@@ -419,7 +419,7 @@ function DatasetPanel({ nodeId }: { nodeId: number }) {
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
-                  <th className="py-1 pr-2">Name</th>
+                  <th className="py-1 pr-2">ID</th>
                   <th className="py-1 pr-2">Input</th>
                   <th className="py-1 pr-2">Expected</th>
                   <th className="py-1 pr-2">Type</th>
@@ -429,7 +429,7 @@ function DatasetPanel({ nodeId }: { nodeId: number }) {
               <tbody>
                 {cases.map((c) => (
                   <tr key={c.case_id} className="border-b border-slate-100 align-top">
-                    <td className="py-1 pr-2">{c.case_nm || '-'}</td>
+                    <td className="py-1 pr-2">#{c.case_id}</td>
                     <td className="py-1 pr-2 font-mono whitespace-pre-wrap break-words">
                       {c.input_data}
                     </td>
@@ -495,7 +495,6 @@ function CaseModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [caseNm, setCaseNm] = useState(existing?.case_nm ?? '');
   const [inputData, setInputData] = useState(existing?.input_data ?? '');
   const [expected, setExpected] = useState(existing?.expected_output ?? '');
   const [evalCriteria, setEvalCriteria] = useState(existing?.eval_criteria ?? '');
@@ -512,7 +511,6 @@ function CaseModal({
     setError(null);
     try {
       const body: CaseCreate = {
-        case_nm: caseNm || null,
         input_data: inputData,
         expected_output: expected || null,
         eval_criteria: evalCriteria || null,
@@ -552,15 +550,7 @@ function CaseModal({
       }
     >
       <div className="space-y-3 text-sm">
-        <div className="grid grid-cols-2 gap-2">
-          <label>
-            <div className="text-xs text-slate-500">Case name</div>
-            <input
-              value={caseNm}
-              onChange={(e) => setCaseNm(e.target.value)}
-              className="w-full rounded border border-slate-300 px-2 py-1"
-            />
-          </label>
+        <div className="grid grid-cols-1 gap-2">
           <label>
             <div className="text-xs text-slate-500">Case type</div>
             <input

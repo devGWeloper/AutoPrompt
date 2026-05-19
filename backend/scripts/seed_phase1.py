@@ -47,7 +47,6 @@ _RESET_ORDER = [
 # ragas_service._parse_case() and _case_variables() consume.
 _IT_KB_CASES = [
     {
-        "case_nm": "Password reset",
         "question": "How do I reset my corporate password?",
         "contexts": [
             "To reset your corporate password, open https://id.corp.example.com "
@@ -62,7 +61,6 @@ _IT_KB_CASES = [
         ),
     },
     {
-        "case_nm": "VPN connection",
         "question": "What client do I use to connect to the company VPN?",
         "contexts": [
             "The company VPN uses the GlobalProtect client. Download it from the "
@@ -75,7 +73,6 @@ _IT_KB_CASES = [
         ),
     },
     {
-        "case_nm": "Printer offline",
         "question": "My printer shows offline. How do I fix it?",
         "contexts": [
             "If a network printer shows offline, first confirm it is powered on "
@@ -90,7 +87,6 @@ _IT_KB_CASES = [
         ),
     },
     {
-        "case_nm": "Mailbox quota exceeded",
         "question": "My mailbox is full and I cannot send email. What should I do?",
         "contexts": [
             "The default mailbox quota is 50 GB. When exceeded, sending is "
@@ -104,7 +100,6 @@ _IT_KB_CASES = [
         ),
     },
     {
-        "case_nm": "MFA enrollment",
         "question": "How do I enroll a new phone for multi-factor authentication?",
         "contexts": [
             "To enroll an MFA device, sign in to https://id.corp.example.com, go "
@@ -225,7 +220,6 @@ def seed() -> None:
                 db.add(
                     TestCase(
                         dataset_id=dataset.dataset_id,
-                        case_nm=c["case_nm"],
                         input_data=json.dumps(
                             {
                                 "question": c["question"],

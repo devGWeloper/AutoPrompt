@@ -11,7 +11,7 @@ from app.models.dataset import TestCase, TestDataset
 from app.schemas.dataset import CaseCreate, CaseUpdate, DatasetCreate, DatasetUpdate
 from app.services import audit as audit_service
 
-CSV_COLUMNS = ("case_name", "input_json", "expected_output", "eval_criteria", "case_type")
+CSV_COLUMNS = ("input_json", "expected_output", "eval_criteria", "case_type")
 
 
 # ---- datasets -------------------------------------------------------------
@@ -141,7 +141,6 @@ def create_case(
 ) -> TestCase:
     case = TestCase(
         dataset_id=dataset_id,
-        case_nm=payload.case_nm,
         input_data=payload.input_data,
         expected_output=payload.expected_output,
         eval_criteria=payload.eval_criteria,
@@ -198,7 +197,6 @@ def import_csv(
         db.add(
             TestCase(
                 dataset_id=dataset_id,
-                case_nm=(row.get("case_name") or "").strip() or None,
                 input_data=input_data,
                 expected_output=(row.get("expected_output") or "").strip() or None,
                 eval_criteria=(row.get("eval_criteria") or "").strip() or None,

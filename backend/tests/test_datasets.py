@@ -32,7 +32,7 @@ def test_case_crud(client):
 
     case = client.post(
         f"/api/v1/datasets/{did}/cases",
-        json={"case_nm": "c1", "input_data": '{"q": "hi"}', "expected_output": "hello"},
+        json={"input_data": '{"q": "hi"}', "expected_output": "hello"},
     )
     assert case.status_code == 201, case.text
     cid = case.json()["case_id"]
@@ -57,10 +57,10 @@ def test_csv_upload_counts_created_and_skipped(client):
     ).json()["dataset_id"]
 
     csv_text = (
-        "case_name,input_json,expected_output,eval_criteria,case_type\n"
-        'good1,"{""q"":1}",ok,,NORMAL\n'
-        'good2,"{""q"":2}",ok,,EDGE\n'
-        "bad,,should-skip,,NORMAL\n"
+        "input_json,expected_output,eval_criteria,case_type\n"
+        '"{""q"":1}",ok,,NORMAL\n'
+        '"{""q"":2}",ok,,EDGE\n'
+        ",should-skip,,NORMAL\n"
     )
     files = {"file": ("cases.csv", io.BytesIO(csv_text.encode("utf-8")), "text/csv")}
     resp = client.post(f"/api/v1/datasets/{did}/upload", files=files)

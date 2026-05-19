@@ -162,7 +162,6 @@ export interface DatasetUpdate {
 export interface TestCase {
   case_id: number;
   dataset_id: number;
-  case_nm: string | null;
   input_data: string;
   expected_output: string | null;
   eval_criteria: string | null;
@@ -172,7 +171,6 @@ export interface TestCase {
 }
 
 export interface CaseCreate {
-  case_nm?: string | null;
   input_data: string;
   expected_output?: string | null;
   eval_criteria?: string | null;
@@ -180,7 +178,6 @@ export interface CaseCreate {
 }
 
 export interface CaseUpdate {
-  case_nm?: string | null;
   input_data?: string;
   expected_output?: string | null;
   eval_criteria?: string | null;

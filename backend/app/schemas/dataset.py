@@ -35,7 +35,6 @@ class CaseOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     case_id: int
     dataset_id: int
-    case_nm: str | None = None
     input_data: str
     expected_output: str | None = None
     eval_criteria: str | None = None
@@ -45,7 +44,6 @@ class CaseOut(BaseModel):
 
 
 class CaseCreate(BaseModel):
-    case_nm: str | None = Field(default=None, max_length=200)
     input_data: str = Field(..., min_length=1)
     expected_output: str | None = None
     eval_criteria: str | None = None
@@ -53,7 +51,6 @@ class CaseCreate(BaseModel):
 
 
 class CaseUpdate(BaseModel):
-    case_nm: str | None = Field(default=None, max_length=200)
     input_data: str | None = Field(default=None, min_length=1)
     expected_output: str | None = None
     eval_criteria: str | None = None

@@ -27,7 +27,6 @@ class TestCase(Base):
 
     case_id: Mapped[int] = mapped_column("CASE_ID", Integer, Identity(always=True), primary_key=True)
     dataset_id: Mapped[int] = mapped_column("DATASET_ID", Integer, ForeignKey("PM_TEST_DATASET.DATASET_ID"), nullable=False)
-    case_nm: Mapped[str | None] = mapped_column("CASE_NM", String(200))
     input_data: Mapped[str] = mapped_column("INPUT_DATA", Text, nullable=False)
     expected_output: Mapped[str | None] = mapped_column("EXPECTED_OUTPUT", Text)
     eval_criteria: Mapped[str | None] = mapped_column("EVAL_CRITERIA", Text)

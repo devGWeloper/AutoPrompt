@@ -23,15 +23,19 @@ Phase 1~3 (프로젝트·그래프·노드 / 프롬프트 버전·Diff·변수 /
 LLM 어댑터 3종 / 데이터셋·CSV / 단건·배치·A·B·플로우 테스트 / WebSocket 스트리밍)
 구현 완료. **로그인/인증은 전면 제거됨.**
 
+> **미구현(후속):** 외부 LangGraph Agent 호출 어댑터(`app/services/external_agent.py`)와
+> 프롬프트 로컬 캐시(명세 §6.3)는 아직 구현되지 않았다. 현재 "플로우 테스트"는
+> 이 시스템 내부에서만 실행되며, 외부 운영 Agent와의 연동은 후속 작업이다.
+
 Phase 4 추가분:
 
 - RAGAS 평가: `POST /api/v1/nodes/{id}/ragas/run`,
   `GET /api/v1/ragas-runs/{id}`, `GET /api/v1/nodes/{id}/ragas-runs`,
   WebSocket `WS /ws/ragas-runs/{id}`
   - **플러그형 스코어러**: `app/services/ragas/` — 실제 `ragas` 라이브러리
-    (옵션 의존성 `pip install -r requirements-ragas.txt`, Google 사용 시
-    `langchain-google-genai` 포함) + 키가 있으면 RAGAS 엔진, 없으면 결정론적
-    로컬 폴백 자동 사용 (`PM_RAGAS_RUN.ENGINE`에 기록)
+    (`ragas` / `langchain-google-genai`는 `requirements.txt`에 포함) + 키가
+    있으면 RAGAS 엔진, 없으면 결정론적 로컬 폴백 자동 사용
+    (`PM_RAGAS_RUN.ENGINE`에 기록)
   - **Judge 키는 별도 없음**: `.env`에 설정된 첫 provider 키
     (openai>anthropic>google)를 자동 사용. `RAGAS_ENGINE=auto|fallback|ragas`로
     동작 제어
@@ -53,18 +57,21 @@ cd backend
 python -m venv .venv
 .venv\Scripts\activate              # Windows
 # source .venv/bin/activate         # macOS/Linux
-pip install -r requirements-dev.txt   # 런타임만: requirements.txt / + RAGAS: requirements-ragas.txt
+pip install -r requirements.txt       # runtime + dev(pytest/ruff/mypy) + ragas 모두 포함
+                                      # (pyproject.toml은 ruff/pytest 설정만 보유)
 
 cp .env.example .env                # 로컬 설치된 Oracle에 맞춰 ORACLE_DSN,
                                     # (단건 테스트용) ANTHROPIC/OPENAI/GOOGLE_API_KEY 수정
                                     # Docker 미사용 — Oracle은 로컬에 직접 설치되어 있어야 함
 
-# DB 마이그레이션 (스키마가 바뀌었으면 재적용)
+# DB 마이그레이션 (체인: 0001 → 0002[RAGAS] → 0003[PM_TEST_CASE.CASE_NM 제거])
 #   기존 DB가 구 스키마면: alembic downgrade base && alembic upgrade head
 alembic upgrade head
 
-# 초기 시드 데이터 (프로젝트, 노드, 프롬프트[모델 포함] — 사용자 계정 없음)
-python -m scripts.seed_phase1
+# 초기 시드 (프로젝트/노드/프롬프트[모델 포함] — 사용자 계정 없음).
+#   노드 중 "IT Knowledge Base (RAG)"(google/gemini) + "IT KB Golden Set"
+#   RAGAS 골든 데이터셋 포함. --reset = 기존 PM_* 전부 삭제 후 재시드.
+python -m scripts.seed_phase1 [--reset]
 
 # 개발 서버
 uvicorn app.main:app --reload --port 8000
@@ -98,8 +105,8 @@ http://localhost:3000 — 루트 접속 시 로그인 없이 바로 프로젝트
 - 컬럼/표 공간 단위 암호화(TDE) 적용 권고 — DBA 영역
 - LLM API 키는 환경 변수 / Vault에서 관리 (`*_API_KEY`)
 - 인증이 없으므로 네트워크 레벨(사내망/방화벽/리버스 프록시)에서 접근 통제할 것
-- 프롬프트 관리 시스템 장애 시에도 AI Agent 본 서비스가 영향받지 않도록 캐시 적용 검토
-  (소비처인 외부 Agent 연동이 Phase 3 범위 → 캐시도 Phase 3에서 도입)
+- 프롬프트 관리 시스템 장애 시에도 AI Agent 본 서비스가 영향받지 않도록 캐시 적용 권고
+  — **외부 Agent 연동 어댑터 및 프롬프트 로컬 캐시(§6.3)는 아직 미구현(후속)**
 
 ## 라이선스
 

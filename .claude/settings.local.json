@@ -52,7 +52,8 @@
       "PowerShell(python -c \"import openpyxl, app.services.ragas, app.services.ragas_service, app.services.export_service; print\\('imports ok', openpyxl.__version__\\)\")",
       "PowerShell($env:Path = \"C:\\\\Program Files\\\\nodejs;$env:Path\"; Set-Location C:\\\\work\\\\AutoPrompt\\\\frontend; & \"C:\\\\Program Files\\\\nodejs\\\\node.exe\" .\\\\node_modules\\\\typescript\\\\bin\\\\tsc --noEmit 2>&1 | Select-Object -Last 20; \"EXIT=$LASTEXITCODE\")",
       "PowerShell(Set-Location C:\\\\work\\\\AutoPrompt\\\\frontend; & \"C:\\\\Program Files\\\\nodejs\\\\node.exe\" .\\\\node_modules\\\\typescript\\\\bin\\\\tsc --noEmit 2>&1 | Select-Object -Last 20; \"EXIT=$LASTEXITCODE\")",
-      "PowerShell(Set-Location C:\\\\work\\\\AutoPrompt\\\\frontend; & \"C:\\\\Program Files\\\\nodejs\\\\node.exe\" .\\\\node_modules\\\\typescript\\\\bin\\\\tsc --noEmit 2>&1 | Select-Object -Last 5; \"EXIT=$LASTEXITCODE\")"
+      "PowerShell(Set-Location C:\\\\work\\\\AutoPrompt\\\\frontend; & \"C:\\\\Program Files\\\\nodejs\\\\node.exe\" .\\\\node_modules\\\\typescript\\\\bin\\\\tsc --noEmit 2>&1 | Select-Object -Last 5; \"EXIT=$LASTEXITCODE\")",
+      "Bash(dir \"C:\\\\work\\\\AutoPrompt\\\\backend\")"
     ]
   }
 }

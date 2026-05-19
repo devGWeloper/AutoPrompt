@@ -244,7 +244,7 @@ function SetupPanel({
           <input
             value={judgeProvider}
             onChange={(e) => setJudgeProvider(e.target.value)}
-            placeholder="openai / anthropic / google"
+            placeholder="google"
             className={SELECT_CLS}
           />
         </label>
@@ -253,6 +253,7 @@ function SetupPanel({
           <input
             value={judgeModel}
             onChange={(e) => setJudgeModel(e.target.value)}
+            placeholder="gemini-2.5-flash"
             className={SELECT_CLS}
           />
         </label>

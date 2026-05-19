@@ -7,6 +7,33 @@
 
 ---
 
+## 구현 현황 / 명세 대비 편차 (2026-05-19 기준)
+
+> 본 문서는 원본 요구사항 기준선이며, 일부 항목은 구현 과정에서 변경됐다.
+> 아래가 **현재 코드 기준 사실**이며 충돌 시 이 절이 우선한다.
+
+- **인증/로그인/PM_USER 전면 제거** — 사내 단일 신뢰 환경. 모든 API 공개,
+  생성자/감사 주체는 `SYSTEM_USER`("system") 단일.
+- **모델 설정 = 프롬프트 버전 내장** — 별도 `PM_MODEL_CONFIG` 엔티티 **미구현**.
+  `PM_PROMPT_VERSION`에 `MODEL_PROVIDER/MODEL_NM/TEMPERATURE/MAX_TOKENS/
+  TOP_P/EXTRA_PARAMS` 컬럼으로 종속. (본문 §3 DDL의 PM_MODEL_CONFIG·CONFIG_ID는
+  미반영 — 편차 주석 참조.)
+- **PM_TEST_CASE.CASE_NM 제거** — 케이스 식별은 `CASE_ID`. CSV 업로드 컬럼:
+  `input_json, expected_output, eval_criteria, case_type`.
+- **RAGAS(§4.6)** — 플러그형: 실제 `ragas` + 결정론 로컬 폴백. Judge 키는
+  `.env`의 첫 provider 키 자동감지(openai>anthropic>google),
+  `RAGAS_ENGINE=auto|fallback|ragas`. `PM_RAGAS_RUN` 확장 + `PM_RAGAS_RESULT`
+  (alembic `0002`).
+- **결과 내보내기** — CSV / Excel(openpyxl)만. **PDF 미지원**.
+- **의존성** — 단일 `backend/requirements.txt`(runtime+dev+ragas).
+  `pyproject.toml`은 ruff/pytest 설정만.
+- **마이그레이션 체인** — `0001 → 0002(RAGAS) → 0003(CASE_NM 제거)`.
+- **미구현(후속)** — 외부 LangGraph Agent 호출 어댑터
+  (`app/services/external_agent.py` 없음, 플로우 실행은 시스템 내부 한정),
+  프롬프트 로컬 캐시(§6.3), LLM 비용 추정.
+
+---
+
 ## 목차
 
 1. [시스템 개요](#1-시스템-개요)
@@ -105,7 +132,7 @@ AI Agent 프로젝트를 구성하는 LangGraph 기반 각 노드(Node)의 **프
 PM_PROJECT          - AI Agent 프로젝트
 PM_NODE             - 그래프를 구성하는 노드
 PM_NODE_EDGE        - 노드 간 연결 (엣지)
-PM_MODEL_CONFIG     - LLM 모델 설정 (버전별)
+PM_MODEL_CONFIG     - LLM 모델 설정 (버전별)  ※ 구현에서 제거 — 모델 설정은 PM_PROMPT_VERSION에 내장
 PM_PROMPT_VERSION   - 프롬프트 버전
 PM_PROMPT_VARIABLE  - 프롬프트 내 변수 정의
 PM_TEST_DATASET     - 골든 데이터셋 (테스트 케이스)
@@ -157,6 +184,8 @@ CREATE TABLE PM_NODE_EDGE (
 );
 
 -- LLM 모델 설정 (버전 관리)
+-- ※ 편차: 이 테이블은 구현되지 않음. 모델 설정은 PM_PROMPT_VERSION 컬럼
+--   (MODEL_PROVIDER/MODEL_NM/TEMPERATURE/MAX_TOKENS/TOP_P/EXTRA_PARAMS)에 내장.
 CREATE TABLE PM_MODEL_CONFIG (
     CONFIG_ID       NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     NODE_ID         NUMBER NOT NULL REFERENCES PM_NODE(NODE_ID),
@@ -178,6 +207,8 @@ CREATE TABLE PM_MODEL_CONFIG (
 CREATE TABLE PM_PROMPT_VERSION (
     PROMPT_ID       NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     NODE_ID         NUMBER NOT NULL REFERENCES PM_NODE(NODE_ID),
+    -- ※ 편차: CONFIG_ID/PM_MODEL_CONFIG 미구현. 대신 아래 모델 컬럼이 직접 포함됨:
+    --   MODEL_PROVIDER, MODEL_NM, TEMPERATURE, MAX_TOKENS, TOP_P, EXTRA_PARAMS
     CONFIG_ID       NUMBER REFERENCES PM_MODEL_CONFIG(CONFIG_ID),  -- 연계 모델 설정
     VERSION_NO      VARCHAR2(20) NOT NULL,    -- 예: 1.0.0 (major.minor.patch)
     SYSTEM_PROMPT   CLOB,                     -- 시스템 프롬프트
@@ -216,7 +247,6 @@ CREATE TABLE PM_TEST_DATASET (
 CREATE TABLE PM_TEST_CASE (
     CASE_ID         NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     DATASET_ID      NUMBER NOT NULL REFERENCES PM_TEST_DATASET(DATASET_ID),
-    CASE_NM         VARCHAR2(200),
     INPUT_DATA      CLOB NOT NULL,            -- JSON (변수별 입력값)
     EXPECTED_OUTPUT CLOB,                     -- 기대 출력 (JSON 또는 텍스트)
     EVAL_CRITERIA   CLOB,                     -- 평가 기준 JSON (예: {"category": "배송"})
@@ -449,7 +479,7 @@ LangGraph의 구조를 시각적으로 표현하는 **인터랙티브 그래프*
 **F-34. 골든 데이터셋 관리**
 - 데이터셋 생성/수정/삭제
 - 테스트 케이스 개별 추가 (입력, 기대 출력, 평가 기준, 케이스 유형 입력)
-- CSV 일괄 업로드 (컬럼: case_name, input_json, expected_output, eval_criteria, case_type)
+- CSV 일괄 업로드 (컬럼: input_json, expected_output, eval_criteria, case_type)
 - 테스트 결과에서 케이스를 데이터셋으로 저장하는 "케이스 등록" 버튼
 
 ---
