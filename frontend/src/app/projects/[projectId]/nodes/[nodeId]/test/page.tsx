@@ -18,6 +18,9 @@ import type {
   TestRunResult,
 } from '@/types';
 
+const EXPORT_BASE =
+  process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
+
 type Tab = 'playground' | 'batch' | 'ab' | 'dataset';
 
 export default function TestPage() {
@@ -37,6 +40,10 @@ export default function TestPage() {
             <NavBtn
               label="Prompts"
               onClick={() => router.push(`/projects/${projectId}/nodes/${nodeId}/prompts`)}
+            />
+            <NavBtn
+              label="RAGAS"
+              onClick={() => router.push(`/projects/${projectId}/nodes/${nodeId}/ragas`)}
             />
           </div>
         }
@@ -423,10 +430,10 @@ function DatasetPanel({ nodeId }: { nodeId: number }) {
                 {cases.map((c) => (
                   <tr key={c.case_id} className="border-b border-slate-100 align-top">
                     <td className="py-1 pr-2">{c.case_nm || '-'}</td>
-                    <td className="max-w-[240px] truncate py-1 pr-2 font-mono">
+                    <td className="py-1 pr-2 font-mono whitespace-pre-wrap break-words">
                       {c.input_data}
                     </td>
-                    <td className="max-w-[200px] truncate py-1 pr-2">
+                    <td className="py-1 pr-2 whitespace-pre-wrap break-words">
                       {c.expected_output || '-'}
                     </td>
                     <td className="py-1 pr-2">{c.case_type}</td>
@@ -737,12 +744,24 @@ function BatchPanel({ nodeId }: { nodeId: number }) {
       )}
       {detail && (
         <div className="space-y-2">
-          <div className="flex gap-4 text-sm">
+          <div className="flex flex-wrap items-center gap-4 text-sm">
             <span>total {detail.total_cases}</span>
             <span className="text-emerald-700">passed {detail.passed_cases}</span>
             <span className="text-red-700">failed {detail.failed_cases}</span>
             <span>avg {detail.avg_latency_ms ?? '-'} ms</span>
             <span>{detail.total_tokens ?? 0} tok</span>
+            <a
+              href={`${EXPORT_BASE}/test-runs/${detail.run_id}/export?fmt=csv`}
+              className="rounded border border-slate-300 px-2 py-0.5 text-xs hover:bg-slate-50"
+            >
+              CSV
+            </a>
+            <a
+              href={`${EXPORT_BASE}/test-runs/${detail.run_id}/export?fmt=xlsx`}
+              className="rounded border border-slate-300 px-2 py-0.5 text-xs hover:bg-slate-50"
+            >
+              Excel
+            </a>
           </div>
           <table className="w-full border-collapse text-sm">
             <thead>

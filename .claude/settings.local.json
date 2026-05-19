@@ -40,7 +40,19 @@
       "Bash(.venv/Scripts/python.exe -c ' *)",
       "PowerShell(& \"C:\\\\work\\\\AutoPrompt\\\\backend\\\\.venv\\\\Scripts\\\\python.exe\" -m pytest \"C:\\\\work\\\\AutoPrompt\\\\backend\\\\tests\" -q 2>&1 | Select-Object -Last 25 | Out-String)",
       "PowerShell(& \"C:\\\\work\\\\AutoPrompt\\\\backend\\\\.venv\\\\Scripts\\\\python.exe\" -m ruff check \"C:\\\\work\\\\AutoPrompt\\\\backend\\\\app\" \"C:\\\\work\\\\AutoPrompt\\\\backend\\\\tests\" 2>&1 | Out-String; \"--- mypy ---\"; & \"C:\\\\work\\\\AutoPrompt\\\\backend\\\\.venv\\\\Scripts\\\\python.exe\" -m mypy \"C:\\\\work\\\\AutoPrompt\\\\backend\\\\app\" 2>&1 | Select-Object -Last 6 | Out-String)",
-      "PowerShell(& \"C:\\\\work\\\\AutoPrompt\\\\backend\\\\.venv\\\\Scripts\\\\python.exe\" -m mypy \"C:\\\\work\\\\AutoPrompt\\\\backend\\\\app\" 2>&1 | Select-Object -Last 3 | Out-String)"
+      "PowerShell(& \"C:\\\\work\\\\AutoPrompt\\\\backend\\\\.venv\\\\Scripts\\\\python.exe\" -m mypy \"C:\\\\work\\\\AutoPrompt\\\\backend\\\\app\" 2>&1 | Select-Object -Last 3 | Out-String)",
+      "Bash(Get-ChildItem -Path C:\\\\work\\\\AutoPrompt -Recurse -Directory -Depth 3)",
+      "Bash(Select-Object FullName)",
+      "Bash(Format-List)",
+      "Bash(Get-ChildItem -Path \"C:\\\\work\\\\AutoPrompt\" -Recurse -Depth 2)",
+      "Bash(Select-Object FullName, PSIsContainer)",
+      "Bash(Sort-Object FullName)",
+      "Bash(Format-Table -AutoSize)",
+      "PowerShell(pip *)",
+      "PowerShell(python -c \"import openpyxl, app.services.ragas, app.services.ragas_service, app.services.export_service; print\\('imports ok', openpyxl.__version__\\)\")",
+      "PowerShell($env:Path = \"C:\\\\Program Files\\\\nodejs;$env:Path\"; Set-Location C:\\\\work\\\\AutoPrompt\\\\frontend; & \"C:\\\\Program Files\\\\nodejs\\\\node.exe\" .\\\\node_modules\\\\typescript\\\\bin\\\\tsc --noEmit 2>&1 | Select-Object -Last 20; \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(Set-Location C:\\\\work\\\\AutoPrompt\\\\frontend; & \"C:\\\\Program Files\\\\nodejs\\\\node.exe\" .\\\\node_modules\\\\typescript\\\\bin\\\\tsc --noEmit 2>&1 | Select-Object -Last 20; \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(Set-Location C:\\\\work\\\\AutoPrompt\\\\frontend; & \"C:\\\\Program Files\\\\nodejs\\\\node.exe\" .\\\\node_modules\\\\typescript\\\\bin\\\\tsc --noEmit 2>&1 | Select-Object -Last 5; \"EXIT=$LASTEXITCODE\")"
     ]
   }
 }

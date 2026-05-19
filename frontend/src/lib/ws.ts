@@ -39,3 +39,8 @@ export function connectTestRunWs(runId: number, handlers: RunWsHandlers): WebSoc
 export function connectFlowRunWs(runId: number, handlers: RunWsHandlers): WebSocket {
   return connect(`/ws/flow-runs/${runId}`, handlers);
 }
+
+/** Stream a RAGAS evaluation run (`/ws/ragas-runs/{id}`). */
+export function connectRagasRunWs(ragasRunId: number, handlers: RunWsHandlers): WebSocket {
+  return connect(`/ws/ragas-runs/${ragasRunId}`, handlers);
+}

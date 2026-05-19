@@ -25,7 +25,6 @@ export default function PromptsPage() {
   const router = useRouter();
   const projectId = Number(params.projectId);
   const nodeId = Number(params.nodeId);
-  const admin = true; // auth removed — all actions permitted
 
   const [versions, setVersions] = useState<PromptVersionSummary[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -156,7 +155,7 @@ export default function PromptsPage() {
               ))}
             </div>
             <div className="flex items-center gap-2">
-              {detail && detail.is_active !== 'Y' && admin && (
+              {detail && detail.is_active !== 'Y' && (
                 <button
                   onClick={() => setShowActivate(true)}
                   className="rounded bg-emerald-600 px-3 py-1 text-xs text-white hover:bg-emerald-700"
@@ -164,7 +163,7 @@ export default function PromptsPage() {
                   Activate this version
                 </button>
               )}
-              {detail && detail.is_active === 'Y' && detail.prev_prompt_id && admin && (
+              {detail && detail.is_active === 'Y' && detail.prev_prompt_id && (
                 <button
                   onClick={handleRollback}
                   disabled={busy}
@@ -217,7 +216,7 @@ export default function PromptsPage() {
                 promptId={detail.prompt_id}
                 detected={detectedVars}
                 initial={detail.variables}
-                editable={admin}
+                editable={true}
               />
             ) : tab === 'diff' ? (
               <DiffViewer
@@ -239,7 +238,7 @@ export default function PromptsPage() {
           baseUser={draftUser}
           baseDetail={detail}
           prevPromptId={detail?.prompt_id ?? null}
-          adminCanActivate={admin}
+          adminCanActivate={true}
           onClose={() => setShowCreate(false)}
           onCreated={async (id, activated) => {
             setShowCreate(false);

@@ -3,17 +3,6 @@
 -- Target: Oracle 19c+ / XE 21c (also runs on 12c+ with IDENTITY)
 -- ============================================================
 
--- Users (Phase 1 addition for local auth)
-CREATE TABLE PM_USER (
-    USER_ID         NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    USERNAME        VARCHAR2(50) NOT NULL UNIQUE,
-    PASSWORD_HASH   VARCHAR2(200) NOT NULL,
-    DISPLAY_NM      VARCHAR2(100),
-    ROLE            VARCHAR2(20) DEFAULT 'USER',
-    IS_ACTIVE       CHAR(1) DEFAULT 'Y',
-    CREATED_DT      TIMESTAMP DEFAULT SYSTIMESTAMP
-);
-
 -- Project
 CREATE TABLE PM_PROJECT (
     PROJECT_ID      NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

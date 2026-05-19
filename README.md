@@ -17,24 +17,34 @@ frontend/   Next.js 14 + React Flow
 docs/       Phase 2~4 로드맵 등 문서
 ```
 
-## 현재 단계: Phase 2 (백엔드)
+## 현재 단계: Phase 4 완료
 
-Phase 1 (프로젝트·그래프·노드 / 프롬프트 버전·Diff·변수 / 감사 로그 /
-Frontend 기본 화면) 구현 완료. **로그인/인증은 전면 제거됨.**
+Phase 1~3 (프로젝트·그래프·노드 / 프롬프트 버전·Diff·변수 / 감사 로그 /
+LLM 어댑터 3종 / 데이터셋·CSV / 단건·배치·A·B·플로우 테스트 / WebSocket 스트리밍)
+구현 완료. **로그인/인증은 전면 제거됨.**
 
-Phase 2 백엔드 추가분:
+Phase 4 추가분:
 
-- LLM Provider 어댑터 (`app/services/llm/` — anthropic / openai / google, 공통 `invoke`)
-- **모델 설정은 프롬프트 버전에 종속** — 별도 ModelConfig 엔티티 없음. 프롬프트 버전 생성 시
-  `model_provider/model_nm/temperature/max_tokens/top_p/extra_params`를 함께 지정
-- 데이터셋/케이스 CRUD: `/api/v1/nodes/{id}/datasets`, `/api/v1/datasets/{id}/cases`,
-  CSV 업로드 `POST /api/v1/datasets/{id}/upload`
-- 즉석 단건 테스트: `POST /api/v1/nodes/{id}/test/run` +
-  WebSocket 스트리밍 `WS /ws/test-runs/{run_id}` (모델은 프롬프트 버전에서 사용)
-- 그래프는 LangGraph식 세로(top→bottom) 레이아웃, history는 노드별 스코프
+- RAGAS 평가: `POST /api/v1/nodes/{id}/ragas/run`,
+  `GET /api/v1/ragas-runs/{id}`, `GET /api/v1/nodes/{id}/ragas-runs`,
+  WebSocket `WS /ws/ragas-runs/{id}`
+  - **플러그형 스코어러**: `app/services/ragas/` — 실제 `ragas` 라이브러리
+    (옵션 의존성 `pip install -r requirements-ragas.txt`, Google 사용 시
+    `langchain-google-genai` 포함) + 키가 있으면 RAGAS 엔진, 없으면 결정론적
+    로컬 폴백 자동 사용 (`PM_RAGAS_RUN.ENGINE`에 기록)
+  - **Judge 키는 별도 없음**: `.env`에 설정된 첫 provider 키
+    (openai>anthropic>google)를 자동 사용. `RAGAS_ENGINE=auto|fallback|ragas`로
+    동작 제어
+  - 케이스별 지표는 `PM_RAGAS_RESULT`에 저장 (마이그레이션 `0002`)
+- 결과 내보내기: `GET /api/v1/test-runs/{id}/export?fmt=csv|xlsx`,
+  `GET /api/v1/ragas-runs/{id}/export?fmt=csv|xlsx` (CSV / Excel, **PDF 미지원**)
+- Frontend: RAGAS 화면(설정/결과 차트/이력 추이 — recharts),
+  변경 이력 대시보드(`/projects/{id}/audit` — 필터·페이지네이션·JSON Diff)
+- 운영 가이드: [`docs/oracle-encryption-guide.md`](./docs/oracle-encryption-guide.md)
+  (명세 §6.2 Oracle TDE / 컬럼 암호화)
 
-> Phase 2 프론트엔드 화면 및 프롬프트 캐시(§6.3, 소비처인 Agent 연동이 Phase 3)는
-> 후속 작업. Phase 2~4 전체 범위는 [`docs/phase-roadmap.md`](./docs/phase-roadmap.md) 참조.
+> 전체 Phase 범위 및 후속 비기능 항목은
+> [`docs/phase-roadmap.md`](./docs/phase-roadmap.md) 참조.
 
 ## Backend 실행
 
@@ -43,7 +53,7 @@ cd backend
 python -m venv .venv
 .venv\Scripts\activate              # Windows
 # source .venv/bin/activate         # macOS/Linux
-pip install -e .[dev]
+pip install -r requirements-dev.txt   # 런타임만: requirements.txt / + RAGAS: requirements-ragas.txt
 
 cp .env.example .env                # 로컬 설치된 Oracle에 맞춰 ORACLE_DSN,
                                     # (단건 테스트용) ANTHROPIC/OPENAI/GOOGLE_API_KEY 수정

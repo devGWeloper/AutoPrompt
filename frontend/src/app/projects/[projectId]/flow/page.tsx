@@ -64,7 +64,7 @@ export default function FlowPage() {
     return graph.nodes.map((n) => ({
       id: String(n.node_id),
       type: 'pmNode',
-      data: n,
+      data: n as unknown as Record<string, unknown>,
       position: pos[n.node_id] ?? { x: 0, y: 0 },
       draggable: false,
       style: {

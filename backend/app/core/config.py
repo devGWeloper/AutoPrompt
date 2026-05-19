@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000"
     log_level: str = "INFO"
 
+    # RAGAS engine mode: "auto" (use real ragas when the lib + a provider key
+    # are available, else fallback), "fallback" (always heuristic), "ragas"
+    # (force real ragas). Env: RAGAS_ENGINE.
+    ragas_engine: str = "auto"
+
     # LLM provider API keys (read from .env / environment).
     anthropic_api_key: str = ""
     openai_api_key: str = ""

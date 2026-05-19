@@ -1,19 +1,3 @@
-export type Role = 'USER' | 'ADMIN';
-
-export interface UserMe {
-  username: string;
-  role: Role;
-  display_nm: string | null;
-}
-
-export interface TokenResponse {
-  access_token: string;
-  token_type: string;
-  role: Role;
-  username: string;
-  display_nm: string | null;
-}
-
 export interface Project {
   project_id: number;
   project_nm: string;
@@ -139,6 +123,13 @@ export interface AuditLog {
   after_value: string | null;
   created_by: string;
   created_dt: string;
+}
+
+export interface AuditLogPage {
+  total: number;
+  page: number;
+  size: number;
+  items: AuditLog[];
 }
 
 // ---- Phase 2: datasets / cases ----
@@ -294,5 +285,81 @@ export type RunWsMessage =
       run_id: number;
       result?: TestRunResult;
       summary?: Record<string, number | null>;
+      engine?: string;
     }
   | { event: 'FAILED'; run_id: number; node_id?: number; error: string };
+
+// ---- Phase 4: RAGAS evaluation ----
+
+export const RAGAS_METRICS = [
+  'faithfulness',
+  'answer_relevancy',
+  'context_precision',
+  'context_recall',
+  'answer_correctness',
+] as const;
+
+export type RagasMetric = (typeof RAGAS_METRICS)[number];
+
+export interface RagasRunRequest {
+  prompt_id: number;
+  dataset_id: number;
+  metrics?: RagasMetric[];
+  judge_provider?: string | null;
+  judge_model?: string | null;
+}
+
+export interface RagasResultRow {
+  ragas_result_id: number;
+  ragas_run_id: number;
+  case_id: number | null;
+  question: string | null;
+  answer: string | null;
+  contexts: string | null;
+  ground_truth: string | null;
+  faithfulness: number | null;
+  answer_relevancy: number | null;
+  context_precision: number | null;
+  context_recall: number | null;
+  answer_correctness: number | null;
+  error_msg: string | null;
+}
+
+export interface RagasRunOut {
+  ragas_run_id: number;
+  node_id: number;
+  prompt_id: number;
+  dataset_id: number;
+  status: string;
+  engine: string | null;
+  metrics: string | null;
+  judge_provider: string | null;
+  judge_model: string | null;
+  faithfulness: number | null;
+  answer_relevancy: number | null;
+  context_precision: number | null;
+  context_recall: number | null;
+  answer_correctness: number | null;
+  error_msg: string | null;
+  started_dt: string | null;
+  ended_dt: string | null;
+  created_by: string;
+  created_dt: string;
+}
+
+export interface RagasRunDetail extends RagasRunOut {
+  results: RagasResultRow[];
+}
+
+export interface RagasRunSummary {
+  ragas_run_id: number;
+  prompt_id: number;
+  status: string;
+  engine: string | null;
+  faithfulness: number | null;
+  answer_relevancy: number | null;
+  context_precision: number | null;
+  context_recall: number | null;
+  answer_correctness: number | null;
+  created_dt: string;
+}

@@ -30,7 +30,6 @@ export default function GraphPage() {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [dirty, setDirty] = useState(false);
-  const admin = true; // auth removed — all actions permitted
 
   useEffect(() => {
     api.get<Graph>(`/projects/${projectId}/graph`).then((g) => {
@@ -40,9 +39,9 @@ export default function GraphPage() {
         g.nodes.map((n) => ({
           id: String(n.node_id),
           type: 'pmNode',
-          data: n,
+          data: n as unknown as Record<string, unknown>,
           position: pos[n.node_id] ?? { x: 0, y: 0 },
-          draggable: admin,
+          draggable: true,
         })),
       );
       setEdges(
@@ -55,7 +54,7 @@ export default function GraphPage() {
         })),
       );
     });
-  }, [projectId, admin]);
+  }, [projectId]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
@@ -87,23 +86,27 @@ export default function GraphPage() {
     () => (
       <div className="flex gap-2">
         <button
+          onClick={() => router.push(`/projects/${projectId}/audit`)}
+          className="rounded border border-slate-300 px-3 py-1 text-xs hover:bg-slate-50"
+        >
+          변경 이력
+        </button>
+        <button
           onClick={() => router.push(`/projects/${projectId}/flow`)}
           className="rounded border border-slate-300 px-3 py-1 text-xs hover:bg-slate-50"
         >
           Run flow
         </button>
-        {admin && (
-          <button
-            onClick={saveLayout}
-            disabled={!dirty}
-            className="rounded bg-slate-900 px-3 py-1 text-xs text-white disabled:opacity-40"
-          >
-            Save layout
-          </button>
-        )}
+        <button
+          onClick={saveLayout}
+          disabled={!dirty}
+          className="rounded bg-slate-900 px-3 py-1 text-xs text-white disabled:opacity-40"
+        >
+          Save layout
+        </button>
       </div>
     ),
-    [admin, dirty, nodes, projectId, router],
+    [dirty, nodes, projectId, router],
   );
 
   return (
@@ -169,6 +172,14 @@ export default function GraphPage() {
                   className="w-full rounded border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50"
                 >
                   Test node
+                </button>
+                <button
+                  onClick={() =>
+                    router.push(`/projects/${projectId}/nodes/${selected.node_id}/ragas`)
+                  }
+                  className="w-full rounded border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50"
+                >
+                  RAGAS 평가
                 </button>
               </div>
             </>

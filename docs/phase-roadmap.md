@@ -37,18 +37,26 @@
 - 4.5 전체 플로우 테스트 화면 (그래프 뷰 위에서 노드 하이라이트로 진행 표시)
 - 트레이스 뷰어 컴포넌트
 
-## Phase 4 (2주) — RAGAS / 감사 / 내보내기
+## Phase 4 (2주) — RAGAS / 감사 / 내보내기 — ✅ 완료
 
-### Backend
-- `ragas` 라이브러리 통합 (`app/services/ragas_runner.py`)
-- `POST /nodes/{id}/ragas/run`, `WS /ws/ragas-runs/{id}`
-- 평가 이력 조회 / 비교 차트용 데이터 API
-- 결과 내보내기: CSV / Excel(openpyxl) / PDF(weasyprint 또는 ReportLab)
+> 구현 결정: RAGAS는 **플러그형 + 폴백** (실제 `ragas`는 옵션 의존성,
+> 미가용 시 결정론적 로컬 스코어러). 내보내기는 **CSV + Excel만, PDF 드롭**.
 
-### Frontend
-- 4.6 RAGAS 평가 화면 (레이더 / 바 / 라인 차트 — recharts 추천)
-- 4.7 변경 이력 대시보드 고도화 (전체 타임라인 + JSON Diff 뷰어)
-- 결과 내보내기 버튼 (CSV / PDF)
+### Backend ✅
+- 플러그형 스코어러 패키지 `app/services/ragas/`
+  (`base.py` / `fallback_scorer.py` / `ragas_engine.py`) + `ragas_service.py`
+- `POST /nodes/{id}/ragas/run`, `GET /ragas-runs/{id}`,
+  `GET /nodes/{id}/ragas-runs`, `WS /ws/ragas-runs/{id}` (채널 키 `ragas:{id}`)
+- 케이스별 지표 `PM_RAGAS_RESULT` + `PM_RAGAS_RUN` 확장 (alembic `0002`)
+- 결과 내보내기 `export_service.py` + `/{test-runs|ragas-runs}/{id}/export?fmt=csv|xlsx`
+  (CSV stdlib / Excel openpyxl; ~~PDF~~ 드롭)
+
+### Frontend ✅
+- 4.6 RAGAS 평가 화면 (`nodes/{id}/ragas` — 설정/결과/이력 탭,
+  레이더·바·라인 차트, recharts)
+- 4.7 변경 이력 대시보드 (`projects/{id}/audit` — 전체 타임라인 + 필터 +
+  페이지네이션 + JSON Diff 뷰어, react-diff-viewer-continued 재사용)
+- 결과 내보내기 버튼 (CSV / Excel; PDF 제외)
 
 ## 비기능 / 운영 보강
 - Phase 2: 프롬프트 캐시 (Redis 또는 인메모리) — 명세 §6.3
@@ -56,9 +64,10 @@
 - Phase 4: Oracle TDE 또는 컬럼 암호화 가이드 문서화 — 명세 §6.2
 - 권한 모델: 제거됨 (로그인/인증 전면 삭제 — 사내 단일 신뢰 환경 가정)
 
-## 외부 의존성 추가 예정
-- `anthropic`, `openai`, `google-generativeai`
-- `ragas`
-- `celery[redis]` 또는 RQ (배치 백엔드 결정 후)
-- `openpyxl`, `weasyprint` 또는 `reportlab` (내보내기)
-- (프론트) `recharts` 또는 `chart.js` (차트)
+## 외부 의존성
+- `anthropic`, `openai`, `google-generativeai` (적용 완료)
+- `openpyxl` — 메인 의존성 (Excel 내보내기, 적용 완료)
+- `ragas`, `datasets` — **옵션** `requirements-ragas.txt` (미설치 시 폴백 스코어러)
+- (프론트) `recharts` — 차트 (적용 완료)
+- ~~`weasyprint` / `reportlab` (PDF)~~ — 드롭
+- `celery[redis]` 또는 RQ — 미적용 (현재 FastAPI BackgroundTasks로 충분)
