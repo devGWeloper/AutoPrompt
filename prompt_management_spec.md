@@ -572,15 +572,16 @@ RAGAS 프레임워크를 활용하여 프롬프트의 품질을 자동으로 정
 
 ### 5.1 기본 규칙
 
-- Base URL: `https://{host}/api/v1`
+- Base URL: `http://localhost:8000/api/v1` (운영 시 `https://{host}/api/v1`)
 - 인증: 없음 (모든 API 공개 — 사내 신뢰 환경 가정)
 - 응답 형식: JSON
-- 페이지네이션: `?page=1&size=20`
-- 에러 응답: `{"code": "ERROR_CODE", "message": "설명", "detail": {}}`
+- 페이지네이션: `?page=1&size=20` (예: `GET /audit-logs`)
+- 에러 응답: FastAPI 기본 형식 `{"detail": "<메시지>"}` — 커스텀 `{code, message, detail}` 핸들러는 **미구현**
+- WebSocket은 `/api/v1` 접두사 없이 루트(`/ws/...`)에 마운트됨
 
 ### 5.2 주요 엔드포인트
 
-#### 노드 관련
+#### 프로젝트 / 노드
 
 ```
 GET    /projects                         - 프로젝트 목록
@@ -595,45 +596,64 @@ PUT    /nodes/{node_id}                  - 노드 수정
 
 ```
 GET    /nodes/{node_id}/prompts          - 버전 목록
-POST   /nodes/{node_id}/prompts          - 신규 버전 생성
+POST   /nodes/{node_id}/prompts          - 신규 버전 생성 (모델 설정 포함)
+GET    /prompts/diff?v1={id}&v2={id}     - 두 버전 Diff
 GET    /prompts/{prompt_id}              - 버전 상세
 PUT    /prompts/{prompt_id}/activate     - Active 전환
-GET    /prompts/diff?v1={id}&v2={id}     - 두 버전 Diff
 GET    /prompts/{prompt_id}/variables    - 변수 목록
 PUT    /prompts/{prompt_id}/variables    - 변수 일괄 저장
 ```
 
-#### 모델 설정 관련
+> ※ 별도 모델 설정 API(`GET/POST /nodes/{id}/configs`, `PUT /configs/{id}/activate`)는 **제거됨**.
+> 모델 설정(`MODEL_PROVIDER/MODEL_NM/TEMPERATURE/MAX_TOKENS/TOP_P/EXTRA_PARAMS`)은
+> 프롬프트 버전 생성·수정 시 함께 저장된다 (상단 편차 절 참조).
+
+#### 데이터셋 / 테스트 케이스
 
 ```
-GET    /nodes/{node_id}/configs          - 모델 설정 버전 목록
-POST   /nodes/{node_id}/configs          - 신규 모델 설정 생성
-PUT    /configs/{config_id}/activate     - Active 전환
+GET    /nodes/{node_id}/datasets               - 노드별 데이터셋 목록
+POST   /nodes/{node_id}/datasets               - 데이터셋 생성
+GET    /datasets/{dataset_id}                  - 데이터셋 상세
+PUT    /datasets/{dataset_id}                  - 데이터셋 수정
+DELETE /datasets/{dataset_id}                  - 데이터셋 삭제
+GET    /datasets/{dataset_id}/cases            - 케이스 목록
+POST   /datasets/{dataset_id}/cases            - 케이스 추가
+PUT    /datasets/{dataset_id}/cases/{case_id}  - 케이스 수정
+DELETE /datasets/{dataset_id}/cases/{case_id}  - 케이스 삭제
+POST   /datasets/{dataset_id}/upload           - CSV 일괄 업로드
 ```
 
-#### 테스트 관련
+#### 테스트 / 플로우
 
 ```
 POST   /nodes/{node_id}/test/run         - 즉석 단건 테스트 실행
 POST   /nodes/{node_id}/test/batch       - 배치 테스트 실행 (비동기)
+POST   /nodes/{node_id}/test/ab          - 버전 A/B 비교 테스트 (비동기)
 GET    /test-runs/{run_id}               - 테스트 실행 상태 조회
 GET    /test-runs/{run_id}/results       - 테스트 결과 목록
 POST   /projects/{project_id}/flow/run   - 전체 플로우 실행
-GET    /datasets                         - 데이터셋 목록
-POST   /datasets                         - 데이터셋 생성
-POST   /datasets/{dataset_id}/cases      - 테스트 케이스 추가
-POST   /datasets/{dataset_id}/upload     - CSV 일괄 업로드
 ```
 
 #### RAGAS 관련
 
 ```
 POST   /nodes/{node_id}/ragas/run        - RAGAS 평가 실행 (비동기)
-GET    /ragas-runs/{ragas_run_id}        - 평가 상태 조회
-GET    /nodes/{node_id}/ragas/history    - 평가 이력
+GET    /ragas-runs/{ragas_run_id}        - 평가 상태 / 결과 조회
+GET    /nodes/{node_id}/ragas-runs       - 노드별 평가 이력
 ```
 
+#### 결과 내보내기 (Export)
+
+```
+GET    /test-runs/{run_id}/export?fmt=csv|xlsx        - 테스트 결과 내보내기
+GET    /ragas-runs/{ragas_run_id}/export?fmt=csv|xlsx - RAGAS 결과 내보내기
+```
+
+> CSV / Excel(xlsx)만 지원 — **PDF 미지원**.
+
 #### 실시간 (WebSocket)
+
+`/api/v1` 접두사 없이 루트에 마운트된다.
 
 ```
 WS    /ws/test-runs/{run_id}            - 테스트 진행률 스트리밍
@@ -644,8 +664,14 @@ WS    /ws/ragas-runs/{ragas_run_id}     - RAGAS 평가 진행률
 #### 감사 로그
 
 ```
-GET    /audit-logs                       - 전체 변경 이력 (필터 지원)
+GET    /audit-logs                       - 전체 변경 이력 (필터: target_table, user, action, date_from, date_to / page, size)
 GET    /nodes/{node_id}/audit-logs       - 노드별 변경 이력
+```
+
+#### 유틸리티
+
+```
+GET    /health                           - 헬스 체크 (루트 — /api/v1 아님)
 ```
 
 ---
