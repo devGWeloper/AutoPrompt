@@ -39,6 +39,12 @@ Phase 4 추가분:
   - **Judge 키는 별도 없음**: `.env`에 설정된 첫 provider 키
     (openai>anthropic>google)를 자동 사용. `RAGAS_ENGINE=auto|fallback|ragas`로
     동작 제어
+  - **모델명은 모두 `.env`에서 주입(하드코딩 없음)**: 실엔진 사용 시 judge
+    provider에 맞춰 judge 챗 모델(`GOOGLE_JUDGE_MODEL`·`OPENAI_JUDGE_MODEL`·
+    `ANTHROPIC_JUDGE_MODEL`)과 임베딩 모델(`GOOGLE_EMBEDDING_MODEL`·
+    `OPENAI_EMBEDDING_MODEL`)을 설정해야 한다. judge 챗 모델은 요청별
+    `judge_model` 파라미터로 덮어쓸 수 있고, 둘 다 미설정이면 케이스별
+    명확한 에러로 실패(기본값 없음)
   - 케이스별 지표는 `PM_RAGAS_RESULT`에 저장 (마이그레이션 `0002`)
 - 결과 내보내기: `GET /api/v1/test-runs/{id}/export?fmt=csv|xlsx`,
   `GET /api/v1/ragas-runs/{id}/export?fmt=csv|xlsx` (CSV / Excel, **PDF 미지원**)

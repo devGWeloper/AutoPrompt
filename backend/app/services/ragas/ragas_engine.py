@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from app.core.config import get_settings
 from app.services.ragas.base import CaseScore, RagasScorer
 
@@ -14,14 +16,6 @@ def ragas_importable() -> bool:
     except Exception:  # noqa: BLE001 - any import/runtime issue means "unavailable"
         return False
     return True
-
-
-# Default judge model per provider when the caller doesn't pin one.
-_DEFAULT_MODEL = {
-    "google": "gemini-2-flash",
-    "openai": "gpt-4o-mini",
-    "anthropic": "claude-3-5-haiku-latest",
-}
 
 
 class RagasEngine(RagasScorer):
@@ -53,7 +47,6 @@ class RagasEngine(RagasScorer):
         """Return ragas-wrapped (llm, embeddings) for the judge provider."""
         s = get_settings()
         provider = self.judge_provider
-        model = self.judge_model or _DEFAULT_MODEL.get(provider)
 
         if provider == "google":
             from langchain_google_genai import (  # type: ignore[import-not-found]
@@ -61,13 +54,18 @@ class RagasEngine(RagasScorer):
                 GoogleGenerativeAIEmbeddings,
             )
 
+            model = self.judge_model or s.google_judge_model
+            if not model:
+                raise RagasUnavailable("GOOGLE_JUDGE_MODEL is not set (.env)")
             llm = ChatGoogleGenerativeAI(
-                model=model or "gemini-1.5-flash",
+                model=model,
                 google_api_key=s.google_api_key,
                 temperature=0,
             )
+            if not s.google_embedding_model:
+                raise RagasUnavailable("GOOGLE_EMBEDDING_MODEL is not set (.env)")
             emb = GoogleGenerativeAIEmbeddings(
-                model="models/embedding-001",
+                model=s.google_embedding_model,
                 google_api_key=s.google_api_key,
             )
         elif provider == "openai":
@@ -76,17 +74,25 @@ class RagasEngine(RagasScorer):
                 OpenAIEmbeddings,
             )
 
+            model = self.judge_model or s.openai_judge_model
+            if not model:
+                raise RagasUnavailable("OPENAI_JUDGE_MODEL is not set (.env)")
             llm = ChatOpenAI(
-                model=model or "gpt-4o-mini",
+                model=model,
                 api_key=s.openai_api_key,
                 temperature=0,
             )
-            emb = OpenAIEmbeddings(api_key=s.openai_api_key)
+            if not s.openai_embedding_model:
+                raise RagasUnavailable("OPENAI_EMBEDDING_MODEL is not set (.env)")
+            emb = OpenAIEmbeddings(model=s.openai_embedding_model, api_key=s.openai_api_key)
         elif provider == "anthropic":
             from langchain_anthropic import ChatAnthropic  # type: ignore[import-not-found]
 
+            model = self.judge_model or s.anthropic_judge_model
+            if not model:
+                raise RagasUnavailable("ANTHROPIC_JUDGE_MODEL is not set (.env)")
             llm = ChatAnthropic(
-                model=model or "claude-3-5-haiku-latest",
+                model=model,
                 api_key=s.anthropic_api_key,
                 temperature=0,
             )
@@ -96,9 +102,11 @@ class RagasEngine(RagasScorer):
                     "anthropic judge needs an embeddings provider "
                     "(set OPENAI_API_KEY or use google)"
                 )
+            if not s.openai_embedding_model:
+                raise RagasUnavailable("OPENAI_EMBEDDING_MODEL is not set (.env)")
             from langchain_openai import OpenAIEmbeddings  # type: ignore[import-not-found]
 
-            emb = OpenAIEmbeddings(api_key=s.openai_api_key)
+            emb = OpenAIEmbeddings(model=s.openai_embedding_model, api_key=s.openai_api_key)
         else:
             raise RagasUnavailable(f"unsupported judge provider: {provider!r}")
 
@@ -167,9 +175,15 @@ class RagasEngine(RagasScorer):
 
         def _g(name: str) -> float | None:
             v = scores.get(name)
+            if v is None:
+                return None
             try:
-                return round(float(v), 4) if v is not None else None
+                f = float(v)
             except (TypeError, ValueError):
                 return None
+            # ragas yields NaN when a metric can't be computed; treat as "no score".
+            if not math.isfinite(f):
+                return None
+            return round(f, 4)
 
         return CaseScore(**{m: _g(m) for m in self.metrics})

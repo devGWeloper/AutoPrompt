@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -76,6 +77,23 @@ def create_ragas_run(
     db.add(run)
     db.flush()
     return run
+
+
+def _to_score(v: float | None) -> Decimal | None:
+    """Convert a raw metric score to a DB-safe Decimal, or None.
+
+    Oracle NUMBER columns reject NaN/inf (DPY-4004), and ragas yields NaN when a
+    metric can't be computed — so non-finite values are stored as NULL.
+    """
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(f):
+        return None
+    return Decimal(str(round(f, 4)))
 
 
 def _avg(values: list[float]) -> Decimal | None:
@@ -163,10 +181,17 @@ async def execute_ragas_run(
                     contexts=fields["contexts"],
                     ground_truth=fields["ground_truth"],
                 )
+                stored_any = False
                 for m, v in cs.as_dict().items():
-                    if v is not None:
-                        setattr(row, m, Decimal(str(round(v, 4))))
-                        sums[m].append(float(v))
+                    dec = _to_score(v)
+                    if dec is not None:
+                        setattr(row, m, dec)
+                        sums[m].append(float(dec))
+                        stored_any = True
+                if not stored_any:
+                    # Judge produced no finite scores (all NaN) — surface why the
+                    # row is blank instead of leaving it silently empty.
+                    row.error_msg = "scorer returned no finite metric scores (all NaN/None)"
             except Exception as exc:  # noqa: BLE001 - per-case failure, keep going
                 row.error_msg = str(exc)[:1000]
             session.add(row)

@@ -25,6 +25,20 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     google_api_key: str = ""
 
+    # RAGAS real-engine judge chat models, per provider (no default — used when
+    # a run doesn't pin judge_model; if both are unset the run fails per-case
+    # with a clear error). Env: GOOGLE_JUDGE_MODEL / OPENAI_JUDGE_MODEL /
+    # ANTHROPIC_JUDGE_MODEL.
+    google_judge_model: str = ""
+    openai_judge_model: str = ""
+    anthropic_judge_model: str = ""
+
+    # RAGAS real-engine embedding models (no default — must be set in .env when
+    # the real engine is used, else the run fails per-case with a clear error).
+    # Env: GOOGLE_EMBEDDING_MODEL / OPENAI_EMBEDDING_MODEL.
+    google_embedding_model: str = ""
+    openai_embedding_model: str = ""
+
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 

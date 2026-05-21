@@ -53,7 +53,24 @@
       "PowerShell($env:Path = \"C:\\\\Program Files\\\\nodejs;$env:Path\"; Set-Location C:\\\\work\\\\AutoPrompt\\\\frontend; & \"C:\\\\Program Files\\\\nodejs\\\\node.exe\" .\\\\node_modules\\\\typescript\\\\bin\\\\tsc --noEmit 2>&1 | Select-Object -Last 20; \"EXIT=$LASTEXITCODE\")",
       "PowerShell(Set-Location C:\\\\work\\\\AutoPrompt\\\\frontend; & \"C:\\\\Program Files\\\\nodejs\\\\node.exe\" .\\\\node_modules\\\\typescript\\\\bin\\\\tsc --noEmit 2>&1 | Select-Object -Last 20; \"EXIT=$LASTEXITCODE\")",
       "PowerShell(Set-Location C:\\\\work\\\\AutoPrompt\\\\frontend; & \"C:\\\\Program Files\\\\nodejs\\\\node.exe\" .\\\\node_modules\\\\typescript\\\\bin\\\\tsc --noEmit 2>&1 | Select-Object -Last 5; \"EXIT=$LASTEXITCODE\")",
-      "Bash(dir \"C:\\\\work\\\\AutoPrompt\\\\backend\")"
+      "Bash(dir \"C:\\\\work\\\\AutoPrompt\\\\backend\")",
+      "Bash(mkdir -p \"C:/work/AutoPrompt/docs/.pptx-build\")",
+      "Bash(npm init *)",
+      "Bash(npm install *)",
+      "Bash(node -e \"console.log\\(require\\('C:/work/AutoPrompt/docs/.pptx-build/node_modules/pptxgenjs/package.json'\\).version\\)\")",
+      "Bash(node generate.js)",
+      "Read(//c/Program Files/LibreOffice/program/**)",
+      "Read(//c/Program Files \\(x86\\)/LibreOffice/program/**)",
+      "Bash(where.exe soffice *)",
+      "Bash(unzip -l \"C:/work/AutoPrompt/docs/AutoPrompt-presentation.pptx\")",
+      "Bash(./.venv/Scripts/python.exe -m pytest tests/test_ragas_select.py -q)",
+      "Bash(./.venv/Scripts/python.exe -m pytest -q)",
+      "Bash(./.venv/Scripts/python.exe -m ruff check app/core/config.py app/services/ragas/ragas_engine.py)",
+      "Bash(./.venv/Scripts/python.exe -m ruff check app/services/ragas_service.py app/services/ragas/ragas_engine.py tests/test_ragas_score_nan.py)",
+      "PowerShell($env:ORACLE_HOME = \"C:\\\\app\\\\product\\\\19.0.0\\\\dbhome_1\"; & \"C:\\\\app\\\\product\\\\19.0.0\\\\dbhome_1\\\\bin\\\\lsnrctl.exe\" status 2>&1 | Select-String -Pattern \"Service|Instance|Alias|Listening\" | Select-Object -First 40)",
+      "PowerShell(Get-CimInstance *)",
+      "PowerShell(& \"C:\\\\Oracle\\\\WINDOWS.X64_193000_db_home\\\\BIN\\\\lsnrctl.exe\" status)",
+      "Bash(./.venv/Scripts/python.exe *)"
     ]
   }
 }
