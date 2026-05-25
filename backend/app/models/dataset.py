@@ -12,7 +12,11 @@ class TestDataset(Base):
     __tablename__ = "PM_TEST_DATASET"
 
     dataset_id: Mapped[int] = mapped_column("DATASET_ID", Integer, Identity(always=True), primary_key=True)
-    node_id: Mapped[int] = mapped_column("NODE_ID", Integer, ForeignKey("PM_NODE.NODE_ID"), nullable=False)
+    # NODE-scoped datasets reference a NODE_MAS node; FLOW-scoped datasets leave it null.
+    node_mas_id: Mapped[int | None] = mapped_column(
+        "NODE_MAS_ID", Integer, ForeignKey("NODE_MAS.ID")
+    )
+    scope: Mapped[str] = mapped_column("SCOPE", String(10), default="NODE", server_default="NODE")
     dataset_nm: Mapped[str] = mapped_column("DATASET_NM", String(200), nullable=False)
     description: Mapped[str | None] = mapped_column("DESCRIPTION", String(500))
     is_active: Mapped[str] = mapped_column("IS_ACTIVE", String(1), default="Y", server_default="Y")

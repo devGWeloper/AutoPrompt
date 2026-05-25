@@ -6,23 +6,14 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class PromptVariableInOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    var_name: str
-    var_type: str = "STRING"
-    description: str | None = None
-    default_value: str | None = None
-    is_required: str = "Y"
-
-
 class PromptVersionSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     prompt_id: int
-    node_id: int
+    node_mas_id: int
+    node_nm: str
     version_no: str
     is_active: str
-    model_provider: str
-    model_nm: str
+    model_nm: str | None = None
     change_summary: str | None = None
     created_by: str
     created_dt: datetime
@@ -37,15 +28,32 @@ class PromptVersionDetail(PromptVersionSummary):
     extra_params: dict | None = None
     change_reason: str | None = None
     prev_prompt_id: int | None = None
-    variables: list[PromptVariableInOut] = Field(default_factory=list)
+    updated_dt: datetime | None = None
+
+
+class ActivePromptOut(BaseModel):
+    """A node's active prompt (system + user) + model, keyed by NODE_NM.
+
+    Kept for inspection / agent compatibility. At runtime the operational project
+    reads NODE_MAS.PROMPT directly (activation writes the SYSTEM_PROMPT there), so
+    this is not the primary delivery path anymore.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+    node_mas_id: int
+    node_nm: str
+    prompt_id: int
+    version_no: str
+    system_prompt: str | None = None
+    user_prompt: str | None = None
+    model_nm: str | None = None
 
 
 class PromptVersionCreate(BaseModel):
     system_prompt: str = ""
     user_prompt: str = ""
     version_no: str | None = None
-    model_provider: str = Field(..., min_length=1, max_length=50)
-    model_nm: str = Field(..., min_length=1, max_length=100)
+    model_nm: str | None = None
     temperature: Decimal | None = None
     max_tokens: int | None = None
     top_p: Decimal | None = None
@@ -56,8 +64,11 @@ class PromptVersionCreate(BaseModel):
     activate_after_save: bool = False
 
 
-class PromptVariablesUpdate(BaseModel):
-    variables: list[PromptVariableInOut]
+class PromptVersionEdit(BaseModel):
+    system_prompt: str = ""
+    user_prompt: str = ""
+    change_summary: str | None = Field(default=None, max_length=500)
+    change_reason: str | None = Field(default=None, max_length=1000)
 
 
 class PromptDiffLine(BaseModel):

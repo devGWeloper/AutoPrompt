@@ -3,12 +3,12 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.models.audit import AuditLog
-from app.models.prompt import PromptVersion
+from app.models.node_prompt_ver import NodePromptVer
 from app.schemas.audit import AuditLogOut, AuditLogPage
 
 router = APIRouter(tags=["audit"])
@@ -64,25 +64,19 @@ def node_audit_logs(
     limit: int = Query(50, ge=1, le=500),
     db: Session = Depends(get_db),
 ) -> list[AuditLogOut]:
-    # Scope strictly to this node: PM_NODE events for the node itself, plus
-    # PM_PROMPT_VERSION / PM_PROMPT_VARIABLE events whose target_id is one of the
-    # node's prompt versions (variable audit rows use prompt_id as target_id).
+    # Scope to this NODE_MAS node: PM_NODE_PROMPT_VER events whose target_id is one
+    # of the node's prompt versions.
     prompt_ids = (
-        db.execute(select(PromptVersion.prompt_id).where(PromptVersion.node_id == node_id))
+        db.execute(select(NodePromptVer.prompt_id).where(NodePromptVer.node_mas_id == node_id))
         .scalars()
         .all()
     )
-    prompt_scoped = (
-        and_(
-            AuditLog.target_table.in_(("PM_PROMPT_VERSION", "PM_PROMPT_VARIABLE")),
-            AuditLog.target_id.in_(prompt_ids),
-        )
-        if prompt_ids
-        else None
+    if not prompt_ids:
+        return []
+    where = and_(
+        AuditLog.target_table == "PM_NODE_PROMPT_VER",
+        AuditLog.target_id.in_(prompt_ids),
     )
-    node_scoped = and_(AuditLog.target_table == "PM_NODE", AuditLog.target_id == node_id)
-    where = or_(node_scoped, prompt_scoped) if prompt_scoped is not None else node_scoped
-
     stmt = (
         select(AuditLog)
         .where(where)

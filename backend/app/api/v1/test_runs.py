@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.constants import SYSTEM_USER
 from app.core.db import get_db
 from app.core.ws import manager
+from app.models.dataset import TestCase
 from app.models.test_run import TestResult, TestRun
 from app.schemas.test_run import (
     ABRunOut,
@@ -17,10 +18,36 @@ from app.schemas.test_run import (
     TestRunDetail,
     TestRunOut,
 )
+from app.services import audit as audit_service
 from app.services import test_service
 
 router = APIRouter(tags=["test-runs"])
 ws_router = APIRouter(tags=["test-runs"])
+
+
+@router.get("/test-runs", response_model=list[TestRunOut])
+def list_test_runs(db: Session = Depends(get_db)) -> list[TestRunOut]:
+    """All test runs (NODE / BATCH / AB / FLOW), newest first."""
+    rows = (
+        db.execute(select(TestRun).order_by(TestRun.run_id.desc())).scalars().all()
+    )
+    return [TestRunOut.model_validate(r) for r in rows]
+
+
+@router.delete("/test-runs/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_test_run(run_id: int, db: Session = Depends(get_db)) -> None:
+    run = db.get(TestRun, run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="test run not found")
+    for r in db.execute(select(TestResult).where(TestResult.run_id == run_id)).scalars():
+        db.delete(r)
+    db.flush()  # children before parent (FK order)
+    db.delete(run)
+    audit_service.write_audit(
+        db, target_table="PM_TEST_RUN", target_id=run_id, action="DELETE",
+        before={"run_id": run_id, "run_type": run.run_type}, after=None, created_by=SYSTEM_USER,
+    )
+    db.commit()
 
 
 @router.post("/nodes/{node_id}/test/run", response_model=TestRunOut)
@@ -31,7 +58,7 @@ async def run_single_test(
     db: Session = Depends(get_db),
 ) -> TestRunOut:
     run = test_service.create_single_run(
-        db, node_id=node_id, payload=payload, actor=SYSTEM_USER
+        db, node_mas_id=node_id, payload=payload, actor=SYSTEM_USER
     )
     db.commit()
     db.refresh(run)
@@ -54,7 +81,7 @@ async def run_batch_test(
 ) -> TestRunOut:
     run = test_service.create_batch_run(
         db,
-        node_id=node_id,
+        node_mas_id=node_id,
         prompt_id=payload.prompt_id,
         dataset_id=payload.dataset_id,
         run_type="BATCH",
@@ -81,7 +108,7 @@ async def run_ab_test(
 ) -> ABRunOut:
     run_a = test_service.create_batch_run(
         db,
-        node_id=node_id,
+        node_mas_id=node_id,
         prompt_id=payload.prompt_id_a,
         dataset_id=payload.dataset_id,
         run_type="AB",
@@ -89,7 +116,7 @@ async def run_ab_test(
     )
     run_b = test_service.create_batch_run(
         db,
-        node_id=node_id,
+        node_mas_id=node_id,
         prompt_id=payload.prompt_id_b,
         dataset_id=payload.dataset_id,
         run_type="AB",
@@ -114,6 +141,24 @@ async def run_ab_test(
     return ABRunOut(run_a_id=a_id, run_b_id=b_id)
 
 
+def _results_out(db: Session, results: list[TestResult]) -> list[TestResultOut]:
+    """Convert results to schema, enriching each with its case's INPUT_DATA (visibility)."""
+    case_ids = {r.case_id for r in results if r.case_id is not None}
+    inputs: dict[int, str] = {}
+    if case_ids:
+        inputs = dict(
+            db.execute(
+                select(TestCase.case_id, TestCase.input_data).where(TestCase.case_id.in_(case_ids))
+            ).all()
+        )
+    out: list[TestResultOut] = []
+    for r in results:
+        o = TestResultOut.model_validate(r)
+        o.input_data = inputs.get(r.case_id) if r.case_id is not None else None
+        out.append(o)
+    return out
+
+
 @router.get("/test-runs/{run_id}", response_model=TestRunDetail)
 def get_test_run(run_id: int, db: Session = Depends(get_db)) -> TestRunDetail:
     run = db.get(TestRun, run_id)
@@ -129,7 +174,7 @@ def get_test_run(run_id: int, db: Session = Depends(get_db)) -> TestRunDetail:
         .all()
     )
     detail = TestRunDetail.model_validate(run)
-    detail.results = [TestResultOut.model_validate(r) for r in results]
+    detail.results = _results_out(db, list(results))
     return detail
 
 
@@ -148,7 +193,7 @@ def get_test_run_results(
         .scalars()
         .all()
     )
-    return [TestResultOut.model_validate(r) for r in rows]
+    return _results_out(db, list(rows))
 
 
 @ws_router.websocket("/ws/test-runs/{run_id}")

@@ -34,9 +34,11 @@ class TestRunOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     run_id: int
     run_type: str
-    node_id: int | None = None
+    node_mas_id: int | None = None
+    chat_ver_id: int | None = None
     prompt_id: int | None = None
     dataset_id: int | None = None
+    ab_group_id: int | None = None
     status: str
     total_cases: int
     passed_cases: int
@@ -54,6 +56,7 @@ class TestResultOut(BaseModel):
     result_id: int
     run_id: int
     case_id: int | None = None
+    input_data: str | None = None  # populated from PM_TEST_CASE for visibility
     actual_output: str | None = None
     is_passed: str | None = None
     eval_detail: str | None = None

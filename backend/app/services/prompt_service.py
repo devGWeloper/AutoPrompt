@@ -2,20 +2,21 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.prompt import PromptVersion
-from app.models.prompt_variable import PromptVariable
+from app.models.chat_ver import ChatVerMas
+from app.models.node_mas import NodeMas
+from app.models.node_prompt_ver import NodePromptVer
 from app.schemas.prompt import (
-    PromptVariableInOut,
+    ActivePromptOut,
     PromptVersionCreate,
     PromptVersionDetail,
 )
 from app.services import audit as audit_service
-from app.services.variable_parser import extract_variables
 
 _VERSION_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 
@@ -28,12 +29,27 @@ def _bump_patch(version_no: str) -> str:
     return f"{major}.{minor}.{patch + 1}"
 
 
-def suggest_next_version(db: Session, node_id: int) -> str:
+def get_node(db: Session, node_mas_id: int) -> NodeMas:
+    node = db.get(NodeMas, node_mas_id)
+    if node is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="node not found")
+    return node
+
+
+def _require_prompt_node(node: NodeMas) -> None:
+    if (node.prompt_edit_enable_yn or "N").upper() != "Y":
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="node has no editable prompt (PROMPT_EDIT_ENABLE_YN != 'Y')",
+        )
+
+
+def suggest_next_version(db: Session, node_mas_id: int) -> str:
     latest = (
         db.execute(
-            select(PromptVersion)
-            .where(PromptVersion.node_id == node_id)
-            .order_by(PromptVersion.created_dt.desc())
+            select(NodePromptVer)
+            .where(NodePromptVer.node_mas_id == node_mas_id)
+            .order_by(NodePromptVer.created_dt.desc(), NodePromptVer.prompt_id.desc())
             .limit(1)
         )
         .scalars()
@@ -44,12 +60,12 @@ def suggest_next_version(db: Session, node_id: int) -> str:
     return _bump_patch(latest.version_no)
 
 
-def list_versions(db: Session, node_id: int) -> list[PromptVersion]:
+def list_versions(db: Session, node_mas_id: int) -> list[NodePromptVer]:
     rows = (
         db.execute(
-            select(PromptVersion)
-            .where(PromptVersion.node_id == node_id)
-            .order_by(PromptVersion.created_dt.desc())
+            select(NodePromptVer)
+            .where(NodePromptVer.node_mas_id == node_mas_id)
+            .order_by(NodePromptVer.created_dt.desc(), NodePromptVer.prompt_id.desc())
         )
         .scalars()
         .all()
@@ -57,24 +73,11 @@ def list_versions(db: Session, node_id: int) -> list[PromptVersion]:
     return list(rows)
 
 
-def get_version(db: Session, prompt_id: int) -> PromptVersion:
-    obj = db.get(PromptVersion, prompt_id)
+def get_version(db: Session, prompt_id: int) -> NodePromptVer:
+    obj = db.get(NodePromptVer, prompt_id)
     if obj is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="prompt version not found")
     return obj
-
-
-def get_variables(db: Session, prompt_id: int) -> list[PromptVariable]:
-    rows = (
-        db.execute(
-            select(PromptVariable)
-            .where(PromptVariable.prompt_id == prompt_id)
-            .order_by(PromptVariable.var_id.asc())
-        )
-        .scalars()
-        .all()
-    )
-    return list(rows)
 
 
 def _parse_extra(raw: str | None) -> dict | None:
@@ -86,13 +89,13 @@ def _parse_extra(raw: str | None) -> dict | None:
         return None
 
 
-def to_detail(version: PromptVersion, variables: list[PromptVariable]) -> PromptVersionDetail:
+def to_detail(version: NodePromptVer) -> PromptVersionDetail:
     return PromptVersionDetail(
         prompt_id=version.prompt_id,
-        node_id=version.node_id,
+        node_mas_id=version.node_mas_id,
+        node_nm=version.node_nm,
         version_no=version.version_no,
         is_active=version.is_active,
-        model_provider=version.model_provider,
         model_nm=version.model_nm,
         temperature=version.temperature,
         max_tokens=version.max_tokens,
@@ -103,25 +106,94 @@ def to_detail(version: PromptVersion, variables: list[PromptVariable]) -> Prompt
         prev_prompt_id=version.prev_prompt_id,
         created_by=version.created_by,
         created_dt=version.created_dt,
+        updated_dt=version.updated_dt,
         system_prompt=version.system_prompt,
         user_prompt=version.user_prompt,
-        variables=[PromptVariableInOut.model_validate(v) for v in variables],
     )
+
+
+def _to_active(version: NodePromptVer) -> ActivePromptOut:
+    return ActivePromptOut(
+        node_mas_id=version.node_mas_id,
+        node_nm=version.node_nm,
+        prompt_id=version.prompt_id,
+        version_no=version.version_no,
+        system_prompt=version.system_prompt,
+        user_prompt=version.user_prompt,
+        model_nm=version.model_nm,
+    )
+
+
+def active_prompts_for_flow(db: Session) -> dict[str, ActivePromptOut]:
+    """All active prompts of the current flow, keyed by NODE_NM (inspection/compat)."""
+    from app.services import flow_service
+
+    chat = flow_service.get_current_chat(db)
+    nodes = (
+        db.execute(select(NodeMas).where(NodeMas.chat_ver_id == chat.id)).scalars().all()
+    )
+    node_ids = [n.id for n in nodes]
+    if not node_ids:
+        return {}
+    actives = (
+        db.execute(
+            select(NodePromptVer).where(
+                NodePromptVer.node_mas_id.in_(node_ids), NodePromptVer.is_active == "Y"
+            )
+        )
+        .scalars()
+        .all()
+    )
+    result: dict[str, ActivePromptOut] = {}
+    for p in actives:
+        result[p.node_nm] = _to_active(p)
+    return result
+
+
+def active_prompt_for_node_nm(db: Session, node_nm: str) -> ActivePromptOut:
+    from app.services import flow_service
+
+    chat = flow_service.get_current_chat(db)
+    node = (
+        db.execute(
+            select(NodeMas).where(NodeMas.chat_ver_id == chat.id, NodeMas.node_nm == node_nm)
+        )
+        .scalars()
+        .first()
+    )
+    if node is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="node not found")
+    active = (
+        db.execute(
+            select(NodePromptVer).where(
+                NodePromptVer.node_mas_id == node.id, NodePromptVer.is_active == "Y"
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if active is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no active prompt for this node")
+    return _to_active(active)
 
 
 def create_version(
     db: Session,
     *,
-    node_id: int,
+    node_mas_id: int,
     payload: PromptVersionCreate,
     created_by: str,
-) -> PromptVersion:
-    version_no = payload.version_no or suggest_next_version(db, node_id)
+) -> NodePromptVer:
+    node = get_node(db, node_mas_id)
+    _require_prompt_node(node)
+
+    version_no = payload.version_no or suggest_next_version(db, node_mas_id)
 
     dup = (
         db.execute(
-            select(PromptVersion).where(
-                PromptVersion.node_id == node_id, PromptVersion.version_no == version_no
+            select(NodePromptVer).where(
+                NodePromptVer.node_mas_id == node_mas_id,
+                NodePromptVer.version_no == version_no,
             )
         )
         .scalars()
@@ -129,16 +201,22 @@ def create_version(
     )
     if dup is not None:
         raise HTTPException(
-            status.HTTP_409_CONFLICT, detail=f"version {version_no} already exists for this node"
+            status.HTTP_409_CONFLICT,
+            detail=f"version {version_no} already exists for this node",
         )
 
-    new_version = PromptVersion(
-        node_id=node_id,
+    # Model is decided at the flow level (NODE_MAS.MODEL_NM is NULL/unused); snapshot
+    # the current flow main model for traceability/display.
+    chat = db.get(ChatVerMas, node.chat_ver_id)
+    main_model = chat.main_model_nm if chat else None
+
+    new_version = NodePromptVer(
+        node_mas_id=node_mas_id,
+        node_nm=node.node_nm,
         version_no=version_no,
         system_prompt=payload.system_prompt,
         user_prompt=payload.user_prompt,
-        model_provider=payload.model_provider,
-        model_nm=payload.model_nm,
+        model_nm=payload.model_nm or main_model,
         temperature=payload.temperature,
         max_tokens=payload.max_tokens,
         top_p=payload.top_p,
@@ -154,110 +232,127 @@ def create_version(
     db.add(new_version)
     db.flush()
 
-    var_names = extract_variables(payload.system_prompt, payload.user_prompt)
-    for name in var_names:
-        db.add(PromptVariable(prompt_id=new_version.prompt_id, var_name=name))
-    db.flush()
-
     audit_service.write_audit(
         db,
-        target_table="PM_PROMPT_VERSION",
+        target_table="PM_NODE_PROMPT_VER",
         target_id=new_version.prompt_id,
         action="CREATE",
         before=None,
         after={
             "prompt_id": new_version.prompt_id,
-            "node_id": node_id,
+            "node_mas_id": node_mas_id,
+            "node_nm": node.node_nm,
             "version_no": version_no,
             "change_summary": payload.change_summary,
+            "change_reason": payload.change_reason,
+            "system_prompt": payload.system_prompt,
+            "user_prompt": payload.user_prompt,
         },
         created_by=created_by,
     )
     return new_version
 
 
-def activate_version(db: Session, *, prompt_id: int, actor: str) -> PromptVersion:
+def activate_version(db: Session, *, prompt_id: int, actor: str) -> NodePromptVer:
+    """Activate a node prompt version.
+
+    1. flip IS_ACTIVE on PM_NODE_PROMPT_VER (one active per node)
+    2. mirror the prompt text into NODE_MAS.PROMPT (+ UPDATE_DATE/UPDATE_USER) so
+       the operational project picks it up
+    3. cut a new whole-flow version snapshot (PM_FLOW_VER + manifest)
+    """
+    from app.services import flow_service
+
     target = get_version(db, prompt_id)
+    node = get_node(db, target.node_mas_id)
 
     current_active = (
         db.execute(
-            select(PromptVersion).where(
-                PromptVersion.node_id == target.node_id, PromptVersion.is_active == "Y"
+            select(NodePromptVer).where(
+                NodePromptVer.node_mas_id == target.node_mas_id,
+                NodePromptVer.is_active == "Y",
             )
         )
         .scalars()
         .first()
     )
 
-    if current_active and current_active.prompt_id == target.prompt_id:
-        return target
-
+    already_active = bool(current_active and current_active.prompt_id == target.prompt_id)
     before_snapshot = {
         "active_prompt_id": current_active.prompt_id if current_active else None,
         "active_version_no": current_active.version_no if current_active else None,
     }
 
-    if current_active:
+    now = datetime.now(timezone.utc)
+    if current_active and not already_active:
         current_active.is_active = "N"
     target.is_active = "Y"
+    target.updated_dt = now
+
+    # (2) reflect into the operational NODE_MAS row. NODE_MAS has a single PROMPT
+    # column, so only the SYSTEM_PROMPT is mirrored (it maps to the agent's
+    # session_system_prompt); USER_PROMPT stays in PM. (Per-node model is not
+    # editable — MODEL_EDIT_ENABLE_YN is always 'N' — so only PROMPT is mirrored.)
+    node.prompt = target.system_prompt
+    node.update_date = now
+    node.update_user = actor
     db.flush()
 
     audit_service.write_audit(
         db,
-        target_table="PM_PROMPT_VERSION",
+        target_table="PM_NODE_PROMPT_VER",
         target_id=target.prompt_id,
         action="ACTIVATE",
         before=before_snapshot,
         after={"active_prompt_id": target.prompt_id, "active_version_no": target.version_no},
         created_by=actor,
     )
+
+    # (3) bump the whole-flow version (a node prompt change == new flow version).
+    flow_service.cut_flow_version(
+        db,
+        actor=actor,
+        summary=f"activate {target.node_nm} v{target.version_no}",
+        reason=None,
+    )
     return target
 
 
-def replace_variables(
+def update_version_prompt(
     db: Session,
     *,
     prompt_id: int,
-    variables: list[PromptVariableInOut],
+    system_prompt: str,
+    user_prompt: str,
+    change_summary: str | None,
+    change_reason: str | None,
     actor: str,
-) -> list[PromptVariable]:
+) -> NodePromptVer:
+    """Edit an existing version's prompt text in place. Only **inactive** versions
+    may be edited (the active version is locked — change it via a new version)."""
     target = get_version(db, prompt_id)
-    existing = get_variables(db, prompt_id)
-    before_snapshot = [
-        {
-            "var_name": v.var_name,
-            "var_type": v.var_type,
-            "description": v.description,
-            "default_value": v.default_value,
-            "is_required": v.is_required,
-        }
-        for v in existing
-    ]
-    for row in existing:
-        db.delete(row)
-    db.flush()
-    new_rows: list[PromptVariable] = []
-    for spec in variables:
-        row = PromptVariable(
-            prompt_id=prompt_id,
-            var_name=spec.var_name,
-            var_type=spec.var_type,
-            description=spec.description,
-            default_value=spec.default_value,
-            is_required=spec.is_required,
+    if target.is_active == "Y":
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="active version is locked; create a new version instead",
         )
-        db.add(row)
-        new_rows.append(row)
+    before = {"system_prompt": target.system_prompt, "user_prompt": target.user_prompt}
+    target.system_prompt = system_prompt
+    target.user_prompt = user_prompt
+    if change_summary:
+        target.change_summary = change_summary
+    if change_reason:
+        target.change_reason = change_reason
+    target.updated_dt = datetime.now(timezone.utc)
     db.flush()
 
     audit_service.write_audit(
         db,
-        target_table="PM_PROMPT_VARIABLE",
+        target_table="PM_NODE_PROMPT_VER",
         target_id=prompt_id,
         action="UPDATE",
-        before=before_snapshot,
-        after=[v.model_dump() for v in variables],
+        before=before,
+        after={"system_prompt": system_prompt, "user_prompt": user_prompt},
         created_by=actor,
     )
-    _ = target  # silence linter; ensures we validated existence above
-    return new_rows
+    return target

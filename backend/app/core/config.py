@@ -20,6 +20,25 @@ class Settings(BaseSettings):
     # (force real ragas). Env: RAGAS_ENGINE.
     ragas_engine: str = "auto"
 
+    # External agent integration. run_mode="internal" (default) runs flow/test
+    # nodes with this system's own LLM adapters; "external" routes node
+    # execution / RAG retrieval to a real LangGraph service over HTTP.
+    # Env: RUN_MODE / EXTERNAL_AGENT_BASE_URL.
+    run_mode: str = "internal"
+    external_agent_base_url: str = ""
+    # Path (appended to external_agent_base_url) of the internal model's single
+    # chat/run endpoint used by the full/flow test. Env: EXTERNAL_CHAT_PATH.
+    # >>> FILL IN: confirm the internal model's real path.
+    external_chat_path: str = "/chat"
+    # Static fields of the internal model's chat payload (see external_agent.run_flow).
+    # The managed prompt rides in session_system_prompt; main_model_name comes from
+    # the flow. Env: EXTERNAL_CHAT_TYPE / EXTERNAL_USER_ID / EXTERNAL_IS_SUPER_AGENT /
+    # EXTERNAL_A2A_REMOTE_URLS.  >>> FILL IN to match the model's expectations.
+    external_chat_type: str = "default"
+    external_user_id: str = "pm-test"
+    external_is_super_agent: bool | None = None
+    external_a2a_remote_urls: str | None = None
+
     # LLM provider API keys (read from .env / environment).
     anthropic_api_key: str = ""
     openai_api_key: str = ""

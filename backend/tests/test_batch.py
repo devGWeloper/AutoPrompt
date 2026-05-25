@@ -16,10 +16,13 @@ def test_batch_run_aggregates_pass_fail(client, stub_llm):
         "/api/v1/nodes/2/datasets", json={"dataset_nm": "golden"}
     ).json()
     did = ds["dataset_id"]
-    # seeded prompt_id 1 user_prompt = "Question: {{q}}" -> stub "STUB::Question: <q>"
+    # seeded prompt_id 1 user_prompt = "Question: {{q}}" -> stub echoes rendered user prompt
     client.post(
         f"/api/v1/datasets/{did}/cases",
-        json={"input_data": '{"q": "hello"}', "expected_output": "STUB::Question: hello"},
+        json={
+            "input_data": '{"q": "hello"}',
+            "expected_output": "STUB::Question: hello",
+        },
     )
     client.post(
         f"/api/v1/datasets/{did}/cases",

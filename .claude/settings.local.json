@@ -70,7 +70,22 @@
       "PowerShell($env:ORACLE_HOME = \"C:\\\\app\\\\product\\\\19.0.0\\\\dbhome_1\"; & \"C:\\\\app\\\\product\\\\19.0.0\\\\dbhome_1\\\\bin\\\\lsnrctl.exe\" status 2>&1 | Select-String -Pattern \"Service|Instance|Alias|Listening\" | Select-Object -First 40)",
       "PowerShell(Get-CimInstance *)",
       "PowerShell(& \"C:\\\\Oracle\\\\WINDOWS.X64_193000_db_home\\\\BIN\\\\lsnrctl.exe\" status)",
-      "Bash(./.venv/Scripts/python.exe *)"
+      "Bash(./.venv/Scripts/python.exe *)",
+      "Bash(python -c 'import py_compile,sys; py_compile.compile\\('\\\\''__TRACKED_VAR__'\\\\'', doraise=True\\); print\\('\\\\''compile OK:'\\\\'', '\\\\''__TRACKED_VAR__'\\\\''\\)')",
+      "Bash(python fetch_active_prompts.py --help)",
+      "Bash(python callback_probe.py --help)",
+      "Bash(python sync_graph_to_pm.py --help)",
+      "Bash(python sync_pm_to_service.py --help)",
+      "Bash(git diff *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\work\\\\AutoPrompt\" -Recurse -Directory -Depth 3)",
+      "Bash(Select-Object -Property FullName)",
+      "Bash(Get-ChildItem -Path \"C:\\\\work\\\\AutoPrompt\" -Directory)",
+      "Bash(Select-Object Name)",
+      "PowerShell(head *)",
+      "Bash(python -c \"import oracledb; print\\('oracledb version:', oracledb.__version__\\)\")",
+      "Bash(python -c 'import socket; s=socket.socket\\(\\); s.settimeout\\(2\\); *)",
+      "PowerShell(& \"backend\\\\.venv\\\\Scripts\\\\python.exe\" \"backend\\\\scripts\\\\demo_seed_oracle.py\")",
+      "PowerShell(& \"backend\\\\.venv\\\\Scripts\\\\python.exe\" \"backend\\\\scripts\\\\diag_delete_flow_ver.py\")"
     ]
   }
 }

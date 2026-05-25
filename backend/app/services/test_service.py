@@ -9,20 +9,42 @@ from sqlalchemy.orm import Session
 
 from app.core import db as db_module
 from app.core.ws import manager
+from app.models.chat_ver import ChatVerMas
 from app.models.dataset import TestCase, TestDataset
-from app.models.node import Node
-from app.models.prompt import PromptVersion
+from app.models.node_mas import NodeMas
+from app.models.node_prompt_ver import NodePromptVer
 from app.models.test_run import TestResult, TestRun
 from app.schemas.test_run import SingleTestRequest
-from app.services.llm import get_adapter
+from app.services.llm import get_adapter, provider_for_model
 
 
-def _adapter_for(prompt: PromptVersion):
-    """Build the LLM adapter from a prompt version's own model settings."""
+def current_main_model(db: Session) -> str | None:
+    """The flow main model (CHAT_VER_MAS.MAIN_MODEL_NM) — the single LLM model.
+
+    Per-node MODEL_NM is NULL/unused; the model is decided at the whole-flow level.
+    """
+    return (
+        db.execute(select(ChatVerMas.main_model_nm).order_by(ChatVerMas.id.desc()).limit(1))
+        .scalars()
+        .first()
+    )
+
+
+def _adapter_for(prompt: NodePromptVer, *, model_nm: str | None = None):
+    """Build the LLM adapter for a node prompt version.
+
+    The model is the flow main model (passed in as ``model_nm``); the provider is
+    inferred from it (see ``provider_for_model``). Falls back to the version's own
+    stored model name if no main model is supplied.
+    """
+    effective = model_nm or prompt.model_nm
+    if not effective:
+        raise RuntimeError("no model configured (flow main model is empty)")
     extra = json.loads(prompt.extra_params) if prompt.extra_params else None
+    provider = provider_for_model(effective)
     return get_adapter(
-        prompt.model_provider,
-        prompt.model_nm,
+        provider,
+        effective,
         temperature=float(prompt.temperature) if prompt.temperature is not None else None,
         max_tokens=prompt.max_tokens,
         top_p=float(prompt.top_p) if prompt.top_p is not None else None,
@@ -31,11 +53,7 @@ def _adapter_for(prompt: PromptVersion):
 
 
 def _evaluate(expected: str | None, actual: str) -> tuple[str | None, str]:
-    """Deterministic pass/fail: case-insensitive exact-or-substring match.
-
-    Returns (is_passed 'Y'/'N'/None, eval_detail json).
-    None when there is no expected_output (case is not scored).
-    """
+    """Deterministic pass/fail: case-insensitive exact-or-substring match."""
     if expected is None or expected.strip() == "":
         return None, json.dumps({"method": "none"})
     e = expected.strip().lower()
@@ -47,18 +65,18 @@ def _evaluate(expected: str | None, actual: str) -> tuple[str | None, str]:
 
 
 def create_single_run(
-    db: Session, *, node_id: int, payload: SingleTestRequest, actor: str
+    db: Session, *, node_mas_id: int, payload: SingleTestRequest, actor: str
 ) -> TestRun:
-    if db.get(Node, node_id) is None:
+    if db.get(NodeMas, node_mas_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="node not found")
 
-    prompt = db.get(PromptVersion, payload.prompt_id)
-    if prompt is None or prompt.node_id != node_id:
+    prompt = db.get(NodePromptVer, payload.prompt_id)
+    if prompt is None or prompt.node_mas_id != node_mas_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="prompt version not found")
 
     run = TestRun(
         run_type="NODE",
-        node_id=node_id,
+        node_mas_id=node_mas_id,
         prompt_id=prompt.prompt_id,
         dataset_id=None,
         status="PENDING",
@@ -70,20 +88,12 @@ def create_single_run(
     return run
 
 
-async def execute_single_run(
-    *,
-    run_id: int,
-    prompt_id: int,
-    variables: dict[str, str],
-) -> None:
-    """Run one LLM invocation on its own DB session and stream progress over WS.
-
-    Model settings are read from the prompt version itself.
-    """
+async def execute_single_run(*, run_id: int, prompt_id: int, variables: dict[str, str]) -> None:
+    """Run one LLM invocation on its own DB session and stream progress over WS."""
     session = db_module.SessionLocal()
     try:
         run = session.get(TestRun, run_id)
-        prompt = session.get(PromptVersion, prompt_id)
+        prompt = session.get(NodePromptVer, prompt_id)
         if run is None or prompt is None:
             return
 
@@ -93,16 +103,14 @@ async def execute_single_run(
         await manager.broadcast(run_id, {"event": "RUNNING", "run_id": run_id})
 
         try:
-            adapter = _adapter_for(prompt)
+            adapter = _adapter_for(prompt, model_nm=current_main_model(session))
             result = await adapter.invoke(
                 system_prompt=prompt.system_prompt,
                 user_prompt=prompt.user_prompt,
                 variables=variables,
             )
         except Exception as exc:  # noqa: BLE001 - record any provider/config failure
-            session.add(
-                TestResult(run_id=run_id, case_id=None, error_msg=str(exc)[:1000])
-            )
+            session.add(TestResult(run_id=run_id, case_id=None, error_msg=str(exc)[:1000]))
             run.status = "FAILED"
             run.failed_cases = 1
             run.ended_dt = datetime.now(timezone.utc)
@@ -153,19 +161,19 @@ async def execute_single_run(
 def create_batch_run(
     db: Session,
     *,
-    node_id: int,
+    node_mas_id: int,
     prompt_id: int,
     dataset_id: int,
     run_type: str,
     actor: str,
 ) -> TestRun:
-    if db.get(Node, node_id) is None:
+    if db.get(NodeMas, node_mas_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="node not found")
-    prompt = db.get(PromptVersion, prompt_id)
-    if prompt is None or prompt.node_id != node_id:
+    prompt = db.get(NodePromptVer, prompt_id)
+    if prompt is None or prompt.node_mas_id != node_mas_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="prompt version not found")
     dataset = db.get(TestDataset, dataset_id)
-    if dataset is None or dataset.node_id != node_id:
+    if dataset is None or dataset.node_mas_id != node_mas_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="dataset not found")
 
     total = len(
@@ -175,7 +183,7 @@ def create_batch_run(
     )
     run = TestRun(
         run_type=run_type,
-        node_id=node_id,
+        node_mas_id=node_mas_id,
         prompt_id=prompt_id,
         dataset_id=dataset_id,
         status="PENDING",
@@ -197,14 +205,12 @@ def _case_variables(input_data: str) -> dict[str, str]:
     return {str(k): str(v) for k, v in parsed.items()}
 
 
-async def execute_batch_run(
-    *, run_id: int, prompt_id: int, dataset_id: int
-) -> None:
+async def execute_batch_run(*, run_id: int, prompt_id: int, dataset_id: int) -> None:
     """Run every case in a dataset through one prompt version; stream progress."""
     session = db_module.SessionLocal()
     try:
         run = session.get(TestRun, run_id)
-        prompt = session.get(PromptVersion, prompt_id)
+        prompt = session.get(NodePromptVer, prompt_id)
         if run is None or prompt is None:
             return
 
@@ -216,7 +222,7 @@ async def execute_batch_run(
         )
 
         try:
-            adapter = _adapter_for(prompt)
+            adapter = _adapter_for(prompt, model_nm=current_main_model(session))
         except Exception as exc:  # noqa: BLE001 - bad model config
             run.status = "FAILED"
             run.ended_dt = datetime.now(timezone.utc)

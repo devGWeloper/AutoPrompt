@@ -12,11 +12,15 @@ class TestRun(Base):
     __tablename__ = "PM_TEST_RUN"
 
     run_id: Mapped[int] = mapped_column("RUN_ID", Integer, Identity(always=True), primary_key=True)
+    # RUN_TYPE: NODE | BATCH | AB | FLOW
     run_type: Mapped[str] = mapped_column("RUN_TYPE", String(20), nullable=False)
-    node_id: Mapped[int | None] = mapped_column("NODE_ID", Integer, ForeignKey("PM_NODE.NODE_ID"))
-    project_id: Mapped[int | None] = mapped_column("PROJECT_ID", Integer, ForeignKey("PM_PROJECT.PROJECT_ID"))
-    prompt_id: Mapped[int | None] = mapped_column("PROMPT_ID", Integer, ForeignKey("PM_PROMPT_VERSION.PROMPT_ID"))
+    node_mas_id: Mapped[int | None] = mapped_column("NODE_MAS_ID", Integer, ForeignKey("NODE_MAS.ID"))
+    chat_ver_id: Mapped[int | None] = mapped_column("CHAT_VER_ID", Integer, ForeignKey("CHAT_VER_MAS.ID"))
+    prompt_id: Mapped[int | None] = mapped_column("PROMPT_ID", Integer, ForeignKey("PM_NODE_PROMPT_VER.PROMPT_ID"))
     dataset_id: Mapped[int | None] = mapped_column("DATASET_ID", Integer, ForeignKey("PM_TEST_DATASET.DATASET_ID"))
+    # Ties the two runs of one flow A/B together (both rows share the A run's id) so
+    # the records UI can show the pair as a single row. NULL for non-A/B runs.
+    ab_group_id: Mapped[int | None] = mapped_column("AB_GROUP_ID", Integer)
     status: Mapped[str] = mapped_column("STATUS", String(20), default="PENDING", server_default="PENDING")
     total_cases: Mapped[int] = mapped_column("TOTAL_CASES", Integer, default=0, server_default="0")
     passed_cases: Mapped[int] = mapped_column("PASSED_CASES", Integer, default=0, server_default="0")

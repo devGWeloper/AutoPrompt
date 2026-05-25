@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.constants import SYSTEM_USER
 from app.core.db import get_db
-from app.models.node import Node
+from app.models.node_mas import NodeMas
 from app.schemas.dataset import (
     CaseCreate,
     CaseOut,
@@ -33,7 +33,7 @@ def list_datasets(
     node_id: int,
     db: Session = Depends(get_db),
 ) -> list[DatasetSummary]:
-    if db.get(Node, node_id) is None:
+    if db.get(NodeMas, node_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="node not found")
     return [DatasetSummary.model_validate(r) for r in dataset_service.list_datasets(db, node_id)]
 
@@ -48,10 +48,10 @@ def create_dataset(
     payload: DatasetCreate,
     db: Session = Depends(get_db),
 ) -> DatasetDetail:
-    if db.get(Node, node_id) is None:
+    if db.get(NodeMas, node_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="node not found")
     ds = dataset_service.create_dataset(
-        db, node_id=node_id, payload=payload, created_by=SYSTEM_USER
+        db, node_mas_id=node_id, payload=payload, created_by=SYSTEM_USER
     )
     db.commit()
     db.refresh(ds)

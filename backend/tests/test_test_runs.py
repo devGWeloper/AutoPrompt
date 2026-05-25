@@ -30,7 +30,7 @@ def test_single_run_streams_over_ws(client, stub_llm):
     kinds = [e["event"] for e in events]
     assert kinds == ["RUNNING", "DONE"]
     done = events[1]
-    # stub echoes the rendered user prompt ("Question: {{q}}" -> "Question: hello")
+    # stub echoes the rendered USER prompt ("Question: {{q}}" -> "Question: hello")
     assert done["result"]["actual_output"] == "STUB::Question: hello"
     assert done["result"]["input_tokens"] == 3
     assert done["result"]["output_tokens"] == 5

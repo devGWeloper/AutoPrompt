@@ -36,8 +36,9 @@ class RagasResultOut(BaseModel):
 class RagasRunOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     ragas_run_id: int
-    node_id: int
-    prompt_id: int
+    node_mas_id: int | None = None
+    prompt_id: int | None = None
+    chat_ver_id: int | None = None
     dataset_id: int
     status: str
     engine: str | None = None
@@ -61,11 +62,17 @@ class RagasRunDetail(RagasRunOut):
 
 
 class RagasRunSummary(BaseModel):
-    """Compact row for the history list / metric-trend line chart (F-52/F-53)."""
+    """Compact row for the history list / metric-trend line chart (F-52/F-53).
+
+    ``node_mas_id``/``prompt_id`` are nullable: a FLOW-scoped RAGAS run has no single
+    node/prompt target. ``error_msg`` surfaces the failure reason in the records list
+    so a FAILED run is visible (not silently dropped).
+    """
 
     model_config = ConfigDict(from_attributes=True)
     ragas_run_id: int
-    prompt_id: int
+    node_mas_id: int | None = None
+    prompt_id: int | None = None
     status: str
     engine: str | None = None
     faithfulness: Decimal | None = None
@@ -73,4 +80,5 @@ class RagasRunSummary(BaseModel):
     context_precision: Decimal | None = None
     context_recall: Decimal | None = None
     answer_correctness: Decimal | None = None
+    error_msg: str | None = None
     created_dt: datetime

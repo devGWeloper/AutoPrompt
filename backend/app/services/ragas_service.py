@@ -12,8 +12,8 @@ from sqlalchemy.orm import Session
 from app.core import db as db_module
 from app.core.ws import manager
 from app.models.dataset import TestCase, TestDataset
-from app.models.node import Node
-from app.models.prompt import PromptVersion
+from app.models.node_mas import NodeMas
+from app.models.node_prompt_ver import NodePromptVer
 from app.models.ragas import RagasResult, RagasRun
 from app.schemas.ragas import RagasRunRequest
 from app.services import test_service
@@ -52,20 +52,20 @@ def _parse_case(input_data: str, expected_output: str | None) -> dict:
 
 
 def create_ragas_run(
-    db: Session, *, node_id: int, payload: RagasRunRequest, actor: str
+    db: Session, *, node_mas_id: int, payload: RagasRunRequest, actor: str
 ) -> RagasRun:
-    if db.get(Node, node_id) is None:
+    if db.get(NodeMas, node_mas_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="node not found")
-    prompt = db.get(PromptVersion, payload.prompt_id)
-    if prompt is None or prompt.node_id != node_id:
+    prompt = db.get(NodePromptVer, payload.prompt_id)
+    if prompt is None or prompt.node_mas_id != node_mas_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="prompt version not found")
     dataset = db.get(TestDataset, payload.dataset_id)
-    if dataset is None or dataset.node_id != node_id:
+    if dataset is None or dataset.node_mas_id != node_mas_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="dataset not found")
 
     metrics = [m for m in ALL_METRICS if m in set(payload.metrics)] or list(ALL_METRICS)
     run = RagasRun(
-        node_id=node_id,
+        node_mas_id=node_mas_id,
         prompt_id=payload.prompt_id,
         dataset_id=payload.dataset_id,
         status="PENDING",
@@ -100,6 +100,20 @@ def _avg(values: list[float]) -> Decimal | None:
     return Decimal(str(round(sum(values) / len(values), 4))) if values else None
 
 
+async def _record_ragas_failure(session, run: RagasRun, key: str, msg: str) -> None:
+    """Mark a RAGAS run FAILED and leave an error row in PM_RAGAS_RESULT.
+
+    Mirrors how plain tests always record an error row, so failures are visible in
+    the results/records UI instead of vanishing.
+    """
+    run.status = "FAILED"
+    run.error_msg = msg[:1000]
+    run.ended_dt = datetime.now(timezone.utc)
+    session.add(RagasResult(ragas_run_id=run.ragas_run_id, error_msg=msg[:1000]))
+    session.commit()
+    await manager.broadcast(key, {"event": "FAILED", "run_id": run.ragas_run_id, "error": msg})
+
+
 async def execute_ragas_run(
     *,
     ragas_run_id: int,
@@ -108,25 +122,19 @@ async def execute_ragas_run(
 ) -> None:
     """Score every dataset case for one prompt version; stream progress over WS.
 
-    Uses the prompt version's own model adapter to produce the answer (via the
-    shared ``test_service`` helpers, so the ``stub_llm`` test fixture also
-    covers this path), then scores with the selected RAGAS engine/fallback.
+    Any failure (scorer/adapter setup or unexpected error) marks the run FAILED and
+    records an error row, so it always shows up in the results/records UI. Answers
+    use the flow main model (per-node MODEL_NM is unused).
     """
     session = db_module.SessionLocal()
+    key = ws_key(ragas_run_id)
+    run = None
     try:
         run = session.get(RagasRun, ragas_run_id)
-        prompt = session.get(PromptVersion, prompt_id)
+        prompt = session.get(NodePromptVer, prompt_id)
         if run is None or prompt is None:
             return
-        key = ws_key(ragas_run_id)
 
-        metrics = json.loads(run.metrics) if run.metrics else list(ALL_METRICS)
-        scorer = get_scorer(
-            metrics,
-            judge_provider=run.judge_provider,
-            judge_model=run.judge_model,
-        )
-        run.engine = scorer.engine
         run.status = "RUNNING"
         run.started_dt = datetime.now(timezone.utc)
         session.commit()
@@ -146,16 +154,17 @@ async def execute_ragas_run(
         )
 
         try:
-            adapter = test_service._adapter_for(prompt)
-        except Exception as exc:  # noqa: BLE001 - bad model config
-            run.status = "FAILED"
-            run.error_msg = str(exc)[:1000]
-            run.ended_dt = datetime.now(timezone.utc)
-            session.commit()
-            await manager.broadcast(
-                key,
-                {"event": "FAILED", "run_id": ragas_run_id, "error": str(exc)},
+            metrics = json.loads(run.metrics) if run.metrics else list(ALL_METRICS)
+            scorer = get_scorer(
+                metrics, judge_provider=run.judge_provider, judge_model=run.judge_model
             )
+            run.engine = scorer.engine
+            session.commit()
+            adapter = test_service._adapter_for(
+                prompt, model_nm=test_service.current_main_model(session)
+            )
+        except Exception as exc:  # noqa: BLE001 - setup/model failure -> record + stop
+            await _record_ragas_failure(session, run, key, str(exc))
             return
 
         sums: dict[str, list[float]] = {m: [] for m in _METRIC_COLS}
@@ -224,5 +233,11 @@ async def execute_ragas_run(
                 },
             },
         )
+    except Exception as exc:  # noqa: BLE001 - never leave a run stuck/unrecorded
+        if run is not None:
+            try:
+                await _record_ragas_failure(session, run, key, str(exc))
+            except Exception:  # noqa: BLE001
+                pass
     finally:
         session.close()

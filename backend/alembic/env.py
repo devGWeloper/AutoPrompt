@@ -9,12 +9,12 @@ from app.core.config import get_settings
 from app.core.db import Base
 from app.models import (  # noqa: F401  -- ensure metadata is populated
     audit,
+    chat_ver,
     dataset,
-    edge,
-    node,
-    project,
-    prompt,
-    prompt_variable,
+    flow_ver,
+    model_mas,
+    node_mas,
+    node_prompt_ver,
     ragas,
     test_run,
 )
