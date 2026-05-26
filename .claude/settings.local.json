@@ -87,7 +87,9 @@
       "PowerShell(& \"backend\\\\.venv\\\\Scripts\\\\python.exe\" \"backend\\\\scripts\\\\demo_seed_oracle.py\")",
       "PowerShell(& \"backend\\\\.venv\\\\Scripts\\\\python.exe\" \"backend\\\\scripts\\\\diag_delete_flow_ver.py\")",
       "PowerShell(Set-Location backend; $env:APP_ENV='test'; .venv\\\\Scripts\\\\python.exe -m pytest -q 2>&1 | Select-Object -Last 25)",
-      "PowerShell(.venv\\\\Scripts\\\\python.exe scripts\\\\create_pm_tables.py --dry-run)"
+      "PowerShell(.venv\\\\Scripts\\\\python.exe scripts\\\\create_pm_tables.py --dry-run)",
+      "PowerShell(Set-Location backend; $env:APP_ENV='test'; .venv\\\\Scripts\\\\python.exe -m pytest -q 2>&1 | Select-Object -Last 12)",
+      "PowerShell(Set-Location backend; $env:APP_ENV='test'; .venv\\\\Scripts\\\\python.exe -m pytest -q 2>&1 | Select-Object -Last 8)"
     ]
   }
 }

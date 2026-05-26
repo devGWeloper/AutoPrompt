@@ -15,7 +15,10 @@ class OpenAIAdapter(LLMAdapter):
     ) -> InvocationResult:
         import openai
 
-        client = openai.AsyncOpenAI(api_key=self.extra_params.get("_api_key", ""))
+        client = openai.AsyncOpenAI(
+            api_key=self.extra_params.get("_api_key", ""),
+            base_url=self.extra_params.get("_base_url") or None,
+        )
         system = render_template(system_prompt, variables)
         user = render_template(user_prompt, variables)
 

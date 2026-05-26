@@ -51,6 +51,16 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     google_api_key: str = ""
 
+    # Internal LLM gateway (OpenAI-compatible: base URL + key + model name).
+    # When llm_endpoint is set, this system's own LLM calls — node-level tests and
+    # the OpenAI RAGAS judge — route HERE instead of the cloud providers above, and
+    # provider inference from the model name is bypassed (so an internal model name
+    # like a Qwen model needs no entry in _MODEL_PREFIX_PROVIDER).
+    # Env: LLM_MODEL_NAME / LLM_ENDPOINT / LLM_API_KEY.
+    llm_model_name: str = ""
+    llm_endpoint: str = ""
+    llm_api_key: str = ""
+
     # RAGAS real-engine judge chat models, per provider (no default — used when
     # a run doesn't pin judge_model; if both are unset the run fails per-case
     # with a clear error). Env: GOOGLE_JUDGE_MODEL / OPENAI_JUDGE_MODEL /
@@ -89,6 +99,10 @@ class Settings(BaseSettings):
             "password": self.oracle_password,
             "dsn": self.oracle_dsn,
         }
+
+    def internal_llm_enabled(self) -> bool:
+        """True when an internal OpenAI-compatible LLM gateway is configured."""
+        return bool(self.llm_endpoint.strip())
 
 
 @lru_cache(maxsize=1)

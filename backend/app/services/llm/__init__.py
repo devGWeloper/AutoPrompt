@@ -11,6 +11,7 @@ __all__ = [
     "LLMAdapter",
     "render_template",
     "get_adapter",
+    "adapter_for_model",
     "provider_for_model",
 ]
 
@@ -77,4 +78,41 @@ def get_adapter(
         max_tokens=max_tokens,
         top_p=top_p,
         extra_params=params,
+    )
+
+
+def adapter_for_model(
+    model: str | None,
+    *,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+    top_p: float | None = None,
+    extra_params: dict | None = None,
+) -> LLMAdapter:
+    """Build an adapter for ``model``, honoring an internal LLM gateway if set.
+
+    When ``LLM_ENDPOINT`` is configured, route to it (OpenAI-compatible) using
+    ``LLM_MODEL_NAME`` + ``LLM_API_KEY`` and SKIP provider inference — the internal
+    model name need not appear in ``_MODEL_PREFIX_PROVIDER``. Otherwise infer the
+    provider from the model name and inject that provider's cloud key.
+    """
+    settings = get_settings()
+    if settings.internal_llm_enabled():
+        params = dict(extra_params or {})
+        params["_api_key"] = settings.llm_api_key
+        params["_base_url"] = settings.llm_endpoint
+        return OpenAIAdapter(
+            model=settings.llm_model_name or (model or ""),
+            temperature=temperature,
+            max_tokens=max_tokens,
+            top_p=top_p,
+            extra_params=params,
+        )
+    return get_adapter(
+        provider_for_model(model),
+        model or "",
+        temperature=temperature,
+        max_tokens=max_tokens,
+        top_p=top_p,
+        extra_params=extra_params,
     )

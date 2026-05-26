@@ -89,8 +89,10 @@ EXTERNAL_USER_ID=pm-test
 and post the chat payload, storing the answer as `PM_TEST_RESULT` rows and
 streaming over `/ws/flow-runs/{run_id}` (or `/ws/ragas-runs/{id}`).
 
-> **Node-level** tests run with this system's own LLM adapters (provider inferred
-> from the model name) — they do NOT call the model. Only the **flow** tests do.
+> **Node-level** tests run with this system's own LLM adapters — on the internal
+> network these route to the OpenAI-compatible gateway in `LLM_ENDPOINT` /
+> `LLM_API_KEY` / `LLM_MODEL_NAME` (provider inference is then bypassed). They do
+> NOT call the chat model — only the **flow** tests do.
 
 After editing env: `cd backend; $env:APP_ENV='test'; .venv\Scripts\python.exe -m pytest`
 must stay green (internal mode), then restart uvicorn with the new env.

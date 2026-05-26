@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core import db as db_module
+from app.core.config import get_settings
 from app.core.ws import manager
 from app.models.chat_ver import ChatVerMas
 from app.models.dataset import TestCase, TestDataset
@@ -15,7 +16,7 @@ from app.models.node_mas import NodeMas
 from app.models.node_prompt_ver import NodePromptVer
 from app.models.test_run import TestResult, TestRun
 from app.schemas.test_run import SingleTestRequest
-from app.services.llm import get_adapter, provider_for_model
+from app.services.llm import adapter_for_model
 
 
 def current_main_model(db: Session) -> str | None:
@@ -33,17 +34,16 @@ def current_main_model(db: Session) -> str | None:
 def _adapter_for(prompt: NodePromptVer, *, model_nm: str | None = None):
     """Build the LLM adapter for a node prompt version.
 
-    The model is the flow main model (passed in as ``model_nm``); the provider is
-    inferred from it (see ``provider_for_model``). Falls back to the version's own
-    stored model name if no main model is supplied.
+    The model is the flow main model (passed in as ``model_nm``), falling back to
+    the version's own stored model name. When an internal LLM gateway is configured
+    (``LLM_ENDPOINT``) the call routes there with ``LLM_MODEL_NAME``; otherwise the
+    provider is inferred from the model name (see ``adapter_for_model``).
     """
     effective = model_nm or prompt.model_nm
-    if not effective:
-        raise RuntimeError("no model configured (flow main model is empty)")
     extra = json.loads(prompt.extra_params) if prompt.extra_params else None
-    provider = provider_for_model(effective)
-    return get_adapter(
-        provider,
+    if not effective and not get_settings().internal_llm_enabled():
+        raise RuntimeError("no model configured (flow main model is empty)")
+    return adapter_for_model(
         effective,
         temperature=float(prompt.temperature) if prompt.temperature is not None else None,
         max_tokens=prompt.max_tokens,

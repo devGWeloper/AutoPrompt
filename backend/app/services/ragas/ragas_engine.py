@@ -74,17 +74,19 @@ class RagasEngine(RagasScorer):
                 OpenAIEmbeddings,
             )
 
-            model = self.judge_model or s.openai_judge_model
+            # Route to the internal OpenAI-compatible gateway when configured.
+            internal = s.internal_llm_enabled()
+            base_url = (s.llm_endpoint or None) if internal else None
+            api_key = s.llm_api_key if internal else s.openai_api_key
+            model = self.judge_model or (s.llm_model_name if internal else s.openai_judge_model)
             if not model:
-                raise RagasUnavailable("OPENAI_JUDGE_MODEL is not set (.env)")
-            llm = ChatOpenAI(
-                model=model,
-                api_key=s.openai_api_key,
-                temperature=0,
-            )
+                raise RagasUnavailable("no judge model (set LLM_MODEL_NAME or OPENAI_JUDGE_MODEL)")
+            llm = ChatOpenAI(model=model, api_key=api_key, base_url=base_url, temperature=0)
             if not s.openai_embedding_model:
                 raise RagasUnavailable("OPENAI_EMBEDDING_MODEL is not set (.env)")
-            emb = OpenAIEmbeddings(model=s.openai_embedding_model, api_key=s.openai_api_key)
+            emb = OpenAIEmbeddings(
+                model=s.openai_embedding_model, api_key=api_key, base_url=base_url
+            )
         elif provider == "anthropic":
             from langchain_anthropic import ChatAnthropic  # type: ignore[import-not-found]
 

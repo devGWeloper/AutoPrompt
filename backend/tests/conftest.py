@@ -170,10 +170,10 @@ def stub_llm(monkeypatch):
                 model=self.model,
             )
 
-    def _factory(provider, model, **kwargs):
+    def _factory(model, **kwargs):
         return _StubAdapter(model)
 
-    monkeypatch.setattr("app.services.test_service.get_adapter", _factory)
+    monkeypatch.setattr("app.services.test_service.adapter_for_model", _factory)
     return _factory
 
 
