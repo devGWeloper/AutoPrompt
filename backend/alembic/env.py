@@ -24,7 +24,8 @@ if config.config_file_name:
     fileConfig(config.config_file_name)
 
 settings = get_settings()
-# python-oracledb DSN form: oracle+oracledb://user:password@host:port/?service_name=...
+# Bare oracle+oracledb URL; the real user/password/dsn go through connect_args
+# (see run_migrations_online). Offline --sql mode never connects, so url-only is ok.
 config.set_main_option("sqlalchemy.url", settings.sqlalchemy_url())
 
 target_metadata = Base.metadata
@@ -46,6 +47,7 @@ def run_migrations_online() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=settings.oracle_connect_args(),
     )
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)

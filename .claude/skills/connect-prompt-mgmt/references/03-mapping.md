@@ -44,7 +44,8 @@ import oracledb  # python-oracledb
 
 def load_node_prompts(node_nm: str) -> tuple[str, str]:
     """(system_prompt, user_prompt) for the active version of node_nm."""
-    with oracledb.connect(ORACLE_DSN) as conn, conn.cursor() as cur:
+    conn = oracledb.connect(user=ORACLE_USER, password=ORACLE_PASSWORD, dsn=ORACLE_DSN)
+    with conn, conn.cursor() as cur:
         cur.execute(
             "SELECT v.SYSTEM_PROMPT, v.USER_PROMPT "
             "FROM PM_NODE_PROMPT_VER v JOIN NODE_MAS n ON n.ID = v.NODE_MAS_ID "

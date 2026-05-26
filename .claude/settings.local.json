@@ -85,7 +85,9 @@
       "Bash(python -c \"import oracledb; print\\('oracledb version:', oracledb.__version__\\)\")",
       "Bash(python -c 'import socket; s=socket.socket\\(\\); s.settimeout\\(2\\); *)",
       "PowerShell(& \"backend\\\\.venv\\\\Scripts\\\\python.exe\" \"backend\\\\scripts\\\\demo_seed_oracle.py\")",
-      "PowerShell(& \"backend\\\\.venv\\\\Scripts\\\\python.exe\" \"backend\\\\scripts\\\\diag_delete_flow_ver.py\")"
+      "PowerShell(& \"backend\\\\.venv\\\\Scripts\\\\python.exe\" \"backend\\\\scripts\\\\diag_delete_flow_ver.py\")",
+      "PowerShell(Set-Location backend; $env:APP_ENV='test'; .venv\\\\Scripts\\\\python.exe -m pytest -q 2>&1 | Select-Object -Last 25)",
+      "PowerShell(.venv\\\\Scripts\\\\python.exe scripts\\\\create_pm_tables.py --dry-run)"
     ]
   }
 }

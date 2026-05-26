@@ -9,7 +9,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    oracle_dsn: str = "pm_user/pm_password@localhost:1521/XEPDB1"
+    # Oracle connection. On the internal network these arrive as three separate
+    # values; oracle_dsn is the BARE connection string handed to python-oracledb
+    # as `dsn` (Easy Connect "host:port/service", a tnsnames alias, or a full
+    # "(DESCRIPTION=...)" descriptor) — credentials are NOT embedded in it.
+    # Env: ORACLE_USER / ORACLE_PASSWORD / ORACLE_DSN.
+    oracle_user: str = "pm_user"
+    oracle_password: str = "pm_password"
+    oracle_dsn: str = "localhost:1521/XEPDB1"
     test_database_url: str = "sqlite+pysqlite:///:memory:"
 
     cors_origins: str = "http://localhost:3000"
@@ -61,27 +68,27 @@ class Settings(BaseSettings):
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
+    def _is_test(self) -> bool:
+        return os.getenv("APP_ENV") == "test"
+
     def sqlalchemy_url(self) -> str:
-        """Build SQLAlchemy URL. Honors TEST_DATABASE_URL when APP_ENV=test."""
-        if os.getenv("APP_ENV") == "test":
+        """SQLAlchemy URL. TEST_DATABASE_URL when APP_ENV=test; otherwise a bare
+        ``oracle+oracledb://`` URL — the real user/password/dsn are passed
+        separately via ``oracle_connect_args()`` so any DSN form is preserved."""
+        if self._is_test():
             return self.test_database_url
-        # python-oracledb thin URL format: oracle+oracledb://user:password@host:port/?service_name=SERVICE
-        # Accept either a SQLAlchemy URL or a tnsnames-style DSN "user/pw@host:port/SERVICE".
-        dsn = self.oracle_dsn
-        if dsn.startswith("oracle+"):
-            return dsn
-        # Parse "user/password@host:port/SERVICE"
-        try:
-            creds, target = dsn.split("@", 1)
-            user, password = creds.split("/", 1)
-            host_port, service = target.rsplit("/", 1)
-            if ":" in host_port:
-                host, port = host_port.split(":", 1)
-            else:
-                host, port = host_port, "1521"
-            return f"oracle+oracledb://{user}:{password}@{host}:{port}/?service_name={service}"
-        except ValueError:
-            return dsn  # let SQLAlchemy raise
+        return "oracle+oracledb://"
+
+    def oracle_connect_args(self) -> dict[str, str]:
+        """Connection kwargs handed straight to python-oracledb (user/password/dsn).
+        Empty under APP_ENV=test (SQLite needs none)."""
+        if self._is_test():
+            return {}
+        return {
+            "user": self.oracle_user,
+            "password": self.oracle_password,
+            "dsn": self.oracle_dsn,
+        }
 
 
 @lru_cache(maxsize=1)

@@ -22,6 +22,9 @@ if _url.startswith("sqlite"):
     # One shared in-memory DB across threads (request + test-run background task).
     _engine_kwargs["connect_args"] = {"check_same_thread": False}
     _engine_kwargs["poolclass"] = StaticPool
+elif _url.startswith("oracle"):
+    # user / password / dsn go straight to python-oracledb (see config.py).
+    _engine_kwargs["connect_args"] = _settings.oracle_connect_args()
 
 engine = create_engine(_url, **_engine_kwargs)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
