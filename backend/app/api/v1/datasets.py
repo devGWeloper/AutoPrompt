@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.constants import SYSTEM_USER
@@ -80,7 +80,7 @@ def update_dataset(
     return _detail(db, ds)
 
 
-@router.delete("/datasets/{dataset_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/datasets/{dataset_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def delete_dataset(
     dataset_id: int,
     db: Session = Depends(get_db),
@@ -133,7 +133,9 @@ def update_case(
 
 
 @router.delete(
-    "/datasets/{dataset_id}/cases/{case_id}", status_code=status.HTTP_204_NO_CONTENT
+    "/datasets/{dataset_id}/cases/{case_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
 )
 def delete_case(
     dataset_id: int,

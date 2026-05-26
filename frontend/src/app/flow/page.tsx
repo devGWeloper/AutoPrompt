@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import TopBar from '@/components/ui/TopBar';
 import { api, ApiError } from '@/lib/api';
+import { MOCK } from '@/lib/mock';
 import { connectFlowRunWs, connectRagasRunWs } from '@/lib/ws';
 import {
   RAGAS_METRICS,
@@ -18,6 +19,44 @@ import {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
 const errText = (e: unknown) => (e instanceof ApiError ? JSON.stringify(e.detail) : String(e));
+
+// ---- CSV export ------------------------------------------------------------
+// In mock mode the backend /export endpoint isn't running, so build the CSV
+// client-side from the (mocked) run detail. In real mode keep the link.
+function csvEscape(v: unknown): string {
+  const s = v == null ? '' : String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+function downloadCsv(filename: string, header: string[], rows: (string | number | null)[][]) {
+  const lines = [header, ...rows].map((r) => r.map(csvEscape).join(','));
+  const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+async function exportTestCsv(runId: number) {
+  const d = await api.get<TestRunDetail>(`/test-runs/${runId}`);
+  downloadCsv(
+    `test-run-${runId}.csv`,
+    ['case_id', 'input_data', 'actual_output', 'is_passed', 'latency_ms', 'input_tokens', 'output_tokens', 'error_msg'],
+    d.results.map((r) => [r.case_id, r.input_data, r.actual_output, r.is_passed, r.latency_ms, r.input_tokens, r.output_tokens, r.error_msg]),
+  );
+}
+async function exportRagasCsv(ragasId: number) {
+  const d = await api.get<RagasRunDetail>(`/ragas-runs/${ragasId}`);
+  downloadCsv(
+    `ragas-run-${ragasId}.csv`,
+    ['case_id', 'question', 'answer', ...RAGAS_METRICS, 'error_msg'],
+    d.results.map((r) => [r.case_id, r.question, r.answer, ...RAGAS_METRICS.map((m) => r[m]), r.error_msg]),
+  );
+}
+function CsvLink({ url, download, className }: { url: string; download: () => void; className: string }) {
+  if (MOCK) return <button onClick={download} className={className}>CSV</button>;
+  return <a href={url} className={className}>CSV</a>;
+}
 
 type Tab = 'flow' | 'batch' | 'ab' | 'ragas' | 'datasets' | 'records';
 const TABS: { id: Tab; label: string }[] = [
@@ -188,7 +227,7 @@ function BatchPanel() {
       {error && <ErrBox msg={error} />}
       {detail && (
         <div className="rounded-xl border-2 border-slate-200 bg-white p-4">
-          <div className="mb-3 text-sm font-bold">통과 {detail.passed_cases}/{detail.total_cases} · 실패 {detail.failed_cases} · 평균 {detail.avg_latency_ms ?? 0}ms · {detail.total_tokens ?? 0} tok</div>
+          <div className="mb-3 text-sm font-bold">케이스 {detail.total_cases}건 · 평균 {detail.avg_latency_ms ?? 0}ms · {detail.total_tokens ?? 0} tok</div>
           <ResultsTable rows={detail.results} />
         </div>
       )}
@@ -266,8 +305,8 @@ function ABPanel() {
                 <tr className="border-b-2 border-slate-200">
                   <th className="px-3 py-2 font-bold">case</th>
                   <th className="px-3 py-2 font-bold">입력</th>
-                  <th className="px-3 py-2 font-bold">A 출력 / 결과</th>
-                  <th className="px-3 py-2 font-bold">B 출력 / 결과</th>
+                  <th className="px-3 py-2 font-bold">A 출력</th>
+                  <th className="px-3 py-2 font-bold">B 출력</th>
                 </tr>
               </thead>
               <tbody>
@@ -278,11 +317,11 @@ function ABPanel() {
                       <td className="px-3 py-2 font-mono">{cid}</td>
                       <td className="px-3 py-2"><pre className="max-h-28 overflow-auto whitespace-pre-wrap text-xs text-slate-600">{a?.input_data ?? b?.input_data ?? '-'}</pre></td>
                       <td className="px-3 py-2">
-                        <div className="mb-1 flex gap-2 text-xs">{passBadge(a?.is_passed ?? null)}<span className="text-slate-400">{a?.latency_ms ?? 0}ms</span></div>
+                        <div className="mb-1 text-xs text-slate-400">{a?.latency_ms ?? 0}ms</div>
                         <pre className="max-h-28 overflow-auto whitespace-pre-wrap text-xs">{a?.actual_output ?? a?.error_msg ?? '-'}</pre>
                       </td>
                       <td className="px-3 py-2">
-                        <div className="mb-1 flex gap-2 text-xs">{passBadge(b?.is_passed ?? null)}<span className="text-slate-400">{b?.latency_ms ?? 0}ms</span></div>
+                        <div className="mb-1 text-xs text-slate-400">{b?.latency_ms ?? 0}ms</div>
                         <pre className="max-h-28 overflow-auto whitespace-pre-wrap text-xs">{b?.actual_output ?? b?.error_msg ?? '-'}</pre>
                       </td>
                     </tr>
@@ -303,7 +342,7 @@ function ABSummary({ label, detail }: { label: string; detail: TestRunDetail | n
     <div className="rounded-xl border-2 border-slate-200 bg-white p-4">
       <div className="text-sm font-extrabold text-slate-700">{label}</div>
       {detail ? (
-        <div className="mt-1 text-sm text-slate-600">통과 {detail.passed_cases}/{detail.total_cases} · 실패 {detail.failed_cases} · 평균 {detail.avg_latency_ms ?? 0}ms · {detail.total_tokens ?? 0} tok</div>
+        <div className="mt-1 text-sm text-slate-600">케이스 {detail.total_cases}건 · 평균 {detail.avg_latency_ms ?? 0}ms · {detail.total_tokens ?? 0} tok</div>
       ) : (
         <div className="mt-1 text-sm text-slate-400">실행 중...</div>
       )}
@@ -538,7 +577,7 @@ function RecordsPanel() {
           <thead className="bg-slate-50 text-left text-slate-500">
             <tr className="border-b-2 border-slate-200">
               <th className="px-3 py-2 font-bold">run</th><th className="px-3 py-2 font-bold">유형</th><th className="px-3 py-2 font-bold">상태</th>
-              <th className="px-3 py-2 font-bold">통과/전체</th><th className="px-3 py-2 font-bold">평균ms</th><th className="px-3 py-2 font-bold">tok</th>
+              <th className="px-3 py-2 font-bold">케이스</th><th className="px-3 py-2 font-bold">평균ms</th><th className="px-3 py-2 font-bold">tok</th>
               <th className="px-3 py-2 font-bold">생성</th><th className="px-3 py-2 font-bold"></th>
             </tr>
           </thead>
@@ -552,7 +591,7 @@ function RecordsPanel() {
                       <td className="px-3 py-2 font-mono">#{r.run_id}</td>
                       <td className="px-3 py-2 font-bold">{r.run_type}</td>
                       <td className="px-3 py-2">{r.status}</td>
-                      <td className="px-3 py-2">{r.passed_cases}/{r.total_cases}</td>
+                      <td className="px-3 py-2">{r.total_cases}</td>
                       <td className="px-3 py-2">{r.avg_latency_ms ?? '-'}</td>
                       <td className="px-3 py-2">{r.total_tokens ?? '-'}</td>
                       <td className="px-3 py-2 text-xs text-slate-400">{r.created_dt}</td>
@@ -560,7 +599,7 @@ function RecordsPanel() {
                         <button onClick={() => setOpenTest(openTest === r.run_id ? null : r.run_id)} className={detailBtn}>
                           {openTest === r.run_id ? '접기' : '상세'}
                         </button>
-                        <a href={`${API_BASE}/test-runs/${r.run_id}/export?fmt=csv`} className="mr-2 text-xs font-bold text-slate-600">CSV</a>
+                        <CsvLink url={`${API_BASE}/test-runs/${r.run_id}/export?fmt=csv`} download={() => exportTestCsv(r.run_id)} className="mr-2 text-xs font-bold text-slate-600" />
                         <button onClick={() => delRun(r.run_id)} className="text-xs font-bold text-red-600">삭제</button>
                       </td>
                     </tr>
@@ -580,7 +619,7 @@ function RecordsPanel() {
                     <td className="px-3 py-2 font-mono">#{a.run_id}/#{b.run_id}</td>
                     <td className="px-3 py-2 font-bold">FLOW_AB</td>
                     <td className="px-3 py-2">{status}</td>
-                    <td className="px-3 py-2">A {a.passed_cases}/{a.total_cases} · B {b.passed_cases}/{b.total_cases}</td>
+                    <td className="px-3 py-2">{a.total_cases}</td>
                     <td className="px-3 py-2">{a.avg_latency_ms ?? '-'} · {b.avg_latency_ms ?? '-'}</td>
                     <td className="px-3 py-2">{a.total_tokens ?? '-'} · {b.total_tokens ?? '-'}</td>
                     <td className="px-3 py-2 text-xs text-slate-400">{a.created_dt}</td>
@@ -600,8 +639,8 @@ function RecordsPanel() {
                               <div className="mb-1 flex items-center gap-2 text-xs font-bold text-slate-600">
                                 <span className="rounded bg-slate-900 px-2 py-0.5 text-white">{i === 0 ? 'A' : 'B'}</span>
                                 <span className="font-mono">#{m.run_id}</span>
-                                <span>통과 {m.passed_cases}/{m.total_cases} · 실패 {m.failed_cases}</span>
-                                <a href={`${API_BASE}/test-runs/${m.run_id}/export?fmt=csv`} className="ml-auto text-xs font-bold text-slate-600">CSV</a>
+                                <span>케이스 {m.total_cases}건</span>
+                                <CsvLink url={`${API_BASE}/test-runs/${m.run_id}/export?fmt=csv`} download={() => exportTestCsv(m.run_id)} className="ml-auto text-xs font-bold text-slate-600" />
                               </div>
                               <TestRunDetailView runId={m.run_id} />
                             </div>
@@ -645,7 +684,7 @@ function RecordsPanel() {
                     <button onClick={() => setOpenRagas(openRagas === r.ragas_run_id ? null : r.ragas_run_id)} className={detailBtn}>
                       {openRagas === r.ragas_run_id ? '접기' : '상세'}
                     </button>
-                    <a href={`${API_BASE}/ragas-runs/${r.ragas_run_id}/export?fmt=csv`} className="mr-2 text-xs font-bold text-slate-600">CSV</a>
+                    <CsvLink url={`${API_BASE}/ragas-runs/${r.ragas_run_id}/export?fmt=csv`} download={() => exportRagasCsv(r.ragas_run_id)} className="mr-2 text-xs font-bold text-slate-600" />
                     <button onClick={() => delRagas(r.ragas_run_id)} className="text-xs font-bold text-red-600">삭제</button>
                   </td>
                 </tr>
@@ -734,11 +773,6 @@ function RunButton({ disabled, onClick, label }: { disabled: boolean; onClick: (
 }
 function StatusText({ status }: { status: string }) { return <span className="text-sm font-bold text-slate-500">상태: {status}</span>; }
 function ErrBox({ msg }: { msg: string }) { return <div className="mt-2 rounded-md border-2 border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">{msg}</div>; }
-function passBadge(v: string | null) {
-  if (v === 'Y') return <span className="rounded bg-emerald-600 px-2 py-0.5 text-xs font-bold text-white">PASS</span>;
-  if (v === 'N') return <span className="rounded bg-red-600 px-2 py-0.5 text-xs font-bold text-white">FAIL</span>;
-  return <span className="rounded bg-slate-300 px-2 py-0.5 text-xs font-bold text-slate-600">-</span>;
-}
 function ResultsTable({ rows }: { rows: TestRunDetail['results'] }) {
   return (
     <div className="overflow-auto">
@@ -748,8 +782,8 @@ function ResultsTable({ rows }: { rows: TestRunDetail['results'] }) {
             <th className="px-3 py-2 font-bold">case</th>
             <th className="px-3 py-2 font-bold">입력</th>
             <th className="px-3 py-2 font-bold">출력 / 오류</th>
-            <th className="px-3 py-2 font-bold">결과</th>
             <th className="px-3 py-2 font-bold">ms</th>
+            <th className="px-3 py-2 font-bold">tok</th>
           </tr>
         </thead>
         <tbody>
@@ -758,8 +792,8 @@ function ResultsTable({ rows }: { rows: TestRunDetail['results'] }) {
               <td className="px-3 py-2 font-mono">{r.case_id}</td>
               <td className="px-3 py-2"><pre className="max-h-24 overflow-auto whitespace-pre-wrap text-xs text-slate-600">{r.input_data ?? '-'}</pre></td>
               <td className="px-3 py-2"><pre className="max-h-24 overflow-auto whitespace-pre-wrap text-xs">{r.actual_output ?? r.error_msg ?? '-'}</pre></td>
-              <td className="px-3 py-2">{passBadge(r.is_passed)}</td>
               <td className="px-3 py-2">{r.latency_ms ?? '-'}</td>
+              <td className="px-3 py-2">{(r.input_tokens ?? 0) + (r.output_tokens ?? 0) || '-'}</td>
             </tr>
           ))}
         </tbody>

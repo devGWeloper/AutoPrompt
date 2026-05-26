@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Set-Location C:\\\\work\\\\AutoPrompt\\\\backend; $env:APP_ENV='test'; & '.\\\\.venv\\\\Scripts\\\\python.exe' -m pytest -q 2>&1 | Select-String -Pattern 'passed|failed|error|dotenv' | Select-Object -First 6)"
+    ]
+  }
+}

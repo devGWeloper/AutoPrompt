@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -34,7 +34,7 @@ def list_test_runs(db: Session = Depends(get_db)) -> list[TestRunOut]:
     return [TestRunOut.model_validate(r) for r in rows]
 
 
-@router.delete("/test-runs/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/test-runs/{run_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def delete_test_run(run_id: int, db: Session = Depends(get_db)) -> None:
     run = db.get(TestRun, run_id)
     if run is None:

@@ -47,6 +47,10 @@ class RagasEngine(RagasScorer):
         """Return ragas-wrapped (llm, embeddings) for the judge provider."""
         s = get_settings()
         provider = self.judge_provider
+        # On the internal network the only reachable LLM is the gateway, so force
+        # the OpenAI-compatible path regardless of the run's selected provider.
+        if s.internal_llm_enabled():
+            provider = "openai"
 
         if provider == "google":
             from langchain_google_genai import (  # type: ignore[import-not-found]

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -31,7 +31,7 @@ def list_all_ragas_runs(db: Session = Depends(get_db)) -> list[RagasRunSummary]:
     return [RagasRunSummary.model_validate(r) for r in rows]
 
 
-@router.delete("/ragas-runs/{ragas_run_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/ragas-runs/{ragas_run_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def delete_ragas_run(ragas_run_id: int, db: Session = Depends(get_db)) -> None:
     run = db.get(RagasRun, ragas_run_id)
     if run is None:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, BackgroundTasks, Depends, Response, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
 from app.core.constants import SYSTEM_USER
@@ -56,7 +56,7 @@ def get_flow_version(flow_ver_id: int, db: Session = Depends(get_db)) -> FlowVer
     return flow_service.get_flow_version(db, flow_ver_id)
 
 
-@router.delete("/flow/versions/{flow_ver_id}", status_code=204)
+@router.delete("/flow/versions/{flow_ver_id}", status_code=204, response_class=Response)
 def delete_flow_version(flow_ver_id: int, db: Session = Depends(get_db)) -> None:
     """Delete a flow version (active version cannot be deleted)."""
     flow_service.delete_flow_version(db, flow_ver_id=flow_ver_id, actor=SYSTEM_USER)

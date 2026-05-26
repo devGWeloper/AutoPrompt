@@ -1,5 +1,7 @@
 'use client';
 
+import { MOCK, mockRequest } from './mock';
+
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
 
 export class ApiError extends Error {
@@ -13,6 +15,11 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  if (MOCK) {
+    const method = (init.method as string) ?? 'GET';
+    const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
+    return mockRequest<T>(method, path, body);
+  }
   const headers = new Headers(init.headers || {});
   if (!headers.has('Content-Type') && init.body) {
     headers.set('Content-Type', 'application/json');
@@ -36,6 +43,7 @@ async function handleResponse<T>(res: Response): Promise<T> {
 }
 
 async function uploadFile<T>(path: string, form: FormData): Promise<T> {
+  if (MOCK) return mockRequest<T>('POST', path, {});
   // No Content-Type: the browser sets the multipart boundary automatically.
   const res = await fetch(`${BASE}${path}`, { method: 'POST', body: form });
   return handleResponse<T>(res);
