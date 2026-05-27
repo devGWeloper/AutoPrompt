@@ -60,10 +60,10 @@ function CsvLink({ url, download, className }: { url: string; download: () => vo
 
 type Tab = 'flow' | 'batch' | 'ab' | 'ragas' | 'datasets' | 'records';
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'flow', label: '플로우 실행' },
-  { id: 'batch', label: '플로우 배치' },
-  { id: 'ab', label: '플로우 A/B' },
-  { id: 'ragas', label: '플로우 RAGAS' },
+  { id: 'flow', label: '단건 실행' },
+  { id: 'batch', label: '일괄 실행' },
+  { id: 'ab', label: 'A/B 비교' },
+  { id: 'ragas', label: 'RAGAS 평가' },
   { id: 'datasets', label: '데이터셋' },
   { id: 'records', label: '테스트 기록' },
 ];
@@ -72,7 +72,7 @@ export default function FlowTestHubPage() {
   const [tab, setTab] = useState<Tab>('flow');
   return (
     <div className="flex h-screen flex-col bg-slate-50">
-      <TopBar title="전체 테스트 (전체 플로우 단위)" />
+      <TopBar title="전체 테스트 (전체 흐름 단위)" />
       <div className="flex items-center gap-1 border-b-2 border-slate-200 bg-white px-6">
         {TABS.map((t) => (
           <button
@@ -162,13 +162,13 @@ function FlowRunPanel() {
           className="w-full rounded-md border-2 border-slate-300 p-3 font-mono text-sm" />
         <button onClick={run} disabled={status === 'running'}
           className="mt-3 w-full rounded-md bg-blue-600 px-4 py-3 text-base font-bold text-white hover:bg-blue-700 disabled:opacity-50">
-          {status === 'running' ? '실행 중...' : '전체 플로우 실행 ▶'}
+          {status === 'running' ? '실행 중...' : '전체 실행 ▶'}
         </button>
         <div className="mt-3 text-sm font-bold">상태: {status}</div>
         {error && <ErrBox msg={error} />}
       </div>
       <div className="rounded-xl border-2 border-slate-200 bg-white p-5">
-        <h2 className="mb-3 text-base font-extrabold text-slate-700">트레이스</h2>
+        <h2 className="mb-3 text-base font-extrabold text-slate-700">실행 추적</h2>
         <ol className="space-y-2">
           {trace.map((s, i) => (
             <li key={i} className="rounded-lg border-2 border-slate-200 p-3">
@@ -221,7 +221,7 @@ function BatchPanel() {
     <div className="space-y-4">
       <Controls>
         <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />
-        <RunButton disabled={!datasetId || status === 'running'} onClick={run} label="배치 실행" />
+        <RunButton disabled={!datasetId || status === 'running'} onClick={run} label="일괄 실행" />
         <StatusText status={status} />
       </Controls>
       {error && <ErrBox msg={error} />}
@@ -475,7 +475,7 @@ function DatasetsPanel() {
   return (
     <div className="space-y-4">
       <Controls>
-        <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="새 플로우 데이터셋 이름"
+        <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="새 데이터셋 이름"
           className="rounded-md border-2 border-slate-300 px-3 py-2 text-sm" />
         <RunButton disabled={!newName.trim()} onClick={createDataset} label="데이터셋 생성" />
       </Controls>
@@ -502,7 +502,7 @@ function DatasetsPanel() {
           ) : (
             <>
               <h3 className="mb-2 text-sm font-extrabold text-slate-700">케이스 ({cases.length})</h3>
-              <p className="mb-2 text-xs text-slate-500">input_data 는 플로우 입력 JSON (예: {'{"question": "..."}'}).</p>
+              <p className="mb-2 text-xs text-slate-500">input_data 는 전체 실행 입력 JSON (예: {'{"question": "..."}'}).</p>
               <div className="mb-3 grid grid-cols-[1fr_1fr_auto] gap-2">
                 <input value={caseInput} onChange={(e) => setCaseInput(e.target.value)} placeholder="input_data JSON"
                   className="rounded-md border-2 border-slate-300 px-2 py-1.5 font-mono text-xs" />
@@ -755,7 +755,7 @@ function Controls({ children }: { children: React.ReactNode }) {
 function DatasetSelect({ datasets, value, onChange }: { datasets: Dataset[]; value: number | null; onChange: (id: number) => void }) {
   return (
     <select value={value ?? ''} onChange={(e) => onChange(Number(e.target.value))} className="rounded-md border-2 border-slate-300 px-3 py-2 text-sm">
-      <option value="" disabled>플로우 데이터셋</option>
+      <option value="" disabled>데이터셋</option>
       {datasets.map((d) => (<option key={d.dataset_id} value={d.dataset_id}>{d.dataset_nm}</option>))}
     </select>
   );

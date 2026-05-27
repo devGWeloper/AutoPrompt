@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell(Set-Location C:\\\\work\\\\AutoPrompt\\\\backend; $env:APP_ENV='test'; & '.\\\\.venv\\\\Scripts\\\\python.exe' -m pytest -q 2>&1 | Select-String -Pattern 'passed|failed|error|dotenv' | Select-Object -First 6)"
+      "PowerShell(Set-Location C:\\\\work\\\\AutoPrompt\\\\backend; $env:APP_ENV='test'; & '.\\\\.venv\\\\Scripts\\\\python.exe' -m pytest -q 2>&1 | Select-String -Pattern 'passed|failed|error|dotenv' | Select-Object -First 6)",
+      "Bash(cd /c/work/AutoPrompt/backend && echo \"=== tree \\(app\\) ===\" && find app -type f -name \"*.py\" 2>/dev/null | head -60 || find . -type f -name \"*.py\" -not -path \"*/.venv/*\" | head -60)",
+      "Read(//c/c/work/AutoPrompt/backend/**)",
+      "Bash(npm run *)"
     ]
   }
 }

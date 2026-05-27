@@ -42,6 +42,7 @@ class FlowVersionSummary(BaseModel):
     chat_ver_id: int
     flow_version_no: str
     is_active: str
+    main_model_nm: str | None = None
     change_summary: str | None = None
     created_by: str
     created_dt: datetime
@@ -57,7 +58,6 @@ class FlowVersionNodeOut(BaseModel):
 
 class FlowVersionDetail(FlowVersionSummary):
     graph_struct: str | None = None
-    main_model_nm: str | None = None
     change_reason: str | None = None
     nodes: list[FlowVersionNodeOut] = Field(default_factory=list)
 

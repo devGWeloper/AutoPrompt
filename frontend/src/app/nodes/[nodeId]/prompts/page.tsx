@@ -213,7 +213,7 @@ export default function NodePromptsPage() {
         </p>
         <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-600">
           <li>운영 테이블 <span className="font-mono">NODE_MAS.PROMPT</span> 에 즉시 반영됩니다.</li>
-          <li>전체 플로우 버전이 한 단계 올라갑니다.</li>
+          <li>전체 버전이 한 단계 올라갑니다.</li>
         </ul>
       </Modal>
     </div>
@@ -319,7 +319,7 @@ const ACTION_META: Record<string, { label: string; cls: string }> = {
   CREATE: { label: '생성', cls: 'bg-blue-600' },
   UPDATE: { label: '수정', cls: 'bg-amber-600' },
   ACTIVATE: { label: '활성화', cls: 'bg-emerald-600' },
-  FLOW_VERSION: { label: '플로우 버전', cls: 'bg-indigo-600' },
+  FLOW_VERSION: { label: '전체 버전', cls: 'bg-indigo-600' },
   DELETE: { label: '삭제', cls: 'bg-red-600' },
 };
 
@@ -344,7 +344,7 @@ const FIELD_LABEL: Record<string, string> = {
   change_summary: '변경 요약',
   change_reason: '변경 사유',
   active_version_no: '활성 버전',
-  flow_version_no: '플로우 버전',
+  flow_version_no: '전체 버전',
   summary: '요약',
 };
 
@@ -536,7 +536,7 @@ function NewVersionModal({
       </div>
       <label className="mt-3 flex items-center gap-2 text-sm font-bold text-slate-700">
         <input type="checkbox" checked={activate} onChange={(e) => setActivate(e.target.checked)} />
-        저장 후 즉시 활성화 (NODE_MAS 반영 + 플로우 버전 ↑)
+        저장 후 즉시 활성화 (NODE_MAS 반영 + 전체 버전 ↑)
       </label>
     </Modal>
   );

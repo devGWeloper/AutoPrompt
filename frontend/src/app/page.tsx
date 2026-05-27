@@ -62,7 +62,7 @@ export default function GraphHomePage() {
         right={
           flow && (
             <div className="flex items-center gap-2 text-sm">
-              <span className="font-bold text-slate-500">메인 모델</span>
+              <span className="font-bold text-slate-500">LLM 모델</span>
               {flow.main_model_editable ? (
                 <select
                   value={flow.main_model_nm ?? ''}
@@ -85,7 +85,7 @@ export default function GraphHomePage() {
                 </span>
               )}
               <span className="rounded-md bg-slate-900 px-3 py-1 font-bold text-white">
-                플로우 v{flow.flow_version_no ?? '-'}
+                전체 버전 v{flow.flow_version_no ?? '-'}
               </span>
             </div>
           )
@@ -101,7 +101,7 @@ export default function GraphHomePage() {
       <div className="flex flex-1 overflow-hidden">
         <main className="flex flex-1 flex-col overflow-hidden p-6">
           <div className="mb-3 flex items-baseline justify-between">
-            <h1 className="text-2xl font-extrabold text-slate-900">LangGraph 플로우</h1>
+            <h1 className="text-2xl font-extrabold text-slate-900">LangGraph 그래프</h1>
             <p className="text-sm font-medium text-slate-500">
               파란 노드(프롬프트 보유)를 클릭해 프롬프트를 관리하세요.
             </p>
@@ -163,7 +163,7 @@ export default function GraphHomePage() {
 
       <Modal
         open={pendingModel !== null}
-        title="메인 모델 변경"
+        title="LLM 모델 변경"
         onClose={() => setPendingModel(null)}
         footer={
           <>
@@ -184,11 +184,11 @@ export default function GraphHomePage() {
         }
       >
         <p className="text-sm text-slate-700">
-          메인 모델을 <span className="font-bold">{pendingModel}</span> 로 변경합니다.
+          LLM 모델을 <span className="font-bold">{pendingModel}</span> 로 변경합니다.
         </p>
         <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-600">
           <li><span className="font-mono">CHAT_VER_MAS.MAIN_MODEL_NM</span> 이 갱신됩니다.</li>
-          <li><span className="font-bold">전체 플로우 버전이 한 단계 올라갑니다.</span></li>
+          <li><span className="font-bold">전체 버전이 한 단계 올라갑니다.</span></li>
         </ul>
       </Modal>
     </div>

@@ -133,7 +133,7 @@ function route(method: string, path: string, body: Record<string, unknown> | und
     const next = String(body?.main_model_nm ?? '');
     if (next && next !== store.flowCurrent.main_model_nm) {
       store.flowCurrent.main_model_nm = next;
-      cutFlowVersion(`메인 모델 변경 → ${next}`, '메인 모델 교체');
+      cutFlowVersion(`LLM 모델 변경 → ${next}`, 'LLM 모델 교체');
     }
     return store.flowCurrent;
   }

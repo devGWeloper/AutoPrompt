@@ -27,6 +27,7 @@ export interface FlowVersionSummary {
   chat_ver_id: number;
   flow_version_no: string;
   is_active: 'Y' | 'N';
+  main_model_nm: string | null;
   change_summary: string | null;
   created_by: string;
   created_dt: string;
@@ -41,7 +42,6 @@ export interface FlowVersionNode {
 
 export interface FlowVersionDetail extends FlowVersionSummary {
   graph_struct: string | null;
-  main_model_nm: string | null;
   change_reason: string | null;
   nodes: FlowVersionNode[];
 }

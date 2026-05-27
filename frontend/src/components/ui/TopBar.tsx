@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
 
 const NAV: { label: string; href: string; match: (p: string) => boolean }[] = [
-  { label: '플로우 그래프', href: '/', match: (p) => p === '/' },
+  { label: '그래프', href: '/', match: (p) => p === '/' },
   { label: '버전 이력', href: '/versions', match: (p) => p.startsWith('/versions') },
   { label: '전체 테스트', href: '/flow', match: (p) => p.startsWith('/flow') },
 ];

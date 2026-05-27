@@ -173,14 +173,14 @@ const flowVersions: FlowVersionDetail[] = [
   { flow_ver_id: 4, chat_ver_id: 1, flow_version_no: '1.3.0', is_active: 'Y', change_summary: 'generate 프롬프트 v2.1.0 활성화 (출처 표기)', created_by: SYSTEM_USER, created_dt: seedDt(3), graph_struct: GRAPH_STRUCT, main_model_nm: 'claude-sonnet-4-6', change_reason: '근거 추적성 강화', nodes: flowVerNodes('1.2.0', '2.1.0', '1.0.0') },
   { flow_ver_id: 3, chat_ver_id: 1, flow_version_no: '1.2.0', is_active: 'N', change_summary: 'router 프롬프트 v1.2.0 활성화', created_by: SYSTEM_USER, created_dt: seedDt(5), graph_struct: GRAPH_STRUCT, main_model_nm: 'claude-sonnet-4-6', change_reason: '라우팅 정확도 개선', nodes: flowVerNodes('1.2.0', '2.0.0', '1.0.0') },
   { flow_ver_id: 2, chat_ver_id: 1, flow_version_no: '1.1.0', is_active: 'N', change_summary: 'generate 프롬프트 v2.0.0 활성화 (환각 억제)', created_by: SYSTEM_USER, created_dt: seedDt(15), graph_struct: GRAPH_STRUCT, main_model_nm: 'claude-sonnet-4-6', change_reason: 'faithfulness 개선', nodes: flowVerNodes('1.1.0', '2.0.0', '1.0.0') },
-  { flow_ver_id: 1, chat_ver_id: 1, flow_version_no: '1.0.0', is_active: 'N', change_summary: '최초 플로우 버전', created_by: SYSTEM_USER, created_dt: seedDt(45), graph_struct: GRAPH_STRUCT, main_model_nm: 'claude-sonnet-4-6', change_reason: '최초 생성', nodes: flowVerNodes('1.0.0', '1.0.0', null) },
+  { flow_ver_id: 1, chat_ver_id: 1, flow_version_no: '1.0.0', is_active: 'N', change_summary: '최초 전체 버전', created_by: SYSTEM_USER, created_dt: seedDt(45), graph_struct: GRAPH_STRUCT, main_model_nm: 'claude-sonnet-4-6', change_reason: '최초 생성', nodes: flowVerNodes('1.1.0', '1.0.0', '1.0.0') },
 ];
 
 // ---- seed: datasets + cases ------------------------------------------------
 
 const datasets: Dataset[] = [
   { dataset_id: 1, node_mas_id: null, scope: 'FLOW', dataset_nm: 'RAG 기본 평가셋', description: '대표 사내 FAQ 5건', is_active: 'Y', created_by: SYSTEM_USER, created_dt: seedDt(30) },
-  { dataset_id: 2, node_mas_id: null, scope: 'FLOW', dataset_nm: '엣지 케이스', description: '문서에 없는 질문 등 경계 케이스', is_active: 'Y', created_by: SYSTEM_USER, created_dt: seedDt(10) },
+  { dataset_id: 2, node_mas_id: null, scope: 'FLOW', dataset_nm: '경계 케이스', description: '문서에 없는 질문 등 경계 케이스', is_active: 'Y', created_by: SYSTEM_USER, created_dt: seedDt(10) },
 ];
 
 function tc(case_id: number, dataset_id: number, question: string, expected: string | null): TestCase {
@@ -500,6 +500,7 @@ export function summarizeFlowVersion(v: FlowVersionDetail): FlowVersionSummary {
     chat_ver_id: v.chat_ver_id,
     flow_version_no: v.flow_version_no,
     is_active: v.is_active,
+    main_model_nm: v.main_model_nm,
     change_summary: v.change_summary,
     created_by: v.created_by,
     created_dt: v.created_dt,
