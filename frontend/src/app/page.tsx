@@ -42,12 +42,10 @@ export default function RagasHomePage() {
       <div className="px-6">
         <Tabs items={TABS} value={tab} onChange={setTab} />
       </div>
-      <div className="flex-1 overflow-auto px-6 py-6">
-        <div className="mx-auto max-w-7xl">
-          {tab === 'run' && <RagasPanel />}
-          {tab === 'datasets' && <DatasetsPanel />}
-          {tab === 'records' && <RecordsPanel />}
-        </div>
+      <div className="flex-1 overflow-auto px-6 py-5">
+        {tab === 'run' && <RagasPanel />}
+        {tab === 'datasets' && <DatasetsPanel />}
+        {tab === 'records' && <RecordsPanel />}
       </div>
     </div>
   );

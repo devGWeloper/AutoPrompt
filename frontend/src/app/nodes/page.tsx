@@ -31,8 +31,8 @@ export default function NodesPage() {
   return (
     <div className="flex h-screen flex-col">
       <TopBar />
-      <main className="flex-1 overflow-auto px-6 py-6">
-        <div className="mx-auto max-w-7xl">
+      <main className="flex-1 overflow-auto px-6 py-5">
+        <div>
           {error && (
             <div className="mb-4 rounded-lg border border-bad/20 bg-bad/5 px-4 py-3 text-sm text-bad">{error}</div>
           )}
