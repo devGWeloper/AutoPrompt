@@ -97,12 +97,34 @@ def _case_variables(input_data: str) -> dict[str, str]:
     return {str(k): str(v) for k, v in parsed.items()}
 
 
-def _flow_session_system_prompt(db: Session) -> str:
-    """session_system_prompt for the current flow = active SYSTEM_PROMPTs joined."""
+def _flow_session_system_prompt(
+    db: Session, *, override_node_id: int | None = None, override_prompt_id: int | None = None
+) -> str:
+    """session_system_prompt for the current flow = active SYSTEM_PROMPTs joined.
+
+    For A/B version comparison, ``override_node_id``'s active prompt is replaced by the
+    ``override_prompt_id`` version's SYSTEM_PROMPT (other nodes keep their active one).
+    """
     chat = get_current_chat(db)
-    nodes = db.execute(select(NodeMas).where(NodeMas.chat_ver_id == chat.id)).scalars().all()
+    nodes = (
+        db.execute(select(NodeMas).where(NodeMas.chat_ver_id == chat.id).order_by(NodeMas.id.asc()))
+        .scalars()
+        .all()
+    )
     actives = _active_prompts_by_node(db, [n.id for n in nodes])
-    parts = [p.system_prompt for p in actives.values() if p.system_prompt]
+    override_sp: str | None = None
+    if override_node_id is not None and override_prompt_id is not None:
+        pv = db.get(NodePromptVer, override_prompt_id)
+        override_sp = pv.system_prompt if pv else None
+    parts: list[str] = []
+    for n in nodes:
+        if override_node_id is not None and n.id == override_node_id:
+            sp = override_sp
+        else:
+            ap = actives.get(n.id)
+            sp = ap.system_prompt if ap else None
+        if sp:
+            parts.append(sp)
     return "\n\n".join(parts)
 
 
@@ -128,6 +150,44 @@ def create_flow_ragas_run(db: Session, *, dataset_id: int, metrics: list[str], a
     db.add(run)
     db.flush()
     return run
+
+
+def create_flow_ragas_ab_run(
+    db: Session,
+    *,
+    dataset_id: int,
+    node_mas_id: int,
+    prompt_id_a: int,
+    prompt_id_b: int,
+    metrics: list[str],
+    actor: str,
+) -> tuple[RagasRun, RagasRun]:
+    """Two RAGAS runs comparing two prompt versions of one node (shared AB_GROUP_ID)."""
+    from app.services.ragas import ALL_METRICS
+
+    _require_flow_dataset(db, dataset_id)
+    if db.get(NodeMas, node_mas_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="node not found")
+    for pid in (prompt_id_a, prompt_id_b):
+        pv = db.get(NodePromptVer, pid)
+        if pv is None or pv.node_mas_id != node_mas_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"prompt version {pid} not found for node")
+    chosen = [m for m in ALL_METRICS if m in set(metrics)] or list(ALL_METRICS)
+    chat_id = get_current_chat(db).id
+    runs: list[RagasRun] = []
+    for pid in (prompt_id_a, prompt_id_b):
+        r = RagasRun(
+            chat_ver_id=chat_id, dataset_id=dataset_id, node_mas_id=node_mas_id, prompt_id=pid,
+            status="PENDING", metrics=json.dumps(chosen), created_by=actor,
+        )
+        db.add(r)
+        db.flush()
+        runs.append(r)
+    group = runs[0].ragas_run_id
+    runs[0].ab_group_id = group
+    runs[1].ab_group_id = group
+    db.flush()
+    return runs[0], runs[1]
 
 
 async def execute_flow_ragas_run(*, ragas_run_id: int, dataset_id: int) -> None:
@@ -170,7 +230,12 @@ async def execute_flow_ragas_run(*, ragas_run_id: int, dataset_id: int) -> None:
             await ragas_service._record_ragas_failure(session, run, key, str(exc))
             return
 
-        session_sys = _flow_session_system_prompt(session)
+        if run.node_mas_id and run.prompt_id:
+            session_sys = _flow_session_system_prompt(
+                session, override_node_id=run.node_mas_id, override_prompt_id=run.prompt_id
+            )
+        else:
+            session_sys = _flow_session_system_prompt(session)
         main_model = get_current_chat(session).main_model_nm
         sums: dict[str, list[float]] = {m: [] for m in ALL_METRICS}
         for idx, case in enumerate(cases, start=1):

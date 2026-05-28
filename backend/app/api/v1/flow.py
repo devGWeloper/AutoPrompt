@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.constants import SYSTEM_USER
 from app.core.db import get_db
 from app.schemas.dataset import DatasetCreate, DatasetDetail, DatasetSummary
-from app.schemas.flow import FlowCurrentOut, FlowRagasRequest
+from app.schemas.flow import FlowCurrentOut, FlowRagasAbOut, FlowRagasAbRequest, FlowRagasRequest
 from app.schemas.ragas import RagasRunOut
 from app.services import dataset_service, flow_service
 
@@ -49,3 +49,21 @@ async def run_flow_ragas(
         flow_service.execute_flow_ragas_run, ragas_run_id=run.ragas_run_id, dataset_id=payload.dataset_id
     )
     return out
+
+
+@router.post("/flow/test/ragas/ab", response_model=FlowRagasAbOut)
+async def run_flow_ragas_ab(
+    payload: FlowRagasAbRequest, background: BackgroundTasks, db: Session = Depends(get_db)
+) -> FlowRagasAbOut:
+    run_a, run_b = flow_service.create_flow_ragas_ab_run(
+        db, dataset_id=payload.dataset_id, node_mas_id=payload.node_mas_id,
+        prompt_id_a=payload.prompt_id_a, prompt_id_b=payload.prompt_id_b,
+        metrics=payload.metrics, actor=SYSTEM_USER,
+    )
+    db.commit()
+    db.refresh(run_a)
+    db.refresh(run_b)
+    a_id, b_id = run_a.ragas_run_id, run_b.ragas_run_id
+    background.add_task(flow_service.execute_flow_ragas_run, ragas_run_id=a_id, dataset_id=payload.dataset_id)
+    background.add_task(flow_service.execute_flow_ragas_run, ragas_run_id=b_id, dataset_id=payload.dataset_id)
+    return FlowRagasAbOut(ragas_run_a_id=a_id, ragas_run_b_id=b_id)

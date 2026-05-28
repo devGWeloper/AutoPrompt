@@ -28,3 +28,18 @@ class FlowCurrentOut(BaseModel):
 class FlowRagasRequest(BaseModel):
     dataset_id: int
     metrics: list[str] = Field(default_factory=list)
+
+
+class FlowRagasAbRequest(BaseModel):
+    """Compare two prompt versions of one node on the same dataset."""
+
+    dataset_id: int
+    node_mas_id: int
+    prompt_id_a: int
+    prompt_id_b: int
+    metrics: list[str] = Field(default_factory=list)
+
+
+class FlowRagasAbOut(BaseModel):
+    ragas_run_a_id: int
+    ragas_run_b_id: int

@@ -110,6 +110,10 @@ export interface RagasResultRow {
 export interface RagasRunOut {
   ragas_run_id: number;
   chat_ver_id: number | null;
+  node_mas_id: number | null;
+  prompt_id: number | null;
+  ab_group_id: number | null;
+  version_no: string | null;
   dataset_id: number;
   status: string;
   engine: string | null;
@@ -129,6 +133,10 @@ export interface RagasRunDetail extends RagasRunOut {
 
 export interface RagasRunSummary {
   ragas_run_id: number;
+  node_mas_id: number | null;
+  prompt_id: number | null;
+  ab_group_id: number | null;
+  version_no: string | null;
   status: string;
   engine: string | null;
   faithfulness: number | null;

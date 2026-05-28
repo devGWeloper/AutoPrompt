@@ -48,14 +48,16 @@ export function TH({
 export function TD({
   className,
   colSpan,
+  rowSpan,
   children,
 }: {
   className?: string;
   colSpan?: number;
+  rowSpan?: number;
   children?: ReactNode;
 }) {
   return (
-    <td colSpan={colSpan} className={cn('px-3 py-2.5 align-top', className)}>
+    <td colSpan={colSpan} rowSpan={rowSpan} className={cn('px-3 py-2.5 align-top', className)}>
       {children}
     </td>
   );

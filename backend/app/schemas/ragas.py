@@ -26,6 +26,10 @@ class RagasRunOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     ragas_run_id: int
     chat_ver_id: int | None = None
+    node_mas_id: int | None = None
+    prompt_id: int | None = None
+    ab_group_id: int | None = None
+    version_no: str | None = None  # resolved from prompt_id by the router (not a column)
     dataset_id: int
     status: str
     engine: str | None = None
@@ -57,6 +61,10 @@ class RagasRunSummary(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
     ragas_run_id: int
+    node_mas_id: int | None = None
+    prompt_id: int | None = None
+    ab_group_id: int | None = None
+    version_no: str | None = None  # resolved from prompt_id by the router (not a column)
     status: str
     engine: str | None = None
     faithfulness: Decimal | None = None

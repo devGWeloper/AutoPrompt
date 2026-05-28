@@ -159,6 +159,10 @@ export function makeRagasRun(datasetId: number, metrics: string[], over?: Partia
   const detail: RagasRunDetail = {
     ragas_run_id: id,
     chat_ver_id: 1,
+    node_mas_id: null,
+    prompt_id: null,
+    ab_group_id: null,
+    version_no: null,
     dataset_id: datasetId,
     status: 'DONE',
     engine: 'FALLBACK',
@@ -191,6 +195,17 @@ const failed = makeRagasRun(2, [...METRIC_KEYS], {
   results: [],
 });
 ragasRuns[failed.ragas_run_id] = failed;
+
+// seeded A/B comparison on node 3 (generate): v2.0.0 (prompt 30) vs v2.0.1 (prompt 31)
+const abA = makeRagasRun(1, [...METRIC_KEYS], { node_mas_id: 3, prompt_id: 30, version_no: '2.0.0', engine: 'RAGAS', created_dt: '2026-05-26 09:00:00' });
+abA.ab_group_id = abA.ragas_run_id;
+ragasRuns[abA.ragas_run_id] = abA;
+const abB = makeRagasRun(1, [...METRIC_KEYS], { node_mas_id: 3, prompt_id: 31, version_no: '2.0.1', engine: 'RAGAS', created_dt: '2026-05-26 09:00:05', ab_group_id: abA.ragas_run_id });
+for (const mm of METRIC_KEYS) {
+  const v = abB[mm];
+  if (v != null) abB[mm] = Math.min(0.99, Math.round((Number(v) + 0.03) * 1000) / 1000); // B slightly better → visible Δ
+}
+ragasRuns[abB.ragas_run_id] = abB;
 
 export const flowCurrent: FlowCurrent = {
   chat_ver_id: 1,

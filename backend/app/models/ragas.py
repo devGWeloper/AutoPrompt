@@ -13,9 +13,14 @@ class RagasRun(Base):
     __tablename__ = "PM_RAGAS_RUN"
 
     ragas_run_id: Mapped[int] = mapped_column("RAGAS_RUN_ID", Integer, Identity(always=True), primary_key=True)
-    # RAGAS is FLOW-scoped only: the whole flow (CHAT_VER_MAS) is evaluated, so there
-    # is no single node/prompt target.
+    # FLOW-scoped run: the whole flow (CHAT_VER_MAS) is evaluated.
     chat_ver_id: Mapped[int | None] = mapped_column("CHAT_VER_ID", Integer, ForeignKey("CHAT_VER_MAS.ID"))
+    # A/B version comparison: which node's prompt version this run evaluated (its
+    # SYSTEM_PROMPT is swapped into the flow). NULL for a plain single run.
+    # AB_GROUP_ID links the two runs of one comparison (= the A run's id).
+    node_mas_id: Mapped[int | None] = mapped_column("NODE_MAS_ID", Integer, ForeignKey("NODE_MAS.ID"))
+    prompt_id: Mapped[int | None] = mapped_column("PROMPT_ID", Integer, ForeignKey("PM_NODE_PROMPT_VER.PROMPT_ID"))
+    ab_group_id: Mapped[int | None] = mapped_column("AB_GROUP_ID", Integer)
     dataset_id: Mapped[int] = mapped_column("DATASET_ID", Integer, ForeignKey("PM_TEST_DATASET.DATASET_ID"), nullable=False)
     status: Mapped[str] = mapped_column("STATUS", String(20), default="PENDING", server_default="PENDING")
     faithfulness: Mapped[Decimal | None] = mapped_column("FAITHFULNESS", Numeric(5, 4))

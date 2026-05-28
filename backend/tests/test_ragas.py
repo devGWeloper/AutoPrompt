@@ -94,3 +94,51 @@ def test_flow_ragas_metric_subset_only(client):
     assert detail["answer_relevancy"] is None
     for r in detail["results"]:
         assert r["answer_relevancy"] is None
+
+
+def test_flow_ragas_ab_two_versions(client):
+    did = _seed_dataset(client)
+    # node 2 ("llm") seeds prompt_id 1 (v1.0.0, active); make a second version for it
+    created = client.post(
+        "/api/v1/nodes/2/prompts",
+        json={
+            "system_prompt": "You are concise.", "user_prompt": "Q: {{q}}",
+            "change_summary": "concise variant", "change_reason": "ab test",
+        },
+    ).json()
+    pid_b = created["prompt_id"]
+
+    resp = client.post(
+        "/api/v1/flow/test/ragas/ab",
+        json={"dataset_id": did, "node_mas_id": 2, "prompt_id_a": 1, "prompt_id_b": pid_b},
+    )
+    assert resp.status_code == 200, resp.text
+    a_id, b_id = resp.json()["ragas_run_a_id"], resp.json()["ragas_run_b_id"]
+
+    for rid in (a_id, b_id):
+        with client.websocket_connect(f"/ws/ragas-runs/{rid}") as ws:
+            done = _drain(ws)[-1]
+            assert done["event"] == "DONE"
+
+    da = client.get(f"/api/v1/ragas-runs/{a_id}").json()
+    db = client.get(f"/api/v1/ragas-runs/{b_id}").json()
+    assert da["status"] == "DONE" and db["status"] == "DONE"
+    # both runs of the comparison share the A run's id as group, and carry their version
+    assert da["ab_group_id"] == a_id and db["ab_group_id"] == a_id
+    assert da["prompt_id"] == 1 and db["prompt_id"] == pid_b
+    assert da["version_no"] and db["version_no"]
+
+    # records list pairs them under one ab_group_id
+    runs = client.get("/api/v1/ragas-runs").json()
+    pair = [r for r in runs if r["ab_group_id"] == a_id]
+    assert len(pair) == 2
+
+
+def test_flow_ragas_ab_bad_prompt_node_404(client):
+    did = _seed_dataset(client)
+    # prompt_id 1 belongs to node 2, not node 9999
+    resp = client.post(
+        "/api/v1/flow/test/ragas/ab",
+        json={"dataset_id": did, "node_mas_id": 2, "prompt_id_a": 1, "prompt_id_b": 9999},
+    )
+    assert resp.status_code == 404

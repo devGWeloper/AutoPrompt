@@ -34,7 +34,9 @@ function summarizePrompt(p: PromptVersionDetail): PromptVersionSummary {
 
 function ragasSummary(d: RagasRunDetail): RagasRunSummary {
   return {
-    ragas_run_id: d.ragas_run_id, status: d.status, engine: d.engine,
+    ragas_run_id: d.ragas_run_id, node_mas_id: d.node_mas_id, prompt_id: d.prompt_id,
+    ab_group_id: d.ab_group_id, version_no: d.version_no,
+    status: d.status, engine: d.engine,
     faithfulness: d.faithfulness, answer_relevancy: d.answer_relevancy,
     context_precision: d.context_precision, context_recall: d.context_recall,
     answer_correctness: d.answer_correctness, error_msg: d.error_msg, created_dt: d.created_dt,
@@ -187,6 +189,21 @@ function route(method: string, path: string, body: Record<string, unknown> | und
     const { results, ...out } = run; // RagasRunOut (detail minus per-case rows)
     void results;
     return out;
+  }
+  if (method === 'POST' && path === '/flow/test/ragas/ab') {
+    const dsId = Number(body?.dataset_id);
+    const nodeId = Number(body?.node_mas_id);
+    const metrics = (body?.metrics as string[]) ?? [];
+    const pidA = Number(body?.prompt_id_a);
+    const pidB = Number(body?.prompt_id_b);
+    const vlist = store.promptVersions[nodeId] ?? [];
+    const vno = (pid: number) => vlist.find((p) => p.prompt_id === pid)?.version_no ?? null;
+    const runA = makeRagasRun(dsId, metrics, { node_mas_id: nodeId, prompt_id: pidA, version_no: vno(pidA), engine: 'FALLBACK' });
+    runA.ab_group_id = runA.ragas_run_id;
+    store.ragasRuns[runA.ragas_run_id] = runA;
+    const runB = makeRagasRun(dsId, metrics, { node_mas_id: nodeId, prompt_id: pidB, version_no: vno(pidB), engine: 'FALLBACK', ab_group_id: runA.ragas_run_id });
+    store.ragasRuns[runB.ragas_run_id] = runB;
+    return { ragas_run_a_id: runA.ragas_run_id, ragas_run_b_id: runB.ragas_run_id };
   }
   if (method === 'GET' && path === '/ragas-runs') {
     return Object.values(store.ragasRuns).sort((a, b) => b.ragas_run_id - a.ragas_run_id).map(ragasSummary);
