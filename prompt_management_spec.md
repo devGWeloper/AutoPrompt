@@ -128,19 +128,28 @@ AI Agent 프로젝트를 구성하는 LangGraph 기반 각 노드(Node)의 **프
 
 ### 3.1 테이블 목록
 
+> ⚠️ 아래 §3.1/§3.2 는 **최초 명세안(다중 프로젝트)** 이다. 구현은 단일 플로우
+> (`CHAT_VER_MAS`/`NODE_MAS`) 구조로 리팩터링됐고(`alembic 0004`), 이어 **RAGAS 중심으로 정리**됐다
+> (`alembic 0008`). **현행 권위 스키마는 [`backend/sql/ddl_initial.sql`](./backend/sql/ddl_initial.sql)
+> + `backend/app/models/*`** 를 본다. 현재 PM 소유 테이블은 **6개**: `PM_NODE_PROMPT_VER`,
+> `PM_TEST_DATASET`, `PM_TEST_CASE`, `PM_RAGAS_RUN`, `PM_RAGAS_RESULT`, `PM_AUDIT_LOG`.
+
 ```
-PM_PROJECT          - AI Agent 프로젝트
-PM_NODE             - 그래프를 구성하는 노드
-PM_NODE_EDGE        - 노드 간 연결 (엣지)
-PM_MODEL_CONFIG     - LLM 모델 설정 (버전별)  ※ 구현에서 제거 — 모델 설정은 PM_PROMPT_VERSION에 내장
-PM_PROMPT_VERSION   - 프롬프트 버전
-PM_PROMPT_VARIABLE  - 프롬프트 내 변수 정의
-PM_TEST_DATASET     - 골든 데이터셋 (테스트 케이스)
-PM_TEST_RUN         - 테스트 실행 기록
-PM_TEST_RESULT      - 테스트 결과 (케이스별 상세)
-PM_RAGAS_RUN        - RAGAS 평가 실행 기록
-PM_RAGAS_RESULT     - RAGAS 평가 결과 (지표별)
-PM_AUDIT_LOG        - 변경 이력 감사 로그
+PM_PROJECT          - (제거) 다중 프로젝트 구조 폐지 → 단일 플로우 CHAT_VER_MAS
+PM_NODE             - (제거) → 운영 고정 테이블 NODE_MAS 사용
+PM_NODE_EDGE        - (제거)
+PM_MODEL_CONFIG     - (제거) 모델 설정 기능 폐지
+PM_PROMPT_VERSION   - → PM_NODE_PROMPT_VER (NODE_MAS_ID 기준, SYSTEM_PROMPT/USER_PROMPT 분리)
+PM_PROMPT_VARIABLE  - (제거)
+PM_TEST_DATASET     - 골든 데이터셋 (RAGAS) — 유지
+PM_TEST_CASE        - 테스트 케이스 (question/contexts/ground_truth) — 유지
+PM_TEST_RUN         - (제거, 0008) 비-RAGAS 테스트 실행 기록
+PM_TEST_RESULT      - (제거, 0008) 비-RAGAS 테스트 결과
+PM_FLOW_VER         - (제거, 0008) 전체 플로우 버전 이력
+PM_FLOW_VER_NODE    - (제거, 0008) 플로우 버전 매니페스트
+PM_RAGAS_RUN        - RAGAS 평가 실행 (전체 플로우 단위) — 유지
+PM_RAGAS_RESULT     - RAGAS 평가 결과 (지표별) — 유지
+PM_AUDIT_LOG        - 변경 이력 감사 로그 — 유지
 ```
 
 ### 3.2 주요 테이블 DDL
