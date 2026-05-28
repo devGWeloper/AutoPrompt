@@ -292,7 +292,7 @@ function PromptField({
         onChange={onChange}
         readOnly={readOnly}
         rows={rows}
-        className={'font-mono text-sm leading-relaxed ' + (readOnly ? 'bg-bg text-muted' : '')}
+        className={'w-full font-mono text-sm leading-relaxed ' + (readOnly ? 'bg-bg text-muted' : '')}
       />
     </div>
   );
@@ -469,22 +469,22 @@ function NewVersionModal({
         <span className="text-sm font-medium text-ink">
           시스템 프롬프트 <span className="font-normal text-muted">(활성화 시 NODE_MAS.PROMPT 로 반영)</span>
         </span>
-        <Textarea value={system} onChange={(e) => setSystem(e.target.value)} rows={7} className="mt-1 font-mono" />
+        <Textarea value={system} onChange={(e) => setSystem(e.target.value)} rows={7} className="mt-1 w-full font-mono" />
       </label>
       <label className="mb-3 block">
         <span className="text-sm font-medium text-ink">
           유저 프롬프트 <span className="font-normal text-muted">(테스트 메시지 템플릿, 변수: {'{{name}}'})</span>
         </span>
-        <Textarea value={user} onChange={(e) => setUser(e.target.value)} rows={6} className="mt-1 font-mono" />
+        <Textarea value={user} onChange={(e) => setUser(e.target.value)} rows={6} className="mt-1 w-full font-mono" />
       </label>
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
           <span className="text-sm font-medium text-ink">변경 요약 *</span>
-          <Input value={summary} onChange={(e) => setSummary(e.target.value)} className="mt-1" />
+          <Input value={summary} onChange={(e) => setSummary(e.target.value)} className="mt-1 w-full" />
         </label>
         <label className="block">
           <span className="text-sm font-medium text-ink">변경 사유 *</span>
-          <Input value={reason} onChange={(e) => setReason(e.target.value)} className="mt-1" />
+          <Input value={reason} onChange={(e) => setReason(e.target.value)} className="mt-1 w-full" />
         </label>
       </div>
       <label className="mt-3 flex items-center gap-2 text-sm text-ink">

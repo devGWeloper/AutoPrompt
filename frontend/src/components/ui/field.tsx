@@ -1,8 +1,9 @@
 import type { InputHTMLAttributes, SelectHTMLAttributes, TextareaHTMLAttributes } from 'react';
 import { cn } from '@/lib/cn';
 
+// No default width — callers set it (`w-full` to fill, or a fixed `w-44` etc.).
 const fieldBase =
-  'w-full rounded-md border border-line bg-surface text-sm text-ink placeholder:text-muted ' +
+  'rounded-md border border-line bg-surface text-sm text-ink placeholder:text-muted ' +
   'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:border-accent/50 ' +
   'disabled:opacity-50';
 

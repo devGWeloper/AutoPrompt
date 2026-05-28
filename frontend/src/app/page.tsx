@@ -343,8 +343,8 @@ function DatasetsPanel() {
               <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-muted">케이스 ({cases.length})</h3>
               <p className="mb-3 text-xs text-muted">input_data 는 평가 입력 JSON. 인식 키: question, contexts(list|str), ground_truth.</p>
               <div className="mb-4 grid grid-cols-[1fr_1fr_auto] gap-2">
-                <Input value={caseInput} onChange={(e) => setCaseInput(e.target.value)} placeholder='{"question": "..."}' className="font-mono text-xs" />
-                <Input value={caseExpected} onChange={(e) => setCaseExpected(e.target.value)} placeholder="expected_output (선택)" className="text-xs" />
+                <Input value={caseInput} onChange={(e) => setCaseInput(e.target.value)} placeholder='{"question": "..."}' className="w-full font-mono text-xs" />
+                <Input value={caseExpected} onChange={(e) => setCaseExpected(e.target.value)} placeholder="expected_output (선택)" className="w-full text-xs" />
                 <Button variant="secondary" size="sm" onClick={addCase}>추가</Button>
               </div>
               <Table>
