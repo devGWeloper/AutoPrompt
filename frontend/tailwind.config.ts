@@ -5,12 +5,30 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        nodeLlm: '#3b82f6',
-        nodeTool: '#10b981',
-        nodeRouter: '#f59e0b',
-        nodeStart: '#6b7280',
-        nodeEnd: '#1f2937',
+        bg: 'rgb(var(--bg) / <alpha-value>)',
+        surface: 'rgb(var(--surface) / <alpha-value>)',
+        line: 'rgb(var(--line) / <alpha-value>)',
+        ink: 'rgb(var(--ink) / <alpha-value>)',
+        muted: 'rgb(var(--muted) / <alpha-value>)',
+        accent: {
+          DEFAULT: 'rgb(var(--accent) / <alpha-value>)',
+          fg: 'rgb(var(--accent-fg) / <alpha-value>)',
+        },
+        ok: 'rgb(var(--ok) / <alpha-value>)',
+        bad: 'rgb(var(--bad) / <alpha-value>)',
       },
+      fontFamily: {
+        sans: [
+          'var(--font-inter)',
+          'Pretendard',
+          'Apple SD Gothic Neo',
+          'Malgun Gothic',
+          'ui-sans-serif',
+          'system-ui',
+          'sans-serif',
+        ],
+      },
+      borderColor: { DEFAULT: 'rgb(var(--line) / <alpha-value>)' },
     },
   },
   plugins: [],

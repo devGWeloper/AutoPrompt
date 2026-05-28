@@ -27,11 +27,13 @@ class Settings(BaseSettings):
     # (force real ragas). Env: RAGAS_ENGINE.
     ragas_engine: str = "auto"
 
-    # External agent integration. run_mode="internal" (default) runs flow/test
-    # nodes with this system's own LLM adapters; "external" routes node
-    # execution / RAG retrieval to a real LangGraph service over HTTP.
+    # External agent integration (flow-level RAGAS answer generation).
+    # run_mode="external" routes answer generation to the real chat/super-agent
+    # endpoint over HTTP; "stub" (default) returns a deterministic placeholder
+    # answer in-process, so flow RAGAS runs end-to-end before the agent is wired.
+    # Swap to external by setting RUN_MODE=external + EXTERNAL_AGENT_BASE_URL.
     # Env: RUN_MODE / EXTERNAL_AGENT_BASE_URL.
-    run_mode: str = "internal"
+    run_mode: str = "stub"
     external_agent_base_url: str = ""
     # Path (appended to external_agent_base_url) of the internal model's single
     # chat/run endpoint used by the full/flow test. Env: EXTERNAL_CHAT_PATH.

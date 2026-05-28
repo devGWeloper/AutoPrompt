@@ -5,19 +5,22 @@
 
 ## 0. 아키텍처 요약
 
-- **단일 플로우.** 프로젝트 선택 화면 없음. 첫 화면이 바로 `CHAT_VER_MAS.GRAPH_STRUCT`(머메이드) 그래프.
+- **단일 플로우.** 프로젝트 선택 화면 없음. 첫 화면은 **RAGAS 회귀 평가** 화면(`/`).
 - **고정 테이블 2개 (구조 변경 금지)** — 운영 프로젝트 소유, PM은 데이터만 읽고/일부 기록:
-  - `CHAT_VER_MAS` : 현재 플로우 1행. 사용 컬럼 `ID`, `GRAPH_STRUCT`, `MAIN_MODEL_NM`.
-  - `NODE_MAS` : 현재 노드들. 사용 컬럼 `ID`, `CHAT_VER_ID`, `NODE_NM`, `MODEL_NM`, `NODE_DESC`,
+  - `CHAT_VER_MAS` : 현재 플로우 1행. 사용 컬럼 `ID`, `MAIN_MODEL_NM`. (`GRAPH_STRUCT`는 더 이상 표출하지 않음)
+  - `NODE_MAS` : 현재 노드들. 사용 컬럼 `ID`, `CHAT_VER_ID`, `NODE_NM`, `NODE_DESC`,
     `PROMPT`, `PROMPT_EDIT_ENABLE_YN`, `UPDATE_DATE`. (`PROMPT_EDIT_ENABLE_YN='Y'` = 프롬프트(LLM) 노드)
-- **PM_* 테이블** : 버전/이력/스냅샷/테스트/감사. 같은 Oracle DB에 존재.
+- **PM_* 테이블 (6개)** : 같은 Oracle DB에 존재.
   - `PM_NODE_PROMPT_VER`(노드 프롬프트 버전 — `SYSTEM_PROMPT`/`USER_PROMPT` 2컬럼 분리),
-    `PM_FLOW_VER`/`PM_FLOW_VER_NODE`(전체 플로우 버전+매니페스트), `PM_TEST_*`, `PM_RAGAS_*`, `PM_AUDIT_LOG`.
+    `PM_TEST_DATASET`/`PM_TEST_CASE`(RAGAS 데이터셋), `PM_RAGAS_RUN`/`PM_RAGAS_RESULT`, `PM_AUDIT_LOG`.
+  - `PM_TEST_RUN`/`PM_TEST_RESULT`(비-RAGAS 테스트)·`PM_FLOW_VER`/`PM_FLOW_VER_NODE`(플로우 버전 이력)는
+    RAGAS 중심 전환 때 **삭제**됨(alembic `0008`).
 - **ACTIVATE** : 웹에서 노드 프롬프트 버전을 활성화하면 → ① PM 활성 플래그 전환 → ② **`SYSTEM_PROMPT` 를
   단일 `NODE_MAS.PROMPT` 컬럼에 기록**(+`UPDATE_DATE`, 운영 반영. `USER_PROMPT` 는 테스트 메시지
-  템플릿으로 PM 에만 보관) → ③ 전체 플로우 버전 1단계 상승(`PM_FLOW_VER` 스냅샷).
-- **전체 테스트** : 내부 모델의 **단일 채팅 엔드포인트**(`EXTERNAL_CHAT_PATH`)를 호출. 관리 중인
-  시스템 프롬프트를 `session_system_prompt` 로 실어 보내고 응답(답변)을 표시.
+  템플릿으로 PM 에만 보관). (플로우 버전 스냅샷 단계는 폐지)
+- **RAGAS 평가(유일한 테스트 경로)** : 데이터셋 각 케이스를 **전체 플로우**에 보내 답을 받고 RAGAS로 채점.
+  답 생성은 `RUN_MODE=external` 이면 내부 모델 채팅 엔드포인트(`EXTERNAL_CHAT_PATH`) 호출, 기본
+  `RUN_MODE=stub` 이면 임시 placeholder 답변. 채점은 judge 키가 있으면 실제 ragas, 없으면 fallback.
 
 ---
 
@@ -31,8 +34,10 @@ ORACLE_DSN=<user>/<password>@<host>:<port>/<service>   # 예: system/orcl@localh
 ```
 .venv\Scripts\python.exe -m alembic upgrade head
 ```
-> alembic 마이그레이션 `0004` 는 옛 프로젝트 중심 PM_* 를 드롭하고 새 PM_* 를 만든다.
-> **`CHAT_VER_MAS`/`NODE_MAS` 는 생성/변경하지 않는다**(운영에 이미 존재한다고 가정).
+> 마이그레이션 체인은 `0001 … 0007` 다음 **`0008`(RAGAS 중심 정리: `PM_TEST_RUN`/`PM_TEST_RESULT`·
+> `PM_FLOW_VER`/`PM_FLOW_VER_NODE` 드롭 + 사장된 컬럼 정리)** 로 끝난다.
+> **`CHAT_VER_MAS`/`NODE_MAS`/`MODEL_MAS` 는 생성/변경하지 않는다**(운영에 이미 존재한다고 가정).
+> 이미 `0007` 상태인 DB라면 `alembic upgrade head` 가 `0008`만 적용한다(스탬프가 없으면 `alembic stamp 0007` 후 실행).
 
 ## 2. 고정 테이블 컬럼 확인 (코드가 기대하는 이름)
 
@@ -76,14 +81,16 @@ POST {EXTERNAL_AGENT_BASE_URL}{EXTERNAL_CHAT_PATH}
 - 답변 필드가 다르면 `external_agent._ANSWER_KEYS` 에 추가. 모델이 여러 노드 시스템 프롬프트가 아닌
   **단일** 세션 프롬프트를 원하면 `flow_service._flow_session_system_prompt` 를 조정.
 
-> `RUN_MODE=internal`(기본)에서는 전체 테스트가 "external 모드 필요"로 실패한다 — 의도된 동작.
+> 기본값 `RUN_MODE=stub` 에서는 RAGAS 평가가 임시 placeholder 답변으로 끝까지 동작한다(외부 미연결).
+> 위처럼 `RUN_MODE=external` 로 바꾸면 실제 채팅 엔드포인트를 호출한다.
 > 계약 확인: `.claude/skills/connect-prompt-mgmt/scripts/callback_probe.py --base-url <model> --path /chat`.
 
-## 5. 모델 → provider 매핑 (노드 단건 테스트/RAGAS용)
+## 5. LLM provider (RAGAS judge 전용)
 
-`NODE_MAS`/`PM_NODE_PROMPT_VER` 에는 모델 **이름만** 있어 provider 를 이름으로 추론한다
-(`backend/app/services/llm/__init__.py:provider_for_model`, 접두사 claude*/gpt*/gemini* 등).
-운영에서 다른 모델명을 쓰면 `_MODEL_PREFIX_PROVIDER` 에 추가한다. (전체 테스트는 외부가 처리하므로 무관.)
+노드 단위 실행 경로는 제거됐다(전체 플로우 RAGAS만 남음). 이 시스템이 직접 호출하는 LLM은
+**RAGAS 실제 엔진의 judge/임베딩 모델**뿐이며, 내부망에서는 `LLM_ENDPOINT`/`LLM_API_KEY`/`LLM_MODEL_NAME`
+(OpenAI 호환 게이트웨이)로, 그 외에는 provider 키로 `.env` 에서 주입한다. judge 키가 없으면 fallback 채점기가
+LLM 없이 동작한다. (답 생성은 외부 채팅 엔드포인트 또는 stub 이 담당하므로 모델명 provider 추론과 무관.)
 
 ## 6. 실행 방법
 
@@ -104,28 +111,26 @@ npm run dev            # http://localhost:3000
 
 - `backend/scripts/demo_seed_oracle.py` — `CHAT_VER_MAS`/`NODE_MAS` 데모 테이블 생성 + RAG 플로우 시드.
   (운영에서는 실행하지 말 것 — 실제 테이블이 이미 존재.)
-- `backend/scripts/seed_pm_demo.py` — `alembic upgrade head` 후 PM_* 에 노드 프롬프트 v1.0.0(활성) +
-  플로우 v1.0.0 을 `NODE_MAS` 로부터 시드.
+- `backend/scripts/seed_pm_demo.py` — `alembic upgrade head` 후 `NODE_MAS` 로부터 노드 프롬프트
+  v1.0.0(활성)을 `PM_NODE_PROMPT_VER` 에 시드. (플로우 버전 시드는 폐지)
 - `backend/scripts/demo_seed_oracle.sql` — 위 DDL/시드의 sqlplus 버전.
 
 ## 8. 빠른 점검
 
 ```
-GET  /api/v1/flow/current                 # 머메이드 + 노드(+has_prompt) + flow_version_no
+GET  /api/v1/flow/current                 # 노드 목록(+has_prompt) ← 프롬프트 관리 진입
 GET  /api/v1/nodes/{id}/prompts            # 노드 프롬프트 버전 목록
 POST /api/v1/nodes/{id}/prompts            # 새 버전
-PUT  /api/v1/prompts/{pid}/activate        # 활성화 → NODE_MAS.PROMPT 기록 + 플로우 버전 ↑
-GET  /api/v1/flow/versions                 # 전체 플로우 버전 이력
-GET  /api/v1/flow/models                   # MODEL_MAS.GAIA_MODEL_NM 목록(메인 모델 선택)
-PUT  /api/v1/flow/main-model               # 메인 모델 변경 → CHAT_VER_MAS.MAIN_MODEL_NM + 새 플로우 버전
 PUT  /api/v1/prompts/{pid}                 # 비활성 버전 프롬프트 편집(활성은 잠금)
-GET/POST /api/v1/flow/datasets             # 플로우 데이터셋(scope='FLOW')
-POST /api/v1/flow/test/run|batch|ab|ragas  # 전체 플로우 테스트(내부 모델 채팅). ab=두 버전(시스템프롬프트/모델)
-GET  /api/v1/test-runs                      # 테스트 기록 전체  /  DELETE /test-runs/{id} 삭제
+PUT  /api/v1/prompts/{pid}/activate        # 활성화 → NODE_MAS.PROMPT 기록
+GET  /api/v1/nodes/{id}/audit-logs         # 노드 프롬프트 변경 이력
+GET/POST /api/v1/flow/datasets             # RAGAS 데이터셋(scope='FLOW')
+POST /api/v1/flow/test/ragas               # 전체 플로우 RAGAS 평가(유일한 테스트 경로)
+GET  /api/v1/ragas-runs · /ragas-runs/{id} · DELETE /ragas-runs/{id}
+GET  /api/v1/ragas-runs/{id}/export?fmt=csv|xlsx
 ```
 
-> 2~4차 추가: 모델은 **메인 모델 1개**만 `MODEL_MAS`에서 선택(노드별 모델 수정 불가, `MODEL_EDIT_ENABLE_YN`=N),
-> 변경 시 새 플로우 버전. 비활성 버전만 프롬프트 in-place 편집. 배치/A·B/RAGAS는 **전체 플로우**를 내부 모델
-> 채팅 엔드포인트로 실행(A·B는 두 플로우 버전 비교 — 버전별 `session_system_prompt`/`main_model_name` 전달).
 > 프롬프트는 `SYSTEM_PROMPT`/`USER_PROMPT` 2컬럼 분리, 활성화 시 `SYSTEM_PROMPT`만 `NODE_MAS.PROMPT` 로 반영(`0006`).
-> 플로우 RAGAS 위해 `PM_RAGAS_RUN.NODE_MAS_ID/PROMPT_ID` nullable(`0005`).
+> RAGAS 중심 전환(`0008`)으로 단건/일괄/A·B 테스트·플로우 버전 이력·메인 모델 변경 기능과 관련 테이블
+> (`PM_TEST_RUN`/`PM_TEST_RESULT`/`PM_FLOW_VER`/`PM_FLOW_VER_NODE`) 및 사장 컬럼
+> (`PM_RAGAS_RUN.NODE_MAS_ID/PROMPT_ID`, `PM_NODE_PROMPT_VER` 모델 파라미터)이 제거됐다. RAGAS는 **전체 플로우** 단위로만 실행한다.

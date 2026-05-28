@@ -10,8 +10,8 @@
 | Agent table / column            | Used by PM as                                  |
 |---------------------------------|------------------------------------------------|
 | `CHAT_VER_MAS.ID`               | current flow id (`get_current_chat`)           |
-| `CHAT_VER_MAS.GRAPH_STRUCT`     | mermaid graph rendered on the home screen      |
-| `CHAT_VER_MAS.MAIN_MODEL_NM`    | flow main model (header display)               |
+| `CHAT_VER_MAS.GRAPH_STRUCT`     | flow graph definition (no longer rendered — graph screen removed) |
+| `CHAT_VER_MAS.MAIN_MODEL_NM`    | flow main model (passed to the agent on RAGAS runs) |
 | `NODE_MAS.ID`                   | node id; FK target of `PM_NODE_PROMPT_VER.NODE_MAS_ID` |
 | `NODE_MAS.CHAT_VER_ID`          | FK → `CHAT_VER_MAS.ID`                          |
 | `NODE_MAS.NODE_NM`              | node identity / join key (= the agent's node name) |

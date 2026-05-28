@@ -8,35 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.ragas import RagasResult, RagasRun
-from app.models.test_run import TestResult, TestRun
 from app.services.ragas.base import ALL_METRICS
 
 Rows = tuple[list[str], list[list[object]]]
-
-
-def test_run_rows(db: Session, run_id: int) -> Rows:
-    run = db.get(TestRun, run_id)
-    if run is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="test run not found")
-    results = (
-        db.execute(
-            select(TestResult)
-            .where(TestResult.run_id == run_id)
-            .order_by(TestResult.result_id.asc())
-        )
-        .scalars()
-        .all()
-    )
-    header = [
-        "result_id", "case_id", "is_passed", "latency_ms",
-        "input_tokens", "output_tokens", "actual_output", "error_msg",
-    ]
-    rows = [
-        [r.result_id, r.case_id, r.is_passed, r.latency_ms,
-         r.input_tokens, r.output_tokens, r.actual_output, r.error_msg]
-        for r in results
-    ]
-    return header, rows
 
 
 def ragas_run_rows(db: Session, ragas_run_id: int) -> Rows:

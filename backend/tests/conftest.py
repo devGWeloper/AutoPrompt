@@ -17,15 +17,12 @@ from app.models import (  # noqa: F401  -- register tables on Base.metadata
     audit,
     chat_ver,
     dataset,
-    flow_ver,
     model_mas,
     node_mas,
     node_prompt_ver,
     ragas,
-    test_run,
 )
 from app.models.chat_ver import ChatVerMas
-from app.models.flow_ver import FlowVer, FlowVerNode
 from app.models.model_mas import ModelMas
 from app.models.node_mas import NodeMas
 from app.models.node_prompt_ver import NodePromptVer
@@ -120,20 +117,9 @@ def seeded_db(engine):
             p1 = NodePromptVer(
                 node_mas_id=n2.id, node_nm="llm", version_no="1.0.0",
                 system_prompt="You are helpful.", user_prompt="Question: {{q}}",
-                model_nm="claude-sonnet-4-6",
                 is_active="Y", change_summary="seed", change_reason="seed", created_by="system",
             )
             s.add(p1)
-            s.flush()
-            fv = FlowVer(
-                chat_ver_id=chat.id, flow_version_no="1.0.0", graph_struct=_SEED_GRAPH,
-                main_model_nm="claude-sonnet-4-6", is_active="Y",
-                change_summary="seed", created_by="system",
-            )
-            s.add(fv)
-            s.flush()
-            s.add(FlowVerNode(flow_ver_id=fv.flow_ver_id, node_mas_id=n2.id, node_nm="llm",
-                              prompt_id=p1.prompt_id, version_no="1.0.0"))
             s.commit()
         yield s
     finally:
@@ -145,36 +131,6 @@ def client(seeded_db):
     app = create_app()
     with TestClient(app) as c:
         yield c
-
-
-@pytest.fixture
-def stub_llm(monkeypatch):
-    """Replace the LLM adapter factory with a deterministic offline stub.
-
-    The stub echoes the rendered user prompt so tests can assert {{var}}
-    substitution without any real provider call.
-    """
-    from app.services.llm.base import InvocationResult, render_template
-
-    class _StubAdapter:
-        def __init__(self, model: str) -> None:
-            self.model = model
-
-        async def invoke(self, *, system_prompt, user_prompt, variables):
-            rendered = render_template(user_prompt, variables)
-            return InvocationResult(
-                output=f"STUB::{rendered}",
-                input_tokens=3,
-                output_tokens=5,
-                latency_ms=7,
-                model=self.model,
-            )
-
-    def _factory(model, **kwargs):
-        return _StubAdapter(model)
-
-    monkeypatch.setattr("app.services.test_service.adapter_for_model", _factory)
-    return _factory
 
 
 @pytest.fixture(autouse=True)

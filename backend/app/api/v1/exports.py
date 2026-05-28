@@ -20,17 +20,6 @@ def _stream(body: bytes, media: str, filename: str) -> StreamingResponse:
     )
 
 
-@router.get("/test-runs/{run_id}/export")
-def export_test_run(
-    run_id: int,
-    fmt: str = Query("csv", pattern="^(csv|xlsx)$"),
-    db: Session = Depends(get_db),
-) -> StreamingResponse:
-    rows = export_service.test_run_rows(db, run_id)
-    body, media, ext = export_service.serialize(rows, fmt)
-    return _stream(body, media, f"test-run-{run_id}.{ext}")
-
-
 @router.get("/ragas-runs/{ragas_run_id}/export")
 def export_ragas_run(
     ragas_run_id: int,

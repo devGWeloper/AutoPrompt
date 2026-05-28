@@ -32,16 +32,6 @@ function connect(path: string, handlers: RunWsHandlers): WebSocket {
   return ws;
 }
 
-/** Stream a single/batch/AB test run (`/ws/test-runs/{id}`). */
-export function connectTestRunWs(runId: number, handlers: RunWsHandlers): WebSocket {
-  return connect(`/ws/test-runs/${runId}`, handlers);
-}
-
-/** Stream a full-flow run (`/ws/flow-runs/{id}`). */
-export function connectFlowRunWs(runId: number, handlers: RunWsHandlers): WebSocket {
-  return connect(`/ws/flow-runs/${runId}`, handlers);
-}
-
 /** Stream a RAGAS evaluation run (`/ws/ragas-runs/{id}`). */
 export function connectRagasRunWs(ragasRunId: number, handlers: RunWsHandlers): WebSocket {
   return connect(`/ws/ragas-runs/${ragasRunId}`, handlers);

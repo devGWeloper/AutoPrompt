@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
 
 from sqlalchemy import (
     DateTime,
     ForeignKey,
     Identity,
     Integer,
-    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -45,12 +43,6 @@ class NodePromptVer(Base):
     version_no: Mapped[str] = mapped_column("VERSION_NO", String(20), nullable=False)
     system_prompt: Mapped[str | None] = mapped_column("SYSTEM_PROMPT", Text)
     user_prompt: Mapped[str | None] = mapped_column("USER_PROMPT", Text)
-    # Model settings (kept for traceability + node test/RAGAS adapter build).
-    model_nm: Mapped[str | None] = mapped_column("MODEL_NM", String(100))
-    temperature: Mapped[Decimal | None] = mapped_column("TEMPERATURE", Numeric(3, 2))
-    max_tokens: Mapped[int | None] = mapped_column("MAX_TOKENS", Integer)
-    top_p: Mapped[Decimal | None] = mapped_column("TOP_P", Numeric(3, 2))
-    extra_params: Mapped[str | None] = mapped_column("EXTRA_PARAMS", Text)
     is_active: Mapped[str] = mapped_column("IS_ACTIVE", String(1), default="N", server_default="N")
     change_summary: Mapped[str | None] = mapped_column("CHANGE_SUMMARY", String(500))
     change_reason: Mapped[str | None] = mapped_column("CHANGE_REASON", String(1000))

@@ -4,9 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1 import api_router
-from app.api.v1.flow import ws_router as flow_ws_router
 from app.api.v1.ragas import ws_router as ragas_ws_router
-from app.api.v1.test_runs import ws_router
 from app.core.config import get_settings
 
 
@@ -25,8 +23,6 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(api_router)
-    app.include_router(ws_router)
-    app.include_router(flow_ws_router)
     app.include_router(ragas_ws_router)
 
     @app.get("/health")

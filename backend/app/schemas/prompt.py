@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -13,7 +12,6 @@ class PromptVersionSummary(BaseModel):
     node_nm: str
     version_no: str
     is_active: str
-    model_nm: str | None = None
     change_summary: str | None = None
     created_by: str
     created_dt: datetime
@@ -22,17 +20,13 @@ class PromptVersionSummary(BaseModel):
 class PromptVersionDetail(PromptVersionSummary):
     system_prompt: str | None = None
     user_prompt: str | None = None
-    temperature: Decimal | None = None
-    max_tokens: int | None = None
-    top_p: Decimal | None = None
-    extra_params: dict | None = None
     change_reason: str | None = None
     prev_prompt_id: int | None = None
     updated_dt: datetime | None = None
 
 
 class ActivePromptOut(BaseModel):
-    """A node's active prompt (system + user) + model, keyed by NODE_NM.
+    """A node's active prompt (system + user), keyed by NODE_NM.
 
     Kept for inspection / agent compatibility. At runtime the operational project
     reads NODE_MAS.PROMPT directly (activation writes the SYSTEM_PROMPT there), so
@@ -46,18 +40,12 @@ class ActivePromptOut(BaseModel):
     version_no: str
     system_prompt: str | None = None
     user_prompt: str | None = None
-    model_nm: str | None = None
 
 
 class PromptVersionCreate(BaseModel):
     system_prompt: str = ""
     user_prompt: str = ""
     version_no: str | None = None
-    model_nm: str | None = None
-    temperature: Decimal | None = None
-    max_tokens: int | None = None
-    top_p: Decimal | None = None
-    extra_params: dict | None = None
     change_summary: str = Field(..., min_length=1, max_length=500)
     change_reason: str = Field(..., min_length=1, max_length=1000)
     prev_prompt_id: int | None = None

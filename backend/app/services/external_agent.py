@@ -171,6 +171,32 @@ async def run_flow(
     return {"output": _extract_answer(data)}
 
 
+async def stub_run_flow(*, message: str, **_: object) -> dict:
+    """TEMPORARY in-process stand-in for ``run_flow`` (no external endpoint yet).
+
+    Returns a deterministic placeholder answer so flow-level RAGAS runs end-to-end
+    while the real chat/super-agent is not connected. Swap back to the real call by
+    setting ``RUN_MODE=external`` + ``EXTERNAL_AGENT_BASE_URL`` (see ``flow_answer``).
+    """
+    return {"output": f"[stub answer] {message}".strip()}
+
+
+async def flow_answer(
+    *,
+    message: str,
+    session_system_prompt: str | None = None,
+    main_model_name: str | None = None,
+) -> dict:
+    """One flow answer: the real chat endpoint when external is enabled, else the stub."""
+    if external_enabled():
+        return await run_flow(
+            message=message,
+            session_system_prompt=session_system_prompt,
+            main_model_name=main_model_name,
+        )
+    return await stub_run_flow(message=message)
+
+
 async def retrieve(query: str, *, top_k: int = 5, timeout_s: float = 30.0) -> list[str]:
     """Fetch RAG contexts from the external retriever -> ``{"contexts": [str,...]}``."""
     payload = {"query": query, "top_k": top_k}

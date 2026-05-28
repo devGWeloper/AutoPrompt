@@ -17,20 +17,28 @@ export default function Modal({
 }) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-[640px] max-w-[90vw] rounded-lg bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b px-4 py-3">
-          <h2 className="text-sm font-semibold">{title}</h2>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-[600px] max-w-full rounded-xl border border-line bg-surface shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
+          <h2 className="text-sm font-semibold text-ink">{title}</h2>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-700"
-            aria-label="Close"
+            aria-label="닫기"
+            className="rounded-md p-1 text-muted transition-colors hover:bg-bg hover:text-ink"
           >
-            x
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
           </button>
         </div>
-        <div className="max-h-[70vh] overflow-y-auto p-4">{children}</div>
-        {footer && <div className="flex justify-end gap-2 border-t px-4 py-3">{footer}</div>}
+        <div className="max-h-[70vh] overflow-y-auto px-5 py-4">{children}</div>
+        {footer && <div className="flex justify-end gap-2 border-t border-line px-5 py-3.5">{footer}</div>}
       </div>
     </div>
   );

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 from datetime import datetime, timezone
 
@@ -8,7 +7,6 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.chat_ver import ChatVerMas
 from app.models.node_mas import NodeMas
 from app.models.node_prompt_ver import NodePromptVer
 from app.schemas.prompt import (
@@ -80,15 +78,6 @@ def get_version(db: Session, prompt_id: int) -> NodePromptVer:
     return obj
 
 
-def _parse_extra(raw: str | None) -> dict | None:
-    if not raw:
-        return None
-    try:
-        return json.loads(raw)
-    except (ValueError, TypeError):
-        return None
-
-
 def to_detail(version: NodePromptVer) -> PromptVersionDetail:
     return PromptVersionDetail(
         prompt_id=version.prompt_id,
@@ -96,11 +85,6 @@ def to_detail(version: NodePromptVer) -> PromptVersionDetail:
         node_nm=version.node_nm,
         version_no=version.version_no,
         is_active=version.is_active,
-        model_nm=version.model_nm,
-        temperature=version.temperature,
-        max_tokens=version.max_tokens,
-        top_p=version.top_p,
-        extra_params=_parse_extra(version.extra_params),
         change_summary=version.change_summary,
         change_reason=version.change_reason,
         prev_prompt_id=version.prev_prompt_id,
@@ -120,7 +104,6 @@ def _to_active(version: NodePromptVer) -> ActivePromptOut:
         version_no=version.version_no,
         system_prompt=version.system_prompt,
         user_prompt=version.user_prompt,
-        model_nm=version.model_nm,
     )
 
 
@@ -205,24 +188,12 @@ def create_version(
             detail=f"version {version_no} already exists for this node",
         )
 
-    # Model is decided at the flow level (NODE_MAS.MODEL_NM is NULL/unused); snapshot
-    # the current flow main model for traceability/display.
-    chat = db.get(ChatVerMas, node.chat_ver_id)
-    main_model = chat.main_model_nm if chat else None
-
     new_version = NodePromptVer(
         node_mas_id=node_mas_id,
         node_nm=node.node_nm,
         version_no=version_no,
         system_prompt=payload.system_prompt,
         user_prompt=payload.user_prompt,
-        model_nm=payload.model_nm or main_model,
-        temperature=payload.temperature,
-        max_tokens=payload.max_tokens,
-        top_p=payload.top_p,
-        extra_params=json.dumps(payload.extra_params, ensure_ascii=False)
-        if payload.extra_params is not None
-        else None,
         is_active="N",
         change_summary=payload.change_summary,
         change_reason=payload.change_reason,
@@ -259,10 +230,7 @@ def activate_version(db: Session, *, prompt_id: int, actor: str) -> NodePromptVe
     1. flip IS_ACTIVE on PM_NODE_PROMPT_VER (one active per node)
     2. mirror the prompt text into NODE_MAS.PROMPT (+ UPDATE_DATE/UPDATE_USER) so
        the operational project picks it up
-    3. cut a new whole-flow version snapshot (PM_FLOW_VER + manifest)
     """
-    from app.services import flow_service
-
     target = get_version(db, prompt_id)
     node = get_node(db, target.node_mas_id)
 
@@ -306,14 +274,6 @@ def activate_version(db: Session, *, prompt_id: int, actor: str) -> NodePromptVe
         before=before_snapshot,
         after={"active_prompt_id": target.prompt_id, "active_version_no": target.version_no},
         created_by=actor,
-    )
-
-    # (3) bump the whole-flow version (a node prompt change == new flow version).
-    flow_service.cut_flow_version(
-        db,
-        actor=actor,
-        summary=f"activate {target.node_nm} v{target.version_no}",
-        reason=None,
     )
     return target
 

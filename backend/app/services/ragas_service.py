@@ -5,25 +5,12 @@ import math
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from fastapi import HTTPException, status
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
-from app.core import db as db_module
 from app.core.ws import manager
-from app.models.dataset import TestCase, TestDataset
-from app.models.node_mas import NodeMas
-from app.models.node_prompt_ver import NodePromptVer
 from app.models.ragas import RagasResult, RagasRun
-from app.schemas.ragas import RagasRunRequest
-from app.services import test_service
-from app.services.ragas import ALL_METRICS, get_scorer
-
-_METRIC_COLS = ALL_METRICS
 
 
 def ws_key(ragas_run_id: int) -> str:
-    """Namespaced WS channel so RAGAS ids never collide with TestRun ids."""
+    """Namespaced WS channel so RAGAS ids never collide with other run ids."""
     return f"ragas:{ragas_run_id}"
 
 
@@ -51,34 +38,6 @@ def _parse_case(input_data: str, expected_output: str | None) -> dict:
     }
 
 
-def create_ragas_run(
-    db: Session, *, node_mas_id: int, payload: RagasRunRequest, actor: str
-) -> RagasRun:
-    if db.get(NodeMas, node_mas_id) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="node not found")
-    prompt = db.get(NodePromptVer, payload.prompt_id)
-    if prompt is None or prompt.node_mas_id != node_mas_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="prompt version not found")
-    dataset = db.get(TestDataset, payload.dataset_id)
-    if dataset is None or dataset.node_mas_id != node_mas_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="dataset not found")
-
-    metrics = [m for m in ALL_METRICS if m in set(payload.metrics)] or list(ALL_METRICS)
-    run = RagasRun(
-        node_mas_id=node_mas_id,
-        prompt_id=payload.prompt_id,
-        dataset_id=payload.dataset_id,
-        status="PENDING",
-        metrics=json.dumps(metrics),
-        judge_provider=payload.judge_provider,
-        judge_model=payload.judge_model,
-        created_by=actor,
-    )
-    db.add(run)
-    db.flush()
-    return run
-
-
 def _to_score(v: float | None) -> Decimal | None:
     """Convert a raw metric score to a DB-safe Decimal, or None.
 
@@ -103,8 +62,7 @@ def _avg(values: list[float]) -> Decimal | None:
 async def _record_ragas_failure(session, run: RagasRun, key: str, msg: str) -> None:
     """Mark a RAGAS run FAILED and leave an error row in PM_RAGAS_RESULT.
 
-    Mirrors how plain tests always record an error row, so failures are visible in
-    the results/records UI instead of vanishing.
+    Keeps failures visible in the results/records UI instead of vanishing.
     """
     run.status = "FAILED"
     run.error_msg = msg[:1000]
@@ -112,132 +70,3 @@ async def _record_ragas_failure(session, run: RagasRun, key: str, msg: str) -> N
     session.add(RagasResult(ragas_run_id=run.ragas_run_id, error_msg=msg[:1000]))
     session.commit()
     await manager.broadcast(key, {"event": "FAILED", "run_id": run.ragas_run_id, "error": msg})
-
-
-async def execute_ragas_run(
-    *,
-    ragas_run_id: int,
-    prompt_id: int,
-    dataset_id: int,
-) -> None:
-    """Score every dataset case for one prompt version; stream progress over WS.
-
-    Any failure (scorer/adapter setup or unexpected error) marks the run FAILED and
-    records an error row, so it always shows up in the results/records UI. Answers
-    use the flow main model (per-node MODEL_NM is unused).
-    """
-    session = db_module.SessionLocal()
-    key = ws_key(ragas_run_id)
-    run = None
-    try:
-        run = session.get(RagasRun, ragas_run_id)
-        prompt = session.get(NodePromptVer, prompt_id)
-        if run is None or prompt is None:
-            return
-
-        run.status = "RUNNING"
-        run.started_dt = datetime.now(timezone.utc)
-        session.commit()
-
-        cases = (
-            session.execute(
-                select(TestCase)
-                .where(TestCase.dataset_id == dataset_id)
-                .order_by(TestCase.case_id.asc())
-            )
-            .scalars()
-            .all()
-        )
-        await manager.broadcast(
-            key,
-            {"event": "RUNNING", "run_id": ragas_run_id, "total": len(cases)},
-        )
-
-        try:
-            metrics = json.loads(run.metrics) if run.metrics else list(ALL_METRICS)
-            scorer = get_scorer(
-                metrics, judge_provider=run.judge_provider, judge_model=run.judge_model
-            )
-            run.engine = scorer.engine
-            session.commit()
-            adapter = test_service._adapter_for(
-                prompt, model_nm=test_service.current_main_model(session)
-            )
-        except Exception as exc:  # noqa: BLE001 - setup/model failure -> record + stop
-            await _record_ragas_failure(session, run, key, str(exc))
-            return
-
-        sums: dict[str, list[float]] = {m: [] for m in _METRIC_COLS}
-        for idx, case in enumerate(cases, start=1):
-            fields = _parse_case(case.input_data, case.expected_output)
-            row = RagasResult(
-                ragas_run_id=ragas_run_id,
-                case_id=case.case_id,
-                question=fields["question"],
-                contexts=json.dumps(fields["contexts"], ensure_ascii=False),
-                ground_truth=fields["ground_truth"],
-            )
-            try:
-                inv = await adapter.invoke(
-                    system_prompt=prompt.system_prompt,
-                    user_prompt=prompt.user_prompt,
-                    variables=test_service._case_variables(case.input_data),
-                )
-                row.answer = inv.output
-                cs = await scorer.score(
-                    question=fields["question"],
-                    answer=inv.output,
-                    contexts=fields["contexts"],
-                    ground_truth=fields["ground_truth"],
-                )
-                stored_any = False
-                for m, v in cs.as_dict().items():
-                    dec = _to_score(v)
-                    if dec is not None:
-                        setattr(row, m, dec)
-                        sums[m].append(float(dec))
-                        stored_any = True
-                if not stored_any:
-                    # Judge produced no finite scores (all NaN) — surface why the
-                    # row is blank instead of leaving it silently empty.
-                    row.error_msg = "scorer returned no finite metric scores (all NaN/None)"
-            except Exception as exc:  # noqa: BLE001 - per-case failure, keep going
-                row.error_msg = str(exc)[:1000]
-            session.add(row)
-            session.commit()
-            await manager.broadcast(
-                key,
-                {
-                    "event": "PROGRESS",
-                    "run_id": ragas_run_id,
-                    "done": idx,
-                    "total": len(cases),
-                    "case_id": case.case_id,
-                },
-            )
-
-        for m in _METRIC_COLS:
-            setattr(run, m, _avg(sums[m]))
-        run.status = "DONE"
-        run.ended_dt = datetime.now(timezone.utc)
-        session.commit()
-        await manager.broadcast(
-            key,
-            {
-                "event": "DONE",
-                "run_id": ragas_run_id,
-                "engine": run.engine,
-                "summary": {
-                    m: float(getattr(run, m)) if getattr(run, m) is not None else None
-                    for m in _METRIC_COLS
-                },
-            },
-        )
-    except Exception as exc:  # noqa: BLE001 - never leave a run stuck/unrecorded
-        if run is not None:
-            try:
-                await _record_ragas_failure(session, run, key, str(exc))
-            except Exception:  # noqa: BLE001
-                pass
-    finally:
-        session.close()

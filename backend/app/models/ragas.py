@@ -13,9 +13,8 @@ class RagasRun(Base):
     __tablename__ = "PM_RAGAS_RUN"
 
     ragas_run_id: Mapped[int] = mapped_column("RAGAS_RUN_ID", Integer, Identity(always=True), primary_key=True)
-    # node/prompt are null for FLOW-scoped RAGAS (no single node/prompt target).
-    node_mas_id: Mapped[int | None] = mapped_column("NODE_MAS_ID", Integer, ForeignKey("NODE_MAS.ID"))
-    prompt_id: Mapped[int | None] = mapped_column("PROMPT_ID", Integer, ForeignKey("PM_NODE_PROMPT_VER.PROMPT_ID"))
+    # RAGAS is FLOW-scoped only: the whole flow (CHAT_VER_MAS) is evaluated, so there
+    # is no single node/prompt target.
     chat_ver_id: Mapped[int | None] = mapped_column("CHAT_VER_ID", Integer, ForeignKey("CHAT_VER_MAS.ID"))
     dataset_id: Mapped[int] = mapped_column("DATASET_ID", Integer, ForeignKey("PM_TEST_DATASET.DATASET_ID"), nullable=False)
     status: Mapped[str] = mapped_column("STATUS", String(20), default="PENDING", server_default="PENDING")

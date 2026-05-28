@@ -2,9 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Semantic design tokens as RGB channels so Tailwind's `/<alpha>` modifier works
+   (e.g. bg-accent/10). A dark theme later only needs a second variable set. */
+:root {
+  --bg: 250 250 250;        /* zinc-50  — app background */
+  --surface: 255 255 255;   /* white    — cards/panels */
+  --line: 228 228 231;      /* zinc-200 — hairline borders */
+  --ink: 24 24 27;          /* zinc-900 — primary text */
+  --muted: 113 113 122;     /* zinc-500 — secondary text */
+  --accent: 79 70 229;      /* indigo-600 — restrained accent */
+  --accent-fg: 255 255 255; /* text on accent */
+  --ok: 5 150 105;          /* emerald-600 — pass / healthy */
+  --bad: 225 29 72;         /* rose-600 — fail / error */
+}
+
 html, body, #__next { height: 100%; }
 body {
-  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  background: #f8fafc;
-  color: #0f172a;
+  background: rgb(var(--bg));
+  color: rgb(var(--ink));
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }

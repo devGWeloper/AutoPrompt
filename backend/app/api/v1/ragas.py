@@ -1,21 +1,14 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, HTTPException, Response, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.constants import SYSTEM_USER
 from app.core.db import get_db
 from app.core.ws import manager
-from app.models.node_mas import NodeMas
 from app.models.ragas import RagasResult, RagasRun
-from app.schemas.ragas import (
-    RagasResultOut,
-    RagasRunDetail,
-    RagasRunOut,
-    RagasRunRequest,
-    RagasRunSummary,
-)
+from app.schemas.ragas import RagasResultOut, RagasRunDetail, RagasRunSummary
 from app.services import audit as audit_service
 from app.services import ragas_service
 
@@ -49,28 +42,6 @@ def delete_ragas_run(ragas_run_id: int, db: Session = Depends(get_db)) -> None:
     db.commit()
 
 
-@router.post("/nodes/{node_id}/ragas/run", response_model=RagasRunOut)
-async def run_ragas(
-    node_id: int,
-    payload: RagasRunRequest,
-    background: BackgroundTasks,
-    db: Session = Depends(get_db),
-) -> RagasRunOut:
-    run = ragas_service.create_ragas_run(
-        db, node_mas_id=node_id, payload=payload, actor=SYSTEM_USER
-    )
-    db.commit()
-    db.refresh(run)
-    out = RagasRunOut.model_validate(run)
-    background.add_task(
-        ragas_service.execute_ragas_run,
-        ragas_run_id=run.ragas_run_id,
-        prompt_id=payload.prompt_id,
-        dataset_id=payload.dataset_id,
-    )
-    return out
-
-
 @router.get("/ragas-runs/{ragas_run_id}", response_model=RagasRunDetail)
 def get_ragas_run(ragas_run_id: int, db: Session = Depends(get_db)) -> RagasRunDetail:
     run = db.get(RagasRun, ragas_run_id)
@@ -88,24 +59,6 @@ def get_ragas_run(ragas_run_id: int, db: Session = Depends(get_db)) -> RagasRunD
     detail = RagasRunDetail.model_validate(run)
     detail.results = [RagasResultOut.model_validate(r) for r in rows]
     return detail
-
-
-@router.get("/nodes/{node_id}/ragas-runs", response_model=list[RagasRunSummary])
-def list_node_ragas_runs(
-    node_id: int, db: Session = Depends(get_db)
-) -> list[RagasRunSummary]:
-    if db.get(NodeMas, node_id) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="node not found")
-    rows = (
-        db.execute(
-            select(RagasRun)
-            .where(RagasRun.node_mas_id == node_id)
-            .order_by(RagasRun.ragas_run_id.asc())
-        )
-        .scalars()
-        .all()
-    )
-    return [RagasRunSummary.model_validate(r) for r in rows]
 
 
 @ws_router.websocket("/ws/ragas-runs/{ragas_run_id}")
