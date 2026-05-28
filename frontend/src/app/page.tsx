@@ -222,7 +222,7 @@ function ComparePanel() {
   return (
     <div className="space-y-5">
       <Card className="p-4">
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-3 overflow-x-auto [&>*]:shrink-0">
           <Select value={nodeId ?? ''} onChange={(e) => setNodeId(Number(e.target.value))} className="w-44">
             <option value="" disabled>노드 선택</option>
             {nodes.map((n) => (<option key={n.node_mas_id} value={n.node_mas_id}>{n.node_nm}</option>))}
@@ -231,7 +231,7 @@ function ComparePanel() {
           <span className="text-xs text-muted">vs</span>
           <VersionSelect versions={versions} value={verB} onChange={setVerB} placeholder="버전 B" />
           <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />
-          <Button disabled={!canRun} onClick={run}>{status === 'running' ? '비교 중…' : '버전 비교 실행'}</Button>
+          <Button className="whitespace-nowrap" disabled={!canRun} onClick={run}>{status === 'running' ? '비교 중…' : '버전 비교 실행'}</Button>
           <StatusPill status={status} />
         </div>
         {verA && verB && verA === verB && (
