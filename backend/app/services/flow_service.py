@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.core import db as db_module
@@ -97,35 +97,57 @@ def _case_variables(input_data: str) -> dict[str, str]:
     return {str(k): str(v) for k, v in parsed.items()}
 
 
-def _flow_session_system_prompt(
-    db: Session, *, override_node_id: int | None = None, override_prompt_id: int | None = None
-) -> str:
-    """session_system_prompt for the current flow = active SYSTEM_PROMPTs joined.
+def _swap_active_prompt(
+    db: Session, *, node_mas_id: int, target_prompt_id: int
+) -> int | None:
+    """Flip IS_ACTIVE on PM_NODE_PROMPT_VER for one node so the external model
+    reads ``target_prompt_id`` as its active row. Returns the prompt_id that
+    was previously active (to restore later), or None if no row was active.
 
-    For A/B version comparison, ``override_node_id``'s active prompt is replaced by the
-    ``override_prompt_id`` version's SYSTEM_PROMPT (other nodes keep their active one).
+    Raw UPDATE only — no NODE_MAS.PROMPT mirror, no audit row. The external
+    model loads its SYSTEM_PROMPT/USER_PROMPT straight from this table.
     """
-    chat = get_current_chat(db)
-    nodes = (
-        db.execute(select(NodeMas).where(NodeMas.chat_ver_id == chat.id).order_by(NodeMas.id.asc()))
+    prev = (
+        db.execute(
+            select(NodePromptVer.prompt_id).where(
+                NodePromptVer.node_mas_id == node_mas_id,
+                NodePromptVer.is_active == "Y",
+            )
+        )
         .scalars()
-        .all()
+        .first()
     )
-    actives = _active_prompts_by_node(db, [n.id for n in nodes])
-    override_sp: str | None = None
-    if override_node_id is not None and override_prompt_id is not None:
-        pv = db.get(NodePromptVer, override_prompt_id)
-        override_sp = pv.system_prompt if pv else None
-    parts: list[str] = []
-    for n in nodes:
-        if override_node_id is not None and n.id == override_node_id:
-            sp = override_sp
-        else:
-            ap = actives.get(n.id)
-            sp = ap.system_prompt if ap else None
-        if sp:
-            parts.append(sp)
-    return "\n\n".join(parts)
+    db.execute(
+        update(NodePromptVer)
+        .where(NodePromptVer.node_mas_id == node_mas_id)
+        .values(is_active="N")
+    )
+    db.execute(
+        update(NodePromptVer)
+        .where(NodePromptVer.prompt_id == target_prompt_id)
+        .values(is_active="Y")
+    )
+    db.commit()
+    return prev
+
+
+def _restore_active_prompt(
+    db: Session, *, node_mas_id: int, prompt_id: int | None
+) -> None:
+    """Restore the previously-active row after an A/B evaluation. ``None`` means
+    no row was active before — leave them all deactivated."""
+    db.execute(
+        update(NodePromptVer)
+        .where(NodePromptVer.node_mas_id == node_mas_id)
+        .values(is_active="N")
+    )
+    if prompt_id is not None:
+        db.execute(
+            update(NodePromptVer)
+            .where(NodePromptVer.prompt_id == prompt_id)
+            .values(is_active="Y")
+        )
+    db.commit()
 
 
 def _require_flow_dataset(db: Session, dataset_id: int) -> TestDataset:
@@ -230,51 +252,54 @@ async def execute_flow_ragas_run(*, ragas_run_id: int, dataset_id: int) -> None:
             await ragas_service._record_ragas_failure(session, run, key, str(exc))
             return
 
-        if run.node_mas_id and run.prompt_id:
-            session_sys = _flow_session_system_prompt(
-                session, override_node_id=run.node_mas_id, override_prompt_id=run.prompt_id
+        # A/B run: flip PM_NODE_PROMPT_VER active flag so the external model reads
+        # this run's version under test. Stub mode skips the toggle (the stub never
+        # consults the DB). Always restored in the inner finally below.
+        ab_backup: int | None = None
+        ab_toggled = False
+        if run.node_mas_id and run.prompt_id and external_agent.external_enabled():
+            ab_backup = _swap_active_prompt(
+                session, node_mas_id=run.node_mas_id, target_prompt_id=run.prompt_id
             )
-        else:
-            session_sys = _flow_session_system_prompt(session)
-        main_model = get_current_chat(session).main_model_nm
+            ab_toggled = True
+
         sums: dict[str, list[float]] = {m: [] for m in ALL_METRICS}
-        for idx, case in enumerate(cases, start=1):
-            fields = ragas_service._parse_case(case.input_data, case.expected_output)
-            row = RagasResult(
-                ragas_run_id=ragas_run_id, case_id=case.case_id, question=fields["question"],
-                contexts=json.dumps(fields["contexts"], ensure_ascii=False), ground_truth=fields["ground_truth"],
-            )
-            try:
-                data = await external_agent.flow_answer(
-                    message=fields["question"] or _message_from_inputs(_case_variables(case.input_data)),
-                    session_system_prompt=session_sys,
-                    main_model_name=main_model,
+        try:
+            for idx, case in enumerate(cases, start=1):
+                fields = ragas_service._parse_case(case.input_data, case.expected_output)
+                row = RagasResult(
+                    ragas_run_id=ragas_run_id, case_id=case.case_id, question=fields["question"],
+                    contexts=json.dumps(fields["contexts"], ensure_ascii=False), ground_truth=fields["ground_truth"],
                 )
-                row.answer = str(data.get("output", ""))
-                contexts = fields["contexts"]
-                if not contexts and external_agent.external_enabled():
-                    try:
-                        contexts = await external_agent.retrieve(fields["question"])
-                    except Exception:  # noqa: BLE001 - retrieval optional
-                        contexts = []
-                cs = await scorer.score(
-                    question=fields["question"], answer=row.answer,
-                    contexts=contexts, ground_truth=fields["ground_truth"],
-                )
-                stored = False
-                for m, v in cs.as_dict().items():
-                    dec = ragas_service._to_score(v)
-                    if dec is not None:
-                        setattr(row, m, dec)
-                        sums[m].append(float(dec))
-                        stored = True
-                if not stored:
-                    row.error_msg = "scorer returned no finite metric scores"
-            except Exception as exc:  # noqa: BLE001 - per-case failure
-                row.error_msg = str(exc)[:1000]
-            session.add(row)
-            session.commit()
-            await manager.broadcast(key, {"event": "PROGRESS", "run_id": ragas_run_id, "done": idx, "total": len(cases), "case_id": case.case_id})
+                try:
+                    data = await external_agent.flow_answer(
+                        message=fields["question"] or _message_from_inputs(_case_variables(case.input_data)),
+                    )
+                    row.answer = str(data.get("response", ""))
+                    # contexts: dataset-specified wins; else use the response's docs[]
+                    # (the external model's retrieved-docs list).
+                    contexts = fields["contexts"] or list(data.get("docs") or [])
+                    cs = await scorer.score(
+                        question=fields["question"], answer=row.answer,
+                        contexts=contexts, ground_truth=fields["ground_truth"],
+                    )
+                    stored = False
+                    for m, v in cs.as_dict().items():
+                        dec = ragas_service._to_score(v)
+                        if dec is not None:
+                            setattr(row, m, dec)
+                            sums[m].append(float(dec))
+                            stored = True
+                    if not stored:
+                        row.error_msg = "scorer returned no finite metric scores"
+                except Exception as exc:  # noqa: BLE001 - per-case failure
+                    row.error_msg = str(exc)[:1000]
+                session.add(row)
+                session.commit()
+                await manager.broadcast(key, {"event": "PROGRESS", "run_id": ragas_run_id, "done": idx, "total": len(cases), "case_id": case.case_id})
+        finally:
+            if ab_toggled and run.node_mas_id:
+                _restore_active_prompt(session, node_mas_id=run.node_mas_id, prompt_id=ab_backup)
 
         for m in ALL_METRICS:
             setattr(run, m, ragas_service._avg(sums[m]))

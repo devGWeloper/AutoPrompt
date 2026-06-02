@@ -32,21 +32,13 @@ class Settings(BaseSettings):
     # endpoint over HTTP; "stub" (default) returns a deterministic placeholder
     # answer in-process, so flow RAGAS runs end-to-end before the agent is wired.
     # Swap to external by setting RUN_MODE=external + EXTERNAL_AGENT_BASE_URL.
-    # Env: RUN_MODE / EXTERNAL_AGENT_BASE_URL.
+    # The chat request only carries {message, user_id} — the external model reads
+    # its own SYSTEM_PROMPT/USER_PROMPT from the active PM_NODE_PROMPT_VER row.
+    # Env: RUN_MODE / EXTERNAL_AGENT_BASE_URL / EXTERNAL_CHAT_PATH / EXTERNAL_USER_ID.
     run_mode: str = "stub"
     external_agent_base_url: str = ""
-    # Path (appended to external_agent_base_url) of the internal model's single
-    # chat/run endpoint used by the full/flow test. Env: EXTERNAL_CHAT_PATH.
-    # >>> FILL IN: confirm the internal model's real path.
     external_chat_path: str = "/chat"
-    # Static fields of the internal model's chat payload (see external_agent.run_flow).
-    # The managed prompt rides in session_system_prompt; main_model_name comes from
-    # the flow. Env: EXTERNAL_CHAT_TYPE / EXTERNAL_USER_ID / EXTERNAL_IS_SUPER_AGENT /
-    # EXTERNAL_A2A_REMOTE_URLS.  >>> FILL IN to match the model's expectations.
-    external_chat_type: str = "default"
     external_user_id: str = "pm-test"
-    external_is_super_agent: bool | None = None
-    external_a2a_remote_urls: str | None = None
 
     # Internal LLM gateway (OpenAI-compatible: base URL + key + model name).
     # The RAGAS judge LLM routes HERE — this is the only LLM this system calls.
