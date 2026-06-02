@@ -21,100 +21,48 @@ def ragas_importable() -> bool:
 class RagasEngine(RagasScorer):
     """Adapter over the real ``ragas`` library (optional dependency).
 
-    Builds a Langchain LLM + embeddings from the resolved judge provider using
-    the API key already in settings/.env, then evaluates one case at a time.
-    Any failure raises :class:`RagasUnavailable` so ``ragas_service`` records
-    it per-case while the run still completes.
+    Builds a Langchain LLM + embeddings from the internal OpenAI-compatible LLM
+    gateway (LLM_ENDPOINT / LLM_API_KEY / LLM_MODEL_NAME), then evaluates one
+    case at a time. Any failure raises :class:`RagasUnavailable` so
+    ``ragas_service`` records it per-case while the run still completes.
     """
 
     engine = "RAGAS"
 
-    def __init__(
-        self,
-        metrics: list[str],
-        *,
-        judge_provider: str | None,
-        judge_model: str | None,
-    ) -> None:
+    def __init__(self, metrics: list[str], *, judge_model: str | None = None) -> None:
         super().__init__(metrics)
-        self.judge_provider = (judge_provider or "").strip().lower()
         self.judge_model = judge_model
         self._wrapped: tuple[object, object] | None = None  # (llm, embeddings)
 
     # -- judge construction -------------------------------------------------
 
     def _build_judge(self) -> tuple[object, object]:
-        """Return ragas-wrapped (llm, embeddings) for the judge provider."""
+        """Return ragas-wrapped (llm, embeddings) routed through the internal gateway."""
         s = get_settings()
-        provider = self.judge_provider
-        # On the internal network the only reachable LLM is the gateway, so force
-        # the OpenAI-compatible path regardless of the run's selected provider.
-        if s.internal_llm_enabled():
-            provider = "openai"
+        if not s.internal_llm_enabled():
+            raise RagasUnavailable("LLM_ENDPOINT is not set (.env)")
 
-        if provider == "google":
-            from langchain_google_genai import (  # type: ignore[import-not-found]
-                ChatGoogleGenerativeAI,
-                GoogleGenerativeAIEmbeddings,
-            )
+        from langchain_openai import (  # type: ignore[import-not-found]
+            ChatOpenAI,
+            OpenAIEmbeddings,
+        )
 
-            model = self.judge_model or s.google_judge_model
-            if not model:
-                raise RagasUnavailable("GOOGLE_JUDGE_MODEL is not set (.env)")
-            llm = ChatGoogleGenerativeAI(
-                model=model,
-                google_api_key=s.google_api_key,
-                temperature=0,
-            )
-            if not s.google_embedding_model:
-                raise RagasUnavailable("GOOGLE_EMBEDDING_MODEL is not set (.env)")
-            emb = GoogleGenerativeAIEmbeddings(
-                model=s.google_embedding_model,
-                google_api_key=s.google_api_key,
-            )
-        elif provider == "openai":
-            from langchain_openai import (  # type: ignore[import-not-found]
-                ChatOpenAI,
-                OpenAIEmbeddings,
-            )
-
-            # Route to the internal OpenAI-compatible gateway when configured.
-            internal = s.internal_llm_enabled()
-            base_url = (s.llm_endpoint or None) if internal else None
-            api_key = s.llm_api_key if internal else s.openai_api_key
-            model = self.judge_model or (s.llm_model_name if internal else s.openai_judge_model)
-            if not model:
-                raise RagasUnavailable("no judge model (set LLM_MODEL_NAME or OPENAI_JUDGE_MODEL)")
-            llm = ChatOpenAI(model=model, api_key=api_key, base_url=base_url, temperature=0)
-            if not s.openai_embedding_model:
-                raise RagasUnavailable("OPENAI_EMBEDDING_MODEL is not set (.env)")
-            emb = OpenAIEmbeddings(
-                model=s.openai_embedding_model, api_key=api_key, base_url=base_url
-            )
-        elif provider == "anthropic":
-            from langchain_anthropic import ChatAnthropic  # type: ignore[import-not-found]
-
-            model = self.judge_model or s.anthropic_judge_model
-            if not model:
-                raise RagasUnavailable("ANTHROPIC_JUDGE_MODEL is not set (.env)")
-            llm = ChatAnthropic(
-                model=model,
-                api_key=s.anthropic_api_key,
-                temperature=0,
-            )
-            # Anthropic has no embeddings; reuse OpenAI if its key is set.
-            if not s.openai_api_key:
-                raise RagasUnavailable(
-                    "anthropic judge needs an embeddings provider "
-                    "(set OPENAI_API_KEY or use google)"
-                )
-            if not s.openai_embedding_model:
-                raise RagasUnavailable("OPENAI_EMBEDDING_MODEL is not set (.env)")
-            from langchain_openai import OpenAIEmbeddings  # type: ignore[import-not-found]
-
-            emb = OpenAIEmbeddings(model=s.openai_embedding_model, api_key=s.openai_api_key)
-        else:
-            raise RagasUnavailable(f"unsupported judge provider: {provider!r}")
+        model = self.judge_model or s.llm_model_name
+        if not model:
+            raise RagasUnavailable("no judge model (set LLM_MODEL_NAME)")
+        llm = ChatOpenAI(
+            model=model,
+            api_key=s.llm_api_key,
+            base_url=s.llm_endpoint,
+            temperature=0,
+        )
+        if not s.openai_embedding_model:
+            raise RagasUnavailable("OPENAI_EMBEDDING_MODEL is not set (.env)")
+        emb = OpenAIEmbeddings(
+            model=s.openai_embedding_model,
+            api_key=s.llm_api_key,
+            base_url=s.llm_endpoint,
+        )
 
         try:
             from ragas.embeddings import (  # type: ignore[import-not-found]

@@ -29,3 +29,15 @@ def export_ragas_run(
     rows = export_service.ragas_run_rows(db, ragas_run_id)
     body, media, ext = export_service.serialize(rows, fmt)
     return _stream(body, media, f"ragas-run-{ragas_run_id}.{ext}")
+
+
+@router.get("/ragas-runs/ab/{ab_group_id}/export")
+def export_ragas_ab(
+    ab_group_id: int,
+    fmt: str = Query("csv", pattern="^(csv|xlsx)$"),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    """Side-by-side A/B export — one row per case with A and B answers + metrics."""
+    rows = export_service.ragas_ab_rows(db, ab_group_id)
+    body, media, ext = export_service.serialize(rows, fmt)
+    return _stream(body, media, f"ragas-ab-{ab_group_id}.{ext}")

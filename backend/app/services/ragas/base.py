@@ -30,8 +30,8 @@ class CaseScore:
 class RagasScorer(abc.ABC):
     """Common interface for RAGAS scoring backends.
 
-    Mirrors the ``app.services.llm.LLMAdapter`` shape: an abstract async
-    ``score`` plus an ``engine`` tag persisted on the run for traceability.
+    An abstract async ``score`` plus an ``engine`` tag persisted on the run for
+    traceability.
     """
 
     #: short identifier stored in PM_RAGAS_RUN.ENGINE ("RAGAS" | "FALLBACK")

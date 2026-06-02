@@ -462,11 +462,12 @@ function RecordsPanel() {
                     <button onClick={() => setOpen(open2 ? null : g.groupId)} className="mr-3 text-xs font-medium text-accent hover:underline">
                       {open2 ? '접기' : '비교'}
                     </button>
+                    <a href={`${API_BASE}/ragas-runs/ab/${g.groupId}/export?fmt=csv`} className="mr-3 text-xs font-medium text-muted hover:text-ink">CSV</a>
                     <button onClick={() => delPair([g.a.ragas_run_id, g.b.ragas_run_id])} className="text-xs font-medium text-bad hover:underline">삭제</button>
                   </TD>
                 </TR>
                 {open2 && (
-                  <TR><TD colSpan={cols} className="bg-bg/60 p-3"><AbCompareView aId={g.a.ragas_run_id} bId={g.b.ragas_run_id} /></TD></TR>
+                  <TR><TD colSpan={cols} className="bg-bg/60 p-3"><AbCompareView aId={g.a.ragas_run_id} bId={g.b.ragas_run_id} labelA={g.a.version_no ?? ''} labelB={g.b.version_no ?? ''} /></TD></TR>
                 )}
               </Fragment>
             );
@@ -478,7 +479,7 @@ function RecordsPanel() {
   );
 }
 
-function AbCompareView({ aId, bId }: { aId: number; bId: number }) {
+function AbCompareView({ aId, bId, labelA, labelB }: { aId: number; bId: number; labelA: string; labelB: string }) {
   const [a, setA] = useState<RagasRunDetail | null>(null);
   const [b, setB] = useState<RagasRunDetail | null>(null);
   useEffect(() => {
@@ -486,7 +487,12 @@ function AbCompareView({ aId, bId }: { aId: number; bId: number }) {
     api.get<RagasRunDetail>(`/ragas-runs/${bId}`).then(setB).catch(() => setB(null));
   }, [aId, bId]);
   if (!a || !b) return <div className="text-xs text-muted">불러오는 중…</div>;
-  return <MetricCompareTable detailA={a} detailB={b} />;
+  return (
+    <div className="space-y-3">
+      <MetricCompareTable detailA={a} detailB={b} />
+      <CaseCompareTable detailA={a} detailB={b} labelA={labelA} labelB={labelB} />
+    </div>
+  );
 }
 
 function RagasRunDetailView({ ragasId }: { ragasId: number }) {

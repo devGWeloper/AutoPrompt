@@ -48,33 +48,16 @@ class Settings(BaseSettings):
     external_is_super_agent: bool | None = None
     external_a2a_remote_urls: str | None = None
 
-    # LLM provider API keys (read from .env / environment).
-    anthropic_api_key: str = ""
-    openai_api_key: str = ""
-    google_api_key: str = ""
-
     # Internal LLM gateway (OpenAI-compatible: base URL + key + model name).
-    # When llm_endpoint is set, this system's own LLM calls — node-level tests and
-    # the OpenAI RAGAS judge — route HERE instead of the cloud providers above, and
-    # provider inference from the model name is bypassed (so an internal model name
-    # like a Qwen model needs no entry in _MODEL_PREFIX_PROVIDER).
+    # The RAGAS judge LLM routes HERE — this is the only LLM this system calls.
     # Env: LLM_MODEL_NAME / LLM_ENDPOINT / LLM_API_KEY.
     llm_model_name: str = ""
     llm_endpoint: str = ""
     llm_api_key: str = ""
 
-    # RAGAS real-engine judge chat models, per provider (no default — used when
-    # a run doesn't pin judge_model; if both are unset the run fails per-case
-    # with a clear error). Env: GOOGLE_JUDGE_MODEL / OPENAI_JUDGE_MODEL /
-    # ANTHROPIC_JUDGE_MODEL.
-    google_judge_model: str = ""
-    openai_judge_model: str = ""
-    anthropic_judge_model: str = ""
-
-    # RAGAS real-engine embedding models (no default — must be set in .env when
-    # the real engine is used, else the run fails per-case with a clear error).
-    # Env: GOOGLE_EMBEDDING_MODEL / OPENAI_EMBEDDING_MODEL.
-    google_embedding_model: str = ""
+    # Embedding model name served by the same internal gateway (base_url=LLM_ENDPOINT).
+    # Required for real RAGAS context metrics (precision/recall); LLM-only metrics
+    # still run if it's unset. Env: OPENAI_EMBEDDING_MODEL.
     openai_embedding_model: str = ""
 
     def cors_origin_list(self) -> list[str]:

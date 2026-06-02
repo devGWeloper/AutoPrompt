@@ -1,15 +1,13 @@
 """Adapter for calling the internal chat / super-agent service.
 
 This is the piece that lets the prompt-management system drive the *real* model
-for flow tests and RAGAS evaluation, instead of only running internally.
+for flow-level RAGAS evaluation, instead of only running internally.
 
 - ``run_flow()`` POSTs one turn to the model's chat endpoint (``EXTERNAL_CHAT_PATH``)
   with the managed prompt in ``session_system_prompt`` and the test input in
   ``message``; it returns the model's answer.
-- ``ExternalAgentAdapter`` (``/run-node``) and ``retrieve()`` (``/retrieve``) are
-  legacy for this single chat-endpoint model: node-level tests run on this system's
-  own LLM adapters, and ``retrieve()`` is only used if the model exposes a RAG
-  endpoint for RAGAS grounding. They are kept for optional/compat use.
+- ``retrieve()`` (``/retrieve``) is only used if the model exposes a RAG endpoint
+  for RAGAS grounding.
 
 Wiring (which services call this, gated on ``RUN_MODE=external``) is applied
 per the ``connect-prompt-mgmt`` skill after the contract is confirmed; the wire
@@ -17,13 +15,11 @@ format lives in that skill's ``references/02-api-contract.md``.
 """
 from __future__ import annotations
 
-import time
 from uuid import uuid4
 
 import httpx
 
 from app.core.config import get_settings
-from app.services.llm.base import InvocationResult, LLMAdapter, render_template
 
 
 class ExternalAgentError(RuntimeError):
@@ -41,47 +37,6 @@ def _base_url() -> str:
     if not url:
         raise ExternalAgentError("EXTERNAL_AGENT_BASE_URL is not set (.env)")
     return url
-
-
-class ExternalAgentAdapter(LLMAdapter):
-    """Run ONE external node via HTTP, conforming to the LLMAdapter interface."""
-
-    def __init__(self, *, node_key: str, model: str, timeout_s: float = 30.0, **kw: object) -> None:
-        super().__init__(model=model, **kw)  # type: ignore[arg-type]
-        self.node_key = node_key
-        self.timeout_s = timeout_s
-
-    async def invoke(
-        self,
-        *,
-        system_prompt: str | None,
-        user_prompt: str | None,
-        variables: dict[str, str],
-    ) -> InvocationResult:
-        payload = {
-            "node_key": self.node_key,
-            "system_prompt": render_template(system_prompt, variables),
-            "user_prompt": render_template(user_prompt, variables),
-            "variables": variables,
-        }
-        start = time.perf_counter()
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout_s) as client:
-                resp = await client.post(f"{_base_url()}/run-node", json=payload)
-                resp.raise_for_status()
-                data = resp.json()
-        except Exception as exc:  # noqa: BLE001 - any transport/HTTP error -> domain error
-            raise ExternalAgentError(
-                f"run-node failed for node_key={self.node_key!r}: {exc}"
-            ) from exc
-        latency = int((time.perf_counter() - start) * 1000)
-        return InvocationResult(
-            output=str(data.get("output", "")),
-            input_tokens=int(data.get("input_tokens") or 0),
-            output_tokens=int(data.get("output_tokens") or 0),
-            latency_ms=int(data.get("latency_ms") or latency),
-            model=self.model,
-        )
 
 
 # Response keys the internal model might use for the assistant's answer, in order
@@ -129,8 +84,8 @@ async def run_flow(
 ) -> dict:
     """Run one turn against the internal chat / super-agent endpoint.
 
-    Used by the full/flow test (single / batch / A·B / RAGAS). The managed prompt
-    rides in ``session_system_prompt``; the test input is ``message``. Contract:
+    Used by flow-level RAGAS. The managed prompt rides in ``session_system_prompt``;
+    the test input is ``message``. Contract:
 
         POST {EXTERNAL_AGENT_BASE_URL}{EXTERNAL_CHAT_PATH}
         request:  {
