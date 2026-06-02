@@ -257,10 +257,9 @@ def activate_version(db: Session, *, prompt_id: int, actor: str) -> NodePromptVe
     target.is_active = "Y"
     target.updated_dt = now
 
-    # (2) reflect into the operational NODE_MAS row. NODE_MAS has a single PROMPT
-    # column, so only the SYSTEM_PROMPT is mirrored (it maps to the agent's
-    # session_system_prompt); USER_PROMPT stays in PM. (Per-node model is not
-    # editable — MODEL_EDIT_ENABLE_YN is always 'N' — so only PROMPT is mirrored.)
+    # (2) mirror SYSTEM_PROMPT into NODE_MAS.PROMPT for legacy compatibility.
+    # The external model now reads PM_NODE_PROMPT_VER directly, so this mirror
+    # is vestigial; it's kept for downstream consumers that still tail NODE_MAS.
     node.prompt = target.system_prompt
     node.update_date = now
     node.update_user = actor

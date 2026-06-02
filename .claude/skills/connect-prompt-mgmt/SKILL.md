@@ -48,9 +48,12 @@ at the end of each stage before moving on.
   it to verify the loader, not as the agent's runtime path.
 - **External-call adapter:** `backend/app/services/external_agent.py:run_flow`
   POSTs one turn to the model's chat endpoint, gated by `RUN_MODE=external` +
-  `EXTERNAL_AGENT_BASE_URL`. The prompt under test rides in `session_system_prompt`.
-- Node-level tests (single / batch / A·B / RAGAS at the node level) run on **this
-  system's own LLM adapters** — only the **flow** tests call the model.
+  `EXTERNAL_AGENT_BASE_URL`. The request body is just `{message, user_id}` —
+  the model loads its prompts via the DB loader (Path A), not from the request.
+- **A/B comparison** runs by temporarily flipping `IS_ACTIVE` so the version
+  under test becomes the active row for the duration of the run, then
+  restoring the original active row in a `finally`. The agent's DB loader must
+  read the active row at evaluation time (not from a long-lived cache).
 
 ## Path A — the agent's DB loader (the core change)
 
@@ -72,15 +75,18 @@ loader snippet + caching note in `references/03-mapping.md`.
 `POST {EXTERNAL_AGENT_BASE_URL}{EXTERNAL_CHAT_PATH}`
 
 ```json
-{ "message": "<test input>", "user_id": "pm-test", "session_id": "<uuid>",
-  "chat_type": "default", "a2a_remote_urls": null, "is_super_agent": null,
-  "main_model_name": "<flow main model>", "session_system_prompt": "<prompt under test>" }
+request:  { "message": "<test input>", "user_id": "pm-test" }
+response: { "response": "<answer>",
+            "service_id": "...", "session_id": "...", "user_id": "...", "trace_id": "...",
+            "docs": [...], "urls": [], "images": [], "db_data": [],
+            "followup_questions": [], "knowhows": [] }
 ```
 
-Mapping: `session_system_prompt` ← the prompt version under test;
-`main_model_name` ← `CHAT_VER_MAS.MAIN_MODEL_NM`; `message` ← the dataset case /
-flow input. Response → the assistant answer (field auto-detected; pin it in
-Stage 0). See `references/02-api-contract.md`.
+The backend uses only `response` (the answer) and `docs` (used as RAGAS retrieved
+contexts when the dataset case doesn't pin its own). All other fields are
+accepted and ignored. The model resolves SYSTEM_PROMPT/USER_PROMPT itself from
+the active `PM_NODE_PROMPT_VER` row — not from the request. See
+`references/02-api-contract.md`.
 
 ## Stages
 
@@ -89,8 +95,7 @@ Read `references/04-discovery.md` and record in `references/03-mapping.md`:
 (1) the agent's **prompt module layout** (`prompt/<node>/prompt.py` constants) and
 how it fills variables, so the loader can replace them; (2) confirm the agent's node
 identifiers **equal `NODE_MAS.NODE_NM`** and that the agent can reach the shared
-Oracle DB; (3) the model's chat endpoint **path** and the **response field** that
-holds the answer; (4) optional RAG endpoint. **Do not wire until these are recorded.**
+Oracle DB; (3) the model's chat endpoint **path**. **Do not wire until these are recorded.**
 
 ### Stage A — Refactor the agent to read prompts from the DB
 1. Add the DB loader (query above) to the agent; point it at the shared Oracle DSN.
@@ -103,10 +108,10 @@ holds the answer; (4) optional RAG endpoint. **Do not wire until these are recor
 
 ### Stage B — Flow test drive (this system calls the model)
 1. Confirm the chat contract with `python scripts/callback_probe.py --base-url <model-url>`
-   (posts the real payload, validates the answer field).
-2. Wire: set `RUN_MODE=external`, `EXTERNAL_AGENT_BASE_URL`, `EXTERNAL_CHAT_PATH`
-   (and any `EXTERNAL_*` payload defaults) in `backend/.env` per
-   `references/02-api-contract.md` §Wiring; restart; run a flow test / RAGAS.
+   (posts `{message, user_id}` and verifies a non-empty `response` field).
+2. Wire: set `RUN_MODE=external`, `EXTERNAL_AGENT_BASE_URL`, `EXTERNAL_CHAT_PATH`,
+   `EXTERNAL_USER_ID` in `backend/.env` per `references/02-api-contract.md` §Wiring;
+   restart; run a flow RAGAS / A·B RAGAS.
 
 ## References (load as needed)
 - `references/01-architecture.md` — the 2 paths + shared-DB diagram.

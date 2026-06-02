@@ -12,26 +12,21 @@ code / API docs over guessing.
 - Confirm the agent's node identifiers **equal `NODE_MAS.NODE_NM`** (the loader keys
   on `NODE_NM`). Record any mismatch + the mapping rule.
 - Confirm the agent process can reach the shared Oracle DB (DSN / credentials).
+- Decide the **cache policy** for the loader — must be invalidated on activation
+  and on `IS_ACTIVE` toggle during an A/B RAGAS run. Re-read per request is the
+  simplest safe choice; see `03-mapping.md` "Caching policy".
 
 ## 2. Chat endpoint (Path B)
 - The **path** appended to `EXTERNAL_AGENT_BASE_URL` (e.g. `/chat`, `/v1/chat`,
   `/run`). → `EXTERNAL_CHAT_PATH`.
-- Confirm it accepts the payload in `02-api-contract.md` §Callback
-  (`message`, `user_id`, `session_id`, `chat_type`, `a2a_remote_urls`,
-  `is_super_agent`, `main_model_name`, `session_system_prompt`). Note any field the
-  model requires differently (→ set the `EXTERNAL_*` env defaults, or adjust the
-  payload builder in `external_agent.run_flow`).
-
-## 3. Response shape (the answer field)
-- Send one probe and record **which field holds the assistant answer**
-  (`output` / `answer` / `response` / `message` / `content` / `result` / `text`, or
-  nested). `run_flow._extract_answer` auto-detects those; if the model differs, pin
-  it in `external_agent._ANSWER_KEYS`. Note any token/latency fields if present.
-
-## 4. RAG retrieval entrypoint (optional, for RAGAS grounding)
-- If the model exposes a retriever, note its `POST /retrieve` contract
-  (`{query, top_k}` → `{contexts: [str]}`) for `external_agent.retrieve`. If not,
-  RAGAS uses the dataset's own `contexts`; skip `/retrieve`.
+- Confirm it accepts the contract in `02-api-contract.md` §Callback —
+  request body `{message, user_id}`, response carries `response` (the assistant
+  answer) and `docs` (used as RAGAS retrieved contexts when the dataset case
+  doesn't pin its own). The other response fields (service_id, session_id,
+  user_id, trace_id, urls, images, db_data, followup_questions, knowhows) are
+  accepted and ignored — no need to change them.
+- Run `scripts/callback_probe.py --base-url <model-url> --path <path>` to
+  verify the model returns a non-empty `response`.
 
 ## Reachability / auth (internal network)
 - Both legs must be reachable: **agent → shared Oracle DB** (Path A) and **this

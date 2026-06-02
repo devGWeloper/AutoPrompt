@@ -22,9 +22,8 @@ class NodePromptVer(Base):
 
     One row per saved prompt version of a NODE_MAS node. The prompt is split into
     ``SYSTEM_PROMPT`` + ``USER_PROMPT`` here (PM-owned table; NODE_MAS cannot change).
-    On activation only ``SYSTEM_PROMPT`` is mirrored into the single ``NODE_MAS.PROMPT``
-    column (it maps to the agent's ``session_system_prompt``); ``USER_PROMPT`` stays in
-    PM as the test-time message template.
+    The external model reads the active row of this table directly to pick up both
+    prompts — see the ``connect-prompt-mgmt`` skill.
     """
 
     __tablename__ = "PM_NODE_PROMPT_VER"

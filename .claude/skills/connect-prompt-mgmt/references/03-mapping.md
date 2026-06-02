@@ -11,7 +11,7 @@
 |---------------------------------|------------------------------------------------|
 | `CHAT_VER_MAS.ID`               | current flow id (`get_current_chat`)           |
 | `CHAT_VER_MAS.GRAPH_STRUCT`     | flow graph definition (no longer rendered — graph screen removed) |
-| `CHAT_VER_MAS.MAIN_MODEL_NM`    | flow main model (passed to the agent on RAGAS runs) |
+| `CHAT_VER_MAS.MAIN_MODEL_NM`    | **unused by PM** — model selection happens inside the agent |
 | `NODE_MAS.ID`                   | node id; FK target of `PM_NODE_PROMPT_VER.NODE_MAS_ID` |
 | `NODE_MAS.CHAT_VER_ID`          | FK → `CHAT_VER_MAS.ID`                          |
 | `NODE_MAS.NODE_NM`              | node identity / join key (= the agent's node name) |
@@ -68,9 +68,17 @@ with
 ```python
 GENERATE_SYSTEM_PROMPT, GENERATE_USER_PROMPT = load_node_prompts("generate")
 ```
-The agent fills its variables into these exactly as before. **Caching:** loading at
-import freezes prompts at process start — cache per process and refresh on restart
-(or a signal) after an activation, since `IS_ACTIVE` changes between runs.
+The agent fills its variables into these exactly as before.
+
+**Caching policy — important for A/B RAGAS:** loading at import freezes prompts at
+process start, which breaks A/B RAGAS. During an A/B run PM **temporarily flips
+`IS_ACTIVE`** so the version under test becomes the active row, then **restores
+the original active row in a `finally`** (see
+`backend/app/services/flow_service.py:_swap_active_prompt` /
+`_restore_active_prompt`). For the toggle to actually affect generation, the agent
+must read the active row at evaluation time — either no cache, a short TTL, or
+re-load per request when an A/B RAGAS is in flight. Steady state after the run
+matches what was active before.
 
 ## Activation rule (no sync script, no NODE_MAS.PROMPT write needed)
 

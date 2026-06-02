@@ -22,11 +22,16 @@ everywhere is **`NODE_NM`**.
                        │  WHERE NODE_NM=? AND IS_ACTIVE='Y'        │   constants)
                        │  (GET /active-prompts = inspection only)  │
                        │                                          │
-   (B) DRIVE  this system runs flow tests / RAGAS                 │
+   (B) DRIVE  this system runs flow-level RAGAS                   │
    flow test ───► POST {model}{EXTERNAL_CHAT_PATH} ───────────────► one chat turn
-                  message=<input>, session_system_prompt=<prompt under test>,
-                  main_model_name=<flow main model>  → {answer}
+                  {message, user_id}  →  {response, docs, ...}
+                  (the agent reads its prompts from the active
+                   PM_NODE_PROMPT_VER row in the shared DB)
 ```
+
+For A/B comparison, PM flips `PM_NODE_PROMPT_VER.IS_ACTIVE` to the version under
+test for the duration of the run, then restores the original — the agent's DB
+loader must read fresh per evaluation (no long-lived cache during runs).
 
 ## Why these choices
 - **Shared DB for prompts, HTTP for execution.** PM versions prompts in
@@ -43,6 +48,10 @@ everywhere is **`NODE_NM`**.
 ## Resilience
 The agent reads prompts straight from `PM_NODE_PROMPT_VER` (shared DB), so it keeps
 working if this backend's HTTP API is down — only the DB must be up. The
-`GET /active-prompts` read is only for inspection / verifying the loader. Cache the
-loaded prompts in the agent and refresh on a signal or restart after an activation
-(`IS_ACTIVE` changes between runs).
+`GET /active-prompts` read is only for inspection / verifying the loader.
+
+**Caching policy:** the agent may cache the loaded prompts, but the cache must be
+invalidated on activation (PM-driven). Since A/B RAGAS toggles `IS_ACTIVE` for
+the duration of a run, either keep the cache TTL short or re-read per request
+during evaluation. PM restores the original active row in a `finally`, so steady
+state after the run matches what was active before.
