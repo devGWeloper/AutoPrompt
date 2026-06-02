@@ -7,6 +7,7 @@ from app.api.v1 import (
     flow,
     prompts,
     ragas,
+    system_config,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -16,3 +17,4 @@ api_router.include_router(datasets.router)
 api_router.include_router(audit.router)
 api_router.include_router(ragas.router)
 api_router.include_router(exports.router)
+api_router.include_router(system_config.router)

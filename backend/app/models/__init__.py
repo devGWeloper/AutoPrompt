@@ -3,4 +3,5 @@ from app.models import (  # noqa: F401
     dataset,
     node_prompt_ver,
     ragas,
+    system_config,
 )

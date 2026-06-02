@@ -221,6 +221,15 @@ function route(method: string, path: string, body: Record<string, unknown> | und
     return undefined;
   }
 
+  // system config (single-row global toggle)
+  if (method === 'GET' && path === '/system-config') return store.systemConfig;
+  if (method === 'PUT' && path === '/system-config') {
+    const next = body?.enabled_yn;
+    if (next !== 'Y' && next !== 'N') throw new ApiError(422, { detail: 'enabled_yn must be Y or N' });
+    store.systemConfig.enabled_yn = next;
+    return store.systemConfig;
+  }
+
   // Unknown route — fail soft so the demo never crashes.
   return method === 'GET' ? [] : {};
 }
