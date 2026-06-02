@@ -7,7 +7,6 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.node_mas import NodeMas
 from app.models.node_prompt_ver import NodePromptVer
 from app.schemas.prompt import (
     ActivePromptOut,
@@ -27,26 +26,11 @@ def _bump_patch(version_no: str) -> str:
     return f"{major}.{minor}.{patch + 1}"
 
 
-def get_node(db: Session, node_mas_id: int) -> NodeMas:
-    node = db.get(NodeMas, node_mas_id)
-    if node is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="node not found")
-    return node
-
-
-def _require_prompt_node(node: NodeMas) -> None:
-    if (node.prompt_edit_enable_yn or "N").upper() != "Y":
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            detail="node has no editable prompt (PROMPT_EDIT_ENABLE_YN != 'Y')",
-        )
-
-
-def suggest_next_version(db: Session, node_mas_id: int) -> str:
+def suggest_next_version(db: Session, node_nm: str) -> str:
     latest = (
         db.execute(
             select(NodePromptVer)
-            .where(NodePromptVer.node_mas_id == node_mas_id)
+            .where(NodePromptVer.node_nm == node_nm)
             .order_by(NodePromptVer.created_dt.desc(), NodePromptVer.prompt_id.desc())
             .limit(1)
         )
@@ -58,11 +42,11 @@ def suggest_next_version(db: Session, node_mas_id: int) -> str:
     return _bump_patch(latest.version_no)
 
 
-def list_versions(db: Session, node_mas_id: int) -> list[NodePromptVer]:
+def list_versions(db: Session, node_nm: str) -> list[NodePromptVer]:
     rows = (
         db.execute(
             select(NodePromptVer)
-            .where(NodePromptVer.node_mas_id == node_mas_id)
+            .where(NodePromptVer.node_nm == node_nm)
             .order_by(NodePromptVer.created_dt.desc(), NodePromptVer.prompt_id.desc())
         )
         .scalars()
@@ -81,10 +65,10 @@ def get_version(db: Session, prompt_id: int) -> NodePromptVer:
 def to_detail(version: NodePromptVer) -> PromptVersionDetail:
     return PromptVersionDetail(
         prompt_id=version.prompt_id,
-        node_mas_id=version.node_mas_id,
         node_nm=version.node_nm,
         version_no=version.version_no,
         is_active=version.is_active,
+        model_nm=version.model_nm,
         change_summary=version.change_summary,
         change_reason=version.change_reason,
         prev_prompt_id=version.prev_prompt_id,
@@ -98,58 +82,30 @@ def to_detail(version: NodePromptVer) -> PromptVersionDetail:
 
 def _to_active(version: NodePromptVer) -> ActivePromptOut:
     return ActivePromptOut(
-        node_mas_id=version.node_mas_id,
         node_nm=version.node_nm,
         prompt_id=version.prompt_id,
         version_no=version.version_no,
+        model_nm=version.model_nm,
         system_prompt=version.system_prompt,
         user_prompt=version.user_prompt,
     )
 
 
 def active_prompts_for_flow(db: Session) -> dict[str, ActivePromptOut]:
-    """All active prompts of the current flow, keyed by NODE_NM (inspection/compat)."""
-    from app.services import flow_service
-
-    chat = flow_service.get_current_chat(db)
-    nodes = (
-        db.execute(select(NodeMas).where(NodeMas.chat_ver_id == chat.id)).scalars().all()
-    )
-    node_ids = [n.id for n in nodes]
-    if not node_ids:
-        return {}
+    """All active prompts keyed by NODE_NM."""
     actives = (
-        db.execute(
-            select(NodePromptVer).where(
-                NodePromptVer.node_mas_id.in_(node_ids), NodePromptVer.is_active == "Y"
-            )
-        )
+        db.execute(select(NodePromptVer).where(NodePromptVer.is_active == "Y"))
         .scalars()
         .all()
     )
-    result: dict[str, ActivePromptOut] = {}
-    for p in actives:
-        result[p.node_nm] = _to_active(p)
-    return result
+    return {p.node_nm: _to_active(p) for p in actives}
 
 
 def active_prompt_for_node_nm(db: Session, node_nm: str) -> ActivePromptOut:
-    from app.services import flow_service
-
-    chat = flow_service.get_current_chat(db)
-    node = (
-        db.execute(
-            select(NodeMas).where(NodeMas.chat_ver_id == chat.id, NodeMas.node_nm == node_nm)
-        )
-        .scalars()
-        .first()
-    )
-    if node is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="node not found")
     active = (
         db.execute(
             select(NodePromptVer).where(
-                NodePromptVer.node_mas_id == node.id, NodePromptVer.is_active == "Y"
+                NodePromptVer.node_nm == node_nm, NodePromptVer.is_active == "Y"
             )
         )
         .scalars()
@@ -163,19 +119,18 @@ def active_prompt_for_node_nm(db: Session, node_nm: str) -> ActivePromptOut:
 def create_version(
     db: Session,
     *,
-    node_mas_id: int,
+    node_nm: str,
     payload: PromptVersionCreate,
     created_by: str,
 ) -> NodePromptVer:
-    node = get_node(db, node_mas_id)
-    _require_prompt_node(node)
-
-    version_no = payload.version_no or suggest_next_version(db, node_mas_id)
+    """Create a new version for NODE_NM. The first version of a fresh node_nm
+    bootstraps the node — PM doesn't pre-register nodes elsewhere."""
+    version_no = payload.version_no or suggest_next_version(db, node_nm)
 
     dup = (
         db.execute(
             select(NodePromptVer).where(
-                NodePromptVer.node_mas_id == node_mas_id,
+                NodePromptVer.node_nm == node_nm,
                 NodePromptVer.version_no == version_no,
             )
         )
@@ -189,11 +144,11 @@ def create_version(
         )
 
     new_version = NodePromptVer(
-        node_mas_id=node_mas_id,
-        node_nm=node.node_nm,
+        node_nm=node_nm,
         version_no=version_no,
         system_prompt=payload.system_prompt,
         user_prompt=payload.user_prompt,
+        model_nm=payload.model_nm,
         is_active="N",
         change_summary=payload.change_summary,
         change_reason=payload.change_reason,
@@ -211,9 +166,9 @@ def create_version(
         before=None,
         after={
             "prompt_id": new_version.prompt_id,
-            "node_mas_id": node_mas_id,
-            "node_nm": node.node_nm,
+            "node_nm": node_nm,
             "version_no": version_no,
+            "model_nm": payload.model_nm,
             "change_summary": payload.change_summary,
             "change_reason": payload.change_reason,
             "system_prompt": payload.system_prompt,
@@ -225,19 +180,14 @@ def create_version(
 
 
 def activate_version(db: Session, *, prompt_id: int, actor: str) -> NodePromptVer:
-    """Activate a node prompt version.
-
-    1. flip IS_ACTIVE on PM_NODE_PROMPT_VER (one active per node)
-    2. mirror the prompt text into NODE_MAS.PROMPT (+ UPDATE_DATE/UPDATE_USER) so
-       the operational project picks it up
-    """
+    """Activate a node prompt version: flip IS_ACTIVE on PM_NODE_PROMPT_VER
+    (one active per NODE_NM). The external model reads the active row directly."""
     target = get_version(db, prompt_id)
-    node = get_node(db, target.node_mas_id)
 
     current_active = (
         db.execute(
             select(NodePromptVer).where(
-                NodePromptVer.node_mas_id == target.node_mas_id,
+                NodePromptVer.node_nm == target.node_nm,
                 NodePromptVer.is_active == "Y",
             )
         )
@@ -256,13 +206,6 @@ def activate_version(db: Session, *, prompt_id: int, actor: str) -> NodePromptVe
         current_active.is_active = "N"
     target.is_active = "Y"
     target.updated_dt = now
-
-    # (2) mirror SYSTEM_PROMPT into NODE_MAS.PROMPT for legacy compatibility.
-    # The external model now reads PM_NODE_PROMPT_VER directly, so this mirror
-    # is vestigial; it's kept for downstream consumers that still tail NODE_MAS.
-    node.prompt = target.system_prompt
-    node.update_date = now
-    node.update_user = actor
     db.flush()
 
     audit_service.write_audit(
@@ -283,21 +226,23 @@ def update_version_prompt(
     prompt_id: int,
     system_prompt: str,
     user_prompt: str,
+    model_nm: str | None,
     change_summary: str | None,
     change_reason: str | None,
     actor: str,
 ) -> NodePromptVer:
-    """Edit an existing version's prompt text in place. Only **inactive** versions
-    may be edited (the active version is locked — change it via a new version)."""
+    """Edit an existing version's prompt text + model in place. Active version
+    edits are allowed — the external model will read the new content on its
+    next refresh."""
     target = get_version(db, prompt_id)
-    if target.is_active == "Y":
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            detail="active version is locked; create a new version instead",
-        )
-    before = {"system_prompt": target.system_prompt, "user_prompt": target.user_prompt}
+    before = {
+        "system_prompt": target.system_prompt,
+        "user_prompt": target.user_prompt,
+        "model_nm": target.model_nm,
+    }
     target.system_prompt = system_prompt
     target.user_prompt = user_prompt
+    target.model_nm = model_nm
     if change_summary:
         target.change_summary = change_summary
     if change_reason:
@@ -311,7 +256,7 @@ def update_version_prompt(
         target_id=prompt_id,
         action="UPDATE",
         before=before,
-        after={"system_prompt": system_prompt, "user_prompt": user_prompt},
+        after={"system_prompt": system_prompt, "user_prompt": user_prompt, "model_nm": model_nm},
         created_by=actor,
     )
     return target

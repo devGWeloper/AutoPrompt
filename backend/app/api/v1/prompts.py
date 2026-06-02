@@ -21,38 +21,35 @@ router = APIRouter(tags=["prompts"])
 
 @router.get("/active-prompts", response_model=dict[str, ActivePromptOut])
 def list_active_prompts(db: Session = Depends(get_db)) -> dict[str, ActivePromptOut]:
-    """All active prompts of the current flow, keyed by NODE_NM (inspection/compat).
-
-    At runtime the operational project reads NODE_MAS.PROMPT directly (activation
-    writes the SYSTEM_PROMPT there), so this is not the primary delivery path.
-    """
+    """All active prompts (system + user + model), keyed by NODE_NM. The external
+    model reads PM_NODE_PROMPT_VER's active row directly; this endpoint is for
+    inspection from the PM UI."""
     return prompt_service.active_prompts_for_flow(db)
 
 
-@router.get("/nodes/by-name/{node_nm}/active-prompt", response_model=ActivePromptOut)
+@router.get("/nodes/{node_nm}/active-prompt", response_model=ActivePromptOut)
 def get_active_prompt_by_name(node_nm: str, db: Session = Depends(get_db)) -> ActivePromptOut:
     return prompt_service.active_prompt_for_node_nm(db, node_nm)
 
 
-@router.get("/nodes/{node_id}/prompts", response_model=list[PromptVersionSummary])
-def list_prompts(node_id: int, db: Session = Depends(get_db)) -> list[PromptVersionSummary]:
-    prompt_service.get_node(db, node_id)  # 404 if missing
-    rows = prompt_service.list_versions(db, node_id)
+@router.get("/nodes/{node_nm}/prompts", response_model=list[PromptVersionSummary])
+def list_prompts(node_nm: str, db: Session = Depends(get_db)) -> list[PromptVersionSummary]:
+    rows = prompt_service.list_versions(db, node_nm)
     return [PromptVersionSummary.model_validate(r) for r in rows]
 
 
 @router.post(
-    "/nodes/{node_id}/prompts",
+    "/nodes/{node_nm}/prompts",
     response_model=PromptVersionDetail,
     status_code=status.HTTP_201_CREATED,
 )
 def create_prompt(
-    node_id: int,
+    node_nm: str,
     payload: PromptVersionCreate,
     db: Session = Depends(get_db),
 ) -> PromptVersionDetail:
     version = prompt_service.create_version(
-        db, node_mas_id=node_id, payload=payload, created_by=SYSTEM_USER
+        db, node_nm=node_nm, payload=payload, created_by=SYSTEM_USER
     )
     if payload.activate_after_save:
         prompt_service.activate_version(db, prompt_id=version.prompt_id, actor=SYSTEM_USER)
@@ -89,12 +86,13 @@ def edit_prompt(
     payload: PromptVersionEdit,
     db: Session = Depends(get_db),
 ) -> PromptVersionDetail:
-    """Edit an inactive version's prompt text in place (active version is locked)."""
+    """Edit an inactive version's prompt text + model in place (active version is locked)."""
     version = prompt_service.update_version_prompt(
         db,
         prompt_id=prompt_id,
         system_prompt=payload.system_prompt,
         user_prompt=payload.user_prompt,
+        model_nm=payload.model_nm,
         change_summary=payload.change_summary,
         change_reason=payload.change_reason,
         actor=SYSTEM_USER,

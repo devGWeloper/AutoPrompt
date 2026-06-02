@@ -16,25 +16,10 @@ CSV_COLUMNS = ("input_json", "expected_output", "eval_criteria", "case_type")
 
 # ---- datasets -------------------------------------------------------------
 
-def list_datasets(db: Session, node_mas_id: int) -> list[TestDataset]:
-    rows = (
-        db.execute(
-            select(TestDataset)
-            .where(TestDataset.node_mas_id == node_mas_id)
-            .order_by(TestDataset.created_dt.desc())
-        )
-        .scalars()
-        .all()
-    )
-    return list(rows)
-
-
 def list_flow_datasets(db: Session) -> list[TestDataset]:
     rows = (
         db.execute(
-            select(TestDataset)
-            .where(TestDataset.scope == "FLOW")
-            .order_by(TestDataset.created_dt.desc())
+            select(TestDataset).order_by(TestDataset.created_dt.desc())
         )
         .scalars()
         .all()
@@ -44,8 +29,6 @@ def list_flow_datasets(db: Session) -> list[TestDataset]:
 
 def create_flow_dataset(db: Session, *, payload: DatasetCreate, created_by: str) -> TestDataset:
     ds = TestDataset(
-        node_mas_id=None,
-        scope="FLOW",
         dataset_nm=payload.dataset_nm,
         description=payload.description,
         is_active="Y",
@@ -59,7 +42,7 @@ def create_flow_dataset(db: Session, *, payload: DatasetCreate, created_by: str)
         target_id=ds.dataset_id,
         action="CREATE",
         before=None,
-        after={"dataset_id": ds.dataset_id, "scope": "FLOW", "dataset_nm": ds.dataset_nm},
+        after={"dataset_id": ds.dataset_id, "dataset_nm": ds.dataset_nm},
         created_by=created_by,
     )
     return ds
@@ -80,31 +63,6 @@ def case_count(db: Session, dataset_id: int) -> int:
             .where(TestCase.dataset_id == dataset_id)
         ).scalar_one()
     )
-
-
-def create_dataset(
-    db: Session, *, node_mas_id: int, payload: DatasetCreate, created_by: str
-) -> TestDataset:
-    ds = TestDataset(
-        node_mas_id=node_mas_id,
-        scope="NODE",
-        dataset_nm=payload.dataset_nm,
-        description=payload.description,
-        is_active="Y",
-        created_by=created_by,
-    )
-    db.add(ds)
-    db.flush()
-    audit_service.write_audit(
-        db,
-        target_table="PM_TEST_DATASET",
-        target_id=ds.dataset_id,
-        action="CREATE",
-        before=None,
-        after={"dataset_id": ds.dataset_id, "node_mas_id": node_mas_id, "dataset_nm": ds.dataset_nm},
-        created_by=created_by,
-    )
-    return ds
 
 
 def update_dataset(

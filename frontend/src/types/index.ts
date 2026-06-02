@@ -1,25 +1,22 @@
-// Flow-centric, single-project types (CHAT_VER_MAS / NODE_MAS + PM_* versioning).
+// PM-only types. Node identity is NODE_NM (no external CHAT_VER_MAS / NODE_MAS anchors).
 
 export interface FlowNode {
-  node_mas_id: number;
   node_nm: string;
-  node_desc: string | null;
-  has_prompt: boolean; // LLM/prompt node (PROMPT_EDIT_ENABLE_YN == 'Y')
   active_prompt_id: number | null;
   active_version_no: string | null;
+  active_model_nm: string | null;
 }
 
 export interface FlowCurrent {
-  chat_ver_id: number;
   nodes: FlowNode[];
 }
 
 export interface PromptVersionSummary {
   prompt_id: number;
-  node_mas_id: number;
   node_nm: string;
   version_no: string;
   is_active: 'Y' | 'N';
+  model_nm: string | null;
   change_summary: string | null;
   created_by: string;
   created_dt: string;
@@ -36,6 +33,7 @@ export interface PromptVersionDetail extends PromptVersionSummary {
 export interface PromptVersionCreate {
   system_prompt: string;
   user_prompt: string;
+  model_nm?: string | null;
   version_no?: string;
   change_summary: string;
   change_reason: string;
@@ -58,8 +56,6 @@ export interface AuditLog {
 
 export interface Dataset {
   dataset_id: number;
-  node_mas_id: number | null;
-  scope: string;
   dataset_nm: string;
   description: string | null;
   is_active: 'Y' | 'N';
@@ -109,10 +105,9 @@ export interface RagasResultRow {
 
 export interface RagasRunOut {
   ragas_run_id: number;
-  chat_ver_id: number | null;
-  node_mas_id: number | null;
   prompt_id: number | null;
   ab_group_id: number | null;
+  node_nm: string | null;
   version_no: string | null;
   dataset_id: number;
   status: string;
@@ -133,9 +128,9 @@ export interface RagasRunDetail extends RagasRunOut {
 
 export interface RagasRunSummary {
   ragas_run_id: number;
-  node_mas_id: number | null;
   prompt_id: number | null;
   ab_group_id: number | null;
+  node_nm: string | null;
   version_no: string | null;
   status: string;
   engine: string | null;

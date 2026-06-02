@@ -8,8 +8,6 @@ from pydantic import BaseModel, ConfigDict, Field
 class DatasetSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     dataset_id: int
-    node_mas_id: int | None = None
-    scope: str = "NODE"
     dataset_nm: str
     description: str | None = None
     is_active: str

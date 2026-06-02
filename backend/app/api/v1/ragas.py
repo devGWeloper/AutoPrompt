@@ -17,15 +17,16 @@ router = APIRouter(tags=["ragas"])
 ws_router = APIRouter(tags=["ragas"])
 
 
-def _version_map(db: Session, prompt_ids: list[int | None]) -> dict[int, str]:
-    """{prompt_id: version_no} for A/B run labelling (one batched query)."""
+def _resolve_prompts(db: Session, prompt_ids: list[int | None]) -> dict[int, tuple[str, str]]:
+    """{prompt_id: (node_nm, version_no)} for A/B labelling (one batched query)."""
     ids = {p for p in prompt_ids if p}
     if not ids:
         return {}
     rows = db.execute(
-        select(NodePromptVer.prompt_id, NodePromptVer.version_no).where(NodePromptVer.prompt_id.in_(ids))
+        select(NodePromptVer.prompt_id, NodePromptVer.node_nm, NodePromptVer.version_no)
+        .where(NodePromptVer.prompt_id.in_(ids))
     ).all()
-    return {pid: vno for pid, vno in rows}
+    return {pid: (nm, vno) for pid, nm, vno in rows}
 
 
 @router.get("/ragas-runs", response_model=list[RagasRunSummary])
@@ -33,11 +34,13 @@ def list_all_ragas_runs(db: Session = Depends(get_db)) -> list[RagasRunSummary]:
     rows = (
         db.execute(select(RagasRun).order_by(RagasRun.ragas_run_id.desc())).scalars().all()
     )
-    vmap = _version_map(db, [r.prompt_id for r in rows])
+    rmap = _resolve_prompts(db, [r.prompt_id for r in rows])
     out: list[RagasRunSummary] = []
     for r in rows:
         s = RagasRunSummary.model_validate(r)
-        s.version_no = vmap.get(r.prompt_id) if r.prompt_id else None
+        resolved = rmap.get(r.prompt_id) if r.prompt_id else None
+        if resolved:
+            s.node_nm, s.version_no = resolved
         out.append(s)
     return out
 
@@ -78,7 +81,9 @@ def get_ragas_run(ragas_run_id: int, db: Session = Depends(get_db)) -> RagasRunD
     detail.results = [RagasResultOut.model_validate(r) for r in rows]
     if run.prompt_id:
         pv = db.get(NodePromptVer, run.prompt_id)
-        detail.version_no = pv.version_no if pv else None
+        if pv is not None:
+            detail.node_nm = pv.node_nm
+            detail.version_no = pv.version_no
     return detail
 
 

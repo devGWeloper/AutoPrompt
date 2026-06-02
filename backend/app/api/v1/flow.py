@@ -56,7 +56,7 @@ async def run_flow_ragas_ab(
     payload: FlowRagasAbRequest, background: BackgroundTasks, db: Session = Depends(get_db)
 ) -> FlowRagasAbOut:
     run_a, run_b = flow_service.create_flow_ragas_ab_run(
-        db, dataset_id=payload.dataset_id, node_mas_id=payload.node_mas_id,
+        db, dataset_id=payload.dataset_id, node_nm=payload.node_nm,
         prompt_id_a=payload.prompt_id_a, prompt_id_b=payload.prompt_id_b,
         metrics=payload.metrics, actor=SYSTEM_USER,
     )

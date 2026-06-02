@@ -58,16 +58,15 @@ def list_audit_logs(
     )
 
 
-@router.get("/nodes/{node_id}/audit-logs", response_model=list[AuditLogOut])
+@router.get("/nodes/{node_nm}/audit-logs", response_model=list[AuditLogOut])
 def node_audit_logs(
-    node_id: int,
+    node_nm: str,
     limit: int = Query(50, ge=1, le=500),
     db: Session = Depends(get_db),
 ) -> list[AuditLogOut]:
-    # Scope to this NODE_MAS node: PM_NODE_PROMPT_VER events whose target_id is one
-    # of the node's prompt versions.
+    """PM_NODE_PROMPT_VER events whose target_id is one of this node's prompt versions."""
     prompt_ids = (
-        db.execute(select(NodePromptVer.prompt_id).where(NodePromptVer.node_mas_id == node_id))
+        db.execute(select(NodePromptVer.prompt_id).where(NodePromptVer.node_nm == node_nm))
         .scalars()
         .all()
     )

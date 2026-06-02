@@ -10,15 +10,17 @@ from app.core.db import Base
 
 
 class RagasRun(Base):
+    """One RAGAS evaluation over a dataset (PM-owned, no external FK).
+
+    A/B comparison: ``PROMPT_ID`` records which node prompt version was under
+    test (the run flips its ``IS_ACTIVE`` so the external model picks it up);
+    ``AB_GROUP_ID`` links the two runs of one comparison (= the A run's id).
+    Both are NULL for a plain single run.
+    """
+
     __tablename__ = "PM_RAGAS_RUN"
 
     ragas_run_id: Mapped[int] = mapped_column("RAGAS_RUN_ID", Integer, Identity(always=True), primary_key=True)
-    # FLOW-scoped run: the whole flow (CHAT_VER_MAS) is evaluated.
-    chat_ver_id: Mapped[int | None] = mapped_column("CHAT_VER_ID", Integer, ForeignKey("CHAT_VER_MAS.ID"))
-    # A/B version comparison: which node's prompt version this run evaluated (its
-    # SYSTEM_PROMPT is swapped into the flow). NULL for a plain single run.
-    # AB_GROUP_ID links the two runs of one comparison (= the A run's id).
-    node_mas_id: Mapped[int | None] = mapped_column("NODE_MAS_ID", Integer, ForeignKey("NODE_MAS.ID"))
     prompt_id: Mapped[int | None] = mapped_column("PROMPT_ID", Integer, ForeignKey("PM_NODE_PROMPT_VER.PROMPT_ID"))
     ab_group_id: Mapped[int | None] = mapped_column("AB_GROUP_ID", Integer)
     dataset_id: Mapped[int] = mapped_column("DATASET_ID", Integer, ForeignKey("PM_TEST_DATASET.DATASET_ID"), nullable=False)
@@ -28,7 +30,6 @@ class RagasRun(Base):
     context_precision: Mapped[Decimal | None] = mapped_column("CONTEXT_PRECISION", Numeric(5, 4))
     context_recall: Mapped[Decimal | None] = mapped_column("CONTEXT_RECALL", Numeric(5, 4))
     answer_correctness: Mapped[Decimal | None] = mapped_column("ANSWER_CORRECTNESS", Numeric(5, 4))
-    # Phase 4: judge model + selected metrics + which engine actually ran.
     judge_provider: Mapped[str | None] = mapped_column("JUDGE_PROVIDER", String(50))
     judge_model: Mapped[str | None] = mapped_column("JUDGE_MODEL", String(100))
     metrics: Mapped[str | None] = mapped_column("METRICS", Text)
@@ -43,7 +44,7 @@ class RagasRun(Base):
 
 
 class RagasResult(Base):
-    """Per-case metric breakdown for a RAGAS run (spec F-52)."""
+    """Per-case metric breakdown for a RAGAS run."""
 
     __tablename__ = "PM_RAGAS_RESULT"
 

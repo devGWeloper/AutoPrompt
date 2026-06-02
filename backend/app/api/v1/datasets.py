@@ -1,17 +1,15 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.constants import SYSTEM_USER
 from app.core.db import get_db
-from app.models.node_mas import NodeMas
 from app.schemas.dataset import (
     CaseCreate,
     CaseOut,
     CaseUpdate,
     CsvUploadResult,
-    DatasetCreate,
     DatasetDetail,
     DatasetSummary,
     DatasetUpdate,
@@ -26,36 +24,6 @@ def _detail(db: Session, ds) -> DatasetDetail:
         **DatasetSummary.model_validate(ds).model_dump(),
         case_count=dataset_service.case_count(db, ds.dataset_id),
     )
-
-
-@router.get("/nodes/{node_id}/datasets", response_model=list[DatasetSummary])
-def list_datasets(
-    node_id: int,
-    db: Session = Depends(get_db),
-) -> list[DatasetSummary]:
-    if db.get(NodeMas, node_id) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="node not found")
-    return [DatasetSummary.model_validate(r) for r in dataset_service.list_datasets(db, node_id)]
-
-
-@router.post(
-    "/nodes/{node_id}/datasets",
-    response_model=DatasetDetail,
-    status_code=status.HTTP_201_CREATED,
-)
-def create_dataset(
-    node_id: int,
-    payload: DatasetCreate,
-    db: Session = Depends(get_db),
-) -> DatasetDetail:
-    if db.get(NodeMas, node_id) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="node not found")
-    ds = dataset_service.create_dataset(
-        db, node_mas_id=node_id, payload=payload, created_by=SYSTEM_USER
-    )
-    db.commit()
-    db.refresh(ds)
-    return _detail(db, ds)
 
 
 @router.get("/datasets/{dataset_id}", response_model=DatasetDetail)

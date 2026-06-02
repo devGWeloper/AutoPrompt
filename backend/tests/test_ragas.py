@@ -98,9 +98,9 @@ def test_flow_ragas_metric_subset_only(client):
 
 def test_flow_ragas_ab_two_versions(client):
     did = _seed_dataset(client)
-    # node 2 ("llm") seeds prompt_id 1 (v1.0.0, active); make a second version for it
+    # seed: node_nm="llm" with prompt_id 1 (v1.0.0, active). Make a second version for it.
     created = client.post(
-        "/api/v1/nodes/2/prompts",
+        "/api/v1/nodes/llm/prompts",
         json={
             "system_prompt": "You are concise.", "user_prompt": "Q: {{q}}",
             "change_summary": "concise variant", "change_reason": "ab test",
@@ -110,7 +110,7 @@ def test_flow_ragas_ab_two_versions(client):
 
     resp = client.post(
         "/api/v1/flow/test/ragas/ab",
-        json={"dataset_id": did, "node_mas_id": 2, "prompt_id_a": 1, "prompt_id_b": pid_b},
+        json={"dataset_id": did, "node_nm": "llm", "prompt_id_a": 1, "prompt_id_b": pid_b},
     )
     assert resp.status_code == 200, resp.text
     a_id, b_id = resp.json()["ragas_run_a_id"], resp.json()["ragas_run_b_id"]
@@ -127,6 +127,7 @@ def test_flow_ragas_ab_two_versions(client):
     assert da["ab_group_id"] == a_id and db["ab_group_id"] == a_id
     assert da["prompt_id"] == 1 and db["prompt_id"] == pid_b
     assert da["version_no"] and db["version_no"]
+    assert da["node_nm"] == "llm" and db["node_nm"] == "llm"
 
     # records list pairs them under one ab_group_id
     runs = client.get("/api/v1/ragas-runs").json()
@@ -136,9 +137,9 @@ def test_flow_ragas_ab_two_versions(client):
 
 def test_flow_ragas_ab_bad_prompt_node_404(client):
     did = _seed_dataset(client)
-    # prompt_id 1 belongs to node 2, not node 9999
+    # prompt_id 1 belongs to node "llm", not node "ghost"
     resp = client.post(
         "/api/v1/flow/test/ragas/ab",
-        json={"dataset_id": did, "node_mas_id": 2, "prompt_id_a": 1, "prompt_id_b": 9999},
+        json={"dataset_id": did, "node_nm": "ghost", "prompt_id_a": 1, "prompt_id_b": 9999},
     )
     assert resp.status_code == 404

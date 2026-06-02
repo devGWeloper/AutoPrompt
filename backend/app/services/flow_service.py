@@ -9,68 +9,59 @@ from sqlalchemy.orm import Session
 
 from app.core import db as db_module
 from app.core.ws import manager
-from app.models.chat_ver import ChatVerMas
 from app.models.dataset import TestCase, TestDataset
-from app.models.node_mas import NodeMas
 from app.models.node_prompt_ver import NodePromptVer
 from app.models.ragas import RagasResult, RagasRun
 from app.schemas.flow import FlowCurrentOut, FlowNodeOut
 from app.services import external_agent
 
 
-def get_current_chat(db: Session) -> ChatVerMas:
-    """The current flow row (latest CHAT_VER_MAS by ID)."""
-    chat = (
-        db.execute(select(ChatVerMas).order_by(ChatVerMas.id.desc()).limit(1))
-        .scalars()
-        .first()
-    )
-    if chat is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no flow (CHAT_VER_MAS) found")
-    return chat
-
-
-def _active_prompts_by_node(db: Session, node_ids: list[int]) -> dict[int, NodePromptVer]:
-    if not node_ids:
-        return {}
+def _list_node_nms(db: Session) -> list[str]:
+    """Distinct NODE_NM in PM_NODE_PROMPT_VER, ordered by first appearance."""
     rows = (
         db.execute(
-            select(NodePromptVer).where(
-                NodePromptVer.node_mas_id.in_(node_ids), NodePromptVer.is_active == "Y"
+            select(NodePromptVer.node_nm, NodePromptVer.prompt_id).order_by(
+                NodePromptVer.prompt_id.asc()
             )
         )
+        .all()
+    )
+    seen: dict[str, None] = {}
+    for nm, _ in rows:
+        if nm not in seen:
+            seen[nm] = None
+    return list(seen.keys())
+
+
+def _active_prompts_by_node_nm(db: Session) -> dict[str, NodePromptVer]:
+    rows = (
+        db.execute(select(NodePromptVer).where(NodePromptVer.is_active == "Y"))
         .scalars()
         .all()
     )
-    return {p.node_mas_id: p for p in rows}
+    return {p.node_nm: p for p in rows}
 
 
 def get_current_flow(db: Session) -> FlowCurrentOut:
-    """The current flow's nodes (drives the node list → per-node prompt management)."""
-    chat = get_current_chat(db)
-    nodes = (
-        db.execute(
-            select(NodeMas).where(NodeMas.chat_ver_id == chat.id).order_by(NodeMas.id.asc())
-        )
-        .scalars()
-        .all()
-    )
-    actives = _active_prompts_by_node(db, [n.id for n in nodes])
+    """The current flow's nodes — drives the node list → per-node prompt management.
 
+    Source of truth is PM_NODE_PROMPT_VER: any NODE_NM that has at least one
+    version is a node. Active version + model are surfaced per node.
+    """
+    node_nms = _list_node_nms(db)
+    actives = _active_prompts_by_node_nm(db)
     nodes_out: list[FlowNodeOut] = []
-    for n in nodes:
-        ap = actives.get(n.id)
+    for nm in node_nms:
+        ap = actives.get(nm)
         nodes_out.append(
             FlowNodeOut(
-                node_mas_id=n.id,
-                node_nm=n.node_nm,
-                node_desc=n.node_desc,
-                has_prompt=(n.prompt_edit_enable_yn or "N").upper() == "Y",
+                node_nm=nm,
                 active_prompt_id=ap.prompt_id if ap else None,
                 active_version_no=ap.version_no if ap else None,
+                active_model_nm=ap.model_nm if ap else None,
             )
         )
-    return FlowCurrentOut(chat_ver_id=chat.id, nodes=nodes_out)
+    return FlowCurrentOut(nodes=nodes_out)
 
 
 # ---- flow-level RAGAS (each dataset case -> one whole-flow answer -> score) -----
@@ -98,19 +89,16 @@ def _case_variables(input_data: str) -> dict[str, str]:
 
 
 def _swap_active_prompt(
-    db: Session, *, node_mas_id: int, target_prompt_id: int
+    db: Session, *, node_nm: str, target_prompt_id: int
 ) -> int | None:
-    """Flip IS_ACTIVE on PM_NODE_PROMPT_VER for one node so the external model
-    reads ``target_prompt_id`` as its active row. Returns the prompt_id that
-    was previously active (to restore later), or None if no row was active.
-
-    Raw UPDATE only — no NODE_MAS.PROMPT mirror, no audit row. The external
-    model loads its SYSTEM_PROMPT/USER_PROMPT straight from this table.
+    """Flip IS_ACTIVE on PM_NODE_PROMPT_VER for one NODE_NM so the external model
+    reads ``target_prompt_id`` as its active row. Returns the prompt_id that was
+    previously active (to restore later), or None if no row was active.
     """
     prev = (
         db.execute(
             select(NodePromptVer.prompt_id).where(
-                NodePromptVer.node_mas_id == node_mas_id,
+                NodePromptVer.node_nm == node_nm,
                 NodePromptVer.is_active == "Y",
             )
         )
@@ -119,7 +107,7 @@ def _swap_active_prompt(
     )
     db.execute(
         update(NodePromptVer)
-        .where(NodePromptVer.node_mas_id == node_mas_id)
+        .where(NodePromptVer.node_nm == node_nm)
         .values(is_active="N")
     )
     db.execute(
@@ -132,13 +120,13 @@ def _swap_active_prompt(
 
 
 def _restore_active_prompt(
-    db: Session, *, node_mas_id: int, prompt_id: int | None
+    db: Session, *, node_nm: str, prompt_id: int | None
 ) -> None:
     """Restore the previously-active row after an A/B evaluation. ``None`` means
     no row was active before — leave them all deactivated."""
     db.execute(
         update(NodePromptVer)
-        .where(NodePromptVer.node_mas_id == node_mas_id)
+        .where(NodePromptVer.node_nm == node_nm)
         .values(is_active="N")
     )
     if prompt_id is not None:
@@ -163,7 +151,6 @@ def create_flow_ragas_run(db: Session, *, dataset_id: int, metrics: list[str], a
     _require_flow_dataset(db, dataset_id)
     chosen = [m for m in ALL_METRICS if m in set(metrics)] or list(ALL_METRICS)
     run = RagasRun(
-        chat_ver_id=get_current_chat(db).id,
         dataset_id=dataset_id,
         status="PENDING",
         metrics=json.dumps(chosen),
@@ -178,7 +165,7 @@ def create_flow_ragas_ab_run(
     db: Session,
     *,
     dataset_id: int,
-    node_mas_id: int,
+    node_nm: str,
     prompt_id_a: int,
     prompt_id_b: int,
     metrics: list[str],
@@ -188,18 +175,18 @@ def create_flow_ragas_ab_run(
     from app.services.ragas import ALL_METRICS
 
     _require_flow_dataset(db, dataset_id)
-    if db.get(NodeMas, node_mas_id) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="node not found")
     for pid in (prompt_id_a, prompt_id_b):
         pv = db.get(NodePromptVer, pid)
-        if pv is None or pv.node_mas_id != node_mas_id:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"prompt version {pid} not found for node")
+        if pv is None or pv.node_nm != node_nm:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                detail=f"prompt version {pid} not found for node {node_nm!r}",
+            )
     chosen = [m for m in ALL_METRICS if m in set(metrics)] or list(ALL_METRICS)
-    chat_id = get_current_chat(db).id
     runs: list[RagasRun] = []
     for pid in (prompt_id_a, prompt_id_b):
         r = RagasRun(
-            chat_ver_id=chat_id, dataset_id=dataset_id, node_mas_id=node_mas_id, prompt_id=pid,
+            dataset_id=dataset_id, prompt_id=pid,
             status="PENDING", metrics=json.dumps(chosen), created_by=actor,
         )
         db.add(r)
@@ -256,12 +243,14 @@ async def execute_flow_ragas_run(*, ragas_run_id: int, dataset_id: int) -> None:
         # this run's version under test. Stub mode skips the toggle (the stub never
         # consults the DB). Always restored in the inner finally below.
         ab_backup: int | None = None
-        ab_toggled = False
-        if run.node_mas_id and run.prompt_id and external_agent.external_enabled():
-            ab_backup = _swap_active_prompt(
-                session, node_mas_id=run.node_mas_id, target_prompt_id=run.prompt_id
-            )
-            ab_toggled = True
+        ab_node_nm: str | None = None
+        if run.prompt_id and external_agent.external_enabled():
+            pv = session.get(NodePromptVer, run.prompt_id)
+            if pv is not None:
+                ab_node_nm = pv.node_nm
+                ab_backup = _swap_active_prompt(
+                    session, node_nm=ab_node_nm, target_prompt_id=run.prompt_id
+                )
 
         sums: dict[str, list[float]] = {m: [] for m in ALL_METRICS}
         try:
@@ -276,8 +265,6 @@ async def execute_flow_ragas_run(*, ragas_run_id: int, dataset_id: int) -> None:
                         message=fields["question"] or _message_from_inputs(_case_variables(case.input_data)),
                     )
                     row.answer = str(data.get("response", ""))
-                    # contexts: dataset-specified wins; else use the response's docs[]
-                    # (the external model's retrieved-docs list).
                     contexts = fields["contexts"] or list(data.get("docs") or [])
                     cs = await scorer.score(
                         question=fields["question"], answer=row.answer,
@@ -298,8 +285,8 @@ async def execute_flow_ragas_run(*, ragas_run_id: int, dataset_id: int) -> None:
                 session.commit()
                 await manager.broadcast(key, {"event": "PROGRESS", "run_id": ragas_run_id, "done": idx, "total": len(cases), "case_id": case.case_id})
         finally:
-            if ab_toggled and run.node_mas_id:
-                _restore_active_prompt(session, node_mas_id=run.node_mas_id, prompt_id=ab_backup)
+            if ab_node_nm is not None:
+                _restore_active_prompt(session, node_nm=ab_node_nm, prompt_id=ab_backup)
 
         for m in ALL_METRICS:
             setattr(run, m, ragas_service._avg(sums[m]))

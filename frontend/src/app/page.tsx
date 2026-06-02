@@ -67,7 +67,7 @@ function usePromptNodes() {
   useEffect(() => {
     api
       .get<FlowCurrent>('/flow/current')
-      .then((f) => setNodes(f.nodes.filter((n) => n.has_prompt)))
+      .then((f) => setNodes(f.nodes))
       .catch(() => setNodes([]));
   }, []);
   return nodes;
@@ -165,7 +165,7 @@ function SingleRunPanel() {
 function ComparePanel() {
   const { datasets } = useFlowDatasets();
   const nodes = usePromptNodes();
-  const [nodeId, setNodeId] = useState<number | null>(null);
+  const [nodeNm, setNodeNm] = useState<string | null>(null);
   const [versions, setVersions] = useState<PromptVersionSummary[]>([]);
   const [verA, setVerA] = useState<number | null>(null);
   const [verB, setVerB] = useState<number | null>(null);
@@ -178,9 +178,9 @@ function ComparePanel() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (nodeId == null) { setVersions([]); return; }
-    api.get<PromptVersionSummary[]>(`/nodes/${nodeId}/prompts`).then(setVersions).catch(() => setVersions([]));
-  }, [nodeId]);
+    if (nodeNm == null) { setVersions([]); return; }
+    api.get<PromptVersionSummary[]>(`/nodes/${encodeURIComponent(nodeNm)}/prompts`).then(setVersions).catch(() => setVersions([]));
+  }, [nodeNm]);
 
   // default A = active version, B = next most-recent
   useEffect(() => {
@@ -190,7 +190,7 @@ function ComparePanel() {
     setVerB(other?.prompt_id ?? versions[1]?.prompt_id ?? null);
   }, [versions]);
 
-  const canRun = !!(nodeId && verA && verB && verA !== verB && datasetId) && status !== 'running';
+  const canRun = !!(nodeNm && verA && verB && verA !== verB && datasetId) && status !== 'running';
   const verLabel = (id: number | null) => versions.find((v) => v.prompt_id === id)?.version_no ?? '';
 
   async function run() {
@@ -198,7 +198,7 @@ function ComparePanel() {
     setError(null); setDetailA(null); setDetailB(null); setShowCases(false); setStatus('running');
     try {
       const r = await api.post<{ ragas_run_a_id: number; ragas_run_b_id: number }>('/flow/test/ragas/ab', {
-        dataset_id: datasetId, node_mas_id: nodeId, prompt_id_a: verA, prompt_id_b: verB, metrics,
+        dataset_id: datasetId, node_nm: nodeNm, prompt_id_a: verA, prompt_id_b: verB, metrics,
       });
       const waitDone = (id: number, set: (d: RagasRunDetail) => void) =>
         new Promise<void>((resolve) => {
@@ -221,9 +221,9 @@ function ComparePanel() {
     <div className="space-y-5">
       <Card className="p-4">
         <div className="flex items-center gap-3 overflow-x-auto [&>*]:shrink-0">
-          <Select value={nodeId ?? ''} onChange={(e) => setNodeId(Number(e.target.value))} className="w-44">
+          <Select value={nodeNm ?? ''} onChange={(e) => setNodeNm(e.target.value)} className="w-44">
             <option value="" disabled>노드 선택</option>
-            {nodes.map((n) => (<option key={n.node_mas_id} value={n.node_mas_id}>{n.node_nm}</option>))}
+            {nodes.map((n) => (<option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>))}
           </Select>
           <VersionSelect versions={versions} value={verA} onChange={setVerA} placeholder="버전 A" />
           <span className="text-xs text-muted">vs</span>
@@ -252,7 +252,7 @@ function ComparePanel() {
       {detailA && detailB && (
         <Card className="p-4">
           <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-muted">
-            <span className="font-medium text-ink">{nodes.find((n) => n.node_mas_id === nodeId)?.node_nm}</span>
+            <span className="font-medium text-ink">{nodeNm}</span>
             <Badge tone="neutral">A · v{verLabel(verA)}</Badge>
             <span>vs</span>
             <Badge tone="accent">B · v{verLabel(verB)}</Badge>

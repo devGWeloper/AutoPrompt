@@ -1,6 +1,4 @@
-// Demo mock layer. When NEXT_PUBLIC_USE_MOCK !== '0' (default ON for UI review),
-// api.ts / ws.ts route here instead of hitting the backend, so the whole UI runs
-// off ./store with no backend / DB / LLM. Scoped to the current RAGAS API surface.
+// Demo mock layer. PM-only model: node identity is NODE_NM.
 
 import { ApiError } from '../api';
 import type { RunWsHandlers } from '../ws';
@@ -26,16 +24,17 @@ const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function summarizePrompt(p: PromptVersionDetail): PromptVersionSummary {
   return {
-    prompt_id: p.prompt_id, node_mas_id: p.node_mas_id, node_nm: p.node_nm,
-    version_no: p.version_no, is_active: p.is_active, change_summary: p.change_summary,
+    prompt_id: p.prompt_id, node_nm: p.node_nm,
+    version_no: p.version_no, is_active: p.is_active, model_nm: p.model_nm,
+    change_summary: p.change_summary,
     created_by: p.created_by, created_dt: p.created_dt,
   };
 }
 
 function ragasSummary(d: RagasRunDetail): RagasRunSummary {
   return {
-    ragas_run_id: d.ragas_run_id, node_mas_id: d.node_mas_id, prompt_id: d.prompt_id,
-    ab_group_id: d.ab_group_id, version_no: d.version_no,
+    ragas_run_id: d.ragas_run_id, prompt_id: d.prompt_id,
+    ab_group_id: d.ab_group_id, node_nm: d.node_nm, version_no: d.version_no,
     status: d.status, engine: d.engine,
     faithfulness: d.faithfulness, answer_relevancy: d.answer_relevancy,
     context_precision: d.context_precision, context_recall: d.context_recall,
@@ -43,16 +42,16 @@ function ragasSummary(d: RagasRunDetail): RagasRunSummary {
   };
 }
 
-function findPrompt(promptId: number): { nodeId: number; prompt: PromptVersionDetail } | null {
-  for (const [nodeId, list] of Object.entries(store.promptVersions)) {
+function findPrompt(promptId: number): { nodeNm: string; prompt: PromptVersionDetail } | null {
+  for (const [nodeNm, list] of Object.entries(store.promptVersions)) {
     const prompt = list.find((p) => p.prompt_id === promptId);
-    if (prompt) return { nodeId: Number(nodeId), prompt };
+    if (prompt) return { nodeNm, prompt };
   }
   return null;
 }
 
-function logAudit(nodeId: number, targetId: number, action: string, before: object | null, after: object | null): void {
-  (store.auditLogs[nodeId] ??= []).unshift({
+function logAudit(nodeNm: string, targetId: number, action: string, before: object | null, after: object | null): void {
+  (store.auditLogs[nodeNm] ??= []).unshift({
     log_id: nextId(), target_table: 'PM_NODE_PROMPT_VER', target_id: targetId, action,
     before_value: before ? JSON.stringify(before) : null,
     after_value: after ? JSON.stringify(after) : null,
@@ -60,8 +59,8 @@ function logAudit(nodeId: number, targetId: number, action: string, before: obje
   });
 }
 
-function activatePrompt(nodeId: number, promptId: number): void {
-  const list = store.promptVersions[nodeId] ?? [];
+function activatePrompt(nodeNm: string, promptId: number): void {
+  const list = store.promptVersions[nodeNm] ?? [];
   let activated: PromptVersionDetail | undefined;
   const prev = list.find((p) => p.is_active === 'Y');
   for (const p of list) {
@@ -69,12 +68,13 @@ function activatePrompt(nodeId: number, promptId: number): void {
     if (p.prompt_id === promptId) activated = p;
   }
   if (!activated) return;
-  const node = store.flowCurrent.nodes.find((n) => n.node_mas_id === nodeId);
+  const node = store.flowCurrent.nodes.find((n) => n.node_nm === nodeNm);
   if (node) {
     node.active_prompt_id = activated.prompt_id;
     node.active_version_no = activated.version_no;
+    node.active_model_nm = activated.model_nm;
   }
-  logAudit(nodeId, promptId, 'ACTIVATE',
+  logAudit(nodeNm, promptId, 'ACTIVATE',
     { active_version_no: prev?.version_no ?? null },
     { active_version_no: activated.version_no });
 }
@@ -93,7 +93,7 @@ function route(method: string, path: string, body: Record<string, unknown> | und
   if (method === 'POST' && path === '/flow/datasets') {
     const id = nextId();
     const ds: Dataset = {
-      dataset_id: id, node_mas_id: null, scope: 'FLOW',
+      dataset_id: id,
       dataset_nm: String(body?.dataset_nm ?? `데이터셋 ${id}`),
       description: (body?.description as string) ?? null, is_active: 'Y',
       created_by: 'system', created_dt: nowDt(),
@@ -127,28 +127,29 @@ function route(method: string, path: string, body: Record<string, unknown> | und
     return undefined;
   }
 
-  // prompts
-  if (method === 'GET' && (mm = m(/^\/nodes\/(\d+)\/prompts$/))) {
-    return (store.promptVersions[Number(mm[1])] ?? []).map(summarizePrompt);
+  // prompts (path param is NODE_NM, URL-encoded by the caller)
+  if (method === 'GET' && (mm = m(/^\/nodes\/([^/]+)\/prompts$/))) {
+    const nodeNm = decodeURIComponent(mm[1]);
+    return (store.promptVersions[nodeNm] ?? []).map(summarizePrompt);
   }
-  if (method === 'POST' && (mm = m(/^\/nodes\/(\d+)\/prompts$/))) {
-    const nodeId = Number(mm[1]);
+  if (method === 'POST' && (mm = m(/^\/nodes\/([^/]+)\/prompts$/))) {
+    const nodeNm = decodeURIComponent(mm[1]);
     const payload = (body ?? {}) as unknown as PromptVersionCreate;
-    const list = (store.promptVersions[nodeId] ??= []);
-    const node = store.flowCurrent.nodes.find((n) => n.node_mas_id === nodeId);
+    const list = (store.promptVersions[nodeNm] ??= []);
     const latest = list[0]?.version_no ?? '0.0.0';
     const created: PromptVersionDetail = {
-      prompt_id: nextId(), node_mas_id: nodeId, node_nm: node?.node_nm ?? `#${nodeId}`,
+      prompt_id: nextId(), node_nm: nodeNm,
       version_no: payload.version_no || bumpMinor(latest), is_active: 'N',
+      model_nm: payload.model_nm ?? null,
       change_summary: payload.change_summary ?? null, change_reason: payload.change_reason ?? null,
       prev_prompt_id: list[0]?.prompt_id ?? null, created_by: 'system',
       created_dt: nowDt(), updated_dt: nowDt(),
       system_prompt: payload.system_prompt ?? '', user_prompt: payload.user_prompt ?? '',
     };
     list.unshift(created);
-    logAudit(nodeId, created.prompt_id, 'CREATE', null,
-      { version_no: created.version_no, change_summary: created.change_summary });
-    if (payload.activate_after_save) activatePrompt(nodeId, created.prompt_id);
+    logAudit(nodeNm, created.prompt_id, 'CREATE', null,
+      { version_no: created.version_no, change_summary: created.change_summary, model_nm: created.model_nm });
+    if (payload.activate_after_save) activatePrompt(nodeNm, created.prompt_id);
     return created;
   }
   if (method === 'GET' && (mm = m(/^\/prompts\/(\d+)$/))) {
@@ -159,24 +160,26 @@ function route(method: string, path: string, body: Record<string, unknown> | und
   if (method === 'PUT' && (mm = m(/^\/prompts\/(\d+)$/))) {
     const found = findPrompt(Number(mm[1]));
     if (!found) throw new ApiError(404, { detail: '프롬프트를 찾을 수 없습니다.' });
-    const before = { system_prompt: found.prompt.system_prompt, user_prompt: found.prompt.user_prompt };
+    const before = { system_prompt: found.prompt.system_prompt, user_prompt: found.prompt.user_prompt, model_nm: found.prompt.model_nm };
     if (body?.system_prompt !== undefined) found.prompt.system_prompt = String(body.system_prompt);
     if (body?.user_prompt !== undefined) found.prompt.user_prompt = String(body.user_prompt);
+    if (body?.model_nm !== undefined) found.prompt.model_nm = body.model_nm == null ? null : String(body.model_nm);
     found.prompt.updated_dt = nowDt();
-    logAudit(found.nodeId, found.prompt.prompt_id, 'UPDATE', before,
-      { system_prompt: found.prompt.system_prompt, user_prompt: found.prompt.user_prompt });
+    logAudit(found.nodeNm, found.prompt.prompt_id, 'UPDATE', before,
+      { system_prompt: found.prompt.system_prompt, user_prompt: found.prompt.user_prompt, model_nm: found.prompt.model_nm });
     return found.prompt;
   }
   if (method === 'PUT' && (mm = m(/^\/prompts\/(\d+)\/activate$/))) {
     const found = findPrompt(Number(mm[1]));
     if (!found) throw new ApiError(404, { detail: '프롬프트를 찾을 수 없습니다.' });
-    activatePrompt(found.nodeId, found.prompt.prompt_id);
+    activatePrompt(found.nodeNm, found.prompt.prompt_id);
     return found.prompt;
   }
 
   // audit
-  if (method === 'GET' && (mm = m(/^\/nodes\/(\d+)\/audit-logs$/))) {
-    const logs: AuditLog[] = store.auditLogs[Number(mm[1])] ?? [];
+  if (method === 'GET' && (mm = m(/^\/nodes\/([^/]+)\/audit-logs$/))) {
+    const nodeNm = decodeURIComponent(mm[1]);
+    const logs: AuditLog[] = store.auditLogs[nodeNm] ?? [];
     return logs;
   }
 
@@ -186,22 +189,22 @@ function route(method: string, path: string, body: Record<string, unknown> | und
     const metrics = (body?.metrics as string[]) ?? [];
     const run = makeRagasRun(dsId, metrics);
     store.ragasRuns[run.ragas_run_id] = run;
-    const { results, ...out } = run; // RagasRunOut (detail minus per-case rows)
+    const { results, ...out } = run;
     void results;
     return out;
   }
   if (method === 'POST' && path === '/flow/test/ragas/ab') {
     const dsId = Number(body?.dataset_id);
-    const nodeId = Number(body?.node_mas_id);
+    const nodeNm = String(body?.node_nm ?? '');
     const metrics = (body?.metrics as string[]) ?? [];
     const pidA = Number(body?.prompt_id_a);
     const pidB = Number(body?.prompt_id_b);
-    const vlist = store.promptVersions[nodeId] ?? [];
+    const vlist = store.promptVersions[nodeNm] ?? [];
     const vno = (pid: number) => vlist.find((p) => p.prompt_id === pid)?.version_no ?? null;
-    const runA = makeRagasRun(dsId, metrics, { node_mas_id: nodeId, prompt_id: pidA, version_no: vno(pidA), engine: 'FALLBACK' });
+    const runA = makeRagasRun(dsId, metrics, { node_nm: nodeNm, prompt_id: pidA, version_no: vno(pidA), engine: 'FALLBACK' });
     runA.ab_group_id = runA.ragas_run_id;
     store.ragasRuns[runA.ragas_run_id] = runA;
-    const runB = makeRagasRun(dsId, metrics, { node_mas_id: nodeId, prompt_id: pidB, version_no: vno(pidB), engine: 'FALLBACK', ab_group_id: runA.ragas_run_id });
+    const runB = makeRagasRun(dsId, metrics, { node_nm: nodeNm, prompt_id: pidB, version_no: vno(pidB), engine: 'FALLBACK', ab_group_id: runA.ragas_run_id });
     store.ragasRuns[runB.ragas_run_id] = runB;
     return { ragas_run_a_id: runA.ragas_run_id, ragas_run_b_id: runB.ragas_run_id };
   }

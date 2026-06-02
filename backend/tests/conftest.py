@@ -15,16 +15,10 @@ import app.core.db as db_module
 from app.main import create_app
 from app.models import (  # noqa: F401  -- register tables on Base.metadata
     audit,
-    chat_ver,
     dataset,
-    model_mas,
-    node_mas,
     node_prompt_ver,
     ragas,
 )
-from app.models.chat_ver import ChatVerMas
-from app.models.model_mas import ModelMas
-from app.models.node_mas import NodeMas
 from app.models.node_prompt_ver import NodePromptVer
 
 
@@ -75,48 +69,17 @@ def db_session(engine):
         connection.close()
 
 
-_SEED_GRAPH = """flowchart TD
-    start([START]) --> llm[LLM]
-    llm --> done([END])
-"""
-
-
 @pytest.fixture
 def seeded_db(engine):
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
     s = SessionLocal()
     try:
-        # Idempotent seed for shared in-memory engine (no users — auth removed).
-        if s.query(ChatVerMas).count() == 0:
-            for nm in ("claude-sonnet-4-6", "gemini-2.5-flash", "gpt-4o"):
-                s.add(ModelMas(gaia_model_nm=nm))
-            chat = ChatVerMas(
-                graph_struct=_SEED_GRAPH,
-                main_model_nm="claude-sonnet-4-6",
-                create_user="system",
-            )
-            s.add(chat)
-            s.flush()
-            n1 = NodeMas(
-                chat_ver_id=chat.id, node_nm="start", node_desc="start node",
-                prompt_edit_enable_yn="N", create_user="system",
-            )
-            # NODE_MAS.MODEL_NM is NULL — the LLM model is the flow main model.
-            n2 = NodeMas(
-                chat_ver_id=chat.id, node_nm="llm",
-                node_desc="llm node", prompt="You are helpful. Question: {{q}}",
-                prompt_edit_enable_yn="Y", model_edit_enable_yn="N",
-                main_model_edit_enable_yn="Y", create_user="system",
-            )
-            n3 = NodeMas(
-                chat_ver_id=chat.id, node_nm="done", node_desc="end node",
-                prompt_edit_enable_yn="N", create_user="system",
-            )
-            s.add_all([n1, n2, n3])
-            s.flush()
+        # Idempotent seed: one node ("llm") with one active prompt version.
+        if s.query(NodePromptVer).count() == 0:
             p1 = NodePromptVer(
-                node_mas_id=n2.id, node_nm="llm", version_no="1.0.0",
+                node_nm="llm", version_no="1.0.0",
                 system_prompt="You are helpful.", user_prompt="Question: {{q}}",
+                model_nm="claude-sonnet-4-6",
                 is_active="Y", change_summary="seed", change_reason="seed", created_by="system",
             )
             s.add(p1)

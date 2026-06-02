@@ -20,13 +20,10 @@ export default function NodesPage() {
   }, []);
 
   function openNode(node: FlowNode) {
-    if (!node.has_prompt) return;
-    router.push(`/nodes/${node.node_mas_id}/prompts`);
+    router.push(`/nodes/${encodeURIComponent(node.node_nm)}/prompts`);
   }
 
-  // Prompt management only concerns LLM/prompt nodes — hide the rest (they have
-  // nothing to manage here and just add noise).
-  const promptNodes = (flow?.nodes ?? []).filter((n) => n.has_prompt);
+  const nodes = flow?.nodes ?? [];
 
   return (
     <div className="flex h-screen flex-col">
@@ -38,15 +35,15 @@ export default function NodesPage() {
           )}
           <div className="mb-5">
             <h1 className="text-lg font-semibold text-ink">
-              프롬프트 노드 <span className="text-muted">({promptNodes.length})</span>
+              프롬프트 노드 <span className="text-muted">({nodes.length})</span>
             </h1>
             <p className="mt-0.5 text-sm text-muted">
-              LLM 프롬프트를 가진 노드만 표시됩니다. 노드를 선택해 시스템·유저 프롬프트 버전을 관리하세요.
+              노드를 선택해 시스템·유저 프롬프트와 모델 버전을 관리하세요.
             </p>
           </div>
           <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {promptNodes.map((n) => (
-              <li key={n.node_mas_id}>
+            {nodes.map((n) => (
+              <li key={n.node_nm}>
                 <button
                   onClick={() => openNode(n)}
                   className="group flex w-full flex-col rounded-lg border border-line bg-surface p-4 text-left transition-colors hover:border-accent/40 hover:bg-accent/5"
@@ -55,15 +52,15 @@ export default function NodesPage() {
                     <span className="truncate text-sm font-semibold text-ink">{n.node_nm}</span>
                     <Badge tone="accent">v{n.active_version_no ?? '—'}</Badge>
                   </div>
-                  <p className="mt-1.5 line-clamp-2 text-xs text-muted">{n.node_desc ?? '설명 없음'}</p>
+                  <p className="mt-1.5 truncate text-xs text-muted">{n.active_model_nm ?? '모델 미지정'}</p>
                   <span className="mt-3 text-xs font-medium text-muted transition-colors group-hover:text-accent">
                     프롬프트 관리 →
                   </span>
                 </button>
               </li>
             ))}
-            {flow && promptNodes.length === 0 && (
-              <li className="text-sm text-muted">프롬프트를 관리할 LLM 노드가 없습니다.</li>
+            {flow && nodes.length === 0 && (
+              <li className="text-sm text-muted">노드가 없습니다. 첫 프롬프트 버전을 만들어 노드를 추가하세요.</li>
             )}
           </ul>
         </div>

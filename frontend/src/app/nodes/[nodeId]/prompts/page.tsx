@@ -14,8 +14,10 @@ import type { AuditLog, PromptVersionDetail, PromptVersionSummary } from '@/type
 type Tab = 'editor' | 'history';
 
 export default function NodePromptsPage() {
+  // The dynamic segment is the NODE_NM string (folder name is a Next.js artifact;
+  // see `[nodeId]` — kept until a clean dev-server-down rename).
   const params = useParams<{ nodeId: string }>();
-  const nodeId = Number(params.nodeId);
+  const nodeNm = decodeURIComponent(params.nodeId);
   const router = useRouter();
 
   const [versions, setVersions] = useState<PromptVersionSummary[]>([]);
@@ -29,7 +31,7 @@ export default function NodePromptsPage() {
   const reload = useCallback(
     async (selectId?: number) => {
       try {
-        const rows = await api.get<PromptVersionSummary[]>(`/nodes/${nodeId}/prompts`);
+        const rows = await api.get<PromptVersionSummary[]>(`/nodes/${encodeURIComponent(nodeNm)}/prompts`);
         setVersions(rows);
         const pick = selectId ?? rows.find((r) => r.is_active === 'Y')?.prompt_id ?? rows[0]?.prompt_id;
         if (pick) setDetail(await api.get<PromptVersionDetail>(`/prompts/${pick}`));
@@ -38,14 +40,12 @@ export default function NodePromptsPage() {
         setError(e instanceof ApiError ? JSON.stringify(e.detail) : String(e));
       }
     },
-    [nodeId],
+    [nodeNm],
   );
 
   useEffect(() => {
     reload();
   }, [reload]);
-
-  const nodeNm = versions[0]?.node_nm ?? detail?.node_nm ?? `#${nodeId}`;
 
   async function selectVersion(id: number) {
     setDetail(await api.get<PromptVersionDetail>(`/prompts/${id}`));
@@ -105,6 +105,9 @@ export default function NodePromptsPage() {
                     <span className="font-mono text-sm font-medium text-ink">v{v.version_no}</span>
                     {v.is_active === 'Y' && <Badge tone="ok">ACTIVE</Badge>}
                   </div>
+                  {v.model_nm && (
+                    <div className="mt-1 truncate text-[11px] text-muted">{v.model_nm}</div>
+                  )}
                   {v.change_summary && (
                     <div className="mt-1 truncate text-xs text-muted">{v.change_summary}</div>
                   )}
@@ -128,6 +131,7 @@ export default function NodePromptsPage() {
                     <h1 className="truncate text-base font-semibold text-ink">{nodeNm}</h1>
                     <span className="font-mono text-sm text-muted">v{detail.version_no}</span>
                     {detail.is_active === 'Y' ? <Badge tone="ok">활성</Badge> : <Badge tone="neutral">비활성</Badge>}
+                    {detail.model_nm && <Badge tone="neutral">{detail.model_nm}</Badge>}
                   </div>
                   {detail.change_summary && (
                     <p className="mt-0.5 truncate text-xs text-muted">{detail.change_summary}</p>
@@ -151,9 +155,9 @@ export default function NodePromptsPage() {
 
               <div className="flex-1 overflow-auto p-6">
                 {tab === 'editor' && (
-                  <EditorTab detail={detail} onSaved={() => reload(detail.prompt_id)} onEditAsNew={() => setShowNew(true)} />
+                  <EditorTab detail={detail} onSaved={() => reload(detail.prompt_id)} />
                 )}
-                {tab === 'history' && <HistoryTab nodeId={nodeId} />}
+                {tab === 'history' && <HistoryTab nodeNm={nodeNm} />}
               </div>
             </>
           ) : (
@@ -164,7 +168,7 @@ export default function NodePromptsPage() {
 
       {showNew && (
         <NewVersionModal
-          nodeId={nodeId}
+          nodeNm={nodeNm}
           base={detail}
           onClose={() => setShowNew(false)}
           onCreated={async (id) => {
@@ -189,7 +193,7 @@ export default function NodePromptsPage() {
           <span className="font-semibold">v{confirmActivate?.version_no}</span> 을(를) 활성화합니다.
         </p>
         <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-muted">
-          <li>운영 테이블 <span className="font-mono text-ink">NODE_MAS.PROMPT</span> 에 즉시 반영됩니다.</li>
+          <li>외부 모델은 <span className="font-mono text-ink">PM_NODE_PROMPT_VER</span> 의 active row 를 그대로 읽습니다.</li>
         </ul>
       </Modal>
     </div>
@@ -199,31 +203,37 @@ export default function NodePromptsPage() {
 function EditorTab({
   detail,
   onSaved,
-  onEditAsNew,
 }: {
   detail: PromptVersionDetail;
   onSaved: () => void;
-  onEditAsNew: () => void;
 }) {
-  const locked = detail.is_active === 'Y';
   const [system, setSystem] = useState(detail.system_prompt ?? '');
   const [user, setUser] = useState(detail.user_prompt ?? '');
+  const [model, setModel] = useState(detail.model_nm ?? '');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     setSystem(detail.system_prompt ?? '');
     setUser(detail.user_prompt ?? '');
+    setModel(detail.model_nm ?? '');
     setErr(null);
-  }, [detail.prompt_id, detail.system_prompt, detail.user_prompt]);
+  }, [detail.prompt_id, detail.system_prompt, detail.user_prompt, detail.model_nm]);
 
-  const dirty = system !== (detail.system_prompt ?? '') || user !== (detail.user_prompt ?? '');
+  const dirty =
+    system !== (detail.system_prompt ?? '') ||
+    user !== (detail.user_prompt ?? '') ||
+    model !== (detail.model_nm ?? '');
 
   async function save() {
     setBusy(true);
     setErr(null);
     try {
-      await api.put(`/prompts/${detail.prompt_id}`, { system_prompt: system, user_prompt: user });
+      await api.put(`/prompts/${detail.prompt_id}`, {
+        system_prompt: system,
+        user_prompt: user,
+        model_nm: model.trim() || null,
+      });
       onSaved();
     } catch (e) {
       setErr(e instanceof ApiError ? JSON.stringify(e.detail) : String(e));
@@ -235,18 +245,23 @@ function EditorTab({
   return (
     <div className="flex flex-col gap-5">
       {err && <div className="rounded-md border border-bad/20 bg-bad/5 px-3 py-2 text-sm text-bad">{err}</div>}
-      {locked && (
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-line bg-bg/60 px-4 py-3">
-          <p className="text-sm text-muted">활성 버전은 잠겨 있어 직접 편집할 수 없습니다. 편집하려면 새 버전을 만드세요.</p>
-          <Button variant="secondary" size="sm" onClick={onEditAsNew}>새 버전으로 편집</Button>
+      <div>
+        <div className="mb-1.5 flex items-baseline gap-2">
+          <span className="text-sm font-medium text-ink">모델</span>
+          <span className="text-xs text-muted">버전과 함께 저장됩니다</span>
         </div>
-      )}
+        <Input
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          placeholder="예: claude-sonnet-4-6"
+          className="w-full font-mono"
+        />
+      </div>
       <PromptField
         label="시스템 프롬프트"
-        caption="활성화 시 NODE_MAS.PROMPT 로 반영"
+        caption="외부 모델이 PM_NODE_PROMPT_VER active row 를 그대로 읽음"
         value={system}
         onChange={(e) => setSystem(e.target.value)}
-        readOnly={locked}
         rows={10}
       />
       <PromptField
@@ -254,14 +269,11 @@ function EditorTab({
         caption={'테스트 메시지 템플릿 · 변수 {{name}}'}
         value={user}
         onChange={(e) => setUser(e.target.value)}
-        readOnly={locked}
         rows={8}
       />
-      {!locked && (
-        <div className="flex justify-end">
-          <Button onClick={save} disabled={!dirty || busy}>{busy ? '저장 중…' : '프롬프트 저장'}</Button>
-        </div>
-      )}
+      <div className="flex justify-end">
+        <Button onClick={save} disabled={!dirty || busy}>{busy ? '저장 중…' : '프롬프트 저장'}</Button>
+      </div>
     </div>
   );
 }
@@ -271,14 +283,12 @@ function PromptField({
   caption,
   value,
   onChange,
-  readOnly,
   rows,
 }: {
   label: string;
   caption: string;
   value: string;
   onChange: ChangeEventHandler<HTMLTextAreaElement>;
-  readOnly: boolean;
   rows: number;
 }) {
   return (
@@ -290,9 +300,8 @@ function PromptField({
       <Textarea
         value={value}
         onChange={onChange}
-        readOnly={readOnly}
         rows={rows}
-        className={'w-full font-mono text-sm leading-relaxed ' + (readOnly ? 'bg-bg text-muted' : '')}
+        className="w-full font-mono text-sm leading-relaxed"
       />
     </div>
   );
@@ -302,7 +311,6 @@ const ACTION_META: Record<string, { label: string; tone: 'neutral' | 'accent' | 
   CREATE: { label: '생성', tone: 'accent' },
   UPDATE: { label: '수정', tone: 'neutral' },
   ACTIVATE: { label: '활성화', tone: 'ok' },
-  FLOW_VERSION: { label: '전체 버전', tone: 'neutral' },
   DELETE: { label: '삭제', tone: 'bad' },
 };
 
@@ -322,11 +330,11 @@ const TEXT_FIELDS = ['system_prompt', 'user_prompt'];
 const FIELD_LABEL: Record<string, string> = {
   system_prompt: '시스템 프롬프트',
   user_prompt: '유저 프롬프트',
+  model_nm: '모델',
   version_no: '버전',
   change_summary: '변경 요약',
   change_reason: '변경 사유',
   active_version_no: '활성 버전',
-  flow_version_no: '전체 버전',
   summary: '요약',
 };
 
@@ -335,7 +343,7 @@ function AuditDetail({ log }: { log: AuditLog }) {
   const after = parseJson(log.after_value);
   const keys = Array.from(
     new Set([...(before ? Object.keys(before) : []), ...(after ? Object.keys(after) : [])]),
-  ).filter((k) => !['prompt_id', 'node_mas_id', 'node_nm', 'active_prompt_id'].includes(k));
+  ).filter((k) => !['prompt_id', 'node_nm', 'active_prompt_id'].includes(k));
 
   if (!keys.length) {
     if (!log.before_value && !log.after_value) return null;
@@ -382,11 +390,14 @@ function AuditDetail({ log }: { log: AuditLog }) {
   );
 }
 
-function HistoryTab({ nodeId }: { nodeId: number }) {
+function HistoryTab({ nodeNm }: { nodeNm: string }) {
   const [logs, setLogs] = useState<AuditLog[] | null>(null);
   useEffect(() => {
-    api.get<AuditLog[]>(`/nodes/${nodeId}/audit-logs?limit=100`).then(setLogs).catch(() => setLogs([]));
-  }, [nodeId]);
+    api
+      .get<AuditLog[]>(`/nodes/${encodeURIComponent(nodeNm)}/audit-logs?limit=100`)
+      .then(setLogs)
+      .catch(() => setLogs([]));
+  }, [nodeNm]);
   if (logs === null) return <div className="text-sm text-muted">불러오는 중…</div>;
   if (!logs.length) return <div className="text-sm text-muted">변경 이력이 없습니다.</div>;
   return (
@@ -410,18 +421,19 @@ function HistoryTab({ nodeId }: { nodeId: number }) {
 }
 
 function NewVersionModal({
-  nodeId,
+  nodeNm,
   base,
   onClose,
   onCreated,
 }: {
-  nodeId: number;
+  nodeNm: string;
   base: PromptVersionDetail | null;
   onClose: () => void;
   onCreated: (promptId: number) => void;
 }) {
   const [system, setSystem] = useState(base?.system_prompt ?? '');
   const [user, setUser] = useState(base?.user_prompt ?? '');
+  const [model, setModel] = useState(base?.model_nm ?? '');
   const [summary, setSummary] = useState('');
   const [reason, setReason] = useState('');
   const [activate, setActivate] = useState(false);
@@ -437,9 +449,10 @@ function NewVersionModal({
     setBusy(true);
     setErr(null);
     try {
-      const created = await api.post<PromptVersionDetail>(`/nodes/${nodeId}/prompts`, {
+      const created = await api.post<PromptVersionDetail>(`/nodes/${encodeURIComponent(nodeNm)}/prompts`, {
         system_prompt: system,
         user_prompt: user,
+        model_nm: model.trim() || null,
         change_summary: summary,
         change_reason: reason,
         activate_after_save: activate,
@@ -466,9 +479,11 @@ function NewVersionModal({
     >
       {err && <div className="mb-3 rounded-md border border-bad/20 bg-bad/5 px-3 py-2 text-xs text-bad">{err}</div>}
       <label className="mb-3 block">
-        <span className="text-sm font-medium text-ink">
-          시스템 프롬프트 <span className="font-normal text-muted">(활성화 시 NODE_MAS.PROMPT 로 반영)</span>
-        </span>
+        <span className="text-sm font-medium text-ink">모델</span>
+        <Input value={model} onChange={(e) => setModel(e.target.value)} placeholder="예: claude-sonnet-4-6" className="mt-1 w-full font-mono" />
+      </label>
+      <label className="mb-3 block">
+        <span className="text-sm font-medium text-ink">시스템 프롬프트</span>
         <Textarea value={system} onChange={(e) => setSystem(e.target.value)} rows={7} className="mt-1 w-full font-mono" />
       </label>
       <label className="mb-3 block">
@@ -489,7 +504,7 @@ function NewVersionModal({
       </div>
       <label className="mt-3 flex items-center gap-2 text-sm text-ink">
         <input type="checkbox" className="accent-accent" checked={activate} onChange={(e) => setActivate(e.target.checked)} />
-        저장 후 즉시 활성화 (NODE_MAS.PROMPT 반영)
+        저장 후 즉시 활성화
       </label>
     </Modal>
   );

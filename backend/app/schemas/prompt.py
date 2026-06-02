@@ -8,10 +8,10 @@ from pydantic import BaseModel, ConfigDict, Field
 class PromptVersionSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     prompt_id: int
-    node_mas_id: int
     node_nm: str
     version_no: str
     is_active: str
+    model_nm: str | None = None
     change_summary: str | None = None
     created_by: str
     created_dt: datetime
@@ -26,18 +26,13 @@ class PromptVersionDetail(PromptVersionSummary):
 
 
 class ActivePromptOut(BaseModel):
-    """A node's active prompt (system + user), keyed by NODE_NM.
-
-    Kept for inspection / agent compatibility. At runtime the operational project
-    reads NODE_MAS.PROMPT directly (activation writes the SYSTEM_PROMPT there), so
-    this is not the primary delivery path anymore.
-    """
+    """A node's active prompt (system + user + model), keyed by NODE_NM."""
 
     model_config = ConfigDict(from_attributes=True)
-    node_mas_id: int
     node_nm: str
     prompt_id: int
     version_no: str
+    model_nm: str | None = None
     system_prompt: str | None = None
     user_prompt: str | None = None
 
@@ -45,6 +40,7 @@ class ActivePromptOut(BaseModel):
 class PromptVersionCreate(BaseModel):
     system_prompt: str = ""
     user_prompt: str = ""
+    model_nm: str | None = None
     version_no: str | None = None
     change_summary: str = Field(..., min_length=1, max_length=500)
     change_reason: str = Field(..., min_length=1, max_length=1000)
@@ -55,6 +51,7 @@ class PromptVersionCreate(BaseModel):
 class PromptVersionEdit(BaseModel):
     system_prompt: str = ""
     user_prompt: str = ""
+    model_nm: str | None = None
     change_summary: str | None = Field(default=None, max_length=500)
     change_reason: str | None = Field(default=None, max_length=1000)
 

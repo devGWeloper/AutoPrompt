@@ -1,5 +1,5 @@
 // In-memory seed data for the demo mock layer (UI review without a backend).
-// Scoped to the current RAGAS-centric API surface.
+// PM-only model: node identity is NODE_NM (no external CHAT_VER_MAS / NODE_MAS).
 
 import type {
   AuditLog,
@@ -22,11 +22,12 @@ export function bumpMinor(v: string): string {
   return `${m[1]}.${Number(m[2]) + 1}.0`;
 }
 
-// ---- prompt versions (per node) -------------------------------------------
+// ---- prompt versions (per node_nm) ----------------------------------------
 
-function pv(over: Partial<PromptVersionDetail> & { prompt_id: number; node_mas_id: number; node_nm: string; version_no: string }): PromptVersionDetail {
+function pv(over: Partial<PromptVersionDetail> & { prompt_id: number; node_nm: string; version_no: string }): PromptVersionDetail {
   return {
     is_active: 'N',
+    model_nm: null,
     change_summary: null,
     created_by: 'system',
     created_dt: '2026-05-20 10:00:00',
@@ -39,42 +40,42 @@ function pv(over: Partial<PromptVersionDetail> & { prompt_id: number; node_mas_i
   };
 }
 
-const promptVersions: Record<number, PromptVersionDetail[]> = {
-  1: [
-    pv({ prompt_id: 12, node_mas_id: 1, node_nm: 'classify', version_no: '1.2.0', is_active: 'Y',
+const promptVersions: Record<string, PromptVersionDetail[]> = {
+  classify: [
+    pv({ prompt_id: 12, node_nm: 'classify', version_no: '1.2.0', is_active: 'Y', model_nm: 'claude-sonnet-4-6',
       change_summary: '의도 카테고리 6종으로 확장', change_reason: '미분류 비율 감소',
       system_prompt: '당신은 사용자 질문의 의도를 분류하는 분류기입니다. 카테고리: 정보요청, 비교, 절차문의, 불만, 잡담, 기타.',
       user_prompt: '질문: {{question}}\n위 질문의 의도를 한 단어로 답하세요.', created_dt: '2026-05-24 14:12:00', updated_dt: '2026-05-24 14:12:00', prev_prompt_id: 11 }),
-    pv({ prompt_id: 11, node_mas_id: 1, node_nm: 'classify', version_no: '1.1.0',
+    pv({ prompt_id: 11, node_nm: 'classify', version_no: '1.1.0', model_nm: 'claude-sonnet-4-6',
       change_summary: '잡담 카테고리 추가', change_reason: '오분류 대응',
       system_prompt: '당신은 사용자 질문의 의도를 분류합니다. 카테고리: 정보요청, 비교, 절차문의, 기타.',
       user_prompt: '질문: {{question}}\n의도?', created_dt: '2026-05-21 09:30:00', prev_prompt_id: 10 }),
-    pv({ prompt_id: 10, node_mas_id: 1, node_nm: 'classify', version_no: '1.0.0',
+    pv({ prompt_id: 10, node_nm: 'classify', version_no: '1.0.0', model_nm: 'claude-sonnet-4-6',
       change_summary: '초기 버전', change_reason: '최초 작성',
       system_prompt: '질문 의도를 분류하세요.', user_prompt: '{{question}}', created_dt: '2026-05-20 10:00:00' }),
   ],
-  3: [
-    pv({ prompt_id: 31, node_mas_id: 3, node_nm: 'generate', version_no: '2.0.1', is_active: 'Y',
+  generate: [
+    pv({ prompt_id: 31, node_nm: 'generate', version_no: '2.0.1', is_active: 'Y', model_nm: 'claude-sonnet-4-6',
       change_summary: '근거 인용 형식 고정', change_reason: '환각 감소 및 출처 명시',
       system_prompt: '당신은 제공된 문맥만 근거로 답하는 어시스턴트입니다. 문맥에 없으면 모른다고 답하세요. 답변 끝에 [출처] 표기를 붙입니다.',
       user_prompt: '문맥:\n{{contexts}}\n\n질문: {{question}}\n\n문맥에 근거해 한국어로 답하세요.', created_dt: '2026-05-25 16:40:00', updated_dt: '2026-05-25 16:40:00', prev_prompt_id: 30 }),
-    pv({ prompt_id: 30, node_mas_id: 3, node_nm: 'generate', version_no: '2.0.0',
+    pv({ prompt_id: 30, node_nm: 'generate', version_no: '2.0.0', model_nm: 'claude-sonnet-4-6',
       change_summary: '톤 정돈 + 길이 제한', change_reason: '응답 장황함 개선',
       system_prompt: '제공된 문맥을 근거로 간결하게 답하세요.',
       user_prompt: '문맥:\n{{contexts}}\n질문: {{question}}', created_dt: '2026-05-22 11:05:00' }),
   ],
-  4: [
-    pv({ prompt_id: 41, node_mas_id: 4, node_nm: 'verify', version_no: '1.0.0', is_active: 'Y',
+  verify: [
+    pv({ prompt_id: 41, node_nm: 'verify', version_no: '1.0.0', is_active: 'Y', model_nm: 'claude-sonnet-4-6',
       change_summary: '초기 검증 프롬프트', change_reason: '사실성 점검 단계 도입',
       system_prompt: '당신은 답변이 문맥에 의해 뒷받침되는지 검증합니다. 지지/불충분/모순 중 하나로 판정하세요.',
       user_prompt: '문맥:\n{{contexts}}\n답변: {{answer}}\n판정?', created_dt: '2026-05-23 13:20:00' }),
   ],
 };
 
-// ---- audit logs (per node) ------------------------------------------------
+// ---- audit logs (per node_nm) ---------------------------------------------
 
-const auditLogs: Record<number, AuditLog[]> = {
-  1: [
+const auditLogs: Record<string, AuditLog[]> = {
+  classify: [
     { log_id: 9020, target_table: 'PM_NODE_PROMPT_VER', target_id: 12, action: 'ACTIVATE', created_by: 'system', created_dt: '2026-05-24 14:13:10',
       before_value: JSON.stringify({ active_version_no: '1.1.0' }), after_value: JSON.stringify({ active_version_no: '1.2.0' }) },
     { log_id: 9019, target_table: 'PM_NODE_PROMPT_VER', target_id: 12, action: 'CREATE', created_by: 'system', created_dt: '2026-05-24 14:12:00',
@@ -82,13 +83,13 @@ const auditLogs: Record<number, AuditLog[]> = {
     { log_id: 9012, target_table: 'PM_NODE_PROMPT_VER', target_id: 11, action: 'UPDATE', created_by: 'system', created_dt: '2026-05-21 09:35:00',
       before_value: JSON.stringify({ system_prompt: '질문 의도를 분류하세요.' }), after_value: JSON.stringify({ system_prompt: '당신은 사용자 질문의 의도를 분류합니다. 카테고리: 정보요청, 비교, 절차문의, 기타.' }) },
   ],
-  3: [
+  generate: [
     { log_id: 9031, target_table: 'PM_NODE_PROMPT_VER', target_id: 31, action: 'ACTIVATE', created_by: 'system', created_dt: '2026-05-25 16:41:00',
       before_value: JSON.stringify({ active_version_no: '2.0.0' }), after_value: JSON.stringify({ active_version_no: '2.0.1' }) },
     { log_id: 9030, target_table: 'PM_NODE_PROMPT_VER', target_id: 31, action: 'CREATE', created_by: 'system', created_dt: '2026-05-25 16:40:00',
       before_value: null, after_value: JSON.stringify({ version_no: '2.0.1', change_summary: '근거 인용 형식 고정' }) },
   ],
-  4: [
+  verify: [
     { log_id: 9041, target_table: 'PM_NODE_PROMPT_VER', target_id: 41, action: 'CREATE', created_by: 'system', created_dt: '2026-05-23 13:20:00',
       before_value: null, after_value: JSON.stringify({ version_no: '1.0.0', change_summary: '초기 검증 프롬프트' }) },
   ],
@@ -97,7 +98,7 @@ const auditLogs: Record<number, AuditLog[]> = {
 // ---- datasets + cases -----------------------------------------------------
 
 function ds(dataset_id: number, dataset_nm: string, description: string | null): Dataset {
-  return { dataset_id, node_mas_id: null, scope: 'FLOW', dataset_nm, description, is_active: 'Y', created_by: 'system', created_dt: '2026-05-20 10:00:00' };
+  return { dataset_id, dataset_nm, description, is_active: 'Y', created_by: 'system', created_dt: '2026-05-20 10:00:00' };
 }
 function tc(case_id: number, dataset_id: number, question: string, ground_truth: string, contexts: string[]): TestCase {
   return {
@@ -129,14 +130,13 @@ const cases: Record<number, TestCase[]> = {
 
 const METRIC_KEYS = RAGAS_METRICS;
 
-/** Build a RagasRunDetail by scoring each case of a dataset with plausible values. */
 export function makeRagasRun(datasetId: number, metrics: string[], over?: Partial<RagasRunDetail>): RagasRunDetail {
   const id = nextId();
   const chosen = METRIC_KEYS.filter((m) => metrics.includes(m));
   const used = chosen.length ? chosen : [...METRIC_KEYS];
   const rows = (cases[datasetId] ?? []).map((c, i): RagasResultRow => {
     const parsed = JSON.parse(c.input_data) as { question?: string; contexts?: string[]; ground_truth?: string };
-    const base = 0.72 + ((i * 7) % 20) / 100; // deterministic-ish 0.72–0.91
+    const base = 0.72 + ((i * 7) % 20) / 100;
     const scores = Object.fromEntries(
       METRIC_KEYS.map((m, j) => [m, used.includes(m) ? Math.min(0.99, Math.round((base - j * 0.03 + 0.04) * 100) / 100) : null]),
     ) as Record<(typeof METRIC_KEYS)[number], number | null>;
@@ -158,10 +158,9 @@ export function makeRagasRun(datasetId: number, metrics: string[], over?: Partia
   };
   const detail: RagasRunDetail = {
     ragas_run_id: id,
-    chat_ver_id: 1,
-    node_mas_id: null,
     prompt_id: null,
     ab_group_id: null,
+    node_nm: null,
     version_no: null,
     dataset_id: datasetId,
     status: 'DONE',
@@ -186,35 +185,31 @@ function seedRun(datasetId: number, over?: Partial<RagasRunDetail>) {
   ragasRuns[r.ragas_run_id] = r;
   return r;
 }
-// two completed + one failed, with fixed-ish timestamps
 seedRun(1, { engine: 'RAGAS', created_dt: '2026-05-25 17:02:00' });
 seedRun(1, { engine: 'FALLBACK', created_dt: '2026-05-24 10:11:00' });
 const failed = makeRagasRun(2, [...METRIC_KEYS], {
-  status: 'FAILED', engine: 'RAGAS', error_msg: 'judge model timeout (OPENAI_JUDGE_MODEL)', created_dt: '2026-05-23 09:00:00',
+  status: 'FAILED', engine: 'RAGAS', error_msg: 'judge model timeout', created_dt: '2026-05-23 09:00:00',
   faithfulness: null, answer_relevancy: null, context_precision: null, context_recall: null, answer_correctness: null,
   results: [],
 });
 ragasRuns[failed.ragas_run_id] = failed;
 
-// seeded A/B comparison on node 3 (generate): v2.0.0 (prompt 30) vs v2.0.1 (prompt 31)
-const abA = makeRagasRun(1, [...METRIC_KEYS], { node_mas_id: 3, prompt_id: 30, version_no: '2.0.0', engine: 'RAGAS', created_dt: '2026-05-26 09:00:00' });
+// seeded A/B comparison on node "generate": v2.0.0 (prompt 30) vs v2.0.1 (prompt 31)
+const abA = makeRagasRun(1, [...METRIC_KEYS], { node_nm: 'generate', prompt_id: 30, version_no: '2.0.0', engine: 'RAGAS', created_dt: '2026-05-26 09:00:00' });
 abA.ab_group_id = abA.ragas_run_id;
 ragasRuns[abA.ragas_run_id] = abA;
-const abB = makeRagasRun(1, [...METRIC_KEYS], { node_mas_id: 3, prompt_id: 31, version_no: '2.0.1', engine: 'RAGAS', created_dt: '2026-05-26 09:00:05', ab_group_id: abA.ragas_run_id });
+const abB = makeRagasRun(1, [...METRIC_KEYS], { node_nm: 'generate', prompt_id: 31, version_no: '2.0.1', engine: 'RAGAS', created_dt: '2026-05-26 09:00:05', ab_group_id: abA.ragas_run_id });
 for (const mm of METRIC_KEYS) {
   const v = abB[mm];
-  if (v != null) abB[mm] = Math.min(0.99, Math.round((Number(v) + 0.03) * 1000) / 1000); // B slightly better → visible Δ
+  if (v != null) abB[mm] = Math.min(0.99, Math.round((Number(v) + 0.03) * 1000) / 1000);
 }
 ragasRuns[abB.ragas_run_id] = abB;
 
 export const flowCurrent: FlowCurrent = {
-  chat_ver_id: 1,
   nodes: [
-    { node_mas_id: 1, node_nm: 'classify', node_desc: '사용자 질문 의도 분류', has_prompt: true, active_prompt_id: 12, active_version_no: '1.2.0' },
-    { node_mas_id: 2, node_nm: 'retrieve', node_desc: '벡터 검색으로 문맥 수집', has_prompt: false, active_prompt_id: null, active_version_no: null },
-    { node_mas_id: 3, node_nm: 'generate', node_desc: '문맥 기반 답변 생성', has_prompt: true, active_prompt_id: 31, active_version_no: '2.0.1' },
-    { node_mas_id: 4, node_nm: 'verify', node_desc: '답변 사실성 검증', has_prompt: true, active_prompt_id: 41, active_version_no: '1.0.0' },
-    { node_mas_id: 5, node_nm: 'respond', node_desc: '최종 응답 포맷팅', has_prompt: false, active_prompt_id: null, active_version_no: null },
+    { node_nm: 'classify', active_prompt_id: 12, active_version_no: '1.2.0', active_model_nm: 'claude-sonnet-4-6' },
+    { node_nm: 'generate', active_prompt_id: 31, active_version_no: '2.0.1', active_model_nm: 'claude-sonnet-4-6' },
+    { node_nm: 'verify', active_prompt_id: 41, active_version_no: '1.0.0', active_model_nm: 'claude-sonnet-4-6' },
   ],
 };
 
