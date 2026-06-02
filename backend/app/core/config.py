@@ -11,8 +11,9 @@ class Settings(BaseSettings):
 
     # Oracle connection. On the internal network these arrive as three separate
     # values; oracle_dsn is the BARE connection string handed to python-oracledb
-    # as `dsn` (Easy Connect "host:port/service", a tnsnames alias, or a full
-    # "(DESCRIPTION=...)" descriptor) — credentials are NOT embedded in it.
+    # as `dsn` — Easy Connect "host:port/service", a tnsnames alias, or a full
+    # "(DESCRIPTION=(ADDRESS_LIST=(ADDRESS=(PROTOCOL=TCP)(HOST=...)(PORT=...)))
+    # (CONNECT_DATA=(SERVICE_NAME=...)))" descriptor. Credentials are NOT embedded.
     # Env: ORACLE_USER / ORACLE_PASSWORD / ORACLE_DSN.
     oracle_user: str = "pm_user"
     oracle_password: str = "pm_password"
@@ -47,10 +48,14 @@ class Settings(BaseSettings):
     llm_endpoint: str = ""
     llm_api_key: str = ""
 
-    # Embedding model name served by the same internal gateway (base_url=LLM_ENDPOINT).
-    # Required for real RAGAS context metrics (precision/recall); LLM-only metrics
-    # still run if it's unset. Env: OPENAI_EMBEDDING_MODEL.
-    openai_embedding_model: str = ""
+    # Embedding model (OpenAI-compatible: base URL + key + model name). MAY point
+    # at a different gateway than LLM_*. Required for RAGAS context metrics
+    # (context_precision / context_recall); LLM-only metrics still run if
+    # embedding_endpoint is unset.
+    # Env: EMBEDDING_MODEL_NAME / EMBEDDING_ENDPOINT / EMBEDDING_API_KEY.
+    embedding_model_name: str = ""
+    embedding_endpoint: str = ""
+    embedding_api_key: str = ""
 
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

@@ -8,7 +8,6 @@ Run:  backend/.venv/Scripts/python.exe backend/scripts/seed_pm_demo.py
 """
 from __future__ import annotations
 
-import re
 import sys
 from pathlib import Path
 
@@ -19,31 +18,20 @@ from sqlalchemy import create_engine, select  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 import app.models  # noqa: E402,F401  -- register metadata
+from app.core.config import get_settings  # noqa: E402
 from app.models.chat_ver import ChatVerMas  # noqa: E402
 from app.models.node_mas import NodeMas  # noqa: E402
 from app.models.node_prompt_ver import NodePromptVer  # noqa: E402
 
-DEFAULT_DSN = "system/orcl@localhost:1521/orcl"
-
-
-def sqlalchemy_url() -> str:
-    dsn = DEFAULT_DSN
-    env = BACKEND / ".env"
-    if env.exists():
-        for line in env.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line.startswith("ORACLE_DSN="):
-                dsn = line.split("=", 1)[1].strip()
-                break
-    m = re.match(r"^([^/]+)/([^@]+)@([^:/]+):(\d+)/(.+)$", dsn)
-    if not m:
-        raise SystemExit(f"cannot parse ORACLE_DSN={dsn!r}")
-    user, pw, host, port, service = m.groups()
-    return f"oracle+oracledb://{user}:{pw}@{host}:{port}/?service_name={service}"
-
 
 def main() -> int:
-    engine = create_engine(sqlalchemy_url(), future=True)
+    s = get_settings()
+    # Same connection path as the app: bare oracle+oracledb URL + user/password/
+    # dsn handed through connect_args, so any DSN form (Easy Connect / tnsnames
+    # alias / full (DESCRIPTION=...) descriptor) works unchanged.
+    engine = create_engine(
+        s.sqlalchemy_url(), connect_args=s.oracle_connect_args(), future=True
+    )
     Session = sessionmaker(bind=engine, future=True)
     s = Session()
     try:

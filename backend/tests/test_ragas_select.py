@@ -18,7 +18,9 @@ def _settings(*, llm_endpoint: str = "", engine: str = "auto"):
         llm_endpoint=llm_endpoint,
         llm_api_key="",
         llm_model_name="",
-        openai_embedding_model="",
+        embedding_model_name="",
+        embedding_endpoint="",
+        embedding_api_key="",
         ragas_engine=engine,
         internal_llm_enabled=lambda: bool(llm_endpoint.strip()),
     )

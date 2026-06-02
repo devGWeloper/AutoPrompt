@@ -29,8 +29,14 @@
 
 ## 1. DB 접속 (`backend/.env`)
 
+user/password/dsn 3개를 따로 적는다. `ORACLE_DSN` 은 python-oracledb 에 그대로 넘기는
+bare 연결 문자열 — Easy Connect / tnsnames alias / 풀 TNS descriptor 다 가능.
 ```
-ORACLE_DSN=<user>/<password>@<host>:<port>/<service>   # 예: system/orcl@localhost:1521/orcl
+ORACLE_USER=<user>
+ORACLE_PASSWORD=<password>
+# 둘 중 한 형식 (한 줄, 따옴표 없이):
+ORACLE_DSN=host:port/service_name
+ORACLE_DSN=(DESCRIPTION=(ADDRESS_LIST=(ADDRESS=(PROTOCOL=TCP)(HOST=...)(PORT=...)))(CONNECT_DATA=(SERVICE_NAME=...)))
 ```
 
 스키마 생성(최초 1회): `backend/` 에서
@@ -89,15 +95,20 @@ POST {EXTERNAL_AGENT_BASE_URL}{EXTERNAL_CHAT_PATH}
 
 ## 5. LLM provider (RAGAS judge 전용)
 
-이 시스템이 직접 호출하는 LLM 은 **RAGAS judge / embedding 모델**뿐이고, 모두 내부 OpenAI 호환
-게이트웨이로 보낸다. `.env` 에 다음 4개만 채우면 된다:
+이 시스템이 직접 호출하는 LLM 은 **RAGAS judge / embedding 모델**뿐이고, 둘 다 OpenAI 호환
+게이트웨이로 보낸다 (judge 와 embedding 은 다른 게이트웨이여도 됨). `.env`:
 ```
 LLM_ENDPOINT=http://<gateway>:<port>/v1
 LLM_API_KEY=<key>
 LLM_MODEL_NAME=<judge chat model>
-OPENAI_EMBEDDING_MODEL=<embedding model>     # context_precision/recall 필요시
+
+EMBEDDING_ENDPOINT=http://<embedding-gateway>:<port>/v1   # context_precision/recall 필요시
+EMBEDDING_API_KEY=<key>
+EMBEDDING_MODEL_NAME=<embedding model>
 ```
 `LLM_ENDPOINT` 가 비어있으면 자동으로 fallback 채점기 (LLM 미호출, 토큰 겹침 휴리스틱) 로 떨어진다.
+`EMBEDDING_ENDPOINT` 가 비어있으면 LLM-only metrics (faithfulness / answer_relevancy 등) 만 동작하고
+context_precision / context_recall 은 skip 된다.
 답 생성은 외부 채팅 엔드포인트 (또는 stub) 가 담당하므로 이 LLM 설정과 무관하다.
 
 ## 6. 실행 방법

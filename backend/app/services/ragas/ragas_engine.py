@@ -21,10 +21,12 @@ def ragas_importable() -> bool:
 class RagasEngine(RagasScorer):
     """Adapter over the real ``ragas`` library (optional dependency).
 
-    Builds a Langchain LLM + embeddings from the internal OpenAI-compatible LLM
-    gateway (LLM_ENDPOINT / LLM_API_KEY / LLM_MODEL_NAME), then evaluates one
-    case at a time. Any failure raises :class:`RagasUnavailable` so
-    ``ragas_service`` records it per-case while the run still completes.
+    Builds a Langchain LLM from the internal OpenAI-compatible LLM gateway
+    (LLM_ENDPOINT / LLM_API_KEY / LLM_MODEL_NAME) and embeddings from a separate
+    OpenAI-compatible embedding endpoint (EMBEDDING_ENDPOINT / EMBEDDING_API_KEY
+    / EMBEDDING_MODEL_NAME), then evaluates one case at a time. Any failure
+    raises :class:`RagasUnavailable` so ``ragas_service`` records it per-case
+    while the run still completes.
     """
 
     engine = "RAGAS"
@@ -37,7 +39,9 @@ class RagasEngine(RagasScorer):
     # -- judge construction -------------------------------------------------
 
     def _build_judge(self) -> tuple[object, object]:
-        """Return ragas-wrapped (llm, embeddings) routed through the internal gateway."""
+        """Return ragas-wrapped (llm, embeddings). LLM goes through the internal
+        gateway (LLM_*); embeddings go through their own EMBEDDING_* gateway
+        (may be the same host or a different one)."""
         s = get_settings()
         if not s.internal_llm_enabled():
             raise RagasUnavailable("LLM_ENDPOINT is not set (.env)")
@@ -56,12 +60,14 @@ class RagasEngine(RagasScorer):
             base_url=s.llm_endpoint,
             temperature=0,
         )
-        if not s.openai_embedding_model:
-            raise RagasUnavailable("OPENAI_EMBEDDING_MODEL is not set (.env)")
+        if not s.embedding_endpoint.strip():
+            raise RagasUnavailable("EMBEDDING_ENDPOINT is not set (.env)")
+        if not s.embedding_model_name.strip():
+            raise RagasUnavailable("EMBEDDING_MODEL_NAME is not set (.env)")
         emb = OpenAIEmbeddings(
-            model=s.openai_embedding_model,
-            api_key=s.llm_api_key,
-            base_url=s.llm_endpoint,
+            model=s.embedding_model_name,
+            api_key=s.embedding_api_key,
+            base_url=s.embedding_endpoint,
         )
 
         try:
