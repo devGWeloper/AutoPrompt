@@ -9,9 +9,9 @@ request itself only carries the user message + a user id. For A/B comparison,
 ``flow_service`` temporarily flips the active flag before invoking this adapter.
 
 Contract:
-    POST {EXTERNAL_AGENT_BASE_URL}{EXTERNAL_CHAT_PATH}
-    headers:  {EXTERNAL_AUTH_HEADER}: {EXTERNAL_AUTH_KEY}
-              {EXTERNAL_USER_HEADER}: {EXTERNAL_USER_ID}
+    POST {EXTERNAL_AGENT_BASE_URL}
+    headers:  auth-key: {EXTERNAL_AUTH_KEY}
+              user-id:  {EXTERNAL_USER_ID}
     request:  {"message": "<test input>", "user_id": "pm-test"}
     response: {"response": "<answer>", "docs": [...], "urls": [...], ...}
 The other response fields (service_id / session_id / user_id / trace_id / urls /
@@ -60,18 +60,14 @@ def _normalize_docs(raw: object) -> list[str]:
 
 
 def _request_headers() -> dict[str, str]:
-    """Auth + user-id headers from settings. Empty values are dropped so an
+    """Auth-key + user-id headers from settings. Empty values are dropped so an
     unconfigured header is simply omitted from the request."""
     s = get_settings()
     headers: dict[str, str] = {}
-    auth_name = s.external_auth_header.strip()
-    auth_val = s.external_auth_key.strip()
-    if auth_name and auth_val:
-        headers[auth_name] = auth_val
-    user_name = s.external_user_header.strip()
-    user_val = s.external_user_id.strip()
-    if user_name and user_val:
-        headers[user_name] = user_val
+    if s.external_auth_key.strip():
+        headers["auth-key"] = s.external_auth_key.strip()
+    if s.external_user_id.strip():
+        headers["user-id"] = s.external_user_id.strip()
     return headers
 
 
@@ -82,14 +78,11 @@ async def run_flow(*, message: str, timeout_s: float = 60.0) -> dict:
     active PM_NODE_PROMPT_VER row by itself — see module docstring.
     """
     s = get_settings()
-    path = s.external_chat_path
-    if not path.startswith("/"):
-        path = "/" + path
     payload = {"message": message, "user_id": s.external_user_id}
     headers = _request_headers()
     try:
         async with httpx.AsyncClient(timeout=timeout_s) as client:
-            resp = await client.post(f"{_base_url()}{path}", json=payload, headers=headers)
+            resp = await client.post(_base_url(), json=payload, headers=headers)
             resp.raise_for_status()
             data = resp.json()
     except Exception as exc:  # noqa: BLE001
