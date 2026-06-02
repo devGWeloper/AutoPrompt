@@ -32,13 +32,18 @@ class Settings(BaseSettings):
     # run_mode="external" routes answer generation to the real chat/super-agent
     # endpoint over HTTP; "stub" (default) returns a deterministic placeholder
     # answer in-process, so flow RAGAS runs end-to-end before the agent is wired.
-    # Swap to external by setting RUN_MODE=external + EXTERNAL_AGENT_BASE_URL.
-    # The chat request only carries {message, user_id} — the external model reads
-    # its own SYSTEM_PROMPT/USER_PROMPT from the active PM_NODE_PROMPT_VER row.
-    # Env: RUN_MODE / EXTERNAL_AGENT_BASE_URL / EXTERNAL_CHAT_PATH / EXTERNAL_USER_ID.
+    # The chat request body carries {message, user_id}; auth + user identity also
+    # go in HTTP headers (header names are configurable to match the external
+    # API spec). Empty header value → that header is omitted.
+    # Env: RUN_MODE / EXTERNAL_AGENT_BASE_URL / EXTERNAL_CHAT_PATH
+    #    / EXTERNAL_AUTH_HEADER / EXTERNAL_AUTH_KEY
+    #    / EXTERNAL_USER_HEADER / EXTERNAL_USER_ID.
     run_mode: str = "stub"
     external_agent_base_url: str = ""
     external_chat_path: str = "/chat"
+    external_auth_header: str = "Authorization"
+    external_auth_key: str = ""
+    external_user_header: str = "user-id"
     external_user_id: str = "pm-test"
 
     # Internal LLM gateway (OpenAI-compatible: base URL + key + model name).
