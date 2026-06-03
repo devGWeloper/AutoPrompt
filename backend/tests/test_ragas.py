@@ -76,6 +76,30 @@ def test_flow_ragas_run_fallback_scores(client):
     assert any(x["ragas_run_id"] == rid for x in runs)
 
 
+def test_flow_ragas_sets_test_flag_on_start(client, monkeypatch):
+    # Posting a run turns the global TEST flag on. Stub the background execution
+    # so the run stays in-flight and the flag isn't immediately cleared again.
+    async def _noop(**_kwargs):
+        return None
+
+    monkeypatch.setattr("app.services.flow_service.execute_flow_ragas_run", _noop)
+
+    did = _seed_dataset(client)
+    assert client.get("/api/v1/system-config").json() == {"enabled_yn": "N"}
+    client.post("/api/v1/flow/test/ragas", json={"dataset_id": did})
+    assert client.get("/api/v1/system-config").json() == {"enabled_yn": "Y"}
+
+
+def test_flow_ragas_clears_test_flag_when_done(client):
+    # A completed run leaves the flag off again (cleared by execute's finally).
+    did = _seed_dataset(client)
+    resp = client.post("/api/v1/flow/test/ragas", json={"dataset_id": did})
+    rid = resp.json()["ragas_run_id"]
+    with client.websocket_connect(f"/ws/ragas-runs/{rid}") as ws:
+        assert _drain(ws)[-1]["event"] == "DONE"
+    assert client.get("/api/v1/system-config").json() == {"enabled_yn": "N"}
+
+
 def test_flow_ragas_unknown_dataset_404(client):
     resp = client.post("/api/v1/flow/test/ragas", json={"dataset_id": 9999})
     assert resp.status_code == 404

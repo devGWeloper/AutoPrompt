@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.core import db as db_module
@@ -13,7 +13,7 @@ from app.models.dataset import TestCase, TestDataset
 from app.models.node_prompt_ver import NodePromptVer
 from app.models.ragas import RagasResult, RagasRun
 from app.schemas.flow import FlowCurrentOut, FlowNodeOut
-from app.services import external_agent
+from app.services import external_agent, system_config_service
 
 
 def _list_node_nms(db: Session) -> list[str]:
@@ -305,4 +305,18 @@ async def execute_flow_ragas_run(*, ragas_run_id: int, dataset_id: int) -> None:
             except Exception:  # noqa: BLE001
                 pass
     finally:
+        # Clear the global TEST flag once no RAGAS run is still in flight. Count
+        # non-terminal runs (PENDING/RUNNING) so an A/B pair keeps it "Y" until
+        # the last run finishes — including the sibling that is still PENDING
+        # while the first one is wrapping up.
+        try:
+            in_flight = session.execute(
+                select(func.count())
+                .select_from(RagasRun)
+                .where(RagasRun.status.notin_(["DONE", "FAILED"]))
+            ).scalar_one()
+            if in_flight == 0:
+                system_config_service.set_enabled(session, enabled_yn="N")
+        except Exception:  # noqa: BLE001 - never let cleanup mask the run result
+            pass
         session.close()

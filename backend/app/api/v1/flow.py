@@ -8,7 +8,7 @@ from app.core.db import get_db
 from app.schemas.dataset import DatasetCreate, DatasetDetail, DatasetSummary
 from app.schemas.flow import FlowCurrentOut, FlowRagasAbOut, FlowRagasAbRequest, FlowRagasRequest
 from app.schemas.ragas import RagasRunOut
-from app.services import dataset_service, flow_service
+from app.services import dataset_service, flow_service, system_config_service
 
 router = APIRouter(tags=["flow"])
 
@@ -44,6 +44,9 @@ async def run_flow_ragas(
     )
     db.commit()
     db.refresh(run)
+    # Flag a test as in-progress; execute_flow_ragas_run clears it back to "N"
+    # once no RAGAS run remains in RUNNING status.
+    system_config_service.set_enabled(db, enabled_yn="Y")
     out = RagasRunOut.model_validate(run)
     background.add_task(
         flow_service.execute_flow_ragas_run, ragas_run_id=run.ragas_run_id, dataset_id=payload.dataset_id
@@ -63,6 +66,8 @@ async def run_flow_ragas_ab(
     db.commit()
     db.refresh(run_a)
     db.refresh(run_b)
+    # Flag a test as in-progress; cleared once both runs leave RUNNING status.
+    system_config_service.set_enabled(db, enabled_yn="Y")
     a_id, b_id = run_a.ragas_run_id, run_b.ragas_run_id
     background.add_task(flow_service.execute_flow_ragas_run, ragas_run_id=a_id, dataset_id=payload.dataset_id)
     background.add_task(flow_service.execute_flow_ragas_run, ragas_run_id=b_id, dataset_id=payload.dataset_id)
