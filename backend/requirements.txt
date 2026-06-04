@@ -28,4 +28,11 @@ mypy>=1.10
 -r requirements.txt
 ragas>=0.2,<0.3
 datasets>=2.0
-langchain-google-genai>=2.0
+# ragas 0.2.x targets the langchain 0.3.x line. Leaving these unpinned let pip
+# pull langchain 1.x (which relocated/removed modules ragas still imports, e.g.
+# langchain_community.chat_models.vertexai) — `import ragas` then fails and the
+# scorer silently falls back to FALLBACK. The judge uses langchain-openai.
+langchain-core>=0.3,<0.4
+langchain>=0.3,<0.4
+langchain-community>=0.3,<0.4
+langchain-openai>=0.2,<0.4
