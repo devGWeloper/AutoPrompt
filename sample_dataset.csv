@@ -1,6 +1,0 @@
-input_json,expected_output,eval_criteria,case_type
-"{""inquiry_text"": ""I forgot my password and cannot log in""}",IT,,NORMAL
-"{""inquiry_text"": ""What are your business hours?""}",General,,NORMAL
-"{""inquiry_text"": ""My VPN keeps disconnecting on my laptop""}",IT,,EDGE
-"{""inquiry_text"": ""I have a question about my account"", ""customer_name"": ""Jane""}",General,,NORMAL
-"{""inquiry_text"": ""Why was I charged twice this month?""}",General,,NORMAL
