@@ -1,7 +1,6 @@
 'use client';
 
 import type { RunWsMessage } from '@/types';
-import { MOCK, mockConnect } from './mock';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
 
@@ -18,7 +17,6 @@ export interface RunWsHandlers {
 }
 
 function connect(path: string, handlers: RunWsHandlers): WebSocket {
-  if (MOCK) return mockConnect(path, handlers);
   const ws = new WebSocket(`${wsBaseUrl()}${path}`);
   ws.onmessage = (ev) => {
     try {
