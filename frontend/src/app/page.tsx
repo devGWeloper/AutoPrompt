@@ -5,7 +5,7 @@ import TopBar from '@/components/ui/TopBar';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { Input, Select } from '@/components/ui/field';
+import { Input, Select, Textarea } from '@/components/ui/field';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/Table';
 import { Tabs } from '@/components/ui/Tabs';
 import { api, ApiError } from '@/lib/api';
@@ -26,6 +26,18 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/
 const errText = (e: unknown) => (e instanceof ApiError ? JSON.stringify(e.detail) : String(e));
 const fmt2 = (v: number | null | undefined) => (v != null ? Number(v).toFixed(2) : '—');
 const fmt3 = (v: number | null | undefined) => (v != null ? Number(v).toFixed(3) : '—');
+
+/** Parse a case's input_data JSON into the friendly fields for display. Falls
+ * back to showing the raw string as the question if it isn't valid JSON. */
+function parseCaseInput(raw: string): { question: string; contexts: string[]; groundTruth: string | null } {
+  try {
+    const o = JSON.parse(raw) as { question?: string; contexts?: string[] | string; ground_truth?: string };
+    const ctx = Array.isArray(o.contexts) ? o.contexts : o.contexts ? [String(o.contexts)] : [];
+    return { question: o.question ?? '', contexts: ctx.map(String), groundTruth: o.ground_truth ?? null };
+  } catch {
+    return { question: raw, contexts: [], groundTruth: null };
+  }
+}
 
 type Tab = 'run' | 'datasets' | 'records';
 const TABS: { id: Tab; label: string }[] = [
@@ -280,8 +292,9 @@ function DatasetsPanel() {
   const [selDataset, setSelDataset] = useState<number | null>(null);
   const [cases, setCases] = useState<TestCase[]>([]);
   const [newName, setNewName] = useState('');
-  const [caseInput, setCaseInput] = useState('{"question": "", "ground_truth": ""}');
-  const [caseExpected, setCaseExpected] = useState('');
+  const [caseQuestion, setCaseQuestion] = useState('');
+  const [caseContexts, setCaseContexts] = useState('');
+  const [caseGroundTruth, setCaseGroundTruth] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const loadCases = useCallback(() => {
@@ -296,9 +309,22 @@ function DatasetsPanel() {
     catch (e) { setError(errText(e)); }
   }
   async function addCase() {
-    if (selDataset == null) return;
-    try { await api.post(`/datasets/${selDataset}/cases`, { input_data: caseInput, expected_output: caseExpected || null }); setCaseExpected(''); loadCases(); }
-    catch (e) { setError(errText(e)); }
+    if (selDataset == null || !caseQuestion.trim()) return;
+    // Build the input_data JSON from the friendly fields. Contexts: one per line.
+    // ground_truth is optional (only the gt-based metrics need it).
+    const contexts = caseContexts.split('\n').map((s) => s.trim()).filter(Boolean);
+    const input: Record<string, unknown> = { question: caseQuestion.trim() };
+    if (contexts.length) input.contexts = contexts;
+    const gt = caseGroundTruth.trim();
+    if (gt) input.ground_truth = gt;
+    try {
+      await api.post(`/datasets/${selDataset}/cases`, {
+        input_data: JSON.stringify(input),
+        expected_output: gt || null,
+      });
+      setCaseQuestion(''); setCaseContexts(''); setCaseGroundTruth('');
+      loadCases();
+    } catch (e) { setError(errText(e)); }
   }
   async function delDataset(id: number) { await api.del(`/datasets/${id}`); if (selDataset === id) setSelDataset(null); reload(); }
   async function delCase(id: number) { if (selDataset == null) return; await api.del(`/datasets/${selDataset}/cases/${id}`); loadCases(); }
@@ -315,7 +341,7 @@ function DatasetsPanel() {
       <div className="grid grid-cols-[18rem_1fr] gap-5">
         <Card className="p-4">
           <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-muted">데이터셋</h3>
-          <ul className="space-y-1.5">
+          <ul className="max-h-[70vh] space-y-1.5 overflow-y-auto pr-1">
             {datasets.map((d) => (
               <li key={d.dataset_id} className="flex items-center gap-2">
                 <button
@@ -338,26 +364,43 @@ function DatasetsPanel() {
             <div className="py-8 text-center text-sm text-muted">데이터셋을 선택하세요.</div>
           ) : (
             <>
-              <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-muted">케이스 ({cases.length})</h3>
-              <p className="mb-3 text-xs text-muted">input_data 는 평가 입력 JSON. 인식 키: question, contexts(list|str), ground_truth.</p>
-              <div className="mb-4 grid grid-cols-[1fr_1fr_auto] gap-2">
-                <Input value={caseInput} onChange={(e) => setCaseInput(e.target.value)} placeholder='{"question": "..."}' className="w-full font-mono text-xs" />
-                <Input value={caseExpected} onChange={(e) => setCaseExpected(e.target.value)} placeholder="expected_output (선택)" className="w-full text-xs" />
-                <Button variant="secondary" size="sm" onClick={addCase}>추가</Button>
+              <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-muted">케이스 ({cases.length})</h3>
+              <div className="mb-4 space-y-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted">질문 <span className="text-bad">*</span></label>
+                  <Input value={caseQuestion} onChange={(e) => setCaseQuestion(e.target.value)} placeholder="평가할 질문" className="w-full text-sm" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted">문맥 <span className="font-normal">(선택 · 한 줄에 하나)</span></label>
+                  <Textarea value={caseContexts} onChange={(e) => setCaseContexts(e.target.value)} rows={3} placeholder={'근거 문맥 1\n근거 문맥 2'} className="w-full text-sm" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted">정답 <span className="font-normal">(선택 · 정확도 지표에만 사용)</span></label>
+                  <Input value={caseGroundTruth} onChange={(e) => setCaseGroundTruth(e.target.value)} placeholder="기대 정답 (ground truth)" className="w-full text-sm" />
+                </div>
+                <div className="flex justify-end">
+                  <Button variant="secondary" size="sm" disabled={!caseQuestion.trim()} onClick={addCase}>케이스 추가</Button>
+                </div>
               </div>
-              <Table>
-                <THead><TR><TH>input</TH><TH>expected</TH><TH /></TR></THead>
-                <TBody>
-                  {cases.map((c) => (
-                    <TR key={c.case_id}>
-                      <TD className="font-mono text-xs">{c.input_data}</TD>
-                      <TD className="text-xs">{c.expected_output ?? '—'}</TD>
-                      <TD className="text-right"><Button variant="danger" size="sm" onClick={() => delCase(c.case_id)}>삭제</Button></TD>
-                    </TR>
-                  ))}
-                  {cases.length === 0 && <TR><TD colSpan={3} className="py-6 text-center text-muted">케이스 없음</TD></TR>}
-                </TBody>
-              </Table>
+              <div className="max-h-[55vh] overflow-y-auto">
+                <Table>
+                  <THead><TR><TH>질문</TH><TH>문맥</TH><TH>정답</TH><TH /></TR></THead>
+                  <TBody>
+                    {cases.map((c) => {
+                      const p = parseCaseInput(c.input_data);
+                      return (
+                        <TR key={c.case_id}>
+                          <TD className="max-w-[20rem]"><div className="truncate text-xs" title={p.question}>{p.question || '—'}</div></TD>
+                          <TD><span className="text-xs text-muted" title={p.contexts.join('\n')}>{p.contexts.length ? `${p.contexts.length}개` : '—'}</span></TD>
+                          <TD className="max-w-[14rem]"><div className="truncate text-xs" title={p.groundTruth ?? ''}>{p.groundTruth ?? '—'}</div></TD>
+                          <TD className="text-right"><Button variant="danger" size="sm" onClick={() => delCase(c.case_id)}>삭제</Button></TD>
+                        </TR>
+                      );
+                    })}
+                    {cases.length === 0 && <TR><TD colSpan={4} className="py-6 text-center text-muted">케이스 없음</TD></TR>}
+                  </TBody>
+                </Table>
+              </div>
             </>
           )}
         </Card>

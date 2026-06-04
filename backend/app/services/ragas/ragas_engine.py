@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 import math
 
 from app.core.config import get_settings
 from app.services.ragas.base import CaseScore, RagasScorer
+
+logger = logging.getLogger(__name__)
 
 
 class RagasUnavailable(RuntimeError):
@@ -13,7 +16,10 @@ class RagasUnavailable(RuntimeError):
 def ragas_importable() -> bool:
     try:
         import ragas  # noqa: F401
-    except Exception:  # noqa: BLE001 - any import/runtime issue means "unavailable"
+    except Exception as exc:  # noqa: BLE001 - any import/runtime issue means "unavailable"
+        # Log the real reason: a version/dependency conflict here silently forces
+        # FALLBACK even when a judge LLM is configured.
+        logger.warning("ragas library not importable, RAGAS engine disabled: %s", exc)
         return False
     return True
 

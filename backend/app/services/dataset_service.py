@@ -4,10 +4,11 @@ import csv
 import io
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.dataset import TestCase, TestDataset
+from app.models.ragas import RagasResult, RagasRun
 from app.schemas.dataset import CaseCreate, CaseUpdate, DatasetCreate, DatasetUpdate
 from app.services import audit as audit_service
 
@@ -91,11 +92,33 @@ def update_dataset(
 
 
 def delete_dataset(db: Session, *, dataset_id: int, actor: str) -> None:
+    """Delete a dataset and every row that depends on it, in FK order.
+
+    The dependency chain is PM_RAGAS_RESULT → (PM_RAGAS_RUN, PM_TEST_CASE) →
+    PM_TEST_DATASET, so results must go first, then the runs and cases, then the
+    dataset itself — otherwise Oracle rejects the parent delete (ORA-02292).
+    """
     ds = get_dataset(db, dataset_id)
-    for case in db.execute(
-        select(TestCase).where(TestCase.dataset_id == dataset_id)
-    ).scalars():
-        db.delete(case)
+    run_ids = (
+        db.execute(select(RagasRun.ragas_run_id).where(RagasRun.dataset_id == dataset_id))
+        .scalars()
+        .all()
+    )
+    case_ids = (
+        db.execute(select(TestCase.case_id).where(TestCase.dataset_id == dataset_id))
+        .scalars()
+        .all()
+    )
+    # Per-case results reference both a run and a case; clear them first.
+    result_conds = []
+    if run_ids:
+        result_conds.append(RagasResult.ragas_run_id.in_(run_ids))
+    if case_ids:
+        result_conds.append(RagasResult.case_id.in_(case_ids))
+    if result_conds:
+        db.execute(delete(RagasResult).where(or_(*result_conds)))
+    db.execute(delete(RagasRun).where(RagasRun.dataset_id == dataset_id))
+    db.execute(delete(TestCase).where(TestCase.dataset_id == dataset_id))
     db.flush()  # children before parent (FK order)
     db.delete(ds)
     db.flush()
