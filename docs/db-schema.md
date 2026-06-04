@@ -19,9 +19,8 @@
 | `PM_RAGAS_RUN`         | RAGAS 평가 한 건 (단일/AB)                   | `RAGAS_RUN_ID` | FK → `PM_NODE_PROMPT_VER`, `PM_TEST_DATASET` |
 | `PM_RAGAS_RESULT`      | RAGAS 평가의 케이스별 결과                   | `RAGAS_RESULT_ID` | FK → `PM_RAGAS_RUN`, `PM_TEST_CASE`    |
 | `PM_AUDIT_LOG`         | PM_* 테이블의 변경 감사 로그                 | `LOG_ID`       | —                                          |
-| `PM_SYSTEM_CONFIG`     | 시스템 단일 토글 (Y/N) — single-row          | `ENABLED_YN`   | —                                          |
 
-총 7개. 다른 PM_* 테이블 없음.
+총 6개. 다른 PM_* 테이블 없음.
 
 ---
 
@@ -63,7 +62,6 @@
                        └────────────────────────┘
 
    PM_AUDIT_LOG       (PM_* 모든 변경 감사 로그 — FK 없음, target_table+target_id 만 기록)
-   PM_SYSTEM_CONFIG   (시스템 단일 토글 — ENABLED_YN 한 컬럼, single-row)
 ```
 
 ---
@@ -223,22 +221,6 @@ PM_* 테이블의 모든 의미 있는 변경(생성/수정/활성화/삭제)을
 
 ---
 
-### 3.7 `PM_SYSTEM_CONFIG` — 시스템 단일 토글
-
-시스템 전역 Y/N 한 개. **한 row 만 존재**한다는 운영 규칙 (제약은 걸지 않음 —
-컬럼 1개만 유지).
-
-| 컬럼          | 타입            | NULL | 기본값 | 비고                            |
-|--------------|------------------|------|--------|---------------------------------|
-| `ENABLED_YN` | VARCHAR2(1)      | N    | 'N'    | 'Y' = 켜짐 / 'N' = 꺼짐. PK.    |
-
-- **읽기**: `SELECT ENABLED_YN FROM PM_SYSTEM_CONFIG;` — 항상 한 줄.
-- **쓰기**: `UPDATE PM_SYSTEM_CONFIG SET ENABLED_YN = :v;` — 토글.
-- **외부 모델 무관**: 외부 모델은 이 테이블을 절대 읽지 않는다. PM UI 토글
-  전용.
-
----
-
 ## 4. 통합 Oracle DDL (복사 후 그대로 실행)
 
 부모 → 자식 의존 순서. `PM_AUDIT_LOG` 와 `PM_TEST_DATASET` 은 독립.
@@ -363,15 +345,6 @@ CREATE TABLE PM_AUDIT_LOG (
 
 CREATE INDEX IDX_PM_AUDIT_TARGET ON PM_AUDIT_LOG (TARGET_TABLE, TARGET_ID);
 CREATE INDEX IDX_PM_AUDIT_DT     ON PM_AUDIT_LOG (CREATED_DT);
-
--- ==========================================================================
--- PM_SYSTEM_CONFIG : 시스템 단일 토글 (한 row)
--- ==========================================================================
-CREATE TABLE PM_SYSTEM_CONFIG (
-    ENABLED_YN VARCHAR2(1) DEFAULT 'N' NOT NULL
-);
-INSERT INTO PM_SYSTEM_CONFIG (ENABLED_YN) VALUES ('N');
-COMMIT;
 ```
 
 ---

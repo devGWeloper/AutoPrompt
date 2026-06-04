@@ -213,6 +213,4 @@ export const flowCurrent: FlowCurrent = {
   ],
 };
 
-const systemConfig: { enabled_yn: 'Y' | 'N' } = { enabled_yn: 'N' };
-
-export const store = { flowCurrent, promptVersions, auditLogs, datasets, cases, ragasRuns, systemConfig };
+export const store = { flowCurrent, promptVersions, auditLogs, datasets, cases, ragasRuns };

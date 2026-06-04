@@ -149,9 +149,3 @@ export type RunWsMessage =
   | { event: 'PROGRESS'; run_id: number; done: number; total: number; case_id: number | null }
   | { event: 'DONE'; run_id: number; engine?: string; summary?: Record<string, number | null> }
   | { event: 'FAILED'; run_id: number; error: string };
-
-// ---- system config (single-row global toggle) ----
-
-export interface SystemConfig {
-  enabled_yn: 'Y' | 'N';
-}
