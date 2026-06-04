@@ -10,8 +10,8 @@ request itself only carries the user message + a user id. For A/B comparison,
 
 Contract:
     POST {EXTERNAL_AGENT_BASE_URL}
-    headers:  auth-key: {EXTERNAL_AUTH_KEY}
-              user-id:  {EXTERNAL_USER_ID}
+    headers:  {EXTERNAL_AUTH_HEADER|"auth-key"}: {EXTERNAL_AUTH_KEY}
+              {EXTERNAL_USER_HEADER|"user-id"}:  {EXTERNAL_USER_ID}
     request:  {"message": "<test input>", "user_id": "pm-test"}
     response: {"response": "<answer>", "docs": [...], "urls": [...], ...}
 The other response fields (service_id / session_id / user_id / trace_id / urls /
@@ -60,14 +60,18 @@ def _normalize_docs(raw: object) -> list[str]:
 
 
 def _request_headers() -> dict[str, str]:
-    """Auth-key + user-id headers from settings. Empty values are dropped so an
-    unconfigured header is simply omitted from the request."""
+    """Auth + user-id headers from settings. The header NAMES default to
+    "auth-key" / "user-id" but are overridable via EXTERNAL_AUTH_HEADER /
+    EXTERNAL_USER_HEADER (gateways differ — e.g. "Authorization" / "X-User-Id").
+    Empty values are dropped so an unconfigured header is simply omitted."""
     s = get_settings()
+    auth_name = s.external_auth_header.strip() or "auth-key"
+    user_name = s.external_user_header.strip() or "user-id"
     headers: dict[str, str] = {}
     if s.external_auth_key.strip():
-        headers["auth-key"] = s.external_auth_key.strip()
+        headers[auth_name] = s.external_auth_key.strip()
     if s.external_user_id.strip():
-        headers["user-id"] = s.external_user_id.strip()
+        headers[user_name] = s.external_user_id.strip()
     return headers
 
 

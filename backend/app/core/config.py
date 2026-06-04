@@ -32,13 +32,17 @@ class Settings(BaseSettings):
     # run_mode="external" routes answer generation to the real chat/super-agent
     # endpoint over HTTP; "stub" (default) returns a deterministic placeholder
     # answer in-process. The chat request body carries {message, user_id}; auth
-    # + user identity ALSO go in HTTP headers ("auth-key" / "user-id"). Empty
-    # header value → that header is omitted.
-    # Env: RUN_MODE / EXTERNAL_AGENT_BASE_URL / EXTERNAL_AUTH_KEY / EXTERNAL_USER_ID.
+    # + user identity ALSO go in HTTP headers whose NAMES default to "auth-key" /
+    # "user-id" but are overridable (some gateways expect "Authorization" /
+    # "X-User-Id" etc.). Empty header value → that header is omitted.
+    # Env: RUN_MODE / EXTERNAL_AGENT_BASE_URL / EXTERNAL_AUTH_KEY / EXTERNAL_USER_ID
+    #      / EXTERNAL_AUTH_HEADER / EXTERNAL_USER_HEADER.
     run_mode: str = "stub"
     external_agent_base_url: str = ""
     external_auth_key: str = ""
     external_user_id: str = "pm-test"
+    external_auth_header: str = "auth-key"
+    external_user_header: str = "user-id"
 
     # Internal LLM gateway (OpenAI-compatible: base URL + key + model name).
     # The RAGAS judge LLM routes HERE — this is the only LLM this system calls.
