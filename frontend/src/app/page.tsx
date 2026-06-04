@@ -382,7 +382,7 @@ function DatasetsPanel() {
                   <Button variant="secondary" size="sm" disabled={!caseQuestion.trim()} onClick={addCase}>케이스 추가</Button>
                 </div>
               </div>
-              <div className="max-h-[60vh] overflow-y-auto">
+              <div>
                 <Table>
                   <THead><TR><TH className="w-2/5">질문</TH><TH className="w-2/5">문맥</TH><TH>정답</TH><TH /></TR></THead>
                   <TBody>
@@ -390,10 +390,10 @@ function DatasetsPanel() {
                       const p = parseCaseInput(c.input_data);
                       return (
                         <TR key={c.case_id}>
-                          <TD className="align-top"><div className="whitespace-pre-wrap break-words text-xs">{p.question || '—'}</div></TD>
+                          <TD className="align-top"><div className="max-h-28 overflow-y-auto whitespace-pre-wrap break-words text-xs">{p.question || '—'}</div></TD>
                           <TD className="align-top">
                             {p.contexts.length ? (
-                              <ol className="list-decimal space-y-1 pl-4 text-xs text-muted">
+                              <ol className="max-h-28 list-decimal space-y-1 overflow-y-auto pl-4 text-xs text-muted">
                                 {p.contexts.map((ctx, i) => (
                                   <li key={i} className="whitespace-pre-wrap break-words">{ctx}</li>
                                 ))}
@@ -402,7 +402,7 @@ function DatasetsPanel() {
                               <span className="text-xs text-muted">—</span>
                             )}
                           </TD>
-                          <TD className="align-top"><div className="whitespace-pre-wrap break-words text-xs">{p.groundTruth ?? '—'}</div></TD>
+                          <TD className="align-top"><div className="max-h-28 overflow-y-auto whitespace-pre-wrap break-words text-xs">{p.groundTruth ?? '—'}</div></TD>
                           <TD className="text-right align-top"><Button variant="danger" size="sm" onClick={() => delCase(c.case_id)}>삭제</Button></TD>
                         </TR>
                       );
