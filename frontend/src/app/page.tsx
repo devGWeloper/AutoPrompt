@@ -245,6 +245,10 @@ function ComparePanel() {
   const [detailB, setDetailB] = useState<RagasRunDetail | null>(null);
   const [showCases, setShowCases] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Live streaming: answers for both versions trickle in, then scores fill in.
+  const [liveA, setLiveA] = useState<RagasResultRow[]>([]);
+  const [liveB, setLiveB] = useState<RagasResultRow[]>([]);
+  const [total, setTotal] = useState(0);
 
   useEffect(() => {
     if (nodeNm == null) { setVersions([]); return; }
@@ -265,26 +269,42 @@ function ComparePanel() {
   async function run() {
     if (!canRun) return;
     setError(null); setDetailA(null); setDetailB(null); setShowCases(false); setStatus('running');
+    setLiveA([]); setLiveB([]); setTotal(0);
     try {
       const r = await api.post<{ ragas_run_a_id: number; ragas_run_b_id: number }>('/flow/test/ragas/ab', {
         dataset_id: datasetId, node_nm: nodeNm, prompt_id_a: verA, prompt_id_b: verB, metrics,
       });
-      const waitDone = (id: number, set: (d: RagasRunDetail) => void) =>
+      const waitDone = (
+        id: number,
+        setLive: (f: (cur: RagasResultRow[]) => RagasResultRow[]) => void,
+        setDet: (d: RagasRunDetail) => void,
+      ) =>
         new Promise<void>((resolve) => {
           const ws = connectRagasRunWs(id, {
             onMessage: async (m: RunWsMessage) => {
-              if (m.event === 'DONE' || m.event === 'FAILED') {
-                set(await api.get<RagasRunDetail>(`/ragas-runs/${id}`));
+              if (m.event === 'RUNNING') {
+                setTotal((t) => Math.max(t, m.total ?? 0));
+              } else if (m.event === 'ANSWER' || m.event === 'SCORE') {
+                setTotal((t) => Math.max(t, m.total));
+                setLive((cur) => upsertResult(cur, m.result));
+              } else if (m.event === 'DONE' || m.event === 'FAILED' || m.event === 'CANCELLED') {
+                setDet(await api.get<RagasRunDetail>(`/ragas-runs/${id}`));
                 ws.close();
                 resolve();
               }
             },
           });
         });
-      await Promise.all([waitDone(r.ragas_run_a_id, setDetailA), waitDone(r.ragas_run_b_id, setDetailB)]);
+      await Promise.all([
+        waitDone(r.ragas_run_a_id, setLiveA, setDetailA),
+        waitDone(r.ragas_run_b_id, setLiveB, setDetailB),
+      ]);
       setStatus('done');
     } catch (e) { setError(errText(e)); setStatus('failed'); }
   }
+
+  const answeredA = liveA.filter((r) => r.answer !== null || r.error_msg).length;
+  const answeredB = liveB.filter((r) => r.answer !== null || r.error_msg).length;
 
   return (
     <div className="space-y-5">
@@ -311,14 +331,36 @@ function ComparePanel() {
 
       {error && <ErrBox msg={error} />}
 
-      {!detailA && !detailB && !error && (
+      {status === 'idle' && !error && (
         <Card className="flex flex-col items-center justify-center gap-1 px-6 py-16 text-center">
           <div className="text-sm text-ink">노드와 비교할 <span className="font-medium">두 버전</span>을 고르고 실행하세요.</div>
           <div className="text-xs text-muted">선택한 노드의 시스템 프롬프트만 A/B로 바꿔 같은 데이터셋으로 채점합니다.</div>
         </Card>
       )}
 
-      {detailA && detailB && (
+      {/* Live A/B streaming while running: both versions' answers appear first, scores fill in. */}
+      {status === 'running' && (
+        <Card className="p-4">
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted">
+            <Badge tone="neutral">RUNNING</Badge>
+            <Badge tone="neutral">A · v{verLabel(verA)}</Badge>
+            <span>vs</span>
+            <Badge tone="accent">B · v{verLabel(verB)}</Badge>
+            <span className="ml-auto">답변 A {answeredA}/{total || '…'} · B {answeredB}/{total || '…'}</span>
+          </div>
+          {liveA.length > 0 || liveB.length > 0
+            ? <div className="overflow-hidden rounded-lg border border-line bg-surface">
+                <CaseCompareTable
+                  detailA={{ results: liveA } as RagasRunDetail}
+                  detailB={{ results: liveB } as RagasRunDetail}
+                  labelA={verLabel(verA)} labelB={verLabel(verB)}
+                />
+              </div>
+            : <div className="py-8 text-center text-xs text-muted">답변 생성 중…</div>}
+        </Card>
+      )}
+
+      {detailA && detailB && status !== 'running' && (
         <Card className="p-4">
           <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-muted">
             <span className="font-medium text-ink">{nodeNm}</span>
