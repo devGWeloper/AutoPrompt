@@ -74,6 +74,14 @@ class RagasEngine(RagasScorer):
             model=s.embedding_model_name,
             api_key=s.embedding_api_key,
             base_url=s.embedding_endpoint,
+            # Skip langchain's token-based chunking of inputs. That path imports
+            # tiktoken and downloads the cl100k_base encoding from an Azure blob
+            # on first use, which fails on the closed internal network (SSLError).
+            # With this False the raw text goes straight to the embedding API —
+            # no tiktoken, no HuggingFace fallback, no download, no cert bypass.
+            # Trade-off: inputs longer than the model's context are NOT pre-split,
+            # so a very long context would be rejected by the embedding API.
+            check_embedding_ctx_length=False,
         )
 
         try:
