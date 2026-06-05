@@ -171,14 +171,13 @@ function SingleRunPanel() {
       <Card className="p-4">
         <div className="flex flex-wrap items-center gap-3">
           <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />
-          <Button disabled={!datasetId || status === 'running'} onClick={run}>
-            {status === 'running' ? '평가 중…' : 'RAGAS 실행'}
+          <Button
+            variant={status === 'running' ? 'secondary' : 'primary'}
+            disabled={status === 'running' ? cancelling : !datasetId}
+            onClick={status === 'running' ? cancel : run}
+          >
+            {status === 'running' ? (cancelling ? '취소 중…' : '실행 취소') : 'RAGAS 실행'}
           </Button>
-          {status === 'running' && (
-            <Button variant="secondary" size="sm" disabled={cancelling} onClick={cancel}>
-              {cancelling ? '취소 중…' : '실행 취소'}
-            </Button>
-          )}
           <StatusPill status={status} />
         </div>
         <div className="mt-3 border-t border-line pt-3">
@@ -327,12 +326,14 @@ function ComparePanel() {
           <span className="text-xs text-muted">vs</span>
           <VersionSelect versions={versions} value={verB} onChange={setVerB} placeholder="버전 B" />
           <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />
-          <Button className="whitespace-nowrap" disabled={!canRun} onClick={run}>{status === 'running' ? '비교 중…' : '버전 비교 실행'}</Button>
-          {status === 'running' && (
-            <Button variant="secondary" size="sm" className="whitespace-nowrap" disabled={cancelling} onClick={cancel}>
-              {cancelling ? '취소 중…' : '실행 취소'}
-            </Button>
-          )}
+          <Button
+            variant={status === 'running' ? 'secondary' : 'primary'}
+            className="whitespace-nowrap"
+            disabled={status === 'running' ? cancelling : !canRun}
+            onClick={status === 'running' ? cancel : run}
+          >
+            {status === 'running' ? (cancelling ? '취소 중…' : '실행 취소') : '버전 비교 실행'}
+          </Button>
           <StatusPill status={status} />
         </div>
         {verA && verB && verA === verB && (
