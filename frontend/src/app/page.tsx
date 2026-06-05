@@ -12,6 +12,7 @@ import { api, ApiError } from '@/lib/api';
 import { connectRagasRunWs } from '@/lib/ws';
 import {
   RAGAS_METRICS,
+  METRIC_LABELS,
   type Dataset,
   type FlowCurrent,
   type FlowNode,
@@ -464,7 +465,7 @@ function RecordsPanel() {
         <THead>
           <TR>
             <TH>run</TH><TH>유형 / 상태</TH><TH>엔진</TH>
-            {RAGAS_METRICS.map((m) => (<TH key={m} className="text-right">{m.slice(0, 4)}</TH>))}
+            {RAGAS_METRICS.map((m) => (<TH key={m} className="text-right whitespace-nowrap">{METRIC_LABELS[m]}</TH>))}
             <TH>생성</TH><TH />
           </TR>
         </THead>
@@ -562,7 +563,7 @@ function MetricTiles({ run }: { run: RagasRunDetail }) {
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
       {RAGAS_METRICS.map((m) => (
         <div key={m} className="rounded-lg border border-line bg-bg/60 p-3">
-          <div className="truncate text-[11px] text-muted">{m}</div>
+          <div className="truncate text-[11px] text-muted">{METRIC_LABELS[m]}</div>
           <div className="mt-1 text-xl font-semibold tabular-nums text-ink">{fmt3(run[m])}</div>
         </div>
       ))}
@@ -589,7 +590,7 @@ function MetricCompareTable({ detailA, detailB }: { detailA: RagasRunDetail; det
             const d = av != null && bv != null ? Number(bv) - Number(av) : null;
             return (
               <TR key={m}>
-                <TD className="font-medium text-ink">{m}</TD>
+                <TD className="font-medium text-ink">{METRIC_LABELS[m]}</TD>
                 <TD className="text-right font-mono tabular-nums">{fmt3(av)}</TD>
                 <TD className="text-right font-mono tabular-nums">{fmt3(bv)}</TD>
                 <TD className={'text-right font-mono tabular-nums ' + (d == null ? 'text-muted' : d >= 0 ? 'text-ok' : 'text-bad')}>
@@ -625,7 +626,7 @@ function CaseCompareTable({
           <TH>질문</TH>
           <TH>버전</TH>
           <TH>답변</TH>
-          {RAGAS_METRICS.map((m) => (<TH key={m} className="text-right">{m.slice(0, 4)}</TH>))}
+          {RAGAS_METRICS.map((m) => (<TH key={m} className="text-right whitespace-nowrap">{METRIC_LABELS[m]}</TH>))}
         </TR>
       </THead>
       <TBody>
@@ -674,7 +675,7 @@ function CaseTable({ detail, bordered }: { detail: RagasRunDetail; bordered?: bo
       <THead>
         <TR>
           <TH>질문</TH><TH>답변</TH>
-          {RAGAS_METRICS.map((m) => (<TH key={m} className="text-right">{m.slice(0, 4)}</TH>))}
+          {RAGAS_METRICS.map((m) => (<TH key={m} className="text-right whitespace-nowrap">{METRIC_LABELS[m]}</TH>))}
         </TR>
       </THead>
       <TBody>

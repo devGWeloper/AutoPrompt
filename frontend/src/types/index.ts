@@ -87,6 +87,17 @@ export const RAGAS_METRICS = [
 ] as const;
 export type RagasMetric = (typeof RAGAS_METRICS)[number];
 
+// Human-readable Korean labels for the RAGAS metrics. Used in score tables so
+// the columns read as words instead of the truncated FAIT/ANSW/CONT/CONT/ANSW
+// (context_precision vs context_recall both collapsed to "CONT" otherwise).
+export const METRIC_LABELS: Record<RagasMetric, string> = {
+  faithfulness: '충실성',
+  answer_relevancy: '답변 관련성',
+  context_precision: '문맥 정밀도',
+  context_recall: '문맥 재현율',
+  answer_correctness: '답변 정확성',
+};
+
 export interface RagasResultRow {
   ragas_result_id: number;
   ragas_run_id: number;
