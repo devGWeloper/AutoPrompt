@@ -126,15 +126,7 @@ npm run dev            # http://localhost:3000
 프론트가 다른 호스트의 API 를 보게 하려면 `frontend/.env.local` 에
 `NEXT_PUBLIC_API_BASE_URL=http://<host>:8000/api/v1`.
 
-## 7. 데모 시드 스크립트 (로컬 Oracle 전용)
-
-- `backend/scripts/demo_seed_oracle.py` — `CHAT_VER_MAS`/`NODE_MAS` 데모 테이블 생성 + RAG 플로우 시드.
-  (운영에서는 실행하지 말 것 — 실제 테이블이 이미 존재.)
-- `backend/scripts/seed_pm_demo.py` — `alembic upgrade head` 후 `NODE_MAS` 로부터 노드 프롬프트
-  v1.0.0(활성)을 `PM_NODE_PROMPT_VER` 에 시드. (플로우 버전 시드는 폐지)
-- `backend/scripts/demo_seed_oracle.sql` — 위 DDL/시드의 sqlplus 버전.
-
-## 8. 빠른 점검
+## 7. 빠른 점검
 
 ```
 GET  /api/v1/flow/current                 # 노드 목록(+has_prompt) ← 프롬프트 관리 진입

@@ -352,7 +352,6 @@ CREATE INDEX IDX_PM_AUDIT_DT     ON PM_AUDIT_LOG (CREATED_DT);
 ## 5. 초기 시드 (선택, 데모용)
 
 홈 화면 노드 카드가 한 줄이라도 뜨게 하려면 노드를 하나 등록한다.
-백엔드 스크립트로도 동일: `backend/scripts/seed_pm_demo.py`.
 
 ```sql
 INSERT INTO PM_NODE_PROMPT_VER

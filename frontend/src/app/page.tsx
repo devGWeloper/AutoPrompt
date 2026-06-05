@@ -121,7 +121,6 @@ function SingleRunPanel() {
   const [metrics, setMetrics] = useState<string[]>([...RAGAS_METRICS]);
   const [status, setStatus] = useState('idle');
   const [detail, setDetail] = useState<RagasRunDetail | null>(null);
-  const [showDetail, setShowDetail] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Live streaming state: results trickle in (answers first, then scores).
   const [live, setLive] = useState<RagasResultRow[]>([]);
@@ -132,7 +131,7 @@ function SingleRunPanel() {
 
   async function run() {
     if (!datasetId) return;
-    setError(null); setDetail(null); setShowDetail(false); setStatus('running');
+    setError(null); setDetail(null); setStatus('running');
     setLive([]); setTotal(0); setCancelling(false); runIdRef.current = null;
     try {
       const r = await api.post<{ ragas_run_id: number }>('/flow/test/ragas', { dataset_id: datasetId, metrics });
@@ -214,17 +213,17 @@ function SingleRunPanel() {
 
       {detail && status !== 'running' && (
         <Card className="p-4">
-          <div className="mb-4 flex items-center gap-2 text-xs text-muted">
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted">
             <Badge tone={detail.status === 'FAILED' ? 'bad' : 'neutral'}>{detail.status}</Badge>
             <span>엔진 {detail.engine ?? '—'}</span>
             <span>·</span>
-            <span>케이스 {detail.results.length}건 평균</span>
-            <button onClick={() => setShowDetail((v) => !v)} className="ml-auto text-xs font-medium text-accent hover:underline">
-              {showDetail ? '접기' : `케이스 상세 (${detail.results.length})`}
-            </button>
+            <span>케이스 {detail.results.length}건</span>
           </div>
-          <MetricTiles run={detail} />
-          {showDetail && <div className="mt-4"><CaseTable detail={detail} /></div>}
+          <CaseTable detail={detail} />
+          <div className="mt-4 border-t border-line pt-3">
+            <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted">평균 점수</div>
+            <MetricSummary run={detail} />
+          </div>
         </Card>
       )}
     </div>
@@ -243,12 +242,13 @@ function ComparePanel() {
   const [status, setStatus] = useState('idle');
   const [detailA, setDetailA] = useState<RagasRunDetail | null>(null);
   const [detailB, setDetailB] = useState<RagasRunDetail | null>(null);
-  const [showCases, setShowCases] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Live streaming: answers for both versions trickle in, then scores fill in.
   const [liveA, setLiveA] = useState<RagasResultRow[]>([]);
   const [liveB, setLiveB] = useState<RagasResultRow[]>([]);
   const [total, setTotal] = useState(0);
+  const [cancelling, setCancelling] = useState(false);
+  const runIdsRef = useRef<number[]>([]);
 
   useEffect(() => {
     if (nodeNm == null) { setVersions([]); return; }
@@ -268,18 +268,19 @@ function ComparePanel() {
 
   async function run() {
     if (!canRun) return;
-    setError(null); setDetailA(null); setDetailB(null); setShowCases(false); setStatus('running');
-    setLiveA([]); setLiveB([]); setTotal(0);
+    setError(null); setDetailA(null); setDetailB(null); setStatus('running');
+    setLiveA([]); setLiveB([]); setTotal(0); setCancelling(false); runIdsRef.current = [];
     try {
       const r = await api.post<{ ragas_run_a_id: number; ragas_run_b_id: number }>('/flow/test/ragas/ab', {
         dataset_id: datasetId, node_nm: nodeNm, prompt_id_a: verA, prompt_id_b: verB, metrics,
       });
+      runIdsRef.current = [r.ragas_run_a_id, r.ragas_run_b_id];
       const waitDone = (
         id: number,
         setLive: (f: (cur: RagasResultRow[]) => RagasResultRow[]) => void,
         setDet: (d: RagasRunDetail) => void,
       ) =>
-        new Promise<void>((resolve) => {
+        new Promise<string>((resolve) => {
           const ws = connectRagasRunWs(id, {
             onMessage: async (m: RunWsMessage) => {
               if (m.event === 'RUNNING') {
@@ -290,17 +291,25 @@ function ComparePanel() {
               } else if (m.event === 'DONE' || m.event === 'FAILED' || m.event === 'CANCELLED') {
                 setDet(await api.get<RagasRunDetail>(`/ragas-runs/${id}`));
                 ws.close();
-                resolve();
+                resolve(m.event);
               }
             },
           });
         });
-      await Promise.all([
+      const ev = await Promise.all([
         waitDone(r.ragas_run_a_id, setLiveA, setDetailA),
         waitDone(r.ragas_run_b_id, setLiveB, setDetailB),
       ]);
-      setStatus('done');
+      setStatus(ev.includes('FAILED') ? 'failed' : ev.includes('CANCELLED') ? 'cancelled' : 'done');
     } catch (e) { setError(errText(e)); setStatus('failed'); }
+  }
+
+  async function cancel() {
+    const ids = runIdsRef.current;
+    if (!ids.length) return;
+    setCancelling(true);
+    // Cancel both runs; ignore per-id errors (e.g. one already finished → 409).
+    await Promise.all(ids.map((id) => api.post(`/ragas-runs/${id}/cancel`, {}).catch(() => {})));
   }
 
   const answeredA = liveA.filter((r) => r.answer !== null || r.error_msg).length;
@@ -319,6 +328,11 @@ function ComparePanel() {
           <VersionSelect versions={versions} value={verB} onChange={setVerB} placeholder="버전 B" />
           <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />
           <Button className="whitespace-nowrap" disabled={!canRun} onClick={run}>{status === 'running' ? '비교 중…' : '버전 비교 실행'}</Button>
+          {status === 'running' && (
+            <Button variant="secondary" size="sm" className="whitespace-nowrap" disabled={cancelling} onClick={cancel}>
+              {cancelling ? '취소 중…' : '실행 취소'}
+            </Button>
+          )}
           <StatusPill status={status} />
         </div>
         {verA && verB && verA === verB && (
@@ -362,22 +376,20 @@ function ComparePanel() {
 
       {detailA && detailB && status !== 'running' && (
         <Card className="p-4">
-          <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-muted">
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted">
             <span className="font-medium text-ink">{nodeNm}</span>
             <Badge tone="neutral">A · v{verLabel(verA)}</Badge>
             <span>vs</span>
             <Badge tone="accent">B · v{verLabel(verB)}</Badge>
             <span className="ml-auto">엔진 {detailA.engine ?? '—'}</span>
-            <button onClick={() => setShowCases((v) => !v)} className="text-xs font-medium text-accent hover:underline">
-              {showCases ? '케이스 접기' : '케이스별 보기'}
-            </button>
           </div>
-          <MetricCompareTable detailA={detailA} detailB={detailB} />
-          {showCases && (
-            <div className="mt-4 overflow-hidden rounded-lg border border-line bg-surface">
-              <CaseCompareTable detailA={detailA} detailB={detailB} labelA={verLabel(verA)} labelB={verLabel(verB)} />
-            </div>
-          )}
+          <div className="overflow-hidden rounded-lg border border-line bg-surface">
+            <CaseCompareTable detailA={detailA} detailB={detailB} labelA={verLabel(verA)} labelB={verLabel(verB)} />
+          </div>
+          <div className="mt-4 border-t border-line pt-3">
+            <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted">지표 평균 비교</div>
+            <MetricCompareTable detailA={detailA} detailB={detailB} />
+          </div>
         </Card>
       )}
     </div>
@@ -641,8 +653,13 @@ function AbCompareView({ aId, bId, labelA, labelB }: { aId: number; bId: number;
   if (!a || !b) return <div className="text-xs text-muted">불러오는 중…</div>;
   return (
     <div className="space-y-3">
-      <MetricCompareTable detailA={a} detailB={b} />
-      <CaseCompareTable detailA={a} detailB={b} labelA={labelA} labelB={labelB} />
+      <div className="overflow-hidden rounded-lg border border-line bg-surface">
+        <CaseCompareTable detailA={a} detailB={b} labelA={labelA} labelB={labelB} />
+      </div>
+      <div>
+        <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted">지표 평균 비교</div>
+        <MetricCompareTable detailA={a} detailB={b} />
+      </div>
     </div>
   );
 }
@@ -656,14 +673,15 @@ function RagasRunDetailView({ ragasId }: { ragasId: number }) {
 
 // ---- shared bits -----------------------------------------------------------
 
-function MetricTiles({ run }: { run: RagasRunDetail }) {
+// Compact average-score summary (secondary to the answers).
+function MetricSummary({ run }: { run: RagasRunDetail }) {
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+    <div className="flex flex-wrap gap-1.5">
       {RAGAS_METRICS.map((m) => (
-        <div key={m} className="rounded-lg border border-line bg-bg/60 p-3">
-          <div className="truncate text-[11px] text-muted">{METRIC_LABELS[m]}</div>
-          <div className="mt-1 text-xl font-semibold tabular-nums text-ink">{fmt3(run[m])}</div>
-        </div>
+        <span key={m} className="inline-flex items-center gap-1.5 rounded border border-line bg-bg/60 px-2 py-1 text-xs text-muted">
+          {METRIC_LABELS[m]}
+          <span className="font-mono tabular-nums text-ink">{fmt3(run[m])}</span>
+        </span>
       ))}
     </div>
   );
@@ -703,6 +721,47 @@ function MetricCompareTable({ detailA, detailB }: { detailA: RagasRunDetail; det
   );
 }
 
+/** Score chips for one side of an A/B case. When ``vs`` is given (the other
+ * side), each value is coloured better/worse to preserve the comparison. */
+function AbScoreChips({ row, vs, compare }: { row?: RagasResultRow; vs?: RagasResultRow; compare?: boolean }) {
+  const present = RAGAS_METRICS.filter((m) => row?.[m] != null);
+  if (present.length === 0) {
+    return row?.answer == null && row?.error_msg
+      ? <span className="text-[11px] text-bad">{row.error_msg}</span>
+      : <span className="text-[11px] text-muted">채점 대기…</span>;
+  }
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {present.map((m) => {
+        const v = Number(row![m]);
+        const o = vs?.[m];
+        const cls = compare && o != null
+          ? (v > Number(o) ? 'text-ok' : v < Number(o) ? 'text-bad' : 'text-ink')
+          : 'text-ink';
+        return (
+          <span key={m} className="inline-flex items-center gap-1 rounded border border-line bg-bg/60 px-1.5 py-0.5 text-[11px] text-muted">
+            {METRIC_LABELS[m]}
+            <span className={'font-mono tabular-nums ' + cls}>{fmt2(row![m])}</span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+// Bounded, scrollable answer box — answers can be long, so cap the height and
+// scroll inside (break-words so long unbroken tokens/URLs don't overflow wide).
+function AnswerBox({ text, error }: { text?: string | null; error?: string | null }) {
+  if (text == null) return <p className="text-sm text-bad">{error ?? '—'}</p>;
+  return (
+    <div className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words pr-1 text-sm leading-relaxed text-ink">
+      {text}
+    </div>
+  );
+}
+
+// Answer-centric A/B case view: per case, the two versions' answers sit side by
+// side as the focus; scores are small chips (B coloured vs A for comparison).
 function CaseCompareTable({
   detailA,
   detailB,
@@ -717,88 +776,94 @@ function CaseCompareTable({
   const byA = new Map(detailA.results.map((r) => [r.case_id, r] as const));
   const byB = new Map(detailB.results.map((r) => [r.case_id, r] as const));
   const ids = Array.from(new Set([...byA.keys(), ...byB.keys()]));
+  if (ids.length === 0) {
+    return <div className="py-8 text-center text-xs text-muted">결과 행 없음</div>;
+  }
   return (
-    <Table>
-      <THead>
-        <TR>
-          <TH>질문</TH>
-          <TH>버전</TH>
-          <TH>답변</TH>
-          {RAGAS_METRICS.map((m) => (<TH key={m} className="text-right whitespace-nowrap">{METRIC_LABELS[m]}</TH>))}
-        </TR>
-      </THead>
-      <TBody>
-        {ids.map((cid) => {
-          const a = byA.get(cid);
-          const b = byB.get(cid);
-          const q = a?.question ?? b?.question ?? '—';
-          const gt = a?.ground_truth ?? b?.ground_truth ?? null;
-          return (
-            <Fragment key={cid ?? 'null'}>
-              <TR className="border-t-2 border-line">
-                <TD rowSpan={2} className="max-w-[15rem] border-r border-line">
-                  <Clamp>{q}</Clamp>
-                  {gt && <div className="mt-1 text-[11px] text-muted">정답: {gt}</div>}
-                </TD>
-                <TD className="whitespace-nowrap"><Badge tone="neutral">A · v{labelA}</Badge></TD>
-                <TD className="max-w-[20rem]"><Clamp>{a?.answer ?? a?.error_msg ?? '—'}</Clamp></TD>
-                {RAGAS_METRICS.map((m) => (
-                  <TD key={m} className="text-right font-mono text-xs tabular-nums text-muted">{fmt2(a?.[m])}</TD>
-                ))}
-              </TR>
-              <TR>
-                <TD className="whitespace-nowrap"><Badge tone="accent">B · v{labelB}</Badge></TD>
-                <TD className="max-w-[20rem]"><Clamp>{b?.answer ?? b?.error_msg ?? '—'}</Clamp></TD>
-                {RAGAS_METRICS.map((m) => {
-                  const av = a?.[m];
-                  const bv = b?.[m];
-                  const cls = av != null && bv != null ? (bv > av ? 'text-ok' : bv < av ? 'text-bad' : 'text-muted') : 'text-muted';
-                  return <TD key={m} className={'text-right font-mono text-xs tabular-nums ' + cls}>{fmt2(bv)}</TD>;
-                })}
-              </TR>
-            </Fragment>
-          );
-        })}
-        {ids.length === 0 && (
-          <TR><TD colSpan={3 + RAGAS_METRICS.length} className="py-4 text-center text-xs text-muted">결과 행 없음</TD></TR>
-        )}
-      </TBody>
-    </Table>
+    <div className="divide-y divide-line">
+      {ids.map((cid) => {
+        const a = byA.get(cid);
+        const b = byB.get(cid);
+        const q = a?.question ?? b?.question ?? '—';
+        const gt = a?.ground_truth ?? b?.ground_truth ?? null;
+        return (
+          <div key={cid ?? 'null'} className="px-4 py-3.5">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted">질문</p>
+            <p className="mt-0.5 whitespace-pre-wrap text-sm text-ink">{q}</p>
+            {gt && <p className="mt-1.5 whitespace-pre-wrap text-xs text-muted"><span className="font-medium">정답 ·</span> {gt}</p>}
+
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border border-line bg-bg/40 p-3">
+                <Badge tone="neutral">A · v{labelA}</Badge>
+                <div className="mt-2"><AnswerBox text={a?.answer} error={a?.error_msg} /></div>
+                <div className="mt-2.5"><AbScoreChips row={a} /></div>
+              </div>
+              <div className="rounded-lg border border-line bg-bg/40 p-3">
+                <Badge tone="accent">B · v{labelB}</Badge>
+                <div className="mt-2"><AnswerBox text={b?.answer} error={b?.error_msg} /></div>
+                <div className="mt-2.5"><AbScoreChips row={b} vs={a} compare /></div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
+/** Compact, secondary score chips for one case (answer-centric layout). */
+function ScoreChips({ row }: { row: RagasResultRow }) {
+  const present = RAGAS_METRICS.filter((m) => row[m] !== null);
+  if (present.length === 0) {
+    return row.answer == null && row.error_msg
+      ? <span className="text-[11px] text-bad">{row.error_msg}</span>
+      : <span className="text-[11px] text-muted">채점 대기…</span>;
+  }
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {present.map((m) => (
+        <span key={m} className="inline-flex items-center gap-1 rounded border border-line bg-bg/60 px-1.5 py-0.5 text-[11px] text-muted">
+          {METRIC_LABELS[m]}
+          <span className="font-mono tabular-nums text-ink">{fmt2(row[m])}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// Answer-centric case view: question + answer are the focus, scores are small
+// secondary chips. Replaces the old dense score table.
 function CaseTable({ detail, bordered }: { detail: RagasRunDetail; bordered?: boolean }) {
-  const inner = (
-    <Table>
-      <THead>
-        <TR>
-          <TH>질문</TH><TH>답변</TH>
-          {RAGAS_METRICS.map((m) => (<TH key={m} className="text-right whitespace-nowrap">{METRIC_LABELS[m]}</TH>))}
-        </TR>
-      </THead>
-      <TBody>
-        {detail.results.map((r) => (
-          <TR key={r.ragas_result_id}>
-            <TD className="max-w-[16rem]"><Clamp>{r.question ?? '—'}</Clamp></TD>
-            <TD className="max-w-[16rem]"><Clamp>{r.answer ?? r.error_msg ?? '—'}</Clamp></TD>
-            {RAGAS_METRICS.map((m) => (<TD key={m} className="text-right font-mono text-xs tabular-nums">{fmt2(r[m])}</TD>))}
-          </TR>
-        ))}
-        {detail.results.length === 0 && (
-          <TR><TD colSpan={2 + RAGAS_METRICS.length} className="py-4 text-center text-xs text-muted">결과 행 없음</TD></TR>
-        )}
-      </TBody>
-    </Table>
+  const list = (
+    <div className="divide-y divide-line">
+      {detail.results.map((r) => (
+        <div key={r.ragas_result_id} className="px-4 py-3.5">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted">질문</p>
+          <p className="mt-0.5 whitespace-pre-wrap text-sm text-ink">{r.question ?? '—'}</p>
+
+          <p className="mt-3 text-[11px] font-medium uppercase tracking-wide text-muted">답변</p>
+          <div className="mt-0.5"><AnswerBox text={r.answer} error={r.error_msg} /></div>
+          {r.ground_truth && (
+            <p className="mt-2 whitespace-pre-wrap text-xs text-muted"><span className="font-medium">정답 ·</span> {r.ground_truth}</p>
+          )}
+
+          <div className="mt-3"><ScoreChips row={r} /></div>
+        </div>
+      ))}
+      {detail.results.length === 0 && (
+        <div className="py-8 text-center text-xs text-muted">결과 행 없음</div>
+      )}
+    </div>
   );
   if (detail.error_msg) {
     return (
       <div className="overflow-hidden rounded-lg border border-line bg-surface">
         <div className="border-b border-line bg-bad/5 px-3 py-2 text-xs text-bad">{detail.error_msg}</div>
-        {inner}
+        {list}
       </div>
     );
   }
-  return bordered ? <div className="overflow-hidden rounded-lg border border-line bg-surface">{inner}</div> : inner;
+  return bordered ? <div className="overflow-hidden rounded-lg border border-line bg-surface">{list}</div> : list;
 }
 
 function MetricChecks({ metrics, setMetrics }: { metrics: string[]; setMetrics: (f: (cur: string[]) => string[]) => void }) {
@@ -860,7 +925,4 @@ function StatusPill({ status }: { status: string }) {
 }
 function ErrBox({ msg }: { msg: string }) {
   return <div className="rounded-lg border border-bad/20 bg-bad/5 px-4 py-3 text-sm text-bad">{msg}</div>;
-}
-function Clamp({ children }: { children: React.ReactNode }) {
-  return <pre className="max-h-24 overflow-auto whitespace-pre-wrap font-sans text-xs text-ink">{children}</pre>;
 }

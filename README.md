@@ -81,10 +81,6 @@ cp .env.example .env                # 로컬 설치된 Oracle에 맞춰 ORACLE_D
 #   CHAT_VER_MAS/NODE_MAS/MODEL_MAS는 운영에 이미 존재한다고 가정(생성/변경하지 않음).
 alembic upgrade head
 
-# (데모 전용, 로컬 Oracle) 고정 테이블 + PM_* 시드:
-#   python scripts/demo_seed_oracle.py     # CHAT_VER_MAS/NODE_MAS 데모 생성 + RAG 플로우
-#   python scripts/seed_pm_demo.py         # PM_NODE_PROMPT_VER(활성) 시드
-
 # 개발 서버 (Oracle 사용 — .env). 테스트만 APP_ENV=test → SQLite
 uvicorn app.main:app --reload --port 8000
 ```
