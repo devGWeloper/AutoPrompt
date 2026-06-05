@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
@@ -13,7 +14,25 @@ from app.models.dataset import TestCase, TestDataset
 from app.models.node_prompt_ver import NodePromptVer
 from app.models.ragas import RagasResult, RagasRun
 from app.schemas.flow import FlowCurrentOut, FlowNodeOut
+from app.schemas.ragas import RagasResultOut
 from app.services import external_agent
+
+
+def _result_payload(row: RagasResult) -> dict:
+    """JSON-safe result row for WS streaming — same shape as the HTTP detail
+    endpoint (Decimal scores -> floats), so the UI can upsert it directly."""
+    return jsonable_encoder(RagasResultOut.model_validate(row))
+
+
+# Run ids the user asked to cancel. The background run loop (same process, via
+# FastAPI BackgroundTasks) checks this between cases and stops cleanly, keeping
+# whatever partial answers/scores were already produced.
+_cancelled: set[int] = set()
+
+
+def request_cancel(ragas_run_id: int) -> None:
+    """Flag a running RAGAS run for cancellation; the loop stops at the next case."""
+    _cancelled.add(ragas_run_id)
 
 
 def _list_node_nms(db: Session) -> list[str]:
@@ -253,50 +272,81 @@ async def execute_flow_ragas_run(*, ragas_run_id: int, dataset_id: int) -> None:
                 )
 
         sums: dict[str, list[float]] = {m: [] for m in ALL_METRICS}
+        cancelled = False
         try:
+            # Phase 1 — answers. Generate + persist every case's answer first and
+            # stream it to the UI immediately (ANSWER event), so the fast external-
+            # agent answers appear without waiting for the slow, LLM-bound scoring.
+            pending: list[tuple[RagasResult, list[str], dict]] = []
             for idx, case in enumerate(cases, start=1):
+                if ragas_run_id in _cancelled:
+                    cancelled = True
+                    break
                 fields = ragas_service._parse_case(case.input_data, case.expected_output)
                 row = RagasResult(
                     ragas_run_id=ragas_run_id, case_id=case.case_id, question=fields["question"],
                     contexts=json.dumps(fields["contexts"], ensure_ascii=False), ground_truth=fields["ground_truth"],
                 )
+                contexts = fields["contexts"]
                 try:
                     data = await external_agent.flow_answer(
                         message=fields["question"] or _message_from_inputs(_case_variables(case.input_data)),
                     )
                     row.answer = str(data.get("response", ""))
                     contexts = fields["contexts"] or list(data.get("docs") or [])
-                    cs = await scorer.score(
-                        question=fields["question"], answer=row.answer,
-                        contexts=contexts, ground_truth=fields["ground_truth"],
-                    )
-                    stored = False
-                    for m, v in cs.as_dict().items():
-                        dec = ragas_service._to_score(v)
-                        if dec is not None:
-                            setattr(row, m, dec)
-                            sums[m].append(float(dec))
-                            stored = True
-                    if not stored:
-                        row.error_msg = "scorer returned no finite metric scores"
-                except Exception as exc:  # noqa: BLE001 - per-case failure
+                except Exception as exc:  # noqa: BLE001 - answer generation failure
                     row.error_msg = str(exc)[:1000]
                 session.add(row)
                 session.commit()
-                await manager.broadcast(key, {"event": "PROGRESS", "run_id": ragas_run_id, "done": idx, "total": len(cases), "case_id": case.case_id})
+                pending.append((row, contexts, fields))
+                await manager.broadcast(key, {"event": "ANSWER", "run_id": ragas_run_id,
+                    "done": idx, "total": len(cases), "case_id": case.case_id, "result": _result_payload(row)})
+
+            # Phase 2 — scores. Score each answered case; the score columns fill in
+            # per case (SCORE event) as the judge finishes.
+            if not cancelled:
+                for idx, (row, contexts, fields) in enumerate(pending, start=1):
+                    if ragas_run_id in _cancelled:
+                        cancelled = True
+                        break
+                    if row.answer is not None and not row.error_msg:
+                        try:
+                            cs = await scorer.score(
+                                question=fields["question"], answer=row.answer,
+                                contexts=contexts, ground_truth=fields["ground_truth"],
+                            )
+                            stored = False
+                            for m, v in cs.as_dict().items():
+                                dec = ragas_service._to_score(v)
+                                if dec is not None:
+                                    setattr(row, m, dec)
+                                    sums[m].append(float(dec))
+                                    stored = True
+                            if not stored:
+                                row.error_msg = "scorer returned no finite metric scores"
+                        except Exception as exc:  # noqa: BLE001 - per-case scoring failure
+                            row.error_msg = str(exc)[:1000]
+                        session.commit()
+                    await manager.broadcast(key, {"event": "SCORE", "run_id": ragas_run_id,
+                        "done": idx, "total": len(cases), "case_id": row.case_id, "result": _result_payload(row)})
         finally:
             if ab_node_nm is not None:
                 _restore_active_prompt(session, node_nm=ab_node_nm, prompt_id=ab_backup)
 
         for m in ALL_METRICS:
             setattr(run, m, ragas_service._avg(sums[m]))
-        run.status = "DONE"
         run.ended_dt = datetime.now(timezone.utc)
+        summary = {m: float(getattr(run, m)) if getattr(run, m) is not None else None for m in ALL_METRICS}
+        if cancelled:
+            run.status = "CANCELLED"
+            session.commit()
+            await manager.broadcast(key, {"event": "CANCELLED", "run_id": ragas_run_id, "summary": summary})
+            return
+        run.status = "DONE"
         session.commit()
         await manager.broadcast(
             key,
-            {"event": "DONE", "run_id": ragas_run_id, "engine": run.engine,
-             "summary": {m: float(getattr(run, m)) if getattr(run, m) is not None else None for m in ALL_METRICS}},
+            {"event": "DONE", "run_id": ragas_run_id, "engine": run.engine, "summary": summary},
         )
     except Exception as exc:  # noqa: BLE001 - never leave a run stuck/unrecorded
         if run is not None:
@@ -305,4 +355,5 @@ async def execute_flow_ragas_run(*, ragas_run_id: int, dataset_id: int) -> None:
             except Exception:  # noqa: BLE001
                 pass
     finally:
+        _cancelled.discard(ragas_run_id)
         session.close()

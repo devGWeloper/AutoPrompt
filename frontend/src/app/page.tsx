@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import TopBar from '@/components/ui/TopBar';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -17,6 +17,7 @@ import {
   type FlowCurrent,
   type FlowNode,
   type PromptVersionSummary,
+  type RagasResultRow,
   type RagasRunDetail,
   type RagasRunSummary,
   type RunWsMessage,
@@ -105,6 +106,15 @@ function RagasPanel() {
   );
 }
 
+/** Insert or replace a streamed result row, keeping case order (by result id). */
+function upsertResult(cur: RagasResultRow[], row: RagasResultRow): RagasResultRow[] {
+  const i = cur.findIndex((x) => x.ragas_result_id === row.ragas_result_id);
+  if (i === -1) return [...cur, row].sort((a, b) => a.ragas_result_id - b.ragas_result_id);
+  const next = cur.slice();
+  next[i] = row;
+  return next;
+}
+
 function SingleRunPanel() {
   const { datasets } = useFlowDatasets();
   const [datasetId, setDatasetId] = useState<number | null>(null);
@@ -113,23 +123,49 @@ function SingleRunPanel() {
   const [detail, setDetail] = useState<RagasRunDetail | null>(null);
   const [showDetail, setShowDetail] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Live streaming state: results trickle in (answers first, then scores).
+  const [live, setLive] = useState<RagasResultRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [cancelling, setCancelling] = useState(false);
+  const runIdRef = useRef<number | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
 
   async function run() {
     if (!datasetId) return;
     setError(null); setDetail(null); setShowDetail(false); setStatus('running');
+    setLive([]); setTotal(0); setCancelling(false); runIdRef.current = null;
     try {
       const r = await api.post<{ ragas_run_id: number }>('/flow/test/ragas', { dataset_id: datasetId, metrics });
+      runIdRef.current = r.ragas_run_id;
       const ws = connectRagasRunWs(r.ragas_run_id, {
         onMessage: async (m: RunWsMessage) => {
-          if (m.event === 'DONE' || m.event === 'FAILED') {
+          if (m.event === 'RUNNING') {
+            setTotal(m.total ?? 0);
+          } else if (m.event === 'ANSWER' || m.event === 'SCORE') {
+            setTotal(m.total);
+            setLive((cur) => upsertResult(cur, m.result));
+          } else if (m.event === 'DONE' || m.event === 'FAILED' || m.event === 'CANCELLED') {
             setDetail(await api.get<RagasRunDetail>(`/ragas-runs/${r.ragas_run_id}`));
-            setStatus(m.event === 'FAILED' ? 'failed' : 'done');
+            setStatus(m.event === 'DONE' ? 'done' : m.event === 'CANCELLED' ? 'cancelled' : 'failed');
             ws.close();
           }
         },
       });
+      wsRef.current = ws;
     } catch (e) { setError(errText(e)); setStatus('failed'); }
   }
+
+  async function cancel() {
+    const id = runIdRef.current;
+    if (id == null) return;
+    setCancelling(true);
+    try {
+      await api.post(`/ragas-runs/${id}/cancel`, {});
+    } catch (e) { setError(errText(e)); setCancelling(false); }
+  }
+
+  const answered = live.filter((r) => r.answer !== null || r.error_msg).length;
+  const scored = live.filter((r) => RAGAS_METRICS.some((m) => r[m] !== null) || r.error_msg).length;
 
   return (
     <div className="space-y-5">
@@ -139,6 +175,11 @@ function SingleRunPanel() {
           <Button disabled={!datasetId || status === 'running'} onClick={run}>
             {status === 'running' ? '평가 중…' : 'RAGAS 실행'}
           </Button>
+          {status === 'running' && (
+            <Button variant="secondary" size="sm" disabled={cancelling} onClick={cancel}>
+              {cancelling ? '취소 중…' : '실행 취소'}
+            </Button>
+          )}
           <StatusPill status={status} />
         </div>
         <div className="mt-3 border-t border-line pt-3">
@@ -149,14 +190,29 @@ function SingleRunPanel() {
       {error && <ErrBox msg={error} />}
       {detail?.error_msg && <ErrBox msg={detail.error_msg} />}
 
-      {!detail && !error && (
+      {status === 'idle' && !error && (
         <Card className="flex flex-col items-center justify-center gap-1 px-6 py-16 text-center">
           <div className="text-sm text-ink">데이터셋을 선택하고 <span className="font-medium">RAGAS 실행</span>을 누르세요.</div>
           <div className="text-xs text-muted">지난 평가 결과는 ‘평가 기록’ 탭에서 볼 수 있습니다.</div>
         </Card>
       )}
 
-      {detail && (
+      {/* Live streaming view while running: answers appear first, scores fill in. */}
+      {status === 'running' && (
+        <Card className="p-4">
+          <div className="mb-3 flex items-center gap-2 text-xs text-muted">
+            <Badge tone="neutral">{cancelling ? 'CANCELLING' : 'RUNNING'}</Badge>
+            <span>답변 {answered}/{total || '…'}</span>
+            <span>·</span>
+            <span>채점 {scored}/{total || '…'}</span>
+          </div>
+          {live.length > 0
+            ? <CaseTable detail={{ results: live } as RagasRunDetail} />
+            : <div className="py-8 text-center text-xs text-muted">답변 생성 중…</div>}
+        </Card>
+      )}
+
+      {detail && status !== 'running' && (
         <Card className="p-4">
           <div className="mb-4 flex items-center gap-2 text-xs text-muted">
             <Badge tone={detail.status === 'FAILED' ? 'bad' : 'neutral'}>{detail.status}</Badge>

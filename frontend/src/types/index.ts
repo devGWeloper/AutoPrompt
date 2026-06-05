@@ -158,5 +158,10 @@ export interface RagasRunSummary {
 export type RunWsMessage =
   | { event: 'RUNNING'; run_id: number; total?: number }
   | { event: 'PROGRESS'; run_id: number; done: number; total: number; case_id: number | null }
+  // Phase 1: an external-agent answer was generated for a case (no scores yet).
+  | { event: 'ANSWER'; run_id: number; done: number; total: number; case_id: number | null; result: RagasResultRow }
+  // Phase 2: a case finished scoring (scores now present on the result row).
+  | { event: 'SCORE'; run_id: number; done: number; total: number; case_id: number | null; result: RagasResultRow }
   | { event: 'DONE'; run_id: number; engine?: string; summary?: Record<string, number | null> }
+  | { event: 'CANCELLED'; run_id: number; summary?: Record<string, number | null> }
   | { event: 'FAILED'; run_id: number; error: string };

@@ -11,6 +11,7 @@ from app.models.node_prompt_ver import NodePromptVer
 from app.models.ragas import RagasResult, RagasRun
 from app.schemas.ragas import RagasResultOut, RagasRunDetail, RagasRunSummary
 from app.services import audit as audit_service
+from app.services import flow_service
 from app.services import ragas_service
 
 router = APIRouter(tags=["ragas"])
@@ -61,6 +62,19 @@ def delete_ragas_run(ragas_run_id: int, db: Session = Depends(get_db)) -> None:
         before={"ragas_run_id": ragas_run_id}, after=None, created_by=SYSTEM_USER,
     )
     db.commit()
+
+
+@router.post("/ragas-runs/{ragas_run_id}/cancel", status_code=status.HTTP_202_ACCEPTED)
+def cancel_ragas_run(ragas_run_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
+    """Ask a running RAGAS run to stop. The background loop halts at the next case
+    and marks the run CANCELLED, keeping any partial answers/scores."""
+    run = db.get(RagasRun, ragas_run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="ragas run not found")
+    if run.status in ("DONE", "FAILED", "CANCELLED"):
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"run already {run.status}")
+    flow_service.request_cancel(ragas_run_id)
+    return {"status": "cancelling", "ragas_run_id": str(ragas_run_id)}
 
 
 @router.get("/ragas-runs/{ragas_run_id}", response_model=RagasRunDetail)
