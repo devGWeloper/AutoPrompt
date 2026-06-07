@@ -52,6 +52,16 @@ def _cancel_requested(session: Session, ragas_run_id: int) -> bool:
 _CANCELLED = object()  # sentinel returned by _await_or_cancel when a run is cancelled
 
 
+def _run_score(scorer, question, answer, contexts, ground_truth):
+    """Run one ``scorer.score()`` to completion in a worker thread (its own event
+    loop). The real RAGAS engine makes blocking LLM calls; running it off the main
+    event loop keeps the server responsive so cancel requests are handled promptly
+    instead of being stuck behind the blocking scoring."""
+    return asyncio.run(
+        scorer.score(question=question, answer=answer, contexts=contexts, ground_truth=ground_truth)
+    )
+
+
 async def _await_or_cancel(coro, session: Session, ragas_run_id: int, *, poll: float = 1.0):
     """Await ``coro`` (an in-flight answer call) but abort it the moment a cancel
     is requested, instead of waiting for it to finish. Polls the cancel signal
@@ -354,10 +364,16 @@ async def execute_flow_ragas_run(*, ragas_run_id: int, dataset_id: int) -> None:
                         break
                     if row.answer is not None and not row.error_msg:
                         try:
-                            cs = await scorer.score(
-                                question=fields["question"], answer=row.answer,
-                                contexts=contexts, ground_truth=fields["ground_truth"],
+                            cs = await _await_or_cancel(
+                                asyncio.to_thread(
+                                    _run_score, scorer, fields["question"], row.answer,
+                                    contexts, fields["ground_truth"],
+                                ),
+                                session, ragas_run_id,
                             )
+                            if cs is _CANCELLED:  # cancelled mid-scoring → stop now
+                                cancelled = True
+                                break
                             stored = False
                             for m, v in cs.as_dict().items():
                                 dec = ragas_service._to_score(v)

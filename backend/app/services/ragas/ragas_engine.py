@@ -95,9 +95,11 @@ class RagasEngine(RagasScorer):
         return LangchainLLMWrapper(llm), LangchainEmbeddingsWrapper(emb)
 
     def _judge(self) -> tuple[object, object]:
-        if self._wrapped is None:
-            self._wrapped = self._build_judge()
-        return self._wrapped
+        # Built fresh per call (not cached): scoring runs in a fresh worker-thread
+        # event loop, and reusing langchain/httpx clients bound to a previous
+        # (now-closed) loop raises "event loop is closed". Construction is cheap
+        # (no network until the first request), so rebuilding per case is fine.
+        return self._build_judge()
 
     # -- metrics ------------------------------------------------------------
 

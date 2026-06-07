@@ -90,7 +90,8 @@
       "PowerShell(.venv\\\\Scripts\\\\python.exe scripts\\\\create_pm_tables.py --dry-run)",
       "PowerShell(Set-Location backend; $env:APP_ENV='test'; .venv\\\\Scripts\\\\python.exe -m pytest -q 2>&1 | Select-Object -Last 12)",
       "PowerShell(Set-Location backend; $env:APP_ENV='test'; .venv\\\\Scripts\\\\python.exe -m pytest -q 2>&1 | Select-Object -Last 8)",
-      "PowerShell($env:APP_ENV='test'; .venv\\\\Scripts\\\\python.exe -m pytest -q 2>&1 | Select-Object -Last 4)"
+      "PowerShell($env:APP_ENV='test'; .venv\\\\Scripts\\\\python.exe -m pytest -q 2>&1 | Select-Object -Last 4)",
+      "Bash(APP_ENV=test .venv/Scripts/python.exe -m pytest tests/test_ragas.py tests/test_ragas_select.py tests/test_ragas_score_nan.py -q)"
     ]
   }
 }
