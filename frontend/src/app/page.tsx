@@ -219,10 +219,14 @@ function SingleRunPanel() {
             <span>케이스 {detail.results.length}건</span>
           </div>
           <CaseTable detail={detail} />
-          <div className="mt-4 border-t border-line pt-3">
-            <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted">평균 점수</div>
-            <MetricSummary run={detail} />
-          </div>
+          {detail.status === 'CANCELLED'
+            ? <p className="mt-3 text-xs text-muted">취소된 평가 — 채점 결과 없이 답변만 표시합니다.</p>
+            : (
+              <div className="mt-4 border-t border-line pt-3">
+                <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted">평균 점수</div>
+                <MetricSummary run={detail} />
+              </div>
+            )}
         </Card>
       )}
     </div>
@@ -387,10 +391,14 @@ function ComparePanel() {
           <div className="overflow-hidden rounded-lg border border-line bg-surface">
             <CaseCompareTable detailA={detailA} detailB={detailB} labelA={verLabel(verA)} labelB={verLabel(verB)} />
           </div>
-          <div className="mt-4 border-t border-line pt-3">
-            <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted">지표 평균 비교</div>
-            <MetricCompareTable detailA={detailA} detailB={detailB} />
-          </div>
+          {detailA.status === 'CANCELLED' || detailB.status === 'CANCELLED'
+            ? <p className="mt-3 text-xs text-muted">취소된 평가 — 채점 결과 없이 답변만 표시합니다.</p>
+            : (
+              <div className="mt-4 border-t border-line pt-3">
+                <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted">지표 평균 비교</div>
+                <MetricCompareTable detailA={detailA} detailB={detailB} />
+              </div>
+            )}
         </Card>
       )}
     </div>
@@ -657,10 +665,14 @@ function AbCompareView({ aId, bId, labelA, labelB }: { aId: number; bId: number;
       <div className="overflow-hidden rounded-lg border border-line bg-surface">
         <CaseCompareTable detailA={a} detailB={b} labelA={labelA} labelB={labelB} />
       </div>
-      <div>
-        <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted">지표 평균 비교</div>
-        <MetricCompareTable detailA={a} detailB={b} />
-      </div>
+      {a.status === 'CANCELLED' || b.status === 'CANCELLED'
+        ? <p className="text-xs text-muted">취소된 평가 — 채점 결과 없이 답변만 표시합니다.</p>
+        : (
+          <div>
+            <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted">지표 평균 비교</div>
+            <MetricCompareTable detailA={a} detailB={b} />
+          </div>
+        )}
     </div>
   );
 }
@@ -777,6 +789,8 @@ function CaseCompareTable({
   const byA = new Map(detailA.results.map((r) => [r.case_id, r] as const));
   const byB = new Map(detailB.results.map((r) => [r.case_id, r] as const));
   const ids = Array.from(new Set([...byA.keys(), ...byB.keys()]));
+  // If either run was cancelled, scoring is incomplete → answers only, no scores.
+  const showScores = detailA.status !== 'CANCELLED' && detailB.status !== 'CANCELLED';
   if (ids.length === 0) {
     return <div className="py-8 text-center text-xs text-muted">결과 행 없음</div>;
   }
@@ -797,12 +811,12 @@ function CaseCompareTable({
               <div className="rounded-lg border border-line bg-bg/40 p-3">
                 <Badge tone="neutral">A · v{labelA}</Badge>
                 <div className="mt-2"><AnswerBox text={a?.answer} error={a?.error_msg} /></div>
-                <div className="mt-2.5"><AbScoreChips row={a} /></div>
+                {showScores && <div className="mt-2.5"><AbScoreChips row={a} /></div>}
               </div>
               <div className="rounded-lg border border-line bg-bg/40 p-3">
                 <Badge tone="accent">B · v{labelB}</Badge>
                 <div className="mt-2"><AnswerBox text={b?.answer} error={b?.error_msg} /></div>
-                <div className="mt-2.5"><AbScoreChips row={b} vs={a} compare /></div>
+                {showScores && <div className="mt-2.5"><AbScoreChips row={b} vs={a} compare /></div>}
               </div>
             </div>
           </div>
@@ -835,6 +849,8 @@ function ScoreChips({ row }: { row: RagasResultRow }) {
 // Answer-centric case view: question + answer are the focus, scores are small
 // secondary chips. Replaces the old dense score table.
 function CaseTable({ detail, bordered }: { detail: RagasRunDetail; bordered?: boolean }) {
+  // Cancelled runs have incomplete scoring → show answers only, hide scores.
+  const showScores = detail.status !== 'CANCELLED';
   const list = (
     <div className="divide-y divide-line">
       {detail.results.map((r) => (
@@ -848,7 +864,7 @@ function CaseTable({ detail, bordered }: { detail: RagasRunDetail; bordered?: bo
             <p className="mt-2 whitespace-pre-wrap text-xs text-muted"><span className="font-medium">정답 ·</span> {r.ground_truth}</p>
           )}
 
-          <div className="mt-3"><ScoreChips row={r} /></div>
+          {showScores && <div className="mt-3"><ScoreChips row={r} /></div>}
         </div>
       ))}
       {detail.results.length === 0 && (

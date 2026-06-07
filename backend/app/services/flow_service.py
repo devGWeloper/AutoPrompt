@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime, timezone
 
@@ -33,6 +34,42 @@ _cancelled: set[int] = set()
 def request_cancel(ragas_run_id: int) -> None:
     """Flag a running RAGAS run for cancellation; the loop stops at the next case."""
     _cancelled.add(ragas_run_id)
+
+
+def _cancel_requested(session: Session, ragas_run_id: int) -> bool:
+    """True if the user asked to cancel this run. Checks the in-process flag (fast
+    path, same worker) AND the DB status — the cancel request may be handled by a
+    different worker than the one running the loop, so the in-memory set alone is
+    not enough; the shared ``CANCELLING`` status is the cross-worker signal."""
+    if ragas_run_id in _cancelled:
+        return True
+    status = session.execute(
+        select(RagasRun.status).where(RagasRun.ragas_run_id == ragas_run_id)
+    ).scalar()
+    return status == "CANCELLING"
+
+
+_CANCELLED = object()  # sentinel returned by _await_or_cancel when a run is cancelled
+
+
+async def _await_or_cancel(coro, session: Session, ragas_run_id: int, *, poll: float = 1.0):
+    """Await ``coro`` (an in-flight answer call) but abort it the moment a cancel
+    is requested, instead of waiting for it to finish. Polls the cancel signal
+    every ``poll`` seconds while the call is in flight; on cancel it cancels the
+    task and returns the ``_CANCELLED`` sentinel. Otherwise returns the result
+    (re-raising any error from ``coro`` for the caller to record)."""
+    task = asyncio.ensure_future(coro)
+    while True:
+        done, _ = await asyncio.wait({task}, timeout=poll)
+        if task in done:
+            return task.result()
+        if _cancel_requested(session, ragas_run_id):
+            task.cancel()
+            try:
+                await task
+            except BaseException:  # noqa: BLE001 - swallow cancellation / abort error
+                pass
+            return _CANCELLED
 
 
 def _list_node_nms(db: Session) -> list[str]:
@@ -279,7 +316,7 @@ async def execute_flow_ragas_run(*, ragas_run_id: int, dataset_id: int) -> None:
             # agent answers appear without waiting for the slow, LLM-bound scoring.
             pending: list[tuple[RagasResult, list[str], dict]] = []
             for idx, case in enumerate(cases, start=1):
-                if ragas_run_id in _cancelled:
+                if _cancel_requested(session, ragas_run_id):
                     cancelled = True
                     break
                 fields = ragas_service._parse_case(case.input_data, case.expected_output)
@@ -289,9 +326,15 @@ async def execute_flow_ragas_run(*, ragas_run_id: int, dataset_id: int) -> None:
                 )
                 contexts = fields["contexts"]
                 try:
-                    data = await external_agent.flow_answer(
-                        message=fields["question"] or _message_from_inputs(_case_variables(case.input_data)),
+                    data = await _await_or_cancel(
+                        external_agent.flow_answer(
+                            message=fields["question"] or _message_from_inputs(_case_variables(case.input_data)),
+                        ),
+                        session, ragas_run_id,
                     )
+                    if data is _CANCELLED:  # cancelled mid-call → drop this case, stop
+                        cancelled = True
+                        break
                     row.answer = str(data.get("response", ""))
                     contexts = fields["contexts"] or list(data.get("docs") or [])
                 except Exception as exc:  # noqa: BLE001 - answer generation failure
@@ -306,7 +349,7 @@ async def execute_flow_ragas_run(*, ragas_run_id: int, dataset_id: int) -> None:
             # per case (SCORE event) as the judge finishes.
             if not cancelled:
                 for idx, (row, contexts, fields) in enumerate(pending, start=1):
-                    if ragas_run_id in _cancelled:
+                    if _cancel_requested(session, ragas_run_id):
                         cancelled = True
                         break
                     if row.answer is not None and not row.error_msg:
@@ -333,17 +376,29 @@ async def execute_flow_ragas_run(*, ragas_run_id: int, dataset_id: int) -> None:
             if ab_node_nm is not None:
                 _restore_active_prompt(session, node_nm=ab_node_nm, prompt_id=ab_backup)
 
+        if cancelled:
+            # A cancelled run keeps only the answers — drop any partial scoring
+            # (per-case metric columns + run averages) so nothing half-computed is
+            # stored. The UI shows answers only for a cancelled run.
+            session.execute(
+                update(RagasResult)
+                .where(RagasResult.ragas_run_id == ragas_run_id)
+                .values({m: None for m in ALL_METRICS})
+            )
+            for m in ALL_METRICS:
+                setattr(run, m, None)
+            run.status = "CANCELLED"
+            run.ended_dt = datetime.now(timezone.utc)
+            session.commit()
+            await manager.broadcast(key, {"event": "CANCELLED", "run_id": ragas_run_id})
+            return
+
         for m in ALL_METRICS:
             setattr(run, m, ragas_service._avg(sums[m]))
-        run.ended_dt = datetime.now(timezone.utc)
-        summary = {m: float(getattr(run, m)) if getattr(run, m) is not None else None for m in ALL_METRICS}
-        if cancelled:
-            run.status = "CANCELLED"
-            session.commit()
-            await manager.broadcast(key, {"event": "CANCELLED", "run_id": ragas_run_id, "summary": summary})
-            return
         run.status = "DONE"
+        run.ended_dt = datetime.now(timezone.utc)
         session.commit()
+        summary = {m: float(getattr(run, m)) if getattr(run, m) is not None else None for m in ALL_METRICS}
         await manager.broadcast(
             key,
             {"event": "DONE", "run_id": ragas_run_id, "engine": run.engine, "summary": summary},

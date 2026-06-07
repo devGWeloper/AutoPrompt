@@ -73,6 +73,11 @@ def cancel_ragas_run(ragas_run_id: int, db: Session = Depends(get_db)) -> dict[s
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="ragas run not found")
     if run.status in ("DONE", "FAILED", "CANCELLED"):
         raise HTTPException(status.HTTP_409_CONFLICT, detail=f"run already {run.status}")
+    # Persist the cancel signal in the shared DB (status=CANCELLING) so the run
+    # loop sees it even if it runs on a different worker, plus the in-process flag
+    # for an immediate same-worker stop. The loop flips it to CANCELLED when it halts.
+    run.status = "CANCELLING"
+    db.commit()
     flow_service.request_cancel(ragas_run_id)
     return {"status": "cancelling", "ragas_run_id": str(ragas_run_id)}
 
