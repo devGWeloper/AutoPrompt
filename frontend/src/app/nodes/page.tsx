@@ -76,25 +76,27 @@ export default function NodesPage() {
                   onClick={() => openNode(n)}
                   className="flex w-full flex-col rounded-lg border border-line bg-surface p-4 text-left transition-colors hover:border-accent/40 hover:bg-accent/5"
                 >
-                  <div className="flex items-center justify-between gap-2 pr-7">
+                  <div className="flex items-center gap-2 pr-28">
                     <span className="truncate text-sm font-semibold text-ink">{n.node_nm}</span>
-                    <Badge tone="accent">v{n.latest_version_no ?? '—'}</Badge>
                   </div>
                   <p className="mt-1.5 truncate text-xs text-muted">{n.latest_model_nm ?? '모델 미지정'}</p>
                   <span className="mt-3 text-xs font-medium text-muted transition-colors group-hover:text-accent">
                     프롬프트 관리 →
                   </span>
                 </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setConfirmDelete(n);
-                  }}
-                  title="노드 삭제"
-                  className="absolute bottom-2 right-2 rounded-md border border-line bg-surface px-2 py-1 text-[11px] font-medium text-muted transition-colors hover:border-bad/40 hover:bg-bad/5 hover:text-bad"
-                >
-                  삭제
-                </button>
+                <div className="absolute right-3 top-3 flex items-center gap-1.5">
+                  <Badge tone="accent">v{n.latest_version_no ?? '—'}</Badge>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfirmDelete(n);
+                    }}
+                    title="노드 삭제"
+                    className="rounded-md border border-line bg-surface px-2 py-1 text-[11px] font-medium text-muted transition-colors hover:border-bad/40 hover:bg-bad/5 hover:text-bad"
+                  >
+                    삭제
+                  </button>
+                </div>
               </li>
             ))}
             {flow && nodes.length === 0 && (
