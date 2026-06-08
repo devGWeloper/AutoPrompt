@@ -4,7 +4,7 @@ import re
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from app.models.node_prompt_ver import NodePromptVer
@@ -260,3 +260,96 @@ def update_version_prompt(
         created_by=actor,
     )
     return target
+
+
+def node_exists(db: Session, node_nm: str) -> bool:
+    """True if NODE_NM already has at least one version (i.e. the node exists)."""
+    found = (
+        db.execute(
+            select(NodePromptVer.prompt_id).where(NodePromptVer.node_nm == node_nm).limit(1)
+        )
+        .scalars()
+        .first()
+    )
+    return found is not None
+
+
+def delete_version(db: Session, *, prompt_id: int, actor: str) -> None:
+    """Delete one prompt version. The active version is locked (must activate
+    another first). FK references are cleared before the row is removed:
+    sibling ``PREV_PROMPT_ID`` pointers and ``PM_RAGAS_RUN.PROMPT_ID``."""
+    from app.models.ragas import RagasRun
+
+    target = get_version(db, prompt_id)
+    if target.is_active == "Y":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="활성 버전은 삭제할 수 없습니다. 다른 버전을 먼저 활성화하세요.",
+        )
+
+    before = {
+        "node_nm": target.node_nm,
+        "version_no": target.version_no,
+        "model_nm": target.model_nm,
+        "change_summary": target.change_summary,
+        "change_reason": target.change_reason,
+        "system_prompt": target.system_prompt,
+        "user_prompt": target.user_prompt,
+    }
+
+    # Clear FK references so the delete doesn't violate integrity.
+    db.execute(
+        update(NodePromptVer)
+        .where(NodePromptVer.prev_prompt_id == prompt_id)
+        .values(prev_prompt_id=None)
+    )
+    db.execute(update(RagasRun).where(RagasRun.prompt_id == prompt_id).values(prompt_id=None))
+
+    db.delete(target)
+    db.flush()
+
+    audit_service.write_audit(
+        db,
+        target_table="PM_NODE_PROMPT_VER",
+        target_id=prompt_id,
+        action="DELETE",
+        before=before,
+        after=None,
+        created_by=actor,
+    )
+
+
+def delete_node(db: Session, *, node_nm: str, actor: str) -> int:
+    """Delete a whole node: every version of NODE_NM (active included). FK
+    references (RagasRun.prompt_id, internal prev links) are cleared first.
+    Returns the number of versions deleted."""
+    from app.models.ragas import RagasRun
+
+    rows = list_versions(db, node_nm)
+    if not rows:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="node not found")
+    ids = [r.prompt_id for r in rows]
+
+    db.execute(update(RagasRun).where(RagasRun.prompt_id.in_(ids)).values(prompt_id=None))
+    db.execute(
+        update(NodePromptVer)
+        .where(NodePromptVer.prev_prompt_id.in_(ids))
+        .values(prev_prompt_id=None)
+    )
+    db.execute(delete(NodePromptVer).where(NodePromptVer.node_nm == node_nm))
+    db.flush()
+
+    audit_service.write_audit(
+        db,
+        target_table="PM_NODE_PROMPT_VER",
+        target_id=ids[0],
+        action="DELETE",
+        before={
+            "node_nm": node_nm,
+            "deleted_version_count": len(ids),
+            "version_nos": [r.version_no for r in rows],
+        },
+        after=None,
+        created_by=actor,
+    )
+    return len(ids)

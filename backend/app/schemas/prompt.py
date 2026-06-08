@@ -48,6 +48,12 @@ class PromptVersionCreate(BaseModel):
     activate_after_save: bool = False
 
 
+class NodeCreate(PromptVersionCreate):
+    """Bootstrap a brand-new node: its NODE_NM + first prompt version."""
+
+    node_nm: str = Field(..., min_length=1, max_length=200)
+
+
 class PromptVersionEdit(BaseModel):
     system_prompt: str = ""
     user_prompt: str = ""

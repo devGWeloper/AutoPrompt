@@ -26,6 +26,7 @@ export default function NodePromptsPage() {
   const [error, setError] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [confirmActivate, setConfirmActivate] = useState<PromptVersionSummary | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<PromptVersionSummary | null>(null);
   const [busy, setBusy] = useState(false);
 
   const reload = useCallback(
@@ -66,6 +67,22 @@ export default function NodePromptsPage() {
     }
   }
 
+  async function doDelete() {
+    if (!confirmDelete) return;
+    setBusy(true);
+    try {
+      await api.del(`/prompts/${confirmDelete.prompt_id}`);
+      const deletedId = confirmDelete.prompt_id;
+      setConfirmDelete(null);
+      // If the open detail was the deleted one, let reload() pick a fallback.
+      await reload(detail?.prompt_id === deletedId ? undefined : detail?.prompt_id);
+    } catch (e) {
+      setError(e instanceof ApiError ? JSON.stringify(e.detail) : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="flex h-screen flex-col">
       <TopBar
@@ -91,7 +108,7 @@ export default function NodePromptsPage() {
           </div>
           <ul className="space-y-1.5">
             {versions.map((v) => (
-              <li key={v.prompt_id}>
+              <li key={v.prompt_id} className="group/ver relative">
                 <button
                   onClick={() => selectVersion(v.prompt_id)}
                   className={
@@ -113,6 +130,18 @@ export default function NodePromptsPage() {
                   )}
                   <div className="mt-1 text-[11px] text-muted">{v.created_dt}</div>
                 </button>
+                {v.is_active !== 'Y' && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfirmDelete(v);
+                    }}
+                    title="이 버전 삭제"
+                    className="absolute right-2 top-2 rounded p-1 text-muted opacity-0 transition-opacity hover:text-bad focus:opacity-100 group-hover/ver:opacity-100"
+                  >
+                    삭제
+                  </button>
+                )}
               </li>
             ))}
             {versions.length === 0 && (
@@ -195,6 +224,22 @@ export default function NodePromptsPage() {
         <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-muted">
           <li>외부 모델은 <span className="font-mono text-ink">PM_NODE_PROMPT_VER</span> 의 active row 를 그대로 읽습니다.</li>
         </ul>
+      </Modal>
+
+      <Modal
+        open={!!confirmDelete}
+        title="버전 삭제"
+        onClose={() => setConfirmDelete(null)}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setConfirmDelete(null)}>취소</Button>
+            <Button variant="danger" onClick={doDelete} disabled={busy}>삭제</Button>
+          </>
+        }
+      >
+        <p className="text-sm text-ink">
+          <span className="font-semibold">v{confirmDelete?.version_no}</span> 을(를) 삭제합니다. 되돌릴 수 없습니다.
+        </p>
       </Modal>
     </div>
   );
