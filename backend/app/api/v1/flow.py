@@ -64,6 +64,10 @@ async def run_flow_ragas_ab(
     db.refresh(run_a)
     db.refresh(run_b)
     a_id, b_id = run_a.ragas_run_id, run_b.ragas_run_id
-    background.add_task(flow_service.execute_flow_ragas_run, ragas_run_id=a_id, dataset_id=payload.dataset_id)
-    background.add_task(flow_service.execute_flow_ragas_run, ragas_run_id=b_id, dataset_id=payload.dataset_id)
+    # One orchestrated task interleaves the phases (A answers → B answers →
+    # A scores → B scores) so both versions' answers appear before scoring.
+    background.add_task(
+        flow_service.execute_flow_ragas_ab_run,
+        ragas_run_a_id=a_id, ragas_run_b_id=b_id, dataset_id=payload.dataset_id,
+    )
     return FlowRagasAbOut(ragas_run_a_id=a_id, ragas_run_b_id=b_id)

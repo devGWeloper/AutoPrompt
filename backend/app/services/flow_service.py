@@ -265,6 +265,166 @@ def create_flow_ragas_ab_run(
     return runs[0], runs[1]
 
 
+# ---- shared run phases (used by both single and A/B execution) ----------------
+
+def _maybe_swap(session: Session, run: RagasRun) -> tuple[int | None, str | None]:
+    """A/B + external mode: flip IS_ACTIVE to this run's version so the external
+    model answers with it. Returns (prev_active_prompt_id, node_nm) to restore,
+    or (None, None) when no swap was done (single run / stub mode)."""
+    if run.prompt_id and external_agent.external_enabled():
+        pv = session.get(NodePromptVer, run.prompt_id)
+        if pv is not None:
+            backup = _swap_active_prompt(session, node_nm=pv.node_nm, target_prompt_id=run.prompt_id)
+            return backup, pv.node_nm
+    return None, None
+
+
+async def _setup_run(session: Session, ragas_run_id: int, dataset_id: int, key: str):
+    """Mark RUNNING, load cases, build the scorer, emit RUNNING. Returns
+    (run, cases, scorer) or None when the run is missing / scorer build failed
+    (failure already recorded)."""
+    from app.services import ragas_service
+    from app.services.ragas import ALL_METRICS, get_scorer
+
+    run = session.get(RagasRun, ragas_run_id)
+    if run is None:
+        return None
+    run.status = "RUNNING"
+    run.started_dt = datetime.now(timezone.utc)
+    session.commit()
+    cases = (
+        session.execute(
+            select(TestCase).where(TestCase.dataset_id == dataset_id).order_by(TestCase.case_id.asc())
+        )
+        .scalars()
+        .all()
+    )
+    await manager.broadcast(key, {"event": "RUNNING", "run_id": ragas_run_id, "total": len(cases)})
+    try:
+        metrics = json.loads(run.metrics) if run.metrics else list(ALL_METRICS)
+        scorer = get_scorer(metrics, judge_provider=run.judge_provider, judge_model=run.judge_model)
+        run.engine = scorer.engine
+        session.commit()
+    except Exception as exc:  # noqa: BLE001 - scorer setup failure -> record + stop
+        await ragas_service._record_ragas_failure(session, run, key, str(exc))
+        return None
+    return run, cases, scorer
+
+
+async def _phase1_answers(session: Session, ragas_run_id: int, cases, key: str):
+    """Phase 1 — generate + persist each case's answer (streaming ANSWER events).
+    Returns (pending, cancelled) where pending is [(row, contexts, fields), ...]."""
+    from app.services import ragas_service
+
+    pending: list[tuple[RagasResult, list[str], dict]] = []
+    cancelled = False
+    for idx, case in enumerate(cases, start=1):
+        if _cancel_requested(session, ragas_run_id):
+            cancelled = True
+            break
+        fields = ragas_service._parse_case(case.input_data, case.expected_output)
+        row = RagasResult(
+            ragas_run_id=ragas_run_id, case_id=case.case_id, question=fields["question"],
+            contexts=json.dumps(fields["contexts"], ensure_ascii=False), ground_truth=fields["ground_truth"],
+        )
+        contexts = fields["contexts"]
+        try:
+            data = await _await_or_cancel(
+                external_agent.flow_answer(
+                    message=fields["question"] or _message_from_inputs(_case_variables(case.input_data)),
+                ),
+                session, ragas_run_id,
+            )
+            if data is _CANCELLED:  # cancelled mid-call → drop this case, stop
+                cancelled = True
+                break
+            row.answer = str(data.get("response", ""))
+            contexts = fields["contexts"] or list(data.get("docs") or [])
+        except Exception as exc:  # noqa: BLE001 - answer generation failure
+            row.error_msg = str(exc)[:1000]
+        session.add(row)
+        session.commit()
+        pending.append((row, contexts, fields))
+        await manager.broadcast(key, {"event": "ANSWER", "run_id": ragas_run_id,
+            "done": idx, "total": len(cases), "case_id": case.case_id, "result": _result_payload(row)})
+    return pending, cancelled
+
+
+async def _phase2_scores(session: Session, ragas_run_id: int, pending, scorer, key: str, total: int):
+    """Phase 2 — score each answered case (streaming SCORE events). Returns
+    (sums, cancelled)."""
+    from app.services import ragas_service
+    from app.services.ragas import ALL_METRICS
+
+    sums: dict[str, list[float]] = {m: [] for m in ALL_METRICS}
+    cancelled = False
+    for idx, (row, contexts, fields) in enumerate(pending, start=1):
+        if _cancel_requested(session, ragas_run_id):
+            cancelled = True
+            break
+        if row.answer is not None and not row.error_msg:
+            try:
+                cs = await _await_or_cancel(
+                    asyncio.to_thread(
+                        _run_score, scorer, fields["question"], row.answer,
+                        contexts, fields["ground_truth"],
+                    ),
+                    session, ragas_run_id,
+                )
+                if cs is _CANCELLED:  # cancelled mid-scoring → stop now
+                    cancelled = True
+                    break
+                stored = False
+                for m, v in cs.as_dict().items():
+                    dec = ragas_service._to_score(v)
+                    if dec is not None:
+                        setattr(row, m, dec)
+                        sums[m].append(float(dec))
+                        stored = True
+                if not stored:
+                    row.error_msg = "scorer returned no finite metric scores"
+            except Exception as exc:  # noqa: BLE001 - per-case scoring failure
+                row.error_msg = str(exc)[:1000]
+            session.commit()
+        await manager.broadcast(key, {"event": "SCORE", "run_id": ragas_run_id,
+            "done": idx, "total": total, "case_id": row.case_id, "result": _result_payload(row)})
+    return sums, cancelled
+
+
+async def _finalize_run(session: Session, run: RagasRun, ragas_run_id: int, key: str, sums, cancelled: bool):
+    """Mark the run DONE (with averages) or CANCELLED (partial scores dropped),
+    and emit the terminal WS event."""
+    from app.services import ragas_service
+    from app.services.ragas import ALL_METRICS
+
+    if cancelled:
+        # A cancelled run keeps only the answers — drop any partial scoring
+        # (per-case metric columns + run averages) so nothing half-computed is
+        # stored. The UI shows answers only for a cancelled run.
+        session.execute(
+            update(RagasResult)
+            .where(RagasResult.ragas_run_id == ragas_run_id)
+            .values({m: None for m in ALL_METRICS})
+        )
+        for m in ALL_METRICS:
+            setattr(run, m, None)
+        run.status = "CANCELLED"
+        run.ended_dt = datetime.now(timezone.utc)
+        session.commit()
+        await manager.broadcast(key, {"event": "CANCELLED", "run_id": ragas_run_id})
+        return
+    for m in ALL_METRICS:
+        setattr(run, m, ragas_service._avg(sums[m]))
+    run.status = "DONE"
+    run.ended_dt = datetime.now(timezone.utc)
+    session.commit()
+    summary = {m: float(getattr(run, m)) if getattr(run, m) is not None else None for m in ALL_METRICS}
+    await manager.broadcast(
+        key,
+        {"event": "DONE", "run_id": ragas_run_id, "engine": run.engine, "summary": summary},
+    )
+
+
 async def execute_flow_ragas_run(*, ragas_run_id: int, dataset_id: int) -> None:
     """Score every dataset case by running the whole flow for the answer.
 
@@ -274,151 +434,29 @@ async def execute_flow_ragas_run(*, ragas_run_id: int, dataset_id: int) -> None:
     dependency-free fallback (RAGAS_ENGINE).
     """
     from app.services import ragas_service
-    from app.services.ragas import ALL_METRICS, get_scorer
 
     session = db_module.SessionLocal()
     run = None
     key = ragas_service.ws_key(ragas_run_id)
     try:
-        run = session.get(RagasRun, ragas_run_id)
-        if run is None:
+        setup = await _setup_run(session, ragas_run_id, dataset_id, key)
+        if setup is None:
             return
-        run.status = "RUNNING"
-        run.started_dt = datetime.now(timezone.utc)
-        session.commit()
+        run, cases, scorer = setup
 
-        cases = (
-            session.execute(
-                select(TestCase).where(TestCase.dataset_id == dataset_id).order_by(TestCase.case_id.asc())
-            )
-            .scalars()
-            .all()
-        )
-        await manager.broadcast(key, {"event": "RUNNING", "run_id": ragas_run_id, "total": len(cases)})
-
+        ab_backup, ab_node_nm = _maybe_swap(session, run)
+        sums: dict[str, list[float]] = {}
         try:
-            metrics = json.loads(run.metrics) if run.metrics else list(ALL_METRICS)
-            scorer = get_scorer(metrics, judge_provider=run.judge_provider, judge_model=run.judge_model)
-            run.engine = scorer.engine
-            session.commit()
-        except Exception as exc:  # noqa: BLE001 - scorer setup failure -> record + stop
-            await ragas_service._record_ragas_failure(session, run, key, str(exc))
-            return
-
-        # A/B run: flip PM_NODE_PROMPT_VER active flag so the external model reads
-        # this run's version under test. Stub mode skips the toggle (the stub never
-        # consults the DB). Always restored in the inner finally below.
-        ab_backup: int | None = None
-        ab_node_nm: str | None = None
-        if run.prompt_id and external_agent.external_enabled():
-            pv = session.get(NodePromptVer, run.prompt_id)
-            if pv is not None:
-                ab_node_nm = pv.node_nm
-                ab_backup = _swap_active_prompt(
-                    session, node_nm=ab_node_nm, target_prompt_id=run.prompt_id
-                )
-
-        sums: dict[str, list[float]] = {m: [] for m in ALL_METRICS}
-        cancelled = False
-        try:
-            # Phase 1 — answers. Generate + persist every case's answer first and
-            # stream it to the UI immediately (ANSWER event), so the fast external-
-            # agent answers appear without waiting for the slow, LLM-bound scoring.
-            pending: list[tuple[RagasResult, list[str], dict]] = []
-            for idx, case in enumerate(cases, start=1):
-                if _cancel_requested(session, ragas_run_id):
-                    cancelled = True
-                    break
-                fields = ragas_service._parse_case(case.input_data, case.expected_output)
-                row = RagasResult(
-                    ragas_run_id=ragas_run_id, case_id=case.case_id, question=fields["question"],
-                    contexts=json.dumps(fields["contexts"], ensure_ascii=False), ground_truth=fields["ground_truth"],
-                )
-                contexts = fields["contexts"]
-                try:
-                    data = await _await_or_cancel(
-                        external_agent.flow_answer(
-                            message=fields["question"] or _message_from_inputs(_case_variables(case.input_data)),
-                        ),
-                        session, ragas_run_id,
-                    )
-                    if data is _CANCELLED:  # cancelled mid-call → drop this case, stop
-                        cancelled = True
-                        break
-                    row.answer = str(data.get("response", ""))
-                    contexts = fields["contexts"] or list(data.get("docs") or [])
-                except Exception as exc:  # noqa: BLE001 - answer generation failure
-                    row.error_msg = str(exc)[:1000]
-                session.add(row)
-                session.commit()
-                pending.append((row, contexts, fields))
-                await manager.broadcast(key, {"event": "ANSWER", "run_id": ragas_run_id,
-                    "done": idx, "total": len(cases), "case_id": case.case_id, "result": _result_payload(row)})
-
-            # Phase 2 — scores. Score each answered case; the score columns fill in
-            # per case (SCORE event) as the judge finishes.
+            pending, cancelled = await _phase1_answers(session, ragas_run_id, cases, key)
             if not cancelled:
-                for idx, (row, contexts, fields) in enumerate(pending, start=1):
-                    if _cancel_requested(session, ragas_run_id):
-                        cancelled = True
-                        break
-                    if row.answer is not None and not row.error_msg:
-                        try:
-                            cs = await _await_or_cancel(
-                                asyncio.to_thread(
-                                    _run_score, scorer, fields["question"], row.answer,
-                                    contexts, fields["ground_truth"],
-                                ),
-                                session, ragas_run_id,
-                            )
-                            if cs is _CANCELLED:  # cancelled mid-scoring → stop now
-                                cancelled = True
-                                break
-                            stored = False
-                            for m, v in cs.as_dict().items():
-                                dec = ragas_service._to_score(v)
-                                if dec is not None:
-                                    setattr(row, m, dec)
-                                    sums[m].append(float(dec))
-                                    stored = True
-                            if not stored:
-                                row.error_msg = "scorer returned no finite metric scores"
-                        except Exception as exc:  # noqa: BLE001 - per-case scoring failure
-                            row.error_msg = str(exc)[:1000]
-                        session.commit()
-                    await manager.broadcast(key, {"event": "SCORE", "run_id": ragas_run_id,
-                        "done": idx, "total": len(cases), "case_id": row.case_id, "result": _result_payload(row)})
+                sums, cancelled = await _phase2_scores(
+                    session, ragas_run_id, pending, scorer, key, len(cases)
+                )
         finally:
             if ab_node_nm is not None:
                 _restore_active_prompt(session, node_nm=ab_node_nm, prompt_id=ab_backup)
 
-        if cancelled:
-            # A cancelled run keeps only the answers — drop any partial scoring
-            # (per-case metric columns + run averages) so nothing half-computed is
-            # stored. The UI shows answers only for a cancelled run.
-            session.execute(
-                update(RagasResult)
-                .where(RagasResult.ragas_run_id == ragas_run_id)
-                .values({m: None for m in ALL_METRICS})
-            )
-            for m in ALL_METRICS:
-                setattr(run, m, None)
-            run.status = "CANCELLED"
-            run.ended_dt = datetime.now(timezone.utc)
-            session.commit()
-            await manager.broadcast(key, {"event": "CANCELLED", "run_id": ragas_run_id})
-            return
-
-        for m in ALL_METRICS:
-            setattr(run, m, ragas_service._avg(sums[m]))
-        run.status = "DONE"
-        run.ended_dt = datetime.now(timezone.utc)
-        session.commit()
-        summary = {m: float(getattr(run, m)) if getattr(run, m) is not None else None for m in ALL_METRICS}
-        await manager.broadcast(
-            key,
-            {"event": "DONE", "run_id": ragas_run_id, "engine": run.engine, "summary": summary},
-        )
+        await _finalize_run(session, run, ragas_run_id, key, sums, cancelled)
     except Exception as exc:  # noqa: BLE001 - never leave a run stuck/unrecorded
         if run is not None:
             try:
@@ -428,3 +466,70 @@ async def execute_flow_ragas_run(*, ragas_run_id: int, dataset_id: int) -> None:
     finally:
         _cancelled.discard(ragas_run_id)
         session.close()
+
+
+async def execute_flow_ragas_ab_run(
+    *, ragas_run_a_id: int, ragas_run_b_id: int, dataset_id: int
+) -> None:
+    """A/B comparison run with phases interleaved across the two versions:
+    A answers → B answers → A scores → B scores. So both versions' answers show
+    up in the UI before any (slow) scoring starts. Each version's answers are
+    generated under its own IS_ACTIVE swap; scoring needs no swap."""
+    from app.services import ragas_service
+
+    ids = (ragas_run_a_id, ragas_run_b_id)
+    sessions = {rid: db_module.SessionLocal() for rid in ids}
+    ctx: dict[int, dict | None] = {}
+    try:
+        # Setup both runs (RUNNING + scorer).
+        for rid in ids:
+            session = sessions[rid]
+            key = ragas_service.ws_key(rid)
+            setup = await _setup_run(session, rid, dataset_id, key)
+            ctx[rid] = None if setup is None else {
+                "session": session, "run": setup[0], "cases": setup[1], "scorer": setup[2],
+                "key": key, "pending": [], "sums": {}, "cancelled": False,
+            }
+
+        # Phase 1 — answers for A, then B; each under its own active-prompt swap.
+        for rid in ids:
+            c = ctx.get(rid)
+            if c is None:
+                continue
+            ab_backup, ab_node_nm = _maybe_swap(c["session"], c["run"])
+            try:
+                c["pending"], c["cancelled"] = await _phase1_answers(
+                    c["session"], rid, c["cases"], c["key"]
+                )
+            finally:
+                if ab_node_nm is not None:
+                    _restore_active_prompt(c["session"], node_nm=ab_node_nm, prompt_id=ab_backup)
+
+        # Phase 2 — scores for A, then B.
+        for rid in ids:
+            c = ctx.get(rid)
+            if c is None or c["cancelled"]:
+                continue
+            c["sums"], c["cancelled"] = await _phase2_scores(
+                c["session"], rid, c["pending"], c["scorer"], c["key"], len(c["cases"])
+            )
+
+        # Finalize both.
+        for rid in ids:
+            c = ctx.get(rid)
+            if c is None:
+                continue
+            await _finalize_run(c["session"], c["run"], rid, c["key"], c["sums"], c["cancelled"])
+    except Exception as exc:  # noqa: BLE001 - never leave a run stuck/unrecorded
+        for rid in ids:
+            c = ctx.get(rid)
+            if c is not None:
+                try:
+                    await ragas_service._record_ragas_failure(c["session"], c["run"], c["key"], str(exc))
+                except Exception:  # noqa: BLE001
+                    pass
+    finally:
+        for rid in ids:
+            _cancelled.discard(rid)
+        for s in sessions.values():
+            s.close()
