@@ -45,7 +45,6 @@ class PromptVersionCreate(BaseModel):
     change_summary: str = Field(..., min_length=1, max_length=500)
     change_reason: str = Field(..., min_length=1, max_length=1000)
     prev_prompt_id: int | None = None
-    activate_after_save: bool = False
 
 
 class NodeCreate(PromptVersionCreate):

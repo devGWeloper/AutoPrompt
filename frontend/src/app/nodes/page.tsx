@@ -78,9 +78,9 @@ export default function NodesPage() {
                 >
                   <div className="flex items-center justify-between gap-2 pr-7">
                     <span className="truncate text-sm font-semibold text-ink">{n.node_nm}</span>
-                    <Badge tone="accent">v{n.active_version_no ?? '—'}</Badge>
+                    <Badge tone="accent">v{n.latest_version_no ?? '—'}</Badge>
                   </div>
-                  <p className="mt-1.5 truncate text-xs text-muted">{n.active_model_nm ?? '모델 미지정'}</p>
+                  <p className="mt-1.5 truncate text-xs text-muted">{n.latest_model_nm ?? '모델 미지정'}</p>
                   <span className="mt-3 text-xs font-medium text-muted transition-colors group-hover:text-accent">
                     프롬프트 관리 →
                   </span>
@@ -146,7 +146,6 @@ function NewNodeModal({
   const [model, setModel] = useState('');
   const [summary, setSummary] = useState('');
   const [reason, setReason] = useState('');
-  const [activate, setActivate] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -170,7 +169,6 @@ function NewNodeModal({
         model_nm: model.trim() || null,
         change_summary: summary,
         change_reason: reason,
-        activate_after_save: activate,
       });
       onCreated(nodeNm.trim());
     } catch (e) {
@@ -222,10 +220,6 @@ function NewNodeModal({
           <Input value={reason} onChange={(e) => setReason(e.target.value)} className="mt-1 w-full" />
         </label>
       </div>
-      <label className="mt-3 flex items-center gap-2 text-sm text-ink">
-        <input type="checkbox" className="accent-accent" checked={activate} onChange={(e) => setActivate(e.target.checked)} />
-        생성 후 즉시 활성화
-      </label>
     </Modal>
   );
 }

@@ -74,13 +74,14 @@ def seeded_db(engine):
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
     s = SessionLocal()
     try:
-        # Idempotent seed: one node ("llm") with one active prompt version.
+        # Idempotent seed: one node ("llm") with one prompt version. No persistent
+        # active version — IS_ACTIVE is only set transiently during a test run.
         if s.query(NodePromptVer).count() == 0:
             p1 = NodePromptVer(
                 node_nm="llm", version_no="1.0.0",
                 system_prompt="You are helpful.", user_prompt="Question: {{q}}",
                 model_nm="claude-sonnet-4-6",
-                is_active="Y", change_summary="seed", change_reason="seed", created_by="system",
+                is_active="N", change_summary="seed", change_reason="seed", created_by="system",
             )
             s.add(p1)
             s.commit()

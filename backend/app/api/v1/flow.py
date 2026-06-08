@@ -40,7 +40,12 @@ async def run_flow_ragas(
     payload: FlowRagasRequest, background: BackgroundTasks, db: Session = Depends(get_db)
 ) -> RagasRunOut:
     run = flow_service.create_flow_ragas_run(
-        db, dataset_id=payload.dataset_id, metrics=payload.metrics, actor=SYSTEM_USER
+        db,
+        dataset_id=payload.dataset_id,
+        metrics=payload.metrics,
+        actor=SYSTEM_USER,
+        node_nm=payload.node_nm,
+        prompt_id=payload.prompt_id,
     )
     db.commit()
     db.refresh(run)

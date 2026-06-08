@@ -117,6 +117,10 @@ function upsertResult(cur: RagasResultRow[], row: RagasResultRow): RagasResultRo
 
 function SingleRunPanel() {
   const { datasets } = useFlowDatasets();
+  const nodes = usePromptNodes();
+  const [nodeNm, setNodeNm] = useState<string | null>(null);
+  const [versions, setVersions] = useState<PromptVersionSummary[]>([]);
+  const [ver, setVer] = useState<number | null>(null);
   const [datasetId, setDatasetId] = useState<number | null>(null);
   const [metrics, setMetrics] = useState<string[]>([...RAGAS_METRICS]);
   const [status, setStatus] = useState('idle');
@@ -129,12 +133,23 @@ function SingleRunPanel() {
   const runIdRef = useRef<number | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
+  useEffect(() => {
+    if (nodeNm == null) { setVersions([]); return; }
+    api.get<PromptVersionSummary[]>(`/nodes/${encodeURIComponent(nodeNm)}/prompts`).then(setVersions).catch(() => setVersions([]));
+  }, [nodeNm]);
+  // Default to the latest version of the selected node (list is newest-first).
+  useEffect(() => { setVer(versions[0]?.prompt_id ?? null); }, [versions]);
+
+  const canRun = !!(nodeNm && ver && datasetId);
+
   async function run() {
-    if (!datasetId) return;
+    if (!canRun) return;
     setError(null); setDetail(null); setStatus('running');
     setLive([]); setTotal(0); setCancelling(false); runIdRef.current = null;
     try {
-      const r = await api.post<{ ragas_run_id: number }>('/flow/test/ragas', { dataset_id: datasetId, metrics });
+      const r = await api.post<{ ragas_run_id: number }>('/flow/test/ragas', {
+        dataset_id: datasetId, metrics, node_nm: nodeNm, prompt_id: ver,
+      });
       runIdRef.current = r.ragas_run_id;
       const ws = connectRagasRunWs(r.ragas_run_id, {
         onMessage: async (m: RunWsMessage) => {
@@ -169,11 +184,17 @@ function SingleRunPanel() {
   return (
     <div className="space-y-5">
       <Card className="p-4">
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-3 overflow-x-auto [&>*]:shrink-0">
+          <Select value={nodeNm ?? ''} onChange={(e) => setNodeNm(e.target.value)} className="w-44">
+            <option value="" disabled>노드 선택</option>
+            {nodes.map((n) => (<option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>))}
+          </Select>
+          <VersionSelect versions={versions} value={ver} onChange={setVer} placeholder="버전 선택" />
           <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />
           <Button
             variant={status === 'running' ? 'secondary' : 'primary'}
-            disabled={status === 'running' ? cancelling : !datasetId}
+            className="whitespace-nowrap"
+            disabled={status === 'running' ? cancelling : !canRun}
             onClick={status === 'running' ? cancel : run}
           >
             {status === 'running' ? (cancelling ? '취소 중…' : '실행 취소') : 'RAGAS 실행'}
@@ -190,7 +211,7 @@ function SingleRunPanel() {
 
       {status === 'idle' && !error && (
         <Card className="flex flex-col items-center justify-center gap-1 px-6 py-16 text-center">
-          <div className="text-sm text-ink">데이터셋을 선택하고 <span className="font-medium">RAGAS 실행</span>을 누르세요.</div>
+          <div className="text-sm text-ink">노드·버전·데이터셋을 선택하고 <span className="font-medium">RAGAS 실행</span>을 누르세요.</div>
           <div className="text-xs text-muted">지난 평가 결과는 ‘평가 기록’ 탭에서 볼 수 있습니다.</div>
         </Card>
       )}
@@ -258,12 +279,10 @@ function ComparePanel() {
     api.get<PromptVersionSummary[]>(`/nodes/${encodeURIComponent(nodeNm)}/prompts`).then(setVersions).catch(() => setVersions([]));
   }, [nodeNm]);
 
-  // default A = active version, B = next most-recent
+  // default A = latest version, B = next most-recent (list is newest-first)
   useEffect(() => {
-    const active = versions.find((v) => v.is_active === 'Y');
-    const other = versions.find((v) => v.prompt_id !== active?.prompt_id);
-    setVerA(active?.prompt_id ?? versions[0]?.prompt_id ?? null);
-    setVerB(other?.prompt_id ?? versions[1]?.prompt_id ?? null);
+    setVerA(versions[0]?.prompt_id ?? null);
+    setVerB(versions[1]?.prompt_id ?? null);
   }, [versions]);
 
   const canRun = !!(nodeNm && verA && verB && verA !== verB && datasetId) && status !== 'running';
@@ -915,7 +934,7 @@ function VersionSelect({ versions, value, onChange, placeholder }: { versions: P
     <Select value={value ?? ''} onChange={(e) => onChange(Number(e.target.value))} className="w-36">
       <option value="" disabled>{placeholder}</option>
       {versions.map((v) => (
-        <option key={v.prompt_id} value={v.prompt_id}>v{v.version_no}{v.is_active === 'Y' ? ' (활성)' : ''}</option>
+        <option key={v.prompt_id} value={v.prompt_id}>v{v.version_no}</option>
       ))}
     </Select>
   );

@@ -81,6 +81,36 @@ def test_flow_ragas_unknown_dataset_404(client):
     assert resp.status_code == 404
 
 
+def test_flow_ragas_single_targets_version_then_deactivates(client):
+    did = _seed_dataset(client)
+    # seed node "llm" has prompt_id 1. Run a single test targeting it.
+    resp = client.post(
+        "/api/v1/flow/test/ragas",
+        json={"dataset_id": did, "node_nm": "llm", "prompt_id": 1},
+    )
+    assert resp.status_code == 200, resp.text
+    rid = resp.json()["ragas_run_id"]
+    with client.websocket_connect(f"/ws/ragas-runs/{rid}") as ws:
+        assert _drain(ws)[-1]["event"] == "DONE"
+
+    detail = client.get(f"/api/v1/ragas-runs/{rid}").json()
+    assert detail["prompt_id"] == 1
+    assert detail["node_nm"] == "llm" and detail["version_no"]
+
+    # After the run, no version of the node stays active (transient IS_ACTIVE).
+    rows = client.get("/api/v1/nodes/llm/prompts").json()
+    assert all(r["is_active"] == "N" for r in rows)
+
+
+def test_flow_ragas_single_bad_prompt_node_404(client):
+    did = _seed_dataset(client)
+    resp = client.post(
+        "/api/v1/flow/test/ragas",
+        json={"dataset_id": did, "node_nm": "ghost", "prompt_id": 1},
+    )
+    assert resp.status_code == 404
+
+
 def test_flow_ragas_metric_subset_only(client):
     did = _seed_dataset(client)
     resp = client.post(

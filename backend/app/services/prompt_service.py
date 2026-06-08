@@ -179,47 +179,6 @@ def create_version(
     return new_version
 
 
-def activate_version(db: Session, *, prompt_id: int, actor: str) -> NodePromptVer:
-    """Activate a node prompt version: flip IS_ACTIVE on PM_NODE_PROMPT_VER
-    (one active per NODE_NM). The external model reads the active row directly."""
-    target = get_version(db, prompt_id)
-
-    current_active = (
-        db.execute(
-            select(NodePromptVer).where(
-                NodePromptVer.node_nm == target.node_nm,
-                NodePromptVer.is_active == "Y",
-            )
-        )
-        .scalars()
-        .first()
-    )
-
-    already_active = bool(current_active and current_active.prompt_id == target.prompt_id)
-    before_snapshot = {
-        "active_prompt_id": current_active.prompt_id if current_active else None,
-        "active_version_no": current_active.version_no if current_active else None,
-    }
-
-    now = datetime.now(timezone.utc)
-    if current_active and not already_active:
-        current_active.is_active = "N"
-    target.is_active = "Y"
-    target.updated_dt = now
-    db.flush()
-
-    audit_service.write_audit(
-        db,
-        target_table="PM_NODE_PROMPT_VER",
-        target_id=target.prompt_id,
-        action="ACTIVATE",
-        before=before_snapshot,
-        after={"active_prompt_id": target.prompt_id, "active_version_no": target.version_no},
-        created_by=actor,
-    )
-    return target
-
-
 def update_version_prompt(
     db: Session,
     *,
@@ -275,17 +234,11 @@ def node_exists(db: Session, node_nm: str) -> bool:
 
 
 def delete_version(db: Session, *, prompt_id: int, actor: str) -> None:
-    """Delete one prompt version. The active version is locked (must activate
-    another first). FK references are cleared before the row is removed:
-    sibling ``PREV_PROMPT_ID`` pointers and ``PM_RAGAS_RUN.PROMPT_ID``."""
+    """Delete one prompt version. FK references are cleared before the row is
+    removed: sibling ``PREV_PROMPT_ID`` pointers and ``PM_RAGAS_RUN.PROMPT_ID``."""
     from app.models.ragas import RagasRun
 
     target = get_version(db, prompt_id)
-    if target.is_active == "Y":
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            detail="활성 버전은 삭제할 수 없습니다. 다른 버전을 먼저 활성화하세요.",
-        )
 
     before = {
         "node_nm": target.node_nm,

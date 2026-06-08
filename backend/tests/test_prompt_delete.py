@@ -27,11 +27,6 @@ def _new_version(client, node_nm, *, activate=False, prev_prompt_id=None):
     return res.json()
 
 
-def _active_prompt_id(client, node_nm):
-    rows = client.get(f"/api/v1/nodes/{node_nm}/prompts").json()
-    return next(r["prompt_id"] for r in rows if r["is_active"] == "Y")
-
-
 # ---- node create ------------------------------------------------------------
 
 def test_create_node_new(client):
@@ -43,14 +38,14 @@ def test_create_node_new(client):
             "user_prompt": "usr",
             "change_summary": "s",
             "change_reason": "r",
-            "activate_after_save": True,
         },
     )
     assert res.status_code == 201, res.text
     body = res.json()
     assert body["node_nm"] == "router"
     assert body["version_no"] == "1.0.0"
-    assert body["is_active"] == "Y"
+    # No persistent active version — created versions are inactive.
+    assert body["is_active"] == "N"
 
     nodes = {n["node_nm"] for n in client.get("/api/v1/flow/current").json()["nodes"]}
     assert "router" in nodes
@@ -75,9 +70,11 @@ def test_delete_inactive_version(client):
     assert pid not in ids
 
 
-def test_delete_active_version_blocked(client):
-    pid = _active_prompt_id(client, "llm")
-    assert client.delete(f"/api/v1/prompts/{pid}").status_code == 409
+def test_activate_endpoint_removed(client):
+    # The manual "activate" concept is gone — IS_ACTIVE is set only during a test run.
+    rows = client.get("/api/v1/nodes/llm/prompts").json()
+    pid = rows[0]["prompt_id"]
+    assert client.put(f"/api/v1/prompts/{pid}/activate").status_code in (404, 405)
 
 
 def test_delete_missing_version_404(client):

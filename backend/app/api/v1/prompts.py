@@ -42,8 +42,6 @@ def create_node(payload: NodeCreate, db: Session = Depends(get_db)) -> PromptVer
     version = prompt_service.create_version(
         db, node_nm=payload.node_nm, payload=payload, created_by=SYSTEM_USER
     )
-    if payload.activate_after_save:
-        prompt_service.activate_version(db, prompt_id=version.prompt_id, actor=SYSTEM_USER)
     db.commit()
     db.refresh(version)
     return prompt_service.to_detail(version)
@@ -74,8 +72,6 @@ def create_prompt(
     version = prompt_service.create_version(
         db, node_nm=node_nm, payload=payload, created_by=SYSTEM_USER
     )
-    if payload.activate_after_save:
-        prompt_service.activate_version(db, prompt_id=version.prompt_id, actor=SYSTEM_USER)
     db.commit()
     db.refresh(version)
     return prompt_service.to_detail(version)
@@ -120,14 +116,6 @@ def edit_prompt(
         change_reason=payload.change_reason,
         actor=SYSTEM_USER,
     )
-    db.commit()
-    db.refresh(version)
-    return prompt_service.to_detail(version)
-
-
-@router.put("/prompts/{prompt_id}/activate", response_model=PromptVersionDetail)
-def activate(prompt_id: int, db: Session = Depends(get_db)) -> PromptVersionDetail:
-    version = prompt_service.activate_version(db, prompt_id=prompt_id, actor=SYSTEM_USER)
     db.commit()
     db.refresh(version)
     return prompt_service.to_detail(version)

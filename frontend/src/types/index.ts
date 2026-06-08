@@ -2,9 +2,9 @@
 
 export interface FlowNode {
   node_nm: string;
-  active_prompt_id: number | null;
-  active_version_no: string | null;
-  active_model_nm: string | null;
+  latest_prompt_id: number | null;
+  latest_version_no: string | null;
+  latest_model_nm: string | null;
 }
 
 export interface FlowCurrent {
@@ -38,7 +38,6 @@ export interface PromptVersionCreate {
   change_summary: string;
   change_reason: string;
   prev_prompt_id?: number | null;
-  activate_after_save?: boolean;
 }
 
 export interface AuditLog {

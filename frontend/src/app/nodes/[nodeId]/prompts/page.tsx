@@ -25,7 +25,6 @@ export default function NodePromptsPage() {
   const [tab, setTab] = useState<Tab>('editor');
   const [error, setError] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
-  const [confirmActivate, setConfirmActivate] = useState<PromptVersionSummary | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<PromptVersionSummary | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -34,7 +33,7 @@ export default function NodePromptsPage() {
       try {
         const rows = await api.get<PromptVersionSummary[]>(`/nodes/${encodeURIComponent(nodeNm)}/prompts`);
         setVersions(rows);
-        const pick = selectId ?? rows.find((r) => r.is_active === 'Y')?.prompt_id ?? rows[0]?.prompt_id;
+        const pick = selectId ?? rows[0]?.prompt_id;
         if (pick) setDetail(await api.get<PromptVersionDetail>(`/prompts/${pick}`));
         else setDetail(null);
       } catch (e) {
@@ -51,20 +50,6 @@ export default function NodePromptsPage() {
   async function selectVersion(id: number) {
     setDetail(await api.get<PromptVersionDetail>(`/prompts/${id}`));
     setTab('editor');
-  }
-
-  async function doActivate() {
-    if (!confirmActivate) return;
-    setBusy(true);
-    try {
-      await api.put(`/prompts/${confirmActivate.prompt_id}/activate`);
-      setConfirmActivate(null);
-      await reload(confirmActivate.prompt_id);
-    } catch (e) {
-      setError(e instanceof ApiError ? JSON.stringify(e.detail) : String(e));
-    } finally {
-      setBusy(false);
-    }
   }
 
   async function doDelete() {
@@ -120,7 +105,6 @@ export default function NodePromptsPage() {
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-mono text-sm font-medium text-ink">v{v.version_no}</span>
-                    {v.is_active === 'Y' && <Badge tone="ok">ACTIVE</Badge>}
                   </div>
                   {v.model_nm && (
                     <div className="mt-1 truncate text-[11px] text-muted">{v.model_nm}</div>
@@ -130,18 +114,16 @@ export default function NodePromptsPage() {
                   )}
                   <div className="mt-1 text-[11px] text-muted">{v.created_dt}</div>
                 </button>
-                {v.is_active !== 'Y' && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setConfirmDelete(v);
-                    }}
-                    title="이 버전 삭제"
-                    className="absolute right-2 top-2 rounded p-1 text-muted opacity-0 transition-opacity hover:text-bad focus:opacity-100 group-hover/ver:opacity-100"
-                  >
-                    삭제
-                  </button>
-                )}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setConfirmDelete(v);
+                  }}
+                  title="이 버전 삭제"
+                  className="absolute right-2 top-2 rounded p-1 text-muted opacity-0 transition-opacity hover:text-bad focus:opacity-100 group-hover/ver:opacity-100"
+                >
+                  삭제
+                </button>
               </li>
             ))}
             {versions.length === 0 && (
@@ -159,16 +141,12 @@ export default function NodePromptsPage() {
                   <div className="flex items-center gap-2">
                     <h1 className="truncate text-base font-semibold text-ink">{nodeNm}</h1>
                     <span className="font-mono text-sm text-muted">v{detail.version_no}</span>
-                    {detail.is_active === 'Y' ? <Badge tone="ok">활성</Badge> : <Badge tone="neutral">비활성</Badge>}
                     {detail.model_nm && <Badge tone="neutral">{detail.model_nm}</Badge>}
                   </div>
                   {detail.change_summary && (
                     <p className="mt-0.5 truncate text-xs text-muted">{detail.change_summary}</p>
                   )}
                 </div>
-                {detail.is_active !== 'Y' && (
-                  <Button onClick={() => setConfirmActivate(detail)}>이 버전 활성화</Button>
-                )}
               </div>
 
               <div className="px-6 pt-2">
@@ -206,25 +184,6 @@ export default function NodePromptsPage() {
           }}
         />
       )}
-
-      <Modal
-        open={!!confirmActivate}
-        title="버전 활성화"
-        onClose={() => setConfirmActivate(null)}
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setConfirmActivate(null)}>취소</Button>
-            <Button onClick={doActivate} disabled={busy}>활성화</Button>
-          </>
-        }
-      >
-        <p className="text-sm text-ink">
-          <span className="font-semibold">v{confirmActivate?.version_no}</span> 을(를) 활성화합니다.
-        </p>
-        <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-muted">
-          <li>외부 모델은 <span className="font-mono text-ink">PM_NODE_PROMPT_VER</span> 의 active row 를 그대로 읽습니다.</li>
-        </ul>
-      </Modal>
 
       <Modal
         open={!!confirmDelete}
@@ -481,7 +440,6 @@ function NewVersionModal({
   const [model, setModel] = useState(base?.model_nm ?? '');
   const [summary, setSummary] = useState('');
   const [reason, setReason] = useState('');
-  const [activate, setActivate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -500,7 +458,6 @@ function NewVersionModal({
         model_nm: model.trim() || null,
         change_summary: summary,
         change_reason: reason,
-        activate_after_save: activate,
       });
       onCreated(created.prompt_id);
     } catch (e) {
@@ -547,10 +504,6 @@ function NewVersionModal({
           <Input value={reason} onChange={(e) => setReason(e.target.value)} className="mt-1 w-full" />
         </label>
       </div>
-      <label className="mt-3 flex items-center gap-2 text-sm text-ink">
-        <input type="checkbox" className="accent-accent" checked={activate} onChange={(e) => setActivate(e.target.checked)} />
-        저장 후 즉시 활성화
-      </label>
     </Modal>
   );
 }

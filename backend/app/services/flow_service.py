@@ -99,32 +99,42 @@ def _list_node_nms(db: Session) -> list[str]:
     return list(seen.keys())
 
 
-def _active_prompts_by_node_nm(db: Session) -> dict[str, NodePromptVer]:
+def _latest_prompt_by_node_nm(db: Session) -> dict[str, NodePromptVer]:
+    """Most recent version per node (no persistent active version anymore)."""
     rows = (
-        db.execute(select(NodePromptVer).where(NodePromptVer.is_active == "Y"))
+        db.execute(
+            select(NodePromptVer).order_by(
+                NodePromptVer.created_dt.desc(), NodePromptVer.prompt_id.desc()
+            )
+        )
         .scalars()
         .all()
     )
-    return {p.node_nm: p for p in rows}
+    latest: dict[str, NodePromptVer] = {}
+    for p in rows:
+        if p.node_nm not in latest:  # rows are newest-first → first seen is latest
+            latest[p.node_nm] = p
+    return latest
 
 
 def get_current_flow(db: Session) -> FlowCurrentOut:
     """The current flow's nodes — drives the node list → per-node prompt management.
 
     Source of truth is PM_NODE_PROMPT_VER: any NODE_NM that has at least one
-    version is a node. Active version + model are surfaced per node.
+    version is a node. The latest version + model are surfaced per node (there is
+    no persistent active version — IS_ACTIVE is only set during a test run).
     """
     node_nms = _list_node_nms(db)
-    actives = _active_prompts_by_node_nm(db)
+    latest = _latest_prompt_by_node_nm(db)
     nodes_out: list[FlowNodeOut] = []
     for nm in node_nms:
-        ap = actives.get(nm)
+        lp = latest.get(nm)
         nodes_out.append(
             FlowNodeOut(
                 node_nm=nm,
-                active_prompt_id=ap.prompt_id if ap else None,
-                active_version_no=ap.version_no if ap else None,
-                active_model_nm=ap.model_nm if ap else None,
+                latest_prompt_id=lp.prompt_id if lp else None,
+                latest_version_no=lp.version_no if lp else None,
+                latest_model_nm=lp.model_nm if lp else None,
             )
         )
     return FlowCurrentOut(nodes=nodes_out)
@@ -154,23 +164,9 @@ def _case_variables(input_data: str) -> dict[str, str]:
     return {str(k): str(v) for k, v in parsed.items()}
 
 
-def _swap_active_prompt(
-    db: Session, *, node_nm: str, target_prompt_id: int
-) -> int | None:
+def _swap_active_prompt(db: Session, *, node_nm: str, target_prompt_id: int) -> None:
     """Flip IS_ACTIVE on PM_NODE_PROMPT_VER for one NODE_NM so the external model
-    reads ``target_prompt_id`` as its active row. Returns the prompt_id that was
-    previously active (to restore later), or None if no row was active.
-    """
-    prev = (
-        db.execute(
-            select(NodePromptVer.prompt_id).where(
-                NodePromptVer.node_nm == node_nm,
-                NodePromptVer.is_active == "Y",
-            )
-        )
-        .scalars()
-        .first()
-    )
+    reads ``target_prompt_id`` as its active row during this test run only."""
     db.execute(
         update(NodePromptVer)
         .where(NodePromptVer.node_nm == node_nm)
@@ -182,25 +178,16 @@ def _swap_active_prompt(
         .values(is_active="Y")
     )
     db.commit()
-    return prev
 
 
-def _restore_active_prompt(
-    db: Session, *, node_nm: str, prompt_id: int | None
-) -> None:
-    """Restore the previously-active row after an A/B evaluation. ``None`` means
-    no row was active before — leave them all deactivated."""
+def _deactivate_node(db: Session, *, node_nm: str) -> None:
+    """Turn off IS_ACTIVE for every version of a node after a test run. There is
+    no persistent active version — it is only set transiently while a run uses it."""
     db.execute(
         update(NodePromptVer)
         .where(NodePromptVer.node_nm == node_nm)
         .values(is_active="N")
     )
-    if prompt_id is not None:
-        db.execute(
-            update(NodePromptVer)
-            .where(NodePromptVer.prompt_id == prompt_id)
-            .values(is_active="Y")
-        )
     db.commit()
 
 
@@ -211,13 +198,32 @@ def _require_flow_dataset(db: Session, dataset_id: int) -> TestDataset:
     return ds
 
 
-def create_flow_ragas_run(db: Session, *, dataset_id: int, metrics: list[str], actor: str) -> RagasRun:
+def create_flow_ragas_run(
+    db: Session,
+    *,
+    dataset_id: int,
+    metrics: list[str],
+    actor: str,
+    node_nm: str | None = None,
+    prompt_id: int | None = None,
+) -> RagasRun:
+    """Single flow RAGAS run. When ``prompt_id`` is given the run targets that
+    node version (it is activated only while the run uses it); otherwise the flow
+    runs against whatever prompts the agent already has."""
     from app.services.ragas import ALL_METRICS
 
     _require_flow_dataset(db, dataset_id)
+    if prompt_id is not None:
+        pv = db.get(NodePromptVer, prompt_id)
+        if pv is None or (node_nm is not None and pv.node_nm != node_nm):
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                detail=f"prompt version {prompt_id} not found for node {node_nm!r}",
+            )
     chosen = [m for m in ALL_METRICS if m in set(metrics)] or list(ALL_METRICS)
     run = RagasRun(
         dataset_id=dataset_id,
+        prompt_id=prompt_id,
         status="PENDING",
         metrics=json.dumps(chosen),
         created_by=actor,
@@ -267,16 +273,17 @@ def create_flow_ragas_ab_run(
 
 # ---- shared run phases (used by both single and A/B execution) ----------------
 
-def _maybe_swap(session: Session, run: RagasRun) -> tuple[int | None, str | None]:
-    """A/B + external mode: flip IS_ACTIVE to this run's version so the external
-    model answers with it. Returns (prev_active_prompt_id, node_nm) to restore,
-    or (None, None) when no swap was done (single run / stub mode)."""
-    if run.prompt_id and external_agent.external_enabled():
+def _maybe_swap(session: Session, run: RagasRun) -> str | None:
+    """If this run targets a specific version, flip IS_ACTIVE to it so the test
+    runs with that version (the external model reads the active row). Applied in
+    any mode — IS_ACTIVE is set only while a run uses it. Returns the node_nm to
+    deactivate afterward, or None when the run targets no specific version."""
+    if run.prompt_id:
         pv = session.get(NodePromptVer, run.prompt_id)
         if pv is not None:
-            backup = _swap_active_prompt(session, node_nm=pv.node_nm, target_prompt_id=run.prompt_id)
-            return backup, pv.node_nm
-    return None, None
+            _swap_active_prompt(session, node_nm=pv.node_nm, target_prompt_id=run.prompt_id)
+            return pv.node_nm
+    return None
 
 
 async def _setup_run(session: Session, ragas_run_id: int, dataset_id: int, key: str):
@@ -444,7 +451,7 @@ async def execute_flow_ragas_run(*, ragas_run_id: int, dataset_id: int) -> None:
             return
         run, cases, scorer = setup
 
-        ab_backup, ab_node_nm = _maybe_swap(session, run)
+        swap_node_nm = _maybe_swap(session, run)
         sums: dict[str, list[float]] = {}
         try:
             pending, cancelled = await _phase1_answers(session, ragas_run_id, cases, key)
@@ -453,8 +460,8 @@ async def execute_flow_ragas_run(*, ragas_run_id: int, dataset_id: int) -> None:
                     session, ragas_run_id, pending, scorer, key, len(cases)
                 )
         finally:
-            if ab_node_nm is not None:
-                _restore_active_prompt(session, node_nm=ab_node_nm, prompt_id=ab_backup)
+            if swap_node_nm is not None:
+                _deactivate_node(session, node_nm=swap_node_nm)
 
         await _finalize_run(session, run, ragas_run_id, key, sums, cancelled)
     except Exception as exc:  # noqa: BLE001 - never leave a run stuck/unrecorded
@@ -496,14 +503,14 @@ async def execute_flow_ragas_ab_run(
             c = ctx.get(rid)
             if c is None:
                 continue
-            ab_backup, ab_node_nm = _maybe_swap(c["session"], c["run"])
+            swap_node_nm = _maybe_swap(c["session"], c["run"])
             try:
                 c["pending"], c["cancelled"] = await _phase1_answers(
                     c["session"], rid, c["cases"], c["key"]
                 )
             finally:
-                if ab_node_nm is not None:
-                    _restore_active_prompt(c["session"], node_nm=ab_node_nm, prompt_id=ab_backup)
+                if swap_node_nm is not None:
+                    _deactivate_node(c["session"], node_nm=swap_node_nm)
 
         # Phase 2 — scores for A, then B.
         for rid in ids:
