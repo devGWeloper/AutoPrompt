@@ -22,12 +22,11 @@
   `input_json, expected_output, eval_criteria, case_type`.
 - **RAGAS(§4.6)** — 플러그형: 실제 `ragas` + 결정론 로컬 폴백. Judge 키는
   `.env`의 첫 provider 키 자동감지(openai>anthropic>google),
-  `RAGAS_ENGINE=auto|fallback|ragas`. `PM_RAGAS_RUN` 확장 + `PM_RAGAS_RESULT`
-  (alembic `0002`).
+  `RAGAS_ENGINE=auto|fallback|ragas`. `PM_RAGAS_RUN` 확장 + `PM_RAGAS_RESULT`.
 - **결과 내보내기** — CSV / Excel(openpyxl)만. **PDF 미지원**.
 - **의존성** — 단일 `backend/requirements.txt`(runtime+dev+ragas).
   `pyproject.toml`은 ruff/pytest 설정만.
-- **마이그레이션 체인** — `0001 → 0002(RAGAS) → 0003(CASE_NM 제거)`.
+- **스키마 관리** — 마이그레이션 도구 없음. 권위 스키마는 `backend/sql/ddl_initial.sql`(+ `app/models/*`); 운영 DB 변경은 DBA가 직접 SQL로 적용.
 - **미구현(후속)** — 외부 LangGraph Agent 호출 어댑터
   (`app/services/external_agent.py` 없음, 플로우 실행은 시스템 내부 한정),
   프롬프트 로컬 캐시(§6.3), LLM 비용 추정.
@@ -129,8 +128,8 @@ AI Agent 프로젝트를 구성하는 LangGraph 기반 각 노드(Node)의 **프
 ### 3.1 테이블 목록
 
 > ⚠️ 아래 §3.1/§3.2 는 **최초 명세안(다중 프로젝트)** 이다. 구현은 단일 플로우
-> (`CHAT_VER_MAS`/`NODE_MAS`) 구조로 리팩터링됐고(`alembic 0004`), 이어 **RAGAS 중심으로 정리**됐다
-> (`alembic 0008`). **현행 권위 스키마는 [`backend/sql/ddl_initial.sql`](./backend/sql/ddl_initial.sql)
+> (`CHAT_VER_MAS`/`NODE_MAS`) 구조로 리팩터링됐고, 이어 **RAGAS 중심으로 정리**됐다.
+> **현행 권위 스키마는 [`backend/sql/ddl_initial.sql`](./backend/sql/ddl_initial.sql)
 > + `backend/app/models/*`** 를 본다. 현재 PM 소유 테이블은 **6개**: `PM_NODE_PROMPT_VER`,
 > `PM_TEST_DATASET`, `PM_TEST_CASE`, `PM_RAGAS_RUN`, `PM_RAGAS_RESULT`, `PM_AUDIT_LOG`.
 

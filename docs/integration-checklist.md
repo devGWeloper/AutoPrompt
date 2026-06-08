@@ -14,7 +14,7 @@
   - `PM_NODE_PROMPT_VER`(노드 프롬프트 버전 — `SYSTEM_PROMPT`/`USER_PROMPT` 2컬럼 분리),
     `PM_TEST_DATASET`/`PM_TEST_CASE`(RAGAS 데이터셋), `PM_RAGAS_RUN`/`PM_RAGAS_RESULT`, `PM_AUDIT_LOG`.
   - `PM_TEST_RUN`/`PM_TEST_RESULT`(비-RAGAS 테스트)·`PM_FLOW_VER`/`PM_FLOW_VER_NODE`(플로우 버전 이력)는
-    RAGAS 중심 전환 때 **삭제**됨(alembic `0008`).
+    RAGAS 중심 전환 때 **삭제**됨.
 - **ACTIVATE** : 웹에서 노드 프롬프트 버전을 활성화하면 → ① `PM_NODE_PROMPT_VER.IS_ACTIVE` 플래그 전환
   (해당 노드 1행만 'Y') → ② `NODE_MAS.PROMPT` / `UPDATE_DATE` 미러링은 현재 코드가 같이 하지만 외부
   모델이 더 이상 안 읽으므로 vestigial. 외부 모델은 `PM_NODE_PROMPT_VER` 의 active row 만 본다.
@@ -41,12 +41,12 @@ ORACLE_DSN=(DESCRIPTION=(ADDRESS_LIST=(ADDRESS=(PROTOCOL=TCP)(HOST=...)(PORT=...
 
 스키마 생성(최초 1회): `backend/` 에서
 ```
-.venv\Scripts\python.exe -m alembic upgrade head
+.venv\Scripts\python.exe scripts\create_pm_tables.py     # 모델 기반 PM_* 생성 (--dry-run 으로 미리보기)
 ```
-> 마이그레이션 체인은 `0001 … 0007` 다음 **`0008`(RAGAS 중심 정리: `PM_TEST_RUN`/`PM_TEST_RESULT`·
-> `PM_FLOW_VER`/`PM_FLOW_VER_NODE` 드롭 + 사장된 컬럼 정리)** 로 끝난다.
+> 마이그레이션 도구는 쓰지 않는다 — 권위 스키마는 [`backend/sql/ddl_initial.sql`](../backend/sql/ddl_initial.sql)
+> (모델 `app/models/*` 미러)이고, 위 스크립트가 모델에서 PM_* 테이블만 생성한다(`checkfirst`로 기존 테이블은 건너뜀).
 > **`CHAT_VER_MAS`/`NODE_MAS`/`MODEL_MAS` 는 생성/변경하지 않는다**(운영에 이미 존재한다고 가정).
-> 이미 `0007` 상태인 DB라면 `alembic upgrade head` 가 `0008`만 적용한다(스탬프가 없으면 `alembic stamp 0007` 후 실행).
+> 내부 운영 DB의 이후 스키마 변경은 DBA가 리뷰한 SQL을 직접 적용한다.
 
 ## 2. 고정 테이블 컬럼 확인 (코드가 기대하는 이름)
 

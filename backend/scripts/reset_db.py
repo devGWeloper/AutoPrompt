@@ -1,9 +1,10 @@
-"""DEV ONLY: drop this app's tables so `alembic upgrade head` can rebuild.
+"""DEV ONLY: drop this app's PM_* tables for a clean rebuild.
 
-The schema/alembic history got out of sync (old partial migration).
-Only PM_* tables and ALEMBIC_VERSION are touched — other objects in the
-schema (e.g. SQL*Plus system tables) are left alone. Each drop is
-best-effort: failures are reported and skipped.
+Recreate afterwards with ``scripts/create_pm_tables.py`` (or apply
+``sql/ddl_initial.sql``). Only PM_* tables (plus a legacy ALEMBIC_VERSION table
+if one still exists from before migrations were removed) are touched — other
+objects in the schema are left alone. Each drop is best-effort: failures are
+reported and skipped.
 
 Usage:
     python -m scripts.reset_db

@@ -92,7 +92,15 @@
       "PowerShell(Set-Location backend; $env:APP_ENV='test'; .venv\\\\Scripts\\\\python.exe -m pytest -q 2>&1 | Select-Object -Last 8)",
       "PowerShell($env:APP_ENV='test'; .venv\\\\Scripts\\\\python.exe -m pytest -q 2>&1 | Select-Object -Last 4)",
       "Bash(APP_ENV=test .venv/Scripts/python.exe -m pytest tests/test_ragas.py tests/test_ragas_select.py tests/test_ragas_score_nan.py -q)",
-      "Bash(APP_ENV=test .venv/Scripts/python.exe -m pytest tests/test_ragas.py tests/test_ragas_select.py tests/test_ragas_score_nan.py tests/test_ragas_cancel.py -q)"
+      "Bash(APP_ENV=test .venv/Scripts/python.exe -m pytest tests/test_ragas.py tests/test_ragas_select.py tests/test_ragas_score_nan.py tests/test_ragas_cancel.py -q)",
+      "Bash(xargs echo \"CREATE TABLE 수:\")",
+      "Read(//c/work/**)",
+      "Bash(rm -rf alembic alembic.ini)",
+      "Bash(ls -d alembic alembic.ini)",
+      "Bash(cd /c/work/AutoPrompt && grep -rniE \"alembic\" --include=\"*.py\" --include=\"*.md\" --include=\"*.txt\" --include=\"*.ini\" --include=\"*.cfg\" --include=\"*.toml\" . 2>/dev/null | grep -v \"/.venv/\" | grep -v \"egg-info\" | grep -v \"__pycache__\")",
+      "Read(//c/c/work/**)",
+      "Bash(APP_ENV=test .venv/Scripts/python.exe -c \"import app.main; print\\('app import OK'\\)\")",
+      "Bash(APP_ENV=test .venv/Scripts/python.exe -m pytest tests/ -q)"
     ]
   }
 }
