@@ -120,7 +120,7 @@ export default function NodePromptsPage() {
                     setConfirmDelete(v);
                   }}
                   title="이 버전 삭제"
-                  className="absolute right-2 top-2 rounded p-1 text-muted opacity-0 transition-opacity hover:text-bad focus:opacity-100 group-hover/ver:opacity-100"
+                  className="absolute right-2 top-2 rounded-md border border-line bg-surface px-2 py-1 text-[11px] font-medium text-muted transition-colors hover:border-bad/40 hover:bg-bad/5 hover:text-bad"
                 >
                   삭제
                 </button>
