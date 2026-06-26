@@ -90,18 +90,221 @@ function usePromptNodes() {
 // ---- run tab (single | compare) -------------------------------------------
 
 function RagasPanel() {
-  const [mode, setMode] = useState<'single' | 'compare'>('single');
+  const [mode, setMode] = useState<'single' | 'compare' | 'direct'>('single');
   return (
     <div className="space-y-5">
       <SegToggle
         value={mode}
         onChange={setMode}
         options={[
-          { id: 'single', label: '단일' },
-          { id: 'compare', label: '버전 비교' },
+          { id: 'single', label: '단일 프롬프트 실행' },
+          { id: 'compare', label: '프롬프트 버전 비교' },
+          { id: 'direct', label: '현재 버전 실행(GaiA)' },
         ]}
       />
-      {mode === 'single' ? <SingleRunPanel /> : <ComparePanel />}
+      {mode === 'single' && <SingleRunPanel />}
+      {mode === 'compare' && <ComparePanel />}
+      {mode === 'direct' && <DirectPanel />}
+    </div>
+  );
+}
+
+// ---- direct call (raw external-API smoke test, no scoring) ------------------
+
+type DirectResult = { response: string; docs: string[]; raw: Record<string, unknown> };
+type DirectCaseResult = { case_id: number; question: string; answer: string | null; docs: string[]; error: string | null };
+
+/** Optional endpoint overrides shared by both direct modes. Left blank, the
+ * server's EXTERNAL_* settings are used. */
+function EndpointOverrides({
+  baseUrl, setBaseUrl, authKey, setAuthKey, userId, setUserId,
+}: {
+  baseUrl: string; setBaseUrl: (v: string) => void;
+  authKey: string; setAuthKey: (v: string) => void;
+  userId: string; setUserId: (v: string) => void;
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+      <div>
+        <label className="mb-1 block text-xs font-medium text-muted">Base URL</label>
+        <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="기본값: EXTERNAL_AGENT_BASE_URL" className="w-full text-sm" />
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-medium text-muted">Auth Key</label>
+        <Input value={authKey} onChange={(e) => setAuthKey(e.target.value)} placeholder="기본값: EXTERNAL_AUTH_KEY" className="w-full text-sm" />
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-medium text-muted">User ID</label>
+        <Input value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="기본값: EXTERNAL_USER_ID" className="w-full text-sm" />
+      </div>
+    </div>
+  );
+}
+
+/** Raw external-API smoke test: send a message straight to the chat endpoint and
+ * show the answer as-is. Bypasses prompts/RAGAS scoring. Input is either a query
+ * typed by hand or every case of a dataset (read from the DB but not scored). */
+function DirectPanel() {
+  const { datasets } = useFlowDatasets();
+  const [source, setSource] = useState<'manual' | 'dataset'>('manual');
+  const [message, setMessage] = useState('');
+  const [datasetId, setDatasetId] = useState<number | null>(null);
+  const [baseUrl, setBaseUrl] = useState('');
+  const [authKey, setAuthKey] = useState('');
+  const [userId, setUserId] = useState('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showRaw, setShowRaw] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'running' | 'done' | 'failed'>('idle');
+  const [result, setResult] = useState<DirectResult | null>(null);
+  const [rows, setRows] = useState<DirectCaseResult[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const overrides = {
+    base_url: baseUrl.trim() || null,
+    auth_key: authKey.trim() || null,
+    user_id: userId.trim() || null,
+  };
+  const canSend = status !== 'running' && (source === 'manual' ? !!message.trim() : datasetId != null);
+
+  async function send() {
+    if (!canSend) return;
+    setError(null); setResult(null); setRows(null); setStatus('running');
+    try {
+      if (source === 'manual') {
+        setResult(await api.post<DirectResult>('/flow/test/direct', { message, ...overrides }));
+      } else {
+        const r = await api.post<{ results: DirectCaseResult[] }>('/flow/test/direct/dataset', {
+          dataset_id: datasetId, ...overrides,
+        });
+        setRows(r.results);
+      }
+      setStatus('done');
+    } catch (e) { setError(errText(e)); setStatus('failed'); }
+  }
+
+  return (
+    <div className="space-y-5">
+      <Card className="p-4">
+        <div className="mb-3">
+          <SegToggle
+            value={source}
+            onChange={setSource}
+            options={[
+              { id: 'manual', label: '직접 입력' },
+              { id: 'dataset', label: '데이터셋' },
+            ]}
+          />
+        </div>
+
+        {source === 'manual' ? (
+          <>
+            <label className="mb-1 block text-xs font-medium text-muted">메시지 <span className="text-bad">*</span></label>
+            <Textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              rows={4}
+              placeholder="외부 API로 그대로 보낼 메시지"
+              className="w-full text-sm"
+            />
+          </>
+        ) : (
+          <div className="flex items-center gap-3">
+            <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />
+            <span className="text-xs text-muted">선택한 데이터셋의 모든 케이스 질문을 외부 API로 보냅니다 (채점 없음).</span>
+          </div>
+        )}
+
+        <div className="mt-3 flex items-center gap-3">
+          <Button variant="primary" disabled={!canSend} onClick={send}>
+            {status === 'running' ? '호출 중…' : '호출'}
+          </Button>
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((v) => !v)}
+            className="text-xs font-medium text-muted hover:text-ink"
+          >
+            {showAdvanced ? '엔드포인트 설정 숨기기' : '엔드포인트 설정 (선택)'}
+          </button>
+          <StatusPill status={status} />
+        </div>
+        {showAdvanced && (
+          <div className="mt-3 border-t border-line pt-3">
+            <EndpointOverrides
+              baseUrl={baseUrl} setBaseUrl={setBaseUrl}
+              authKey={authKey} setAuthKey={setAuthKey}
+              userId={userId} setUserId={setUserId}
+            />
+          </div>
+        )}
+      </Card>
+
+      {error && <ErrBox msg={error} />}
+
+      {status === 'idle' && !error && (
+        <Card className="flex flex-col items-center justify-center gap-1 px-6 py-16 text-center">
+          <div className="text-sm text-ink">
+            {source === 'manual'
+              ? <>메시지를 입력하고 <span className="font-medium">호출</span>을 누르세요.</>
+              : <>데이터셋을 선택하고 <span className="font-medium">호출</span>을 누르세요.</>}
+          </div>
+          <div className="text-xs text-muted">채점 없이 외부 API 응답을 그대로 받아옵니다.</div>
+        </Card>
+      )}
+
+      {status === 'running' && (
+        <Card className="px-6 py-12 text-center text-xs text-muted">외부 API 호출 중…</Card>
+      )}
+
+      {/* Manual single-message result */}
+      {result && status !== 'running' && (
+        <Card className="p-4">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted">응답</p>
+          <div className="mt-0.5"><AnswerBox text={result.response} /></div>
+          {result.docs.length > 0 && (
+            <div className="mt-4 border-t border-line pt-3">
+              <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted">문맥 ({result.docs.length})</p>
+              <ol className="max-h-48 list-decimal space-y-1 overflow-y-auto pl-4 text-xs text-muted">
+                {result.docs.map((d, i) => (<li key={i} className="whitespace-pre-wrap break-words">{d}</li>))}
+              </ol>
+            </div>
+          )}
+          <div className="mt-4 border-t border-line pt-3">
+            <button type="button" onClick={() => setShowRaw((v) => !v)} className="text-xs font-medium text-muted hover:text-ink">
+              {showRaw ? '원본 응답 숨기기' : '원본 응답 (JSON)'}
+            </button>
+            {showRaw && (
+              <pre className="mt-2 max-h-72 overflow-auto rounded-lg border border-line bg-bg/60 p-3 text-xs text-ink">
+                {JSON.stringify(result.raw, null, 2)}
+              </pre>
+            )}
+          </div>
+        </Card>
+      )}
+
+      {/* Dataset result — one block per case (answer-centric, no scores) */}
+      {rows && status !== 'running' && (
+        <Card className="p-4">
+          <div className="mb-3 text-xs text-muted">케이스 {rows.length}건</div>
+          <div className="overflow-hidden rounded-lg border border-line bg-surface">
+            <div className="divide-y divide-line">
+              {rows.map((r) => (
+                <div key={r.case_id} className="px-4 py-3.5">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted">질문</p>
+                  <p className="mt-0.5 whitespace-pre-wrap text-sm text-ink">{r.question || '—'}</p>
+                  <p className="mt-3 text-[11px] font-medium uppercase tracking-wide text-muted">답변</p>
+                  <div className="mt-0.5"><AnswerBox text={r.answer} error={r.error} /></div>
+                  {r.docs.length > 0 && (
+                    <ol className="mt-2 max-h-40 list-decimal space-y-1 overflow-y-auto pl-4 text-xs text-muted">
+                      {r.docs.map((d, i) => (<li key={i} className="whitespace-pre-wrap break-words">{d}</li>))}
+                    </ol>
+                  )}
+                </div>
+              ))}
+              {rows.length === 0 && <div className="py-8 text-center text-xs text-muted">케이스 없음</div>}
+            </div>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

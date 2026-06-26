@@ -59,20 +59,44 @@ def _normalize_docs(raw: object) -> list[str]:
     return out
 
 
-def _request_headers() -> dict[str, str]:
-    """Auth + user-id headers from settings. The header NAMES default to
-    "auth-key" / "user-id" but are overridable via EXTERNAL_AUTH_HEADER /
-    EXTERNAL_USER_HEADER (gateways differ — e.g. "Authorization" / "X-User-Id").
+def _request_headers(*, auth_key: str | None = None, user_id: str | None = None) -> dict[str, str]:
+    """Auth + user-id headers. The header NAMES default to "auth-key" / "user-id"
+    but are overridable via EXTERNAL_AUTH_HEADER / EXTERNAL_USER_HEADER (gateways
+    differ — e.g. "Authorization" / "X-User-Id"). The header VALUES come from
+    settings, but a non-None ``auth_key`` / ``user_id`` override them (used by the
+    DB-free direct test, which lets the caller aim at an arbitrary endpoint).
     Empty values are dropped so an unconfigured header is simply omitted."""
     s = get_settings()
     auth_name = s.external_auth_header.strip() or "auth-key"
     user_name = s.external_user_header.strip() or "user-id"
+    ak = (auth_key if auth_key is not None else s.external_auth_key).strip()
+    uid = (user_id if user_id is not None else s.external_user_id).strip()
     headers: dict[str, str] = {}
-    if s.external_auth_key.strip():
-        headers[auth_name] = s.external_auth_key.strip()
-    if s.external_user_id.strip():
-        headers[user_name] = s.external_user_id.strip()
+    if ak:
+        headers[auth_name] = ak
+    if uid:
+        headers[user_name] = uid
     return headers
+
+
+def _chat_payload(*, message: str, user_id: str | None = None) -> dict:
+    """Build the external chat-request body. The agent now expects more than just
+    {message, user_id}: session_id / chat_type / a2a_remote_urls / is_super_agent
+    / main_model_name / session_system_prompt. The extra fields come from the
+    EXTERNAL_* settings (defaults mirror the agent's contract); empty
+    main_model_name is sent as null. ``user_id`` overrides the configured one when
+    given (direct test)."""
+    s = get_settings()
+    return {
+        "message": message,
+        "user_id": user_id if user_id is not None else s.external_user_id,
+        "session_id": s.external_session_id,
+        "chat_type": s.external_chat_type,
+        "a2a_remote_urls": None,
+        "is_super_agent": s.external_is_super_agent,
+        "main_model_name": s.external_main_model_name or None,
+        "session_system_prompt": s.external_session_system_prompt,
+    }
 
 
 async def run_flow(*, message: str, timeout_s: float = 60.0) -> dict:
@@ -81,8 +105,7 @@ async def run_flow(*, message: str, timeout_s: float = 60.0) -> dict:
     The external model resolves its SYSTEM_PROMPT/USER_PROMPT/MODEL_NM from the
     active PM_NODE_PROMPT_VER row by itself — see module docstring.
     """
-    s = get_settings()
-    payload = {"message": message, "user_id": s.external_user_id}
+    payload = _chat_payload(message=message)
     headers = _request_headers()
     try:
         async with httpx.AsyncClient(timeout=timeout_s) as client:
@@ -96,6 +119,53 @@ async def run_flow(*, message: str, timeout_s: float = 60.0) -> dict:
     return {
         "response": str(data.get("response") or ""),
         "docs": _normalize_docs(data.get("docs")),
+    }
+
+
+def ensure_direct_url(base_url: str | None = None) -> str:
+    """Resolve the direct-call target URL (request override, else settings) and
+    raise a clear error when none is configured. Returns the normalized URL."""
+    url = (base_url or get_settings().external_agent_base_url).strip().rstrip("/")
+    if not url:
+        raise ExternalAgentError(
+            "호출할 외부 API URL이 없습니다 — 요청에 base_url을 넣거나 EXTERNAL_AGENT_BASE_URL(.env)을 설정하세요"
+        )
+    return url
+
+
+async def run_direct(
+    *,
+    message: str,
+    base_url: str | None = None,
+    auth_key: str | None = None,
+    user_id: str | None = None,
+    timeout_s: float = 60.0,
+) -> dict:
+    """One-shot direct call to the external chat endpoint — NO DB, NO dataset,
+    NO scoring. Sends ``message`` straight to the endpoint and returns its answer
+    as-is (parsed ``response`` + ``docs`` plus the full ``raw`` body).
+
+    Unlike :func:`run_flow` this does not require RUN_MODE=external and lets the
+    caller override the target URL / auth / user-id, so an arbitrary endpoint can
+    be smoke-tested without any .env or DB setup. The external model still resolves
+    its own prompt on its side — this system just relays the message and answer.
+    """
+    url = ensure_direct_url(base_url)
+    payload = _chat_payload(message=message, user_id=user_id)
+    headers = _request_headers(auth_key=auth_key, user_id=user_id)
+    try:
+        async with httpx.AsyncClient(timeout=timeout_s) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as exc:  # noqa: BLE001
+        raise ExternalAgentError(f"direct call failed: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ExternalAgentError(f"unexpected chat response shape: {type(data).__name__}")
+    return {
+        "response": str(data.get("response") or ""),
+        "docs": _normalize_docs(data.get("docs")),
+        "raw": data,
     }
 
 

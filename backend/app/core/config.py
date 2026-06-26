@@ -44,6 +44,18 @@ class Settings(BaseSettings):
     external_auth_header: str = "auth-key"
     external_user_header: str = "user-id"
 
+    # Extra chat-request body fields the external agent now expects alongside
+    # {message, user_id}. Defaults mirror the agent's contract; empty string →
+    # the field is sent as "" (session_id/chat_type) or null (main_model_name).
+    # a2a_remote_urls / is_super_agent default to null and are sent as-is.
+    # Env: EXTERNAL_SESSION_ID / EXTERNAL_CHAT_TYPE / EXTERNAL_MAIN_MODEL_NAME
+    #      / EXTERNAL_SESSION_SYSTEM_PROMPT / EXTERNAL_IS_SUPER_AGENT.
+    external_session_id: str = ""
+    external_chat_type: str = ""
+    external_main_model_name: str = ""
+    external_session_system_prompt: str = "{}"
+    external_is_super_agent: bool | None = None
+
     # Internal LLM gateway (OpenAI-compatible: base URL + key + model name).
     # The RAGAS judge LLM routes HERE — this is the only LLM this system calls.
     # Env: LLM_MODEL_NAME / LLM_ENDPOINT / LLM_API_KEY.

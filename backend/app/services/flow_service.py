@@ -140,6 +140,50 @@ def get_current_flow(db: Session) -> FlowCurrentOut:
     return FlowCurrentOut(nodes=nodes_out)
 
 
+# ---- direct dataset call (no scoring, no persistence) -------------------------
+
+async def run_direct_dataset(
+    db: Session,
+    *,
+    dataset_id: int,
+    base_url: str | None = None,
+    auth_key: str | None = None,
+    user_id: str | None = None,
+) -> list[dict]:
+    """Run every case of a dataset through a direct external-API call and return
+    the answers. No RAGAS scoring, no result rows are persisted — this only reads
+    the dataset's cases and relays each question to the endpoint, collecting the
+    answer (or per-case error) so a whole dataset can be smoke-tested at once."""
+    from app.services import ragas_service
+
+    _require_flow_dataset(db, dataset_id)
+    # Fail fast on a missing endpoint so we return one clear 502 instead of the
+    # same "no URL" error repeated on every case.
+    external_agent.ensure_direct_url(base_url)
+    cases = (
+        db.execute(
+            select(TestCase).where(TestCase.dataset_id == dataset_id).order_by(TestCase.case_id.asc())
+        )
+        .scalars()
+        .all()
+    )
+    results: list[dict] = []
+    for case in cases:
+        fields = ragas_service._parse_case(case.input_data, case.expected_output)
+        question = fields["question"] or _message_from_inputs(_case_variables(case.input_data))
+        row: dict = {"case_id": case.case_id, "question": question, "answer": None, "docs": [], "error": None}
+        try:
+            data = await external_agent.run_direct(
+                message=question, base_url=base_url, auth_key=auth_key, user_id=user_id,
+            )
+            row["answer"] = data["response"]
+            row["docs"] = data["docs"]
+        except Exception as exc:  # noqa: BLE001 - per-case failure, keep going
+            row["error"] = str(exc)[:1000]
+        results.append(row)
+    return results
+
+
 # ---- flow-level RAGAS (each dataset case -> one whole-flow answer -> score) -----
 
 def _message_from_inputs(inputs: dict[str, str]) -> str:

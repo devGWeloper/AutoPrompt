@@ -44,3 +44,43 @@ class FlowRagasAbRequest(BaseModel):
 class FlowRagasAbOut(BaseModel):
     ragas_run_a_id: int
     ragas_run_b_id: int
+
+
+class DirectTestRequest(BaseModel):
+    """Direct external-API call — no DB, no dataset, no scoring. ``base_url`` /
+    ``auth_key`` / ``user_id`` are optional overrides; when omitted the configured
+    EXTERNAL_* settings are used."""
+
+    message: str
+    base_url: str | None = None
+    auth_key: str | None = None
+    user_id: str | None = None
+
+
+class DirectTestOut(BaseModel):
+    response: str
+    docs: list[str] = Field(default_factory=list)
+    raw: dict = Field(default_factory=dict)
+
+
+class DirectDatasetRequest(BaseModel):
+    """Direct external-API call over every case of a dataset — no scoring. Reads
+    the cases from the DB but does not persist any result. Same optional endpoint
+    overrides as :class:`DirectTestRequest`."""
+
+    dataset_id: int
+    base_url: str | None = None
+    auth_key: str | None = None
+    user_id: str | None = None
+
+
+class DirectCaseResult(BaseModel):
+    case_id: int
+    question: str
+    answer: str | None = None
+    docs: list[str] = Field(default_factory=list)
+    error: str | None = None
+
+
+class DirectDatasetOut(BaseModel):
+    results: list[DirectCaseResult] = Field(default_factory=list)
