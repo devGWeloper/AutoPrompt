@@ -25,8 +25,9 @@ import httpx
 
 from app.core.config import get_settings
 
-# Hardcoded session context sent as ``session_system_prompt`` (a *stringified*
-# JSON object — built with json.dumps so the embedded quotes are always valid).
+# Hardcoded session context sent as ``session_system_prompt``. The agent's field
+# is a STRING, so this is a *stringified* JSON object (json.dumps keeps the
+# embedded quotes valid); the agent json.loads it to read CUBE_CHANNEL_ID & co.
 _SESSION_SYSTEM_PROMPT = json.dumps(
     {
         "CUBE_CHANNEL_ID": "509108549",
@@ -167,6 +168,10 @@ async def run_direct(
     url = ensure_direct_url(base_url)
     payload = _chat_payload(message=message, user_id=user_id)
     headers = _request_headers(auth_key=auth_key, user_id=user_id)
+    # TEMP debug: print the exact JSON body we send so we can confirm
+    # session_system_prompt is actually included in the outgoing request.
+    # (print, not logger — the app configures no logging handler, so INFO is dropped.)
+    print(f"[DIRECT] → {url} body={json.dumps(payload, ensure_ascii=False)}", flush=True)
     try:
         async with httpx.AsyncClient(timeout=timeout_s) as client:
             resp = await client.post(url, json=payload, headers=headers)

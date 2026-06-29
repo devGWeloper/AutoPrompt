@@ -70,7 +70,8 @@ def test_direct_success_relays_message_and_answer(client, monkeypatch):
     assert sent["a2a_remote_urls"] is None
     assert sent["is_super_agent"] is None
     assert sent["main_model_name"] is None
-    # session_system_prompt carries the hardcoded CUBE context as stringified JSON.
+    # session_system_prompt is a STRING (stringified JSON) carrying the CUBE context.
+    assert isinstance(sent["session_system_prompt"], str)
     ssp = __import__("json").loads(sent["session_system_prompt"])
     assert ssp["CUBE_CHANNEL_ID"] == "509108549"
     assert ssp["CUBE_USER_ID"] == "2074340"
