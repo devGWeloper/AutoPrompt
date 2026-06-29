@@ -74,6 +74,31 @@ def _normalize_docs(raw: object) -> list[str]:
     return out
 
 
+def _parse_chat_response(resp: httpx.Response) -> dict:
+    """Coerce the endpoint's reply into ``{response, docs, raw}``.
+
+    The agent isn't consistent about its reply shape: sometimes a JSON object
+    ``{"response": ..., "docs": [...]}``, sometimes a bare JSON string, and
+    sometimes plain text (not JSON at all). ``resp.json()`` only handles the
+    first; the bare-text case raises ``Expecting value: line 1 column 1``. So we
+    parse defensively: a dict is read as the contract, anything else (str / list
+    / number / non-JSON body) is treated as the answer text itself."""
+    try:
+        data = resp.json()
+    except (json.JSONDecodeError, ValueError):
+        # Not JSON at all — the whole body is the answer.
+        text = resp.text.strip()
+        return {"response": text, "docs": [], "raw": text}
+    if isinstance(data, dict):
+        return {
+            "response": str(data.get("response") or ""),
+            "docs": _normalize_docs(data.get("docs")),
+            "raw": data,
+        }
+    # Valid JSON but not an object (e.g. a quoted string) — use it as the answer.
+    return {"response": str(data), "docs": [], "raw": data}
+
+
 def _request_headers(*, auth_key: str | None = None, user_id: str | None = None) -> dict[str, str]:
     """Auth + user-id headers. The header NAMES default to "auth-key" / "user-id"
     but are overridable via EXTERNAL_AUTH_HEADER / EXTERNAL_USER_HEADER (gateways
@@ -128,15 +153,10 @@ async def run_flow(*, message: str, timeout_s: float = 60.0) -> dict:
         async with httpx.AsyncClient(timeout=timeout_s) as client:
             resp = await client.post(_base_url(), json=payload, headers=headers)
             resp.raise_for_status()
-            data = resp.json()
+            parsed = _parse_chat_response(resp)
     except Exception as exc:  # noqa: BLE001
         raise ExternalAgentError(f"chat run failed: {exc}") from exc
-    if not isinstance(data, dict):
-        raise ExternalAgentError(f"unexpected chat response shape: {type(data).__name__}")
-    return {
-        "response": str(data.get("response") or ""),
-        "docs": _normalize_docs(data.get("docs")),
-    }
+    return {"response": parsed["response"], "docs": parsed["docs"]}
 
 
 def ensure_direct_url(base_url: str | None = None) -> str:
@@ -178,16 +198,20 @@ async def run_direct(
         async with httpx.AsyncClient(timeout=timeout_s) as client:
             resp = await client.post(url, json=payload, headers=headers)
             resp.raise_for_status()
-            data = resp.json()
+            # TEMP debug: surface what actually came back so a non-JSON body
+            # (SSE stream / HTML error page / empty) is visible instead of being
+            # hidden behind a bare "Expecting value: line 1 column 1" decode error.
+            ctype = resp.headers.get("content-type", "")
+            print(
+                f"[DIRECT] ← status={resp.status_code} content-type={ctype!r} "
+                f"len={len(resp.content)} body[:500]={resp.text[:500]!r}",
+                flush=True,
+            )
+            return _parse_chat_response(resp)
+    except ExternalAgentError:
+        raise
     except Exception as exc:  # noqa: BLE001
         raise ExternalAgentError(f"direct call failed: {exc}") from exc
-    if not isinstance(data, dict):
-        raise ExternalAgentError(f"unexpected chat response shape: {type(data).__name__}")
-    return {
-        "response": str(data.get("response") or ""),
-        "docs": _normalize_docs(data.get("docs")),
-        "raw": data,
-    }
 
 
 async def stub_run_flow(*, message: str, **_: object) -> dict:
