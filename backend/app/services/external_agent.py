@@ -106,7 +106,9 @@ def _chat_payload(*, message: str, user_id: str | None = None) -> dict:
         "message": message,
         "user_id": user_id if user_id is not None else s.external_user_id,
         "session_id": s.external_session_id,
-        "chat_type": s.external_chat_type,
+        # The agent routes on chat_type; an empty value isn't a valid route, so
+        # default to "default" when unset.
+        "chat_type": "default",
         "a2a_remote_urls": None,
         "is_super_agent": s.external_is_super_agent,
         "main_model_name": s.external_main_model_name or None,

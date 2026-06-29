@@ -66,7 +66,7 @@ def test_direct_success_relays_message_and_answer(client, monkeypatch):
     assert sent["user_id"] == "u"
     # The new chat-request fields are present with their contract defaults.
     assert sent["session_id"] == ""
-    assert sent["chat_type"] == ""
+    assert sent["chat_type"] == "default"
     assert sent["a2a_remote_urls"] is None
     assert sent["is_super_agent"] is None
     assert sent["main_model_name"] is None
