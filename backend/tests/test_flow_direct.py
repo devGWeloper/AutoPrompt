@@ -70,7 +70,12 @@ def test_direct_success_relays_message_and_answer(client, monkeypatch):
     assert sent["a2a_remote_urls"] is None
     assert sent["is_super_agent"] is None
     assert sent["main_model_name"] is None
-    assert sent["session_system_prompt"] == "{}"
+    # session_system_prompt carries the hardcoded CUBE context as stringified JSON.
+    ssp = __import__("json").loads(sent["session_system_prompt"])
+    assert ssp["CUBE_CHANNEL_ID"] == "509108549"
+    assert ssp["CUBE_USER_ID"] == "2074340"
+    assert ssp["CUBE_USER_NM"] == "김태윤"
+    assert ssp["TRACE_ID"] == "AI-20260416-171758-44399577"
     assert _FakeClient.last["headers"]["auth-key"] == "k"
     assert _FakeClient.last["headers"]["user-id"] == "u"
 

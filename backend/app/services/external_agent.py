@@ -19,9 +19,23 @@ images / db_data / followup_questions / knowhows) are intentionally ignored.
 """
 from __future__ import annotations
 
+import json
+
 import httpx
 
 from app.core.config import get_settings
+
+# Hardcoded session context sent as ``session_system_prompt`` (a *stringified*
+# JSON object — built with json.dumps so the embedded quotes are always valid).
+_SESSION_SYSTEM_PROMPT = json.dumps(
+    {
+        "CUBE_CHANNEL_ID": "509108549",
+        "CUBE_USER_ID": "2074340",
+        "CUBE_USER_NM": "김태윤",
+        "TRACE_ID": "AI-20260416-171758-44399577",
+    },
+    ensure_ascii=False,
+)
 
 
 class ExternalAgentError(RuntimeError):
@@ -95,7 +109,7 @@ def _chat_payload(*, message: str, user_id: str | None = None) -> dict:
         "a2a_remote_urls": None,
         "is_super_agent": s.external_is_super_agent,
         "main_model_name": s.external_main_model_name or None,
-        "session_system_prompt": s.external_session_system_prompt,
+        "session_system_prompt": _SESSION_SYSTEM_PROMPT,
     }
 
 
