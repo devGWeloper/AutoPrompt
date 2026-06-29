@@ -74,15 +74,56 @@ def _normalize_docs(raw: object) -> list[str]:
     return out
 
 
+def _collect_txt(obj: object, out: list[str]) -> None:
+    """Walk an SSE event payload and append the ``value`` of every ``type=="txt"``
+    object. The stream interleaves other event types (e.g. middle_stream_output)
+    that must be skipped; a payload may be a single object or a list of them."""
+    if isinstance(obj, dict):
+        if obj.get("type") == "txt":
+            v = obj.get("value")
+            if isinstance(v, str):
+                out.append(v)
+    elif isinstance(obj, list):
+        for item in obj:
+            _collect_txt(item, out)
+
+
+def _parse_sse(text: str) -> dict:
+    """Aggregate a ``text/event-stream`` reply into ``{response, docs, raw}``.
+
+    The agent streams ``data: {...}`` events; the final answer is the
+    concatenation of the ``value`` of every ``type=="txt"`` event (other event
+    types are progress/debug noise). ``raw`` keeps the whole stream text."""
+    parts: list[str] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line.startswith("data:"):
+            continue
+        payload = line[len("data:"):].strip()
+        if not payload or payload == "[DONE]":
+            continue
+        try:
+            obj = json.loads(payload)
+        except (json.JSONDecodeError, ValueError):
+            # Tolerate several comma-separated objects on one data line.
+            try:
+                obj = json.loads(f"[{payload}]")
+            except (json.JSONDecodeError, ValueError):
+                continue
+        _collect_txt(obj, parts)
+    return {"response": "".join(parts), "docs": [], "raw": text}
+
+
 def _parse_chat_response(resp: httpx.Response) -> dict:
     """Coerce the endpoint's reply into ``{response, docs, raw}``.
 
-    The agent isn't consistent about its reply shape: sometimes a JSON object
-    ``{"response": ..., "docs": [...]}``, sometimes a bare JSON string, and
-    sometimes plain text (not JSON at all). ``resp.json()`` only handles the
-    first; the bare-text case raises ``Expecting value: line 1 column 1``. So we
-    parse defensively: a dict is read as the contract, anything else (str / list
-    / number / non-JSON body) is treated as the answer text itself."""
+    The agent isn't consistent about its reply shape: an SSE stream
+    (``text/event-stream``), a JSON object ``{"response": ..., "docs": [...]}``,
+    a bare JSON string, or plain text. ``resp.json()`` only handles the JSON
+    object; the others raise ``Expecting value: line 1 column 1``. So we route on
+    content-type first (SSE), then parse defensively."""
+    if "text/event-stream" in resp.headers.get("content-type", "").lower():
+        return _parse_sse(resp.text)
     try:
         data = resp.json()
     except (json.JSONDecodeError, ValueError):

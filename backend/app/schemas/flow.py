@@ -60,7 +60,9 @@ class DirectTestRequest(BaseModel):
 class DirectTestOut(BaseModel):
     response: str
     docs: list[str] = Field(default_factory=list)
-    raw: dict = Field(default_factory=dict)
+    # ``raw`` is the endpoint's untouched body: a dict for JSON replies, but a
+    # string for SSE/plain-text replies — so it can't be typed as ``dict``.
+    raw: dict | list | str = ""
 
 
 class DirectDatasetRequest(BaseModel):
