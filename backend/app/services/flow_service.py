@@ -10,6 +10,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.core import db as db_module
+from app.core.constants import SYSTEM_USER
 from app.core.ws import manager
 from app.models.dataset import TestCase, TestDataset
 from app.models.node_prompt_ver import NodePromptVer
@@ -140,7 +141,77 @@ def get_current_flow(db: Session) -> FlowCurrentOut:
     return FlowCurrentOut(nodes=nodes_out)
 
 
-# ---- direct dataset call (no scoring, no persistence) -------------------------
+# ---- direct external-API calls (no scoring; recorded as ENGINE='direct' runs) -
+
+# A direct run is recorded as a RagasRun with ENGINE='direct' (no scoring). That
+# string is the only thing that tells it apart from a scored RAGAS run, so no new
+# column is needed on PM_RAGAS_RUN.
+DIRECT_ENGINE = "direct"
+
+# Manual (typed) direct calls have no dataset, but PM_RAGAS_RUN.DATASET_ID is NOT
+# NULL. Rather than alter the table, they are attached to this single hidden
+# dataset (IS_ACTIVE='N' so it never shows in the dataset list — see
+# dataset_service.list_flow_datasets).
+_DIRECT_SINK_NM = "(직접 호출)"
+
+
+def _direct_sink_dataset_id(db: Session) -> int:
+    """Get-or-create the hidden dataset that anchors manual direct-call runs so
+    their NOT NULL DATASET_ID is satisfied without a schema change."""
+    sink = (
+        db.execute(
+            select(TestDataset).where(
+                TestDataset.dataset_nm == _DIRECT_SINK_NM, TestDataset.is_active == "N"
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if sink is None:
+        sink = TestDataset(
+            dataset_nm=_DIRECT_SINK_NM,
+            description="직접 호출 기록 전용 (자동 생성, 목록 비표시)",
+            is_active="N",
+            created_by=SYSTEM_USER,
+        )
+        db.add(sink)
+        db.flush()
+    return sink.dataset_id
+
+
+async def record_direct_run(
+    db: Session,
+    *,
+    message: str,
+    base_url: str | None = None,
+    auth_key: str | None = None,
+    user_id: str | None = None,
+) -> dict:
+    """One-shot direct external call, recorded so it shows up in the records page.
+
+    Sends ``message`` straight to the endpoint and returns its answer as-is
+    ({response, docs, raw}). On success a direct ``RagasRun`` (ENGINE='direct', no
+    scoring) plus a single answer row are persisted; a failing call raises before
+    anything is recorded (keeping the records list free of config-error noise)."""
+    data = await external_agent.run_direct(
+        message=message, base_url=base_url, auth_key=auth_key, user_id=user_id,
+    )
+    now = datetime.now(timezone.utc)
+    run = RagasRun(
+        dataset_id=_direct_sink_dataset_id(db), status="DONE", engine=DIRECT_ENGINE,
+        created_by=SYSTEM_USER, started_dt=now, ended_dt=now,
+    )
+    db.add(run)
+    db.flush()
+    db.add(
+        RagasResult(
+            ragas_run_id=run.ragas_run_id, case_id=None, question=message,
+            answer=data["response"], contexts=json.dumps(data["docs"], ensure_ascii=False),
+        )
+    )
+    db.commit()
+    return data
+
 
 async def run_direct_dataset(
     db: Session,
@@ -151,14 +222,13 @@ async def run_direct_dataset(
     user_id: str | None = None,
 ) -> list[dict]:
     """Run every case of a dataset through a direct external-API call and return
-    the answers. No RAGAS scoring, no result rows are persisted — this only reads
-    the dataset's cases and relays each question to the endpoint, collecting the
-    answer (or per-case error) so a whole dataset can be smoke-tested at once."""
+    the answers. No RAGAS scoring, but the run + per-case answers are persisted as
+    an ENGINE='direct' ``RagasRun`` so the whole smoke-test shows up in records."""
     from app.services import ragas_service
 
     _require_flow_dataset(db, dataset_id)
     # Fail fast on a missing endpoint so we return one clear 502 instead of the
-    # same "no URL" error repeated on every case.
+    # same "no URL" error repeated on every case (and record nothing).
     external_agent.ensure_direct_url(base_url)
     cases = (
         db.execute(
@@ -167,20 +237,34 @@ async def run_direct_dataset(
         .scalars()
         .all()
     )
+    run = RagasRun(
+        dataset_id=dataset_id, status="RUNNING", engine=DIRECT_ENGINE,
+        created_by=SYSTEM_USER, started_dt=datetime.now(timezone.utc),
+    )
+    db.add(run)
+    db.flush()
     results: list[dict] = []
     for case in cases:
         fields = ragas_service._parse_case(case.input_data, case.expected_output)
         question = fields["question"] or _message_from_inputs(_case_variables(case.input_data))
         row: dict = {"case_id": case.case_id, "question": question, "answer": None, "docs": [], "error": None}
+        result = RagasResult(ragas_run_id=run.ragas_run_id, case_id=case.case_id, question=question)
         try:
             data = await external_agent.run_direct(
                 message=question, base_url=base_url, auth_key=auth_key, user_id=user_id,
             )
             row["answer"] = data["response"]
             row["docs"] = data["docs"]
+            result.answer = data["response"]
+            result.contexts = json.dumps(data["docs"], ensure_ascii=False)
         except Exception as exc:  # noqa: BLE001 - per-case failure, keep going
             row["error"] = str(exc)[:1000]
+            result.error_msg = str(exc)[:1000]
+        db.add(result)
         results.append(row)
+    run.status = "DONE"
+    run.ended_dt = datetime.now(timezone.utc)
+    db.commit()
     return results
 
 

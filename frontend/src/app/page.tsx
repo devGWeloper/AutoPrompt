@@ -818,8 +818,17 @@ function RecordsPanel() {
                 <Fragment key={`r${r.ragas_run_id}`}>
                   <TR>
                     <TD className="font-mono text-xs text-muted">#{r.ragas_run_id}</TD>
-                    <TD><Badge tone={r.status === 'FAILED' ? 'bad' : r.status === 'DONE' ? 'ok' : 'neutral'}>{r.status}</Badge></TD>
-                    <TD className="text-xs text-muted">{r.engine ?? '—'}</TD>
+                    <TD>
+                      {r.engine === 'direct' ? (
+                        <div className="flex items-center gap-1.5">
+                          <Badge tone="neutral">직접 호출</Badge>
+                          <span className="text-xs text-muted">{r.status}</span>
+                        </div>
+                      ) : (
+                        <Badge tone={r.status === 'FAILED' ? 'bad' : r.status === 'DONE' ? 'ok' : 'neutral'}>{r.status}</Badge>
+                      )}
+                    </TD>
+                    <TD className="text-xs text-muted">{r.engine === 'direct' ? '—' : (r.engine ?? '—')}</TD>
                     {RAGAS_METRICS.map((m) => (<TD key={m} className="text-right font-mono text-xs tabular-nums">{fmt2(r[m])}</TD>))}
                     <TD className="whitespace-nowrap text-xs text-muted">{r.created_dt}</TD>
                     <TD className="whitespace-nowrap text-right">
@@ -1071,8 +1080,9 @@ function ScoreChips({ row }: { row: RagasResultRow }) {
 // Answer-centric case view: question + answer are the focus, scores are small
 // secondary chips. Replaces the old dense score table.
 function CaseTable({ detail, bordered }: { detail: RagasRunDetail; bordered?: boolean }) {
-  // Cancelled runs have incomplete scoring → show answers only, hide scores.
-  const showScores = detail.status !== 'CANCELLED';
+  // Cancelled runs (incomplete scoring) and direct calls (never scored) → show
+  // answers only, hide score chips.
+  const showScores = detail.status !== 'CANCELLED' && detail.engine !== 'direct';
   const list = (
     <div className="divide-y divide-line">
       {detail.results.map((r) => (

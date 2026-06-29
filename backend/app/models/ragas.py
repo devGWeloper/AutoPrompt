@@ -24,6 +24,9 @@ class RagasRun(Base):
     prompt_id: Mapped[int | None] = mapped_column("PROMPT_ID", Integer, ForeignKey("PM_NODE_PROMPT_VER.PROMPT_ID"))
     ab_group_id: Mapped[int | None] = mapped_column("AB_GROUP_ID", Integer)
     dataset_id: Mapped[int] = mapped_column("DATASET_ID", Integer, ForeignKey("PM_TEST_DATASET.DATASET_ID"), nullable=False)
+    # A raw external-API call (no scoring) is recorded with ENGINE='direct' — this
+    # doubles as the marker that tells a direct run apart from a scored RAGAS run,
+    # so no extra column is needed on PM_RAGAS_RUN.
     status: Mapped[str] = mapped_column("STATUS", String(20), default="PENDING", server_default="PENDING")
     faithfulness: Mapped[Decimal | None] = mapped_column("FAITHFULNESS", Numeric(5, 4))
     answer_relevancy: Mapped[Decimal | None] = mapped_column("ANSWER_RELEVANCY", Numeric(5, 4))

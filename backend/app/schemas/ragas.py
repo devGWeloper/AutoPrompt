@@ -31,7 +31,7 @@ class RagasRunOut(BaseModel):
     version_no: str | None = None  # resolved from prompt_id by the router (not a column)
     dataset_id: int
     status: str
-    engine: str | None = None
+    engine: str | None = None  # 'direct' marks a raw external-API call (no scoring)
     metrics: str | None = None
     judge_provider: str | None = None
     judge_model: str | None = None
@@ -65,7 +65,7 @@ class RagasRunSummary(BaseModel):
     node_nm: str | None = None  # resolved from prompt_id by the router (not a column)
     version_no: str | None = None  # resolved from prompt_id by the router (not a column)
     status: str
-    engine: str | None = None
+    engine: str | None = None  # 'direct' marks a raw external-API call (no scoring)
     faithfulness: Decimal | None = None
     answer_relevancy: Decimal | None = None
     context_precision: Decimal | None = None

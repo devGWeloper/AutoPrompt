@@ -74,6 +74,27 @@ def test_direct_success_relays_message_and_answer(client, monkeypatch):
     assert _FakeClient.last["headers"]["auth-key"] == "k"
     assert _FakeClient.last["headers"]["user-id"] == "u"
 
+    # A successful direct call is recorded as an ENGINE='direct' run (shows in the
+    # records page) without any schema change.
+    runs = client.get("/api/v1/ragas-runs").json()
+    assert len(runs) == 1
+    run = runs[0]
+    assert run["engine"] == "direct" and run["status"] == "DONE"
+    detail = client.get(f"/api/v1/ragas-runs/{run['ragas_run_id']}").json()
+    assert len(detail["results"]) == 1
+    assert detail["results"][0]["question"] == "hello"
+    assert detail["results"][0]["answer"] == "hi there"
+    # The manual call is anchored to a hidden sink dataset that never appears in
+    # the dataset list (DATASET_ID stays NOT NULL, no table change).
+    assert client.get("/api/v1/flow/datasets").json() == []
+
+
+def test_direct_failure_records_nothing(client):
+    # A failed direct call (no URL configured) raises 502 and records no run, so
+    # the records page is not polluted with config-error rows.
+    assert client.post("/api/v1/flow/test/direct", json={"message": "x"}).status_code == 502
+    assert client.get("/api/v1/ragas-runs").json() == []
+
 
 # ---- dataset mode -----------------------------------------------------------
 
@@ -99,6 +120,14 @@ def test_direct_dataset_runs_every_case(client, monkeypatch):
     assert {r["question"] for r in results} == {"q1", "q2"}
     assert all(r["answer"] == "hi there" and r["error"] is None for r in results)
     assert all(r["docs"] == ["d1", "d2"] for r in results)
+
+    # The whole dataset smoke-test is recorded as one direct run with per-case rows.
+    runs = client.get("/api/v1/ragas-runs").json()
+    assert len(runs) == 1 and runs[0]["engine"] == "direct" and runs[0]["status"] == "DONE"
+    detail = client.get(f"/api/v1/ragas-runs/{runs[0]['ragas_run_id']}").json()
+    assert detail["dataset_id"] == dataset_id
+    assert {r["question"] for r in detail["results"]} == {"q1", "q2"}
+    assert all(r["answer"] == "hi there" for r in detail["results"])
 
 
 def test_direct_dataset_no_url_returns_502(client):

@@ -46,11 +46,13 @@ def create_flow_dataset(payload: DatasetCreate, db: Session = Depends(get_db)) -
 
 
 @router.post("/flow/test/direct", response_model=DirectTestOut)
-async def run_flow_direct(payload: DirectTestRequest) -> DirectTestOut:
-    """Smoke-test the external chat API directly — no DB, no dataset, no scoring.
-    Relays the message straight to the endpoint and returns its answer as-is."""
+async def run_flow_direct(payload: DirectTestRequest, db: Session = Depends(get_db)) -> DirectTestOut:
+    """Smoke-test the external chat API directly — no dataset, no scoring. Relays
+    the message straight to the endpoint and returns its answer as-is; a successful
+    call is recorded as a DIRECT run so it shows up in the records page."""
     try:
-        data = await external_agent.run_direct(
+        data = await flow_service.record_direct_run(
+            db,
             message=payload.message,
             base_url=payload.base_url,
             auth_key=payload.auth_key,

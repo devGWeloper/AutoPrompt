@@ -121,7 +121,7 @@ export interface RagasRunOut {
   version_no: string | null;
   dataset_id: number;
   status: string;
-  engine: string | null;
+  engine: string | null; // 'direct' marks a raw external-API call (no scoring)
   faithfulness: number | null;
   answer_relevancy: number | null;
   context_precision: number | null;
@@ -143,7 +143,7 @@ export interface RagasRunSummary {
   node_nm: string | null;
   version_no: string | null;
   status: string;
-  engine: string | null;
+  engine: string | null; // 'direct' marks a raw external-API call (no scoring)
   faithfulness: number | null;
   answer_relevancy: number | null;
   context_precision: number | null;

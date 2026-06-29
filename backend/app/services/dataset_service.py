@@ -18,9 +18,13 @@ CSV_COLUMNS = ("input_json", "expected_output", "eval_criteria", "case_type")
 # ---- datasets -------------------------------------------------------------
 
 def list_flow_datasets(db: Session) -> list[TestDataset]:
+    # IS_ACTIVE='N' is reserved for hidden, internal datasets (e.g. the direct-call
+    # sink that anchors manual direct runs) — keep them out of the user-facing list.
     rows = (
         db.execute(
-            select(TestDataset).order_by(TestDataset.created_dt.desc())
+            select(TestDataset)
+            .where(TestDataset.is_active == "Y")
+            .order_by(TestDataset.created_dt.desc())
         )
         .scalars()
         .all()
