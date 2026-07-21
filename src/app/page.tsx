@@ -13,6 +13,7 @@ import { connectRagasRunWs } from '@/lib/ws';
 import {
   RAGAS_METRICS,
   METRIC_LABELS,
+  METRIC_DESCRIPTIONS,
   type RagasMetric,
   type Dataset,
   type FlowCurrent,
@@ -346,7 +347,7 @@ function SingleRunPanel() {
   // Default to the latest version of the selected node (list is newest-first).
   useEffect(() => { setVer(versions[0]?.prompt_id ?? null); }, [versions]);
 
-  const canRun = !!(nodeNm && ver && datasetId);
+  const canRun = !!(nodeNm && ver && datasetId) && metrics.length > 0;
 
   async function run() {
     if (!canRun) return;
@@ -493,7 +494,7 @@ function ComparePanel() {
     setVerB(versions[1]?.prompt_id ?? null);
   }, [versions]);
 
-  const canRun = !!(nodeNm && verA && verB && verA !== verB && datasetId) && status !== 'running';
+  const canRun = !!(nodeNm && verA && verB && verA !== verB && datasetId) && metrics.length > 0 && status !== 'running';
   const verLabel = (id: number | null) => versions.find((v) => v.prompt_id === id)?.version_no ?? '';
 
   async function run() {
@@ -822,7 +823,11 @@ function RecordsPanel() {
         <THead>
           <TR>
             <TH>Run</TH><TH>Type / Status</TH><TH>Engine</TH>
-            {RAGAS_METRICS.map((m) => (<TH key={m} className="text-right whitespace-nowrap">{METRIC_LABELS[m]}</TH>))}
+            {RAGAS_METRICS.map((m) => (
+              <TH key={m} className="text-right whitespace-nowrap">
+                <span title={METRIC_DESCRIPTIONS[m]}>{METRIC_LABELS[m]}</span>
+              </TH>
+            ))}
             <TH>Created</TH><TH />
           </TR>
         </THead>
@@ -989,7 +994,7 @@ function PairedMetricList({ rows }: { rows: MetricRow[] }) {
     <ul className="divide-y divide-line">
       {rows.map(({ m, av, bv, d }) => (
         <li key={m} className="grid grid-cols-[minmax(104px,0.8fr)_2fr_auto] items-center gap-4 px-3.5 py-2.5">
-          <span className="truncate text-sm font-medium text-ink" title={METRIC_LABELS[m]}>{METRIC_LABELS[m]}</span>
+          <span className="truncate text-sm font-medium text-ink" title={METRIC_DESCRIPTIONS[m]}>{METRIC_LABELS[m]}</span>
           <div className="flex flex-col gap-1.5">
             <MetricBar side="A" value={av} win={d != null && d < 0} />
             <MetricBar side="B" value={bv} win={d != null && d > 0} />
@@ -1033,34 +1038,65 @@ function CaseCompareTable({
   const ids = Array.from(new Set([...byA.keys(), ...byB.keys()]));
   // If either run was cancelled, scoring is incomplete → answers only, no scores.
   const showScores = detailA.status !== 'CANCELLED' && detailB.status !== 'CANCELLED';
+  const [closed, setClosed] = useState<Set<string>>(new Set());
+  const keys = ids.map((cid) => String(cid));
+  const allClosed = keys.length > 0 && keys.every((k) => closed.has(k));
+  const toggle = (k: string) =>
+    setClosed((cur) => { const n = new Set(cur); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   if (ids.length === 0) {
     return <div className="py-8 text-center text-xs text-muted">No result rows</div>;
   }
   return (
     <div className="divide-y divide-line">
+      {ids.length > 1 && (
+        <CollapseAllStrip allClosed={allClosed} onToggle={() => setClosed(allClosed ? new Set() : new Set(keys))} />
+      )}
       {ids.map((cid) => {
+        const key = String(cid);
+        const isClosed = closed.has(key);
         const a = byA.get(cid);
         const b = byB.get(cid);
         const q = a?.question ?? b?.question ?? '—';
         const gt = a?.ground_truth ?? b?.ground_truth ?? null;
+        const aMean = caseMean(a);
+        const bMean = caseMean(b);
         return (
-          <div key={cid ?? 'null'} className="px-4 py-3.5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Question</p>
-            <p className="mt-0.5 whitespace-pre-wrap text-sm text-ink">{q}</p>
-            {gt && <p className="mt-1.5 whitespace-pre-wrap text-xs text-muted"><span className="font-medium">Ground truth ·</span> {gt}</p>}
-
-            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="rounded-sm border border-line bg-bg/40 p-3">
-                <Badge tone="neutral">A · v{labelA}</Badge>
-                <div className="mt-2"><AnswerBox text={a?.answer} error={a?.error_msg} /></div>
+          <div key={key}>
+            <button
+              type="button"
+              onClick={() => toggle(key)}
+              className="flex w-full items-start gap-2 px-4 py-3 text-left transition-colors hover:bg-surface-2/60"
+            >
+              <Chevron open={!isClosed} className="mt-1" />
+              <span className={cnstr('min-w-0 flex-1 text-sm text-ink', isClosed ? 'truncate' : 'whitespace-pre-wrap break-words font-medium')}>
+                {q}
+              </span>
+              {isClosed && showScores && (
+                aMean != null || bMean != null
+                  ? <span className="shrink-0 font-mono text-xs tabular-nums text-muted">
+                      <span className={cnstr(aMean != null && bMean != null && aMean > bMean && 'font-semibold text-ink')}>A {fmt3(aMean)}</span>
+                      {' · '}
+                      <span className={cnstr(aMean != null && bMean != null && bMean > aMean && 'font-semibold text-ink')}>B {fmt3(bMean)}</span>
+                    </span>
+                  : <span className="shrink-0 text-[11px] text-muted">Scoring…</span>
+              )}
+            </button>
+            {!isClosed && (
+              <div className="px-4 pb-3.5 pl-10">
+                {gt && <p className="mb-3 whitespace-pre-wrap text-xs text-muted"><span className="font-medium">Ground truth ·</span> {gt}</p>}
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="rounded-sm border border-line bg-bg/40 p-3">
+                    <Badge tone="neutral">A · v{labelA}</Badge>
+                    <div className="mt-2"><AnswerBox text={a?.answer} error={a?.error_msg} /></div>
+                  </div>
+                  <div className="rounded-sm border border-line bg-bg/40 p-3">
+                    <Badge tone="accent">B · v{labelB}</Badge>
+                    <div className="mt-2"><AnswerBox text={b?.answer} error={b?.error_msg} /></div>
+                  </div>
+                </div>
+                {showScores && <CaseScoreBars a={a} b={b} />}
               </div>
-              <div className="rounded-sm border border-line bg-bg/40 p-3">
-                <Badge tone="accent">B · v{labelB}</Badge>
-                <div className="mt-2"><AnswerBox text={b?.answer} error={b?.error_msg} /></div>
-              </div>
-            </div>
-
-            {showScores && <CaseScoreBars a={a} b={b} />}
+            )}
           </div>
         );
       })}
@@ -1068,77 +1104,174 @@ function CaseCompareTable({
   );
 }
 
-// Per-case score comparison — same paired-bar leaderboard as the averages, or a
-// muted 'Scoring…' placeholder until the first metric lands for this case.
+// Per-case A/B score box — its own collapsible section (collapsed by default):
+// the header always shows both means (winner bold); bars unfold on demand.
 function CaseScoreBars({ a, b }: { a?: RagasResultRow; b?: RagasResultRow }) {
+  const [open, setOpen] = useState(false);
   const rows = buildMetricRows(a, b);
   const scored = rows.some((r) => r.av != null || r.bv != null);
+  const aMean = caseMean(a);
+  const bMean = caseMean(b);
+  if (!scored) {
+    return (
+      <div className="mt-3 overflow-hidden rounded-sm border border-line bg-surface">
+        <div className="py-3 text-center text-[11px] text-muted">Scoring…</div>
+      </div>
+    );
+  }
   return (
     <div className="mt-3 overflow-hidden rounded-sm border border-line bg-surface">
-      {scored
-        ? <PairedMetricList rows={rows} />
-        : <div className="py-3 text-center text-[11px] text-muted">Scoring…</div>}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-1.5 bg-surface-2/60 px-3 py-2 text-left transition-colors hover:bg-surface-2"
+      >
+        <Chevron open={open} />
+        <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Scores</span>
+        <span className="ml-auto font-mono text-xs tabular-nums text-muted">
+          <span className={cnstr(aMean != null && bMean != null && aMean > bMean && 'font-semibold text-ink')}>A {fmt3(aMean)}</span>
+          {' · '}
+          <span className={cnstr(aMean != null && bMean != null && bMean > aMean && 'font-semibold text-ink')}>B {fmt3(bMean)}</span>
+        </span>
+      </button>
+      {open && <div className="border-t border-line"><PairedMetricList rows={rows} /></div>}
     </div>
   );
 }
 
 // Single-run score view: one bar per metric on a 0..1 scale — the single-side
-// counterpart of the A/B paired bars, so single and compare read the same way.
+// counterpart of the A/B paired bars. Wrapped in its own collapsible section
+// (collapsed by default) whose header always shows the case average.
 function ScoreBars({ row }: { row: RagasResultRow }) {
+  const [open, setOpen] = useState(false);
   const scored = RAGAS_METRICS.some((m) => row[m] != null);
   if (!scored) {
     return row.answer == null && row.error_msg
       ? <span className="text-[11px] text-bad">{row.error_msg}</span>
       : <span className="text-[11px] text-muted">Scoring…</span>;
   }
+  const mean = caseMean(row);
   return (
-    <ul className="flex flex-col gap-2">
-      {RAGAS_METRICS.map((m) => {
-        const v = row[m] != null ? Number(row[m]) : null;
-        const pct = v != null ? Math.max(0, Math.min(1, v)) * 100 : 0;
-        return (
-          <li key={m} className="grid grid-cols-[minmax(92px,auto)_1fr_auto] items-center gap-3">
-            <span className="truncate text-[11px] text-muted" title={METRIC_LABELS[m]}>{METRIC_LABELS[m]}</span>
-            <div className="relative h-2 overflow-hidden rounded-full bg-bg">
-              <span className="absolute inset-y-0 left-0 rounded-full bg-accent" style={{ width: pct + '%' }} />
-            </div>
-            <span className={'w-12 shrink-0 text-right font-mono text-xs tabular-nums ' + (v != null ? 'text-ink' : 'text-muted')}>{fmt3(v)}</span>
-          </li>
-        );
-      })}
-    </ul>
+    <div className="overflow-hidden rounded-sm border border-line bg-surface">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-1.5 bg-surface-2/60 px-3 py-2 text-left transition-colors hover:bg-surface-2"
+      >
+        <Chevron open={open} />
+        <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Scores</span>
+        <span className="ml-auto font-mono text-xs tabular-nums text-muted">Avg <span className="font-semibold text-ink">{fmt3(mean)}</span></span>
+      </button>
+      {open && (
+        <ul className="flex flex-col gap-2 border-t border-line px-3 py-2.5">
+          {RAGAS_METRICS.map((m) => {
+            const v = row[m] != null ? Number(row[m]) : null;
+            const pct = v != null ? Math.max(0, Math.min(1, v)) * 100 : 0;
+            return (
+              <li key={m} className="grid grid-cols-[minmax(92px,auto)_1fr_auto] items-center gap-3">
+                <span className="truncate text-[11px] text-muted" title={METRIC_DESCRIPTIONS[m]}>{METRIC_LABELS[m]}</span>
+                <div className="relative h-2 overflow-hidden rounded-full bg-bg">
+                  <span className="absolute inset-y-0 left-0 rounded-full bg-accent" style={{ width: pct + '%' }} />
+                </div>
+                <span className={'w-12 shrink-0 text-right font-mono text-xs tabular-nums ' + (v != null ? 'text-ink' : 'text-muted')}>{fmt3(v)}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }
 
-// Answer-centric case view: question + answer are the focus, scores are small
-// secondary chips. Replaces the old dense score table.
+// Small rotating disclosure chevron shared by collapsible rows.
+function Chevron({ open, className }: { open: boolean; className?: string }) {
+  return (
+    <svg
+      width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden
+      className={cnstr('shrink-0 text-muted transition-transform', open && 'rotate-90', className)}
+    >
+      <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+// Tiny class joiner (page-local; the ui components use @/lib/cn).
+function cnstr(...xs: (string | false | undefined)[]) { return xs.filter(Boolean).join(' '); }
+
+// Mean of one case's available metric scores (null until something is scored).
+function caseMean(r: RagasResultRow | undefined): number | null {
+  if (!r) return null;
+  const vs = RAGAS_METRICS.map((m) => r[m]).filter((v): v is number => v != null);
+  return vs.length ? vs.reduce((s, v) => s + Number(v), 0) / vs.length : null;
+}
+
+/** 'Collapse all / Expand all' strip shown above case lists with >1 case. */
+function CollapseAllStrip({ allClosed, onToggle }: { allClosed: boolean; onToggle: () => void }) {
+  return (
+    <div className="flex justify-end bg-surface-2/60 px-4 py-1.5">
+      <button type="button" onClick={onToggle} className="text-[11px] font-medium text-muted hover:text-ink">
+        {allClosed ? 'Expand all' : 'Collapse all'}
+      </button>
+    </div>
+  );
+}
+
+// Answer-centric case view: each case is a collapsible block. The header line is
+// the question (plus its average score when collapsed); the body holds ground
+// truth, answer, and the per-metric score bars.
 function CaseTable({ detail, bordered }: { detail: RagasRunDetail; bordered?: boolean }) {
   // Cancelled runs (incomplete scoring) and direct calls (never scored) → show
   // answers only, hide score chips.
   const showScores = detail.status !== 'CANCELLED' && detail.engine !== 'direct';
+  const [closed, setClosed] = useState<Set<number>>(new Set());
+  const ids = detail.results.map((r) => r.ragas_result_id);
+  const allClosed = ids.length > 0 && ids.every((id) => closed.has(id));
+  const toggle = (id: number) =>
+    setClosed((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const list = (
     <div className="divide-y divide-line">
-      {detail.results.map((r) => (
-        <div key={r.ragas_result_id} className="grid gap-4 px-4 py-3.5 sm:grid-cols-2">
-          {/* left: inputs (question + ground truth) */}
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Question</p>
-            <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-ink">{r.question ?? '—'}</p>
-            {r.ground_truth && (
-              <>
-                <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Ground truth</p>
-                <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-ink">{r.ground_truth}</p>
-              </>
+      {ids.length > 1 && (
+        <CollapseAllStrip allClosed={allClosed} onToggle={() => setClosed(allClosed ? new Set() : new Set(ids))} />
+      )}
+      {detail.results.map((r) => {
+        const isClosed = closed.has(r.ragas_result_id);
+        const mean = caseMean(r);
+        return (
+          <div key={r.ragas_result_id}>
+            <button
+              type="button"
+              onClick={() => toggle(r.ragas_result_id)}
+              className="flex w-full items-start gap-2 px-4 py-3 text-left transition-colors hover:bg-surface-2/60"
+            >
+              <Chevron open={!isClosed} className="mt-1" />
+              <span className={cnstr('min-w-0 flex-1 text-sm text-ink', isClosed ? 'truncate' : 'whitespace-pre-wrap break-words font-medium')}>
+                {r.question ?? '—'}
+              </span>
+              {isClosed && showScores && (
+                mean != null
+                  ? <span className="shrink-0 font-mono text-xs tabular-nums text-muted">Avg <span className="font-semibold text-ink">{fmt3(mean)}</span></span>
+                  : r.answer == null && r.error_msg
+                    ? <span className="shrink-0 text-[11px] text-bad">error</span>
+                    : <span className="shrink-0 text-[11px] text-muted">Scoring…</span>
+              )}
+            </button>
+            {!isClosed && (
+              <div className={cnstr('px-4 pb-3.5 pl-10', !!r.ground_truth && 'grid gap-4 sm:grid-cols-2')}>
+                {r.ground_truth && (
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Ground truth</p>
+                    <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-ink">{r.ground_truth}</p>
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Answer</p>
+                  <div className="mt-0.5"><AnswerBox text={r.answer} error={r.error_msg} /></div>
+                  {showScores && <div className="mt-3"><ScoreBars row={r} /></div>}
+                </div>
+              </div>
             )}
           </div>
-          {/* right: output (answer + scores) */}
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Answer</p>
-            <div className="mt-0.5"><AnswerBox text={r.answer} error={r.error_msg} /></div>
-            {showScores && <div className="mt-3"><ScoreBars row={r} /></div>}
-          </div>
-        </div>
-      ))}
+        );
+      })}
       {detail.results.length === 0 && (
         <div className="py-8 text-center text-xs text-muted">No result rows</div>
       )}
@@ -1155,20 +1288,39 @@ function CaseTable({ detail, bordered }: { detail: RagasRunDetail; bordered?: bo
   return bordered ? <div className="overflow-hidden rounded-sm border border-line bg-surface">{list}</div> : list;
 }
 
+// Metric picker, collapsed to a one-line summary by default — most runs use all
+// metrics, so the checkboxes only unfold on demand.
 function MetricChecks({ metrics, setMetrics }: { metrics: string[]; setMetrics: (f: (cur: string[]) => string[]) => void }) {
+  const [open, setOpen] = useState(false);
+  const summary =
+    metrics.length === RAGAS_METRICS.length ? `All (${RAGAS_METRICS.length})`
+    : metrics.length === 0 ? 'None selected'
+    : `${metrics.length} of ${RAGAS_METRICS.length}`;
   return (
-    <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs">
-      {RAGAS_METRICS.map((m) => (
-        <label key={m} className="flex items-center gap-1.5 text-muted">
-          <input
-            type="checkbox"
-            className="accent-accent"
-            checked={metrics.includes(m)}
-            onChange={(e) => setMetrics((cur) => (e.target.checked ? [...cur, m] : cur.filter((x) => x !== m)))}
-          />
-          {METRIC_LABELS[m]}
-        </label>
-      ))}
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 text-xs font-medium text-muted transition-colors hover:text-ink"
+      >
+        <Chevron open={open} />
+        Metrics · <span className={metrics.length === 0 ? 'text-bad' : 'text-ink'}>{summary}</span>
+      </button>
+      {open && (
+        <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-2 pl-[22px] text-xs">
+          {RAGAS_METRICS.map((m) => (
+            <label key={m} className="flex cursor-pointer items-center gap-1.5 text-muted" title={METRIC_DESCRIPTIONS[m]}>
+              <input
+                type="checkbox"
+                className="accent-accent"
+                checked={metrics.includes(m)}
+                onChange={(e) => setMetrics((cur) => (e.target.checked ? [...cur, m] : cur.filter((x) => x !== m)))}
+              />
+              {METRIC_LABELS[m]}
+            </label>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

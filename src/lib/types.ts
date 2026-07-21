@@ -25,6 +25,20 @@ export const METRIC_LABELS: Record<RagasMetric, string> = {
   answer_correctness: "Answer Correctness",
 };
 
+/** One-line hover explanations for each metric (used as `title` tooltips). */
+export const METRIC_DESCRIPTIONS: Record<RagasMetric, string> = {
+  faithfulness:
+    "답변이 검색된 컨텍스트에 근거하고 있는가? 컨텍스트로 뒷받침되지 않는 주장이 있으면 점수가 낮아집니다 (환각 여부 체크).",
+  answer_relevancy:
+    "답변이 질문을 실제로 다루고 있는가? 동문서답이나 불필요한 내용이 많으면 점수가 낮아집니다.",
+  context_precision:
+    "검색된 컨텍스트가 질문과 관련이 있는가? 관련 없는 문서가 섞여 있으면 점수가 낮아집니다.",
+  context_recall:
+    "검색된 컨텍스트가 정답(ground truth)을 만드는 데 필요한 정보를 충분히 담고 있는가?",
+  answer_correctness:
+    "답변이 정답(ground truth)과 사실적·의미적으로 얼마나 가까운가? Ground truth가 있어야 채점됩니다.",
+};
+
 // ---- prompts / nodes ----
 
 export interface FlowNode {
