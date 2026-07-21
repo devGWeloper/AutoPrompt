@@ -1,0 +1,44 @@
+# ============================================================
+# config.dev.yml — 개발(dev) 환경 설정
+#
+# 이 파일이 존재하면 앱은 dev 로 동작한다(src/lib/config.ts).
+# prd 배포 시 deploy.sh 가 이 파일을 제거해 config.yml(prd)로 전환한다.
+#
+# 로컬에 직접 설치한 Oracle 접속 정보를 채운다. 값을 비워두면 DB 미연결로
+# 간주되어 조회는 빈 결과, 쓰기는 명확한 에러를 반환한다(UI 스모크 테스트 가능).
+# ============================================================
+
+db:
+  user: "system"
+  password: "orcl"
+  connectString: "localhost:1521/orcl"
+
+agent:
+  runMode: "stub"           # stub | external
+  baseUrl: ""
+  authKey: ""
+  userId: "pm-test"
+  authHeader: "auth-key"
+  userHeader: "user-id"
+
+# RAGAS 채점 엔진
+#   auto     = llm.endpoint 이 있으면 LLM 심판(RAGAS), 없으면 FALLBACK(토큰 겹침)
+#   fallback = 항상 FALLBACK
+#   ragas    = auto 와 동일(엔드포인트 필요; 없으면 FALLBACK)
+ragasEngine: "auto"
+
+# 심판 LLM (OpenAI 호환: base URL + key + model).
+#   endpoint 예: http://host:port/v1  (→ /chat/completions 호출)
+#   endpoint 를 비우면 LLM 채점이 꺼지고 FALLBACK 으로 동작한다.
+llm:
+  endpoint: ""
+  apiKey: ""
+  model: ""
+
+# 임베딩 모델 (OpenAI 호환: base URL + key + model). LLM 과 다른 게이트웨이여도 됨.
+#   answer_relevancy 와 answer_correctness 의 의미 유사도 계산에 필요.
+#   비우면 그 부분은 건너뛴다(answer_relevancy=null, correctness=F1만).
+embedding:
+  endpoint: ""
+  apiKey: ""
+  model: ""

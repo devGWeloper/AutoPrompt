@@ -1,0 +1,44 @@
+# ============================================================
+# config.yml — 운영(prd) 환경 설정
+#
+# 로딩 규칙 (src/lib/config.ts)
+#   - config.dev.yml 이 있으면 dev 로 동작
+#   - 없으면 이 파일이 사용되며 appEnv = prd
+#   prd 배포에서는 deploy.sh 가 config.dev.yml 을 제거합니다.
+#
+# db: PM 소유 테이블(PM_*)이 들어있는 Oracle 접속 정보.
+#   connectString 예: host:port/service  ex) 10.0.0.10:1521/XEPDB1
+#   값을 비워두면 DB 미연결로 간주(조회는 빈 결과 / 쓰기는 명확한 에러).
+# ============================================================
+
+db:
+  user: ""
+  password: ""
+  connectString: ""
+
+# 외부 채팅/슈퍼에이전트 연동 (flow-level RAGAS 답변 생성).
+#   runMode=external 이면 baseUrl 로 실제 채팅 엔드포인트를 호출,
+#   기본 stub 이면 결정론적 placeholder 답변으로 동작한다.
+agent:
+  runMode: "stub"           # stub | external
+  baseUrl: ""
+  authKey: ""
+  userId: "pm-test"
+  authHeader: "auth-key"
+  userHeader: "user-id"
+
+# RAGAS 채점 엔진: auto(llm 있으면 LLM 심판, 없으면 FALLBACK) | fallback | ragas
+ragasEngine: "auto"
+
+# 심판 LLM (OpenAI 호환). endpoint 예: http://host:port/v1 (→ /chat/completions)
+# 비우면 LLM 채점이 꺼지고 FALLBACK 으로 동작한다.
+llm:
+  endpoint: ""
+  apiKey: ""
+  model: ""
+
+# 임베딩 모델 (OpenAI 호환). answer_relevancy / answer_correctness 유사도에 필요.
+embedding:
+  endpoint: ""
+  apiKey: ""
+  model: ""

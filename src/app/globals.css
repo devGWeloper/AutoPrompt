@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Semantic design tokens as RGB channels so Tailwind's `/<alpha>` modifier works
+   (e.g. bg-accent/10). Palette mirrors the inview app's neutral enterprise tone. */
+:root {
+  --bg: 244 245 247;        /* #f4f5f7 — app background */
+  --surface: 255 255 255;   /* white    — cards/panels */
+  --surface-2: 250 251 252; /* #fafbfc — recessed strips (table heads, statusbar) */
+  --surface-3: 240 242 245; /* #f0f2f5 — deeper recess (segmented tracks, hovers) */
+  --line: 225 228 232;      /* #e1e4e8 — hairline borders */
+  --line-strong: 208 212 218; /* #d0d4da — control borders (inputs, buttons) */
+  --ink: 31 35 40;          /* #1f2328 — primary text */
+  --muted: 107 114 128;     /* #6b7280 — secondary text */
+  --accent: 37 99 235;      /* #2563eb — inview blue accent */
+  --accent-fg: 255 255 255; /* text on accent */
+  --accent-soft: 232 239 255; /* #e8efff — soft accent wash */
+  --ok: 6 118 71;           /* #067647 — pass / healthy */
+  --bad: 180 35 24;         /* #b42318 — fail / error */
+}
+
+html, body, #__next { height: 100%; }
+body {
+  background: rgb(var(--bg));
+  color: rgb(var(--ink));
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection { background: rgb(var(--accent) / 0.18); }
+
+/* interactive elements ease by default for a softer feel */
+button, a, input, select, textarea { transition-duration: 120ms; }
+
+/* subtle enterprise scrollbar (webkit) */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb {
+  background: #d5d9df; border-radius: 10px;
+  border: 2px solid transparent; background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: #b9bfc7; background-clip: padding-box; }
