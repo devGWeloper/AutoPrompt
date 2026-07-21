@@ -305,6 +305,7 @@ function DirectPanel() {
               {rows.length === 0 && <div className="py-8 text-center text-xs text-muted">No cases</div>}
             </div>
           </div>
+          </div>
         </Card>
       )}
     </div>
