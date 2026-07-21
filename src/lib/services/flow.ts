@@ -4,7 +4,6 @@ import { notFound } from "@/lib/http";
 import { RUN_COLS, insertReturningId, mapRagasRun } from "@/lib/db/rows";
 import { ALL_METRICS, SYSTEM_USER } from "@/lib/types";
 import type {
-  DirectCaseResult,
   FlowCurrent,
   RagasMetric,
   RagasRunOut,
@@ -203,61 +202,6 @@ function messageFromInputs(inputData: string): string {
   }
   for (const v of Object.values(obj)) if (v) return v;
   return inputData;
-}
-
-export async function runDirectDataset(args: {
-  datasetId: number;
-  baseUrl?: string | null;
-  authKey?: string | null;
-  userId?: string | null;
-}): Promise<DirectCaseResult[]> {
-  await requireDataset(args.datasetId);
-  agent.ensureDirectUrl(args.baseUrl); // fail fast on missing URL
-
-  return withConn(async (conn, oracle) => {
-    const casesRes = await conn.execute(
-      `SELECT CASE_ID, INPUT_DATA, EXPECTED_OUTPUT FROM PM_TEST_CASE WHERE DATASET_ID = :id ORDER BY CASE_ID ASC`,
-      { id: args.datasetId },
-    );
-    const cases = (casesRes.rows ?? []) as Record<string, unknown>[];
-    const runId = await insertReturningId(
-      conn,
-      oracle,
-      `INSERT INTO PM_RAGAS_RUN (DATASET_ID, STATUS, ENGINE, CREATED_BY, STARTED_DT)
-       VALUES (:did, 'RUNNING', :eng, :by, SYSTIMESTAMP) RETURNING RAGAS_RUN_ID INTO :out_id`,
-      { did: args.datasetId, eng: DIRECT_ENGINE, cby: SYSTEM_USER },
-    );
-
-    const results: DirectCaseResult[] = [];
-    for (const c of cases) {
-      const caseId = Number(c.CASE_ID);
-      const inputData = String(c.INPUT_DATA ?? "");
-      const fields = parseCase(inputData, c.EXPECTED_OUTPUT != null ? String(c.EXPECTED_OUTPUT) : null);
-      const question = fields.question || messageFromInputs(inputData);
-      const row: DirectCaseResult = { case_id: caseId, question, answer: null, docs: [], error: null };
-      let answer: string | null = null;
-      let contexts: string | null = null;
-      try {
-        const data = await agent.runDirect({ message: question, ...args });
-        row.answer = data.response;
-        row.docs = data.docs;
-        answer = data.response;
-        contexts = JSON.stringify(data.docs);
-      } catch (e) {
-        row.error = String(e).slice(0, 1000);
-      }
-      await conn.execute(
-        `INSERT INTO PM_RAGAS_RESULT (RAGAS_RUN_ID, CASE_ID, QUESTION, ANSWER, CONTEXTS, ERROR_MSG)
-         VALUES (:rid, :cid, :q, :a, :ctx, :err)`,
-        { rid: runId, cid: caseId, q: question, a: answer, ctx: contexts, err: row.error },
-      );
-      results.push(row);
-    }
-    await conn.execute(`UPDATE PM_RAGAS_RUN SET STATUS = 'DONE', ENDED_DT = SYSTIMESTAMP WHERE RAGAS_RUN_ID = :id`, {
-      id: runId,
-    });
-    return results;
-  }, { commit: true });
 }
 
 // ---- cancel ----

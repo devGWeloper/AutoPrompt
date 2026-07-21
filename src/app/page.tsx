@@ -49,13 +49,12 @@ function parseCaseInput(raw: string): { question: string; contexts: string[]; gr
   }
 }
 
-type Tab = 'single' | 'compare' | 'direct' | 'datasets' | 'records';
+type Tab = 'single' | 'compare' | 'datasets' | 'records';
 const TABS: { id: Tab; label: string; desc: string; group?: string }[] = [
-  { id: 'single', label: 'Single run', desc: 'Pick a node and prompt version, then score answer quality with RAGAS metrics.' },
-  { id: 'compare', label: 'Compare', desc: 'Score two prompt versions of the same node on one dataset and compare metrics.' },
-  { id: 'direct', label: 'Direct', desc: 'Send a message straight to the external agent and read the raw answer — no scoring.' },
-  { id: 'datasets', label: 'Datasets', desc: 'Manage the question · context · ground-truth cases used for evaluation.', group: 'secondary' },
-  { id: 'records', label: 'Records', desc: 'Browse past evaluation runs and export them as CSV.', group: 'secondary' },
+  { id: 'single', label: 'Single run', desc: '데이터셋을 RAGAS 지표로 평가합니다 — 프롬프트 버전을 교체해 평가하거나 As-is(현재 상태 그대로)로 평가할 수 있고, Manual 모드는 채점 없이 메시지 하나를 직접 보냅니다.' },
+  { id: 'compare', label: 'Compare', desc: '같은 노드의 두 프롬프트 버전을 하나의 데이터셋으로 평가해 지표를 비교합니다.' },
+  { id: 'datasets', label: 'Datasets', desc: '평가에 사용할 질문 · 컨텍스트 · 정답(ground truth) 케이스를 관리합니다.', group: 'secondary' },
+  { id: 'records', label: 'Records', desc: '지난 평가 실행 기록을 조회하고 CSV로 내보냅니다.', group: 'secondary' },
 ];
 
 export default function RagasHomePage() {
@@ -74,7 +73,6 @@ export default function RagasHomePage() {
         </header>
         {tab === 'single' && <SingleRunPanel />}
         {tab === 'compare' && <ComparePanel />}
-        {tab === 'direct' && <DirectPanel />}
         {tab === 'datasets' && <DatasetsPanel />}
         {tab === 'records' && <RecordsPanel />}
       </div>
@@ -107,7 +105,6 @@ function usePromptNodes() {
 // ---- direct call (raw external-API smoke test, no scoring) ------------------
 
 type DirectResult = { response: string; docs: string[]; raw: Record<string, unknown> };
-type DirectCaseResult = { case_id: number; question: string; answer: string | null; docs: string[]; error: string | null };
 
 /** Optional endpoint overrides shared by both direct modes. Left blank, the
  * server's EXTERNAL_* settings are used. */
@@ -136,183 +133,6 @@ function EndpointOverrides({
   );
 }
 
-/** Raw external-API smoke test: send a message straight to the chat endpoint and
- * show the answer as-is. Bypasses prompts/RAGAS scoring. Input is either a query
- * typed by hand or every case of a dataset (read from the DB but not scored). */
-function DirectPanel() {
-  const { datasets } = useFlowDatasets();
-  const [source, setSource] = useState<'manual' | 'dataset'>('manual');
-  const [message, setMessage] = useState('');
-  const [datasetId, setDatasetId] = useState<number | null>(null);
-  const [baseUrl, setBaseUrl] = useState('');
-  const [authKey, setAuthKey] = useState('');
-  const [userId, setUserId] = useState('');
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [showRaw, setShowRaw] = useState(false);
-  const [status, setStatus] = useState<'idle' | 'running' | 'done' | 'failed'>('idle');
-  const [result, setResult] = useState<DirectResult | null>(null);
-  const [rows, setRows] = useState<DirectCaseResult[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const overrides = {
-    base_url: baseUrl.trim() || null,
-    auth_key: authKey.trim() || null,
-    user_id: userId.trim() || null,
-  };
-  const canSend = status !== 'running' && (source === 'manual' ? !!message.trim() : datasetId != null);
-
-  async function send() {
-    if (!canSend) return;
-    setError(null); setResult(null); setRows(null); setStatus('running');
-    try {
-      if (source === 'manual') {
-        setResult(await api.post<DirectResult>('/flow/test/direct', { message, ...overrides }));
-      } else {
-        const r = await api.post<{ results: DirectCaseResult[] }>('/flow/test/direct/dataset', {
-          dataset_id: datasetId, ...overrides,
-        });
-        setRows(r.results);
-      }
-      setStatus('done');
-    } catch (e) { setError(errText(e)); setStatus('failed'); }
-  }
-
-  return (
-    <div className="space-y-5">
-      <Card tone="muted" className="p-4">
-        <div className="mb-3">
-          <SegToggle
-            value={source}
-            onChange={setSource}
-            options={[
-              { id: 'manual', label: 'Manual' },
-              { id: 'dataset', label: 'Dataset' },
-            ]}
-          />
-        </div>
-
-        {source === 'manual' ? (
-          <>
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Message <span className="text-bad">*</span></label>
-            <Textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              rows={4}
-              placeholder="Message sent as-is to the external API"
-              className="w-full text-sm"
-            />
-          </>
-        ) : (
-          <div className="flex items-center gap-3">
-            <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />
-            <span className="text-xs text-muted">Sends every case question in the selected dataset to the external API (no scoring).</span>
-          </div>
-        )}
-
-        <div className="mt-3 flex items-center gap-3">
-          <Button variant="primary" disabled={!canSend} onClick={send}>
-            {status === 'running' ? 'Calling…' : 'Call'}
-          </Button>
-          <button
-            type="button"
-            onClick={() => setShowAdvanced((v) => !v)}
-            className="text-xs font-medium text-muted hover:text-ink"
-          >
-            {showAdvanced ? 'Hide endpoint settings' : 'Endpoint settings (optional)'}
-          </button>
-          <StatusPill status={status} />
-        </div>
-        {showAdvanced && (
-          <div className="mt-3 border-t border-line pt-3">
-            <EndpointOverrides
-              baseUrl={baseUrl} setBaseUrl={setBaseUrl}
-              authKey={authKey} setAuthKey={setAuthKey}
-              userId={userId} setUserId={setUserId}
-            />
-          </div>
-        )}
-      </Card>
-
-      {error && <ErrBox msg={error} />}
-
-      {status === 'idle' && !error && (
-        <Card className="flex flex-col items-center justify-center gap-1 px-6 py-16 text-center">
-          <div className="text-sm text-ink">
-            {source === 'manual'
-              ? <>Enter a message and press <span className="font-medium">Call</span>.</>
-              : <>Select a dataset and press <span className="font-medium">Call</span>.</>}
-          </div>
-          <div className="text-xs text-muted">Returns the external API response as-is, with no scoring.</div>
-        </Card>
-      )}
-
-      {status === 'running' && (
-        <Card className="px-6 py-12 text-center text-xs text-muted">Calling external API…</Card>
-      )}
-
-      {/* Manual single-message result */}
-      {result && status !== 'running' && (
-        <Card>
-          <div className="border-b border-line px-4 py-3">
-            <h3 className="text-sm font-semibold text-ink">Response</h3>
-          </div>
-          <div className="p-4">
-          <AnswerBox text={result.response} />
-          {result.docs.length > 0 && (
-            <div className="mt-4 border-t border-line pt-3">
-              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Contexts ({result.docs.length})</p>
-              <ol className="max-h-48 list-decimal space-y-1 overflow-y-auto pl-4 text-xs text-muted">
-                {result.docs.map((d, i) => (<li key={i} className="whitespace-pre-wrap break-words">{d}</li>))}
-              </ol>
-            </div>
-          )}
-          <div className="mt-4 border-t border-line pt-3">
-            <button type="button" onClick={() => setShowRaw((v) => !v)} className="text-xs font-medium text-muted hover:text-ink">
-              {showRaw ? 'Hide raw response' : 'Raw response (JSON)'}
-            </button>
-            {showRaw && (
-              <pre className="mt-2 max-h-72 overflow-auto rounded-sm border border-line bg-bg/60 p-3 text-xs text-ink">
-                {JSON.stringify(result.raw, null, 2)}
-              </pre>
-            )}
-          </div>
-          </div>
-        </Card>
-      )}
-
-      {/* Dataset result — one block per case (answer-centric, no scores) */}
-      {rows && status !== 'running' && (
-        <Card>
-          <div className="flex items-center gap-2 border-b border-line px-4 py-3">
-            <h3 className="text-sm font-semibold text-ink">Responses</h3>
-            <span className="text-xs text-muted">{rows.length} case{rows.length === 1 ? '' : 's'}</span>
-          </div>
-          <div className="p-4">
-          <div className="overflow-hidden rounded-sm border border-line bg-surface">
-            <div className="divide-y divide-line">
-              {rows.map((r) => (
-                <div key={r.case_id} className="px-4 py-3.5">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Question</p>
-                  <p className="mt-0.5 whitespace-pre-wrap text-sm text-ink">{r.question || '—'}</p>
-                  <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Answer</p>
-                  <div className="mt-0.5"><AnswerBox text={r.answer} error={r.error} /></div>
-                  {r.docs.length > 0 && (
-                    <ol className="mt-2 max-h-40 list-decimal space-y-1 overflow-y-auto pl-4 text-xs text-muted">
-                      {r.docs.map((d, i) => (<li key={i} className="whitespace-pre-wrap break-words">{d}</li>))}
-                    </ol>
-                  )}
-                </div>
-              ))}
-              {rows.length === 0 && <div className="py-8 text-center text-xs text-muted">No cases</div>}
-            </div>
-          </div>
-          </div>
-        </Card>
-      )}
-    </div>
-  );
-}
-
 /** Insert or replace a streamed result row, keeping case order (by result id). */
 function upsertResult(cur: RagasResultRow[], row: RagasResultRow): RagasResultRow[] {
   const i = cur.findIndex((x) => x.ragas_result_id === row.ragas_result_id);
@@ -322,10 +142,16 @@ function upsertResult(cur: RagasResultRow[], row: RagasResultRow): RagasResultRo
   return next;
 }
 
+/** Evaluate tab: dataset runs are always RAGAS-scored — either with a prompt
+ * version swapped in, or 'As-is' against the agent's current prompts (the old
+ * Direct dataset mode, now scored). Manual mode sends one raw message with no
+ * scoring (smoke test), keeping the endpoint overrides. */
 function SingleRunPanel() {
   const { datasets } = useFlowDatasets();
   const nodes = usePromptNodes();
-  const [nodeNm, setNodeNm] = useState<string | null>(null);
+  const [source, setSource] = useState<'dataset' | 'manual'>('dataset');
+  // '' = As-is: call the external agent without swapping any prompt version.
+  const [nodeNm, setNodeNm] = useState<string>('');
   const [versions, setVersions] = useState<PromptVersionSummary[]>([]);
   const [ver, setVer] = useState<number | null>(null);
   const [datasetId, setDatasetId] = useState<number | null>(null);
@@ -339,15 +165,26 @@ function SingleRunPanel() {
   const [cancelling, setCancelling] = useState(false);
   const runIdRef = useRef<number | null>(null);
   const wsRef = useRef<EventSource | null>(null);
+  // Manual (raw single message, unscored) state.
+  const [message, setMessage] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [authKey, setAuthKey] = useState('');
+  const [userId, setUserId] = useState('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showRaw, setShowRaw] = useState(false);
+  const [callStatus, setCallStatus] = useState<'idle' | 'running' | 'done' | 'failed'>('idle');
+  const [callResult, setCallResult] = useState<DirectResult | null>(null);
+  const [callError, setCallError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (nodeNm == null) { setVersions([]); return; }
+    if (!nodeNm) { setVersions([]); return; }
     api.get<PromptVersionSummary[]>(`/nodes/${encodeURIComponent(nodeNm)}/prompts`).then(setVersions).catch(() => setVersions([]));
   }, [nodeNm]);
   // Default to the latest version of the selected node (list is newest-first).
   useEffect(() => { setVer(versions[0]?.prompt_id ?? null); }, [versions]);
 
-  const canRun = !!(nodeNm && ver && datasetId) && metrics.length > 0;
+  const canRun = !!datasetId && metrics.length > 0 && (!nodeNm || ver != null);
+  const canCall = callStatus !== 'running' && !!message.trim();
 
   async function run() {
     if (!canRun) return;
@@ -355,7 +192,8 @@ function SingleRunPanel() {
     setLive([]); setTotal(0); setCancelling(false); runIdRef.current = null;
     try {
       const r = await api.post<{ ragas_run_id: number }>('/flow/test/ragas', {
-        dataset_id: datasetId, metrics, node_nm: nodeNm, prompt_id: ver,
+        dataset_id: datasetId, metrics,
+        node_nm: nodeNm || null, prompt_id: nodeNm ? ver : null,
       });
       runIdRef.current = r.ragas_run_id;
       const ws = connectRagasRunWs(r.ragas_run_id, {
@@ -385,41 +223,154 @@ function SingleRunPanel() {
     } catch (e) { setError(errText(e)); setCancelling(false); }
   }
 
+  async function call() {
+    if (!canCall) return;
+    setCallError(null); setCallResult(null); setCallStatus('running');
+    try {
+      setCallResult(await api.post<DirectResult>('/flow/test/direct', {
+        message,
+        base_url: baseUrl.trim() || null,
+        auth_key: authKey.trim() || null,
+        user_id: userId.trim() || null,
+      }));
+      setCallStatus('done');
+    } catch (e) { setCallError(errText(e)); setCallStatus('failed'); }
+  }
+
   const answered = live.filter((r) => r.answer !== null || r.error_msg).length;
   const scored = live.filter((r) => RAGAS_METRICS.some((m) => r[m] !== null) || r.error_msg).length;
 
   return (
     <div className="space-y-5">
       <Card tone="muted" className="p-4">
-        <div className="flex items-center gap-3 overflow-x-auto [&>*]:shrink-0">
-          <Select value={nodeNm ?? ''} onChange={(e) => setNodeNm(e.target.value)} className="w-44">
-            <option value="" disabled>Select node</option>
-            {nodes.map((n) => (<option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>))}
-          </Select>
-          <VersionSelect versions={versions} value={ver} onChange={setVer} placeholder="Select version" />
-          <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />
-          <Button
-            variant={status === 'running' ? 'secondary' : 'primary'}
-            className="whitespace-nowrap"
-            disabled={status === 'running' ? cancelling : !canRun}
-            onClick={status === 'running' ? cancel : run}
-          >
-            {status === 'running' ? (cancelling ? 'Cancelling…' : 'Cancel run') : 'Run RAGAS'}
-          </Button>
-          <StatusPill status={status} />
-        </div>
-        <div className="mt-3 border-t border-line pt-3">
-          <MetricChecks metrics={metrics} setMetrics={setMetrics} />
-        </div>
+        {source === 'dataset' ? (
+          <div className="flex items-center gap-3 overflow-x-auto [&>*]:shrink-0">
+            <SegToggle
+              value={source}
+              onChange={setSource}
+              options={[{ id: 'dataset', label: 'Dataset' }, { id: 'manual', label: 'Manual' }]}
+            />
+            <Select value={nodeNm} onChange={(e) => setNodeNm(e.target.value)} className="w-52">
+              <option value="">As-is (no prompt swap)</option>
+              {nodes.map((n) => (<option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>))}
+            </Select>
+            {nodeNm && <VersionSelect versions={versions} value={ver} onChange={setVer} placeholder="Select version" />}
+            <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />
+            <Button
+              variant={status === 'running' ? 'secondary' : 'primary'}
+              className="whitespace-nowrap"
+              disabled={status === 'running' ? cancelling : !canRun}
+              onClick={status === 'running' ? cancel : run}
+            >
+              {status === 'running' ? (cancelling ? 'Cancelling…' : 'Cancel run') : 'Run RAGAS'}
+            </Button>
+            <StatusPill status={status} />
+          </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <SegToggle
+              value={source}
+              onChange={setSource}
+              options={[{ id: 'dataset', label: 'Dataset' }, { id: 'manual', label: 'Manual' }]}
+            />
+            <span className="text-xs text-muted">외부 에이전트에 메시지 하나를 그대로 보냅니다 — 채점 없음.</span>
+          </div>
+        )}
+
+        {source === 'dataset' && (
+          <div className="mt-3 border-t border-line pt-3">
+            <MetricChecks metrics={metrics} setMetrics={setMetrics} />
+          </div>
+        )}
+
+        {source === 'manual' && (
+          <>
+            <div className="mt-3">
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Message <span className="text-bad">*</span></label>
+              <Textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                rows={4}
+                placeholder="Message sent as-is to the external API"
+                className="w-full text-sm"
+              />
+            </div>
+            <div className="mt-3 flex items-center gap-3">
+              <Button variant="primary" disabled={!canCall} onClick={call}>
+                {callStatus === 'running' ? 'Calling…' : 'Call'}
+              </Button>
+              <button
+                type="button"
+                onClick={() => setShowAdvanced((v) => !v)}
+                className="text-xs font-medium text-muted hover:text-ink"
+              >
+                {showAdvanced ? 'Hide endpoint settings' : 'Endpoint settings (optional)'}
+              </button>
+              <StatusPill status={callStatus} />
+            </div>
+            {showAdvanced && (
+              <div className="mt-3 border-t border-line pt-3">
+                <EndpointOverrides
+                  baseUrl={baseUrl} setBaseUrl={setBaseUrl}
+                  authKey={authKey} setAuthKey={setAuthKey}
+                  userId={userId} setUserId={setUserId}
+                />
+              </div>
+            )}
+          </>
+        )}
       </Card>
 
+      {source === 'manual' ? (
+        <>
+          {callError && <ErrBox msg={callError} />}
+          {callStatus === 'idle' && !callError && (
+            <Card className="flex flex-col items-center justify-center gap-1 px-6 py-16 text-center">
+              <div className="text-sm text-ink">메시지를 입력하고 <span className="font-medium">Call</span>을 누르세요.</div>
+              <div className="text-xs text-muted">외부 API 응답을 채점 없이 그대로 보여줍니다.</div>
+            </Card>
+          )}
+          {callStatus === 'running' && (
+            <Card className="px-6 py-12 text-center text-xs text-muted">Calling external API…</Card>
+          )}
+          {callResult && callStatus !== 'running' && (
+            <Card>
+              <div className="border-b border-line px-4 py-3">
+                <h3 className="text-sm font-semibold text-ink">Response</h3>
+              </div>
+              <div className="p-4">
+                <AnswerBox text={callResult.response} />
+                {callResult.docs.length > 0 && (
+                  <div className="mt-4 border-t border-line pt-3">
+                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Contexts ({callResult.docs.length})</p>
+                    <ol className="max-h-48 list-decimal space-y-1 overflow-y-auto pl-4 text-xs text-muted">
+                      {callResult.docs.map((d, i) => (<li key={i} className="whitespace-pre-wrap break-words">{d}</li>))}
+                    </ol>
+                  </div>
+                )}
+                <div className="mt-4 border-t border-line pt-3">
+                  <button type="button" onClick={() => setShowRaw((v) => !v)} className="text-xs font-medium text-muted hover:text-ink">
+                    {showRaw ? 'Hide raw response' : 'Raw response (JSON)'}
+                  </button>
+                  {showRaw && (
+                    <pre className="mt-2 max-h-72 overflow-auto rounded-sm border border-line bg-bg/60 p-3 text-xs text-ink">
+                      {JSON.stringify(callResult.raw, null, 2)}
+                    </pre>
+                  )}
+                </div>
+              </div>
+            </Card>
+          )}
+        </>
+      ) : (
+        <>
       {error && <ErrBox msg={error} />}
       {detail?.error_msg && <ErrBox msg={detail.error_msg} />}
 
       {status === 'idle' && !error && (
         <Card className="flex flex-col items-center justify-center gap-1 px-6 py-16 text-center">
-          <div className="text-sm text-ink">Select a node, version, and dataset, then press <span className="font-medium">Run RAGAS</span>.</div>
-          <div className="text-xs text-muted">Past results are available in the ‘Records’ tab.</div>
+          <div className="text-sm text-ink">데이터셋을 선택한 뒤 <span className="font-medium">Run RAGAS</span>를 누르세요.</div>
+          <div className="text-xs text-muted">프롬프트 버전을 고르면 그 버전으로 교체해 평가하고, As-is면 현재 상태 그대로 평가합니다. 지난 결과는 Records 탭에서 확인할 수 있습니다.</div>
         </Card>
       )}
 
@@ -454,10 +405,12 @@ function SingleRunPanel() {
           <div className="p-4">
             <CaseTable detail={detail} />
             {detail.status === 'CANCELLED' && (
-              <p className="mt-3 text-xs text-muted">Cancelled run — answers only, no scores.</p>
+              <p className="mt-3 text-xs text-muted">취소된 실행 — 답변만 저장되고 점수는 없습니다.</p>
             )}
           </div>
         </Card>
+      )}
+        </>
       )}
     </div>
   );
@@ -580,8 +533,8 @@ function ComparePanel() {
 
       {status === 'idle' && !error && (
         <Card className="flex flex-col items-center justify-center gap-1 px-6 py-16 text-center">
-          <div className="text-sm text-ink">Pick a node and <span className="font-medium">two versions</span> to compare, then run.</div>
-          <div className="text-xs text-muted">Only the node’s system prompt is swapped between A/B; both are scored on the same dataset.</div>
+          <div className="text-sm text-ink">노드와 비교할 <span className="font-medium">두 버전</span>을 선택한 뒤 실행하세요.</div>
+          <div className="text-xs text-muted">A/B 간에는 해당 노드의 시스템 프롬프트만 교체되며, 두 실행 모두 같은 데이터셋으로 채점됩니다.</div>
         </Card>
       )}
 
@@ -628,7 +581,7 @@ function ComparePanel() {
               <CaseCompareTable detailA={detailA} detailB={detailB} labelA={verLabel(verA)} labelB={verLabel(verB)} />
             </div>
             {(detailA.status === 'CANCELLED' || detailB.status === 'CANCELLED') && (
-              <p className="mt-3 text-xs text-muted">Cancelled run — answers only, no scores.</p>
+              <p className="mt-3 text-xs text-muted">취소된 실행 — 답변만 저장되고 점수는 없습니다.</p>
             )}
           </div>
         </Card>
@@ -715,7 +668,7 @@ function DatasetsPanel() {
         </Card>
         <Card>
           {selDataset == null ? (
-            <div className="py-12 text-center text-sm text-muted">Select a dataset.</div>
+            <div className="py-12 text-center text-sm text-muted">데이터셋을 선택하세요.</div>
           ) : (
             <>
               <div className="border-b border-line px-4 py-3">
@@ -918,7 +871,7 @@ function AbCompareView({ aId, bId, labelA, labelB }: { aId: number; bId: number;
         <CaseCompareTable detailA={a} detailB={b} labelA={labelA} labelB={labelB} />
       </div>
       {(a.status === 'CANCELLED' || b.status === 'CANCELLED') && (
-        <p className="text-xs text-muted">Cancelled run — answers only, no scores.</p>
+        <p className="text-xs text-muted">취소된 실행 — 답변만 저장되고 점수는 없습니다.</p>
       )}
     </div>
   );

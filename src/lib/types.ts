@@ -299,25 +299,6 @@ export interface DirectTestOut {
   raw: Record<string, unknown> | unknown[] | string;
 }
 
-export interface DirectDatasetRequest {
-  dataset_id: number;
-  base_url?: string | null;
-  auth_key?: string | null;
-  user_id?: string | null;
-}
-
-export interface DirectCaseResult {
-  case_id: number;
-  question: string;
-  answer: string | null;
-  docs: string[];
-  error: string | null;
-}
-
-export interface DirectDatasetOut {
-  results: DirectCaseResult[];
-}
-
 // ---- run progress events (SSE; same shape the old WebSocket used) ----
 
 export type RunEvent =

@@ -64,7 +64,7 @@ export default function NodesPage() {
                 Prompt nodes <span className="text-muted">({nodes.length})</span>
               </h1>
               <p className="mt-0.5 text-sm text-muted">
-                Select a node to manage its system/user prompts and model version.
+                노드를 선택해 시스템/유저 프롬프트와 모델 버전을 관리하세요.
               </p>
             </div>
             <Button onClick={() => setShowNew(true)}>+ Add node</Button>

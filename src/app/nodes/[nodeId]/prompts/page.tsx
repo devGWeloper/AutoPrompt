@@ -168,7 +168,7 @@ export default function NodePromptsPage() {
               </div>
             </>
           ) : (
-            <div className="p-8 text-sm text-muted">Select a version or create a new one.</div>
+            <div className="p-8 text-sm text-muted">버전을 선택하거나 새로 만드세요.</div>
           )}
         </main>
       </div>
