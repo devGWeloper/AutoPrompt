@@ -1,7 +1,7 @@
 'use client';
 
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
-import TopBar, { PromptsNavChip } from '@/components/ui/TopBar';
+import TopBar from '@/components/ui/TopBar';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -78,9 +78,8 @@ export default function RagasHomePage() {
   return (
     <div className="flex h-full flex-col">
       <TopBar />
-      <div className="flex items-center justify-between gap-3 px-6 pt-5">
+      <div className="px-6 pt-5">
         <Tabs items={TABS} value={tab} onChange={setTab} />
-        <PromptsNavChip />
       </div>
       <div className="flex-1 overflow-auto px-6 py-6">
         <header className="mb-5">
@@ -328,7 +327,7 @@ function SingleRunPanel() {
               disabled={status === 'running' ? cancelling : !canRun}
               onClick={status === 'running' ? cancel : run}
             >
-              {status === 'running' ? (cancelling ? 'Cancelling…' : 'Cancel run') : 'Run RAGAS'}
+              {status === 'running' ? (cancelling ? 'Cancelling…' : 'Cancel run') : 'Run'}
             </Button>
             <StatusPill status={status} />
           </div>
@@ -441,7 +440,7 @@ function SingleRunPanel() {
 
       {status === 'idle' && !error && (
         <Card className="flex flex-col items-center justify-center gap-1 px-6 py-16 text-center">
-          <div className="text-sm text-ink">데이터셋을 선택한 뒤 <span className="font-medium">Run RAGAS</span>를 누르세요.</div>
+          <div className="text-sm text-ink">데이터셋을 선택한 뒤 <span className="font-medium">Run</span>을 누르세요.</div>
           <div className="text-xs text-muted">프롬프트 버전을 고르면 그 버전으로 교체해 평가하고, As-is면 현재 상태 그대로 평가합니다. 지난 결과는 Records 탭에서 확인할 수 있습니다.</div>
         </Card>
       )}
@@ -1301,22 +1300,23 @@ function CaseCompareTable({
   const showScores =
     detailA.status !== 'CANCELLED' && detailB.status !== 'CANCELLED' &&
     (scored ?? (detailA.metrics !== '[]' && detailB.metrics !== '[]'));
-  const [closed, setClosed] = useState<Set<string>>(new Set());
+  // Collapsed by default — see CaseTable.
+  const [opened, setOpened] = useState<Set<string>>(new Set());
   const keys = ids.map((cid) => String(cid));
-  const allClosed = keys.length > 0 && keys.every((k) => closed.has(k));
+  const allClosed = opened.size === 0;
   const toggle = (k: string) =>
-    setClosed((cur) => { const n = new Set(cur); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+    setOpened((cur) => { const n = new Set(cur); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   if (ids.length === 0) {
     return <div className="py-8 text-center text-xs text-muted">결과가 없습니다</div>;
   }
   return (
     <div className="divide-y divide-line">
       {ids.length > 1 && (
-        <CollapseAllStrip allClosed={allClosed} onToggle={() => setClosed(allClosed ? new Set() : new Set(keys))} />
+        <CollapseAllStrip allClosed={allClosed} onToggle={() => setOpened(allClosed ? new Set(keys) : new Set())} />
       )}
       {ids.map((cid) => {
         const key = String(cid);
-        const isClosed = closed.has(key);
+        const isClosed = !opened.has(key);
         const a = byA.get(cid);
         const b = byB.get(cid);
         const q = a?.question ?? b?.question ?? '—';
@@ -1334,6 +1334,12 @@ function CaseCompareTable({
               <span className={cnstr('min-w-0 flex-1 text-sm text-ink', isClosed ? 'truncate' : 'whitespace-pre-wrap break-words font-medium')}>
                 {q}
               </span>
+              {isClosed && (a?.answer != null || b?.answer != null) && (
+                <span className="mt-0.5 flex min-w-0 flex-[2] items-baseline gap-2.5 text-xs text-muted">
+                  <span className="min-w-0 flex-1 truncate"><span className="font-semibold">A</span> {a?.answer ?? '—'}</span>
+                  <span className="min-w-0 flex-1 truncate"><span className="font-semibold">B</span> {b?.answer ?? '—'}</span>
+                </span>
+              )}
               {isClosed && showScores && (
                 aMean != null || bMean != null
                   ? <span className="shrink-0 font-mono text-xs tabular-nums text-muted">
@@ -1487,18 +1493,20 @@ function CaseTable({ detail, bordered, scored }: { detail: RagasRunDetail; borde
   // Live streaming passes `scored` explicitly since its detail stub has no metadata.
   const showScores =
     detail.status !== 'CANCELLED' && (scored ?? (detail.engine !== 'direct' && detail.metrics !== '[]'));
-  const [closed, setClosed] = useState<Set<number>>(new Set());
+  // Collapsed by default — tracking the *opened* set keeps late-arriving
+  // (streamed) rows collapsed too.
+  const [opened, setOpened] = useState<Set<number>>(new Set());
   const ids = detail.results.map((r) => r.ragas_result_id);
-  const allClosed = ids.length > 0 && ids.every((id) => closed.has(id));
+  const allClosed = opened.size === 0;
   const toggle = (id: number) =>
-    setClosed((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+    setOpened((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const list = (
     <div className="divide-y divide-line">
       {ids.length > 1 && (
-        <CollapseAllStrip allClosed={allClosed} onToggle={() => setClosed(allClosed ? new Set() : new Set(ids))} />
+        <CollapseAllStrip allClosed={allClosed} onToggle={() => setOpened(allClosed ? new Set(ids) : new Set())} />
       )}
       {detail.results.map((r) => {
-        const isClosed = closed.has(r.ragas_result_id);
+        const isClosed = !opened.has(r.ragas_result_id);
         const mean = caseMean(r);
         return (
           <div key={r.ragas_result_id}>
@@ -1511,6 +1519,9 @@ function CaseTable({ detail, bordered, scored }: { detail: RagasRunDetail; borde
               <span className={cnstr('min-w-0 flex-1 text-sm text-ink', isClosed ? 'truncate' : 'whitespace-pre-wrap break-words font-medium')}>
                 {r.question ?? '—'}
               </span>
+              {isClosed && r.answer && (
+                <span className="mt-0.5 min-w-0 flex-1 truncate text-xs text-muted">{r.answer}</span>
+              )}
               {isClosed && showScores && (
                 mean != null
                   ? <span className="shrink-0 font-mono text-xs tabular-nums text-muted">평균 <span className="font-semibold text-ink">{fmt3(mean)}</span></span>

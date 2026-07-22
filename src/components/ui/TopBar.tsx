@@ -30,35 +30,33 @@ function EnvBadge() {
   );
 }
 
-/** Prompt-management nav chip (inview nav-agent styling: gradient border +
- * soft tinted background). One button that toggles by location — on the RAGAS
- * home it leads to prompt management, on /nodes pages it leads back home. */
-export function PromptsNavChip() {
+/** Top-level section nav (inview .tabnav-group): segmented control next to the
+ * brand — both sections always visible, active one raised on a white surface. */
+function SectionNav() {
   const router = useRouter();
   const pathname = usePathname() || '/';
   const onPrompts = pathname.startsWith('/nodes');
+  const items = [
+    { href: '/', label: 'RAGAS Eval', active: !onPrompts },
+    { href: '/nodes', label: 'Prompts', active: onPrompts },
+  ];
   return (
-    <button
-      onClick={() => router.push(onPrompts ? '/' : '/nodes')}
-      className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border border-transparent px-3.5 text-[13px] font-semibold text-ink shadow-sm transition hover:shadow-seg active:translate-y-px"
-      style={{
-        background:
-          'linear-gradient(135deg, #f7f9ff, #faf6ff) padding-box, linear-gradient(135deg, rgba(37,99,235,0.45), rgba(124,58,237,0.45)) border-box',
-      }}
-    >
-      {onPrompts ? (
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden className="text-accent">
-          <path d="M9.5 3.5 5 8l4.5 4.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      ) : (
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden className="text-accent">
-          <path d="M9.5 2H4.5A1.5 1.5 0 0 0 3 3.5v9A1.5 1.5 0 0 0 4.5 14h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-          <path d="M9.5 2v3.5H13" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-          <path d="M5.5 9h5M5.5 11.5h3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-        </svg>
-      )}
-      {onPrompts ? 'RAGAS Eval' : 'Prompts'}
-    </button>
+    <nav className="inline-flex h-9 items-center gap-0.5 rounded-lg border border-line bg-surface-2 p-1">
+      {items.map((it) => (
+        <button
+          key={it.href}
+          onClick={() => router.push(it.href)}
+          className={cn(
+            'inline-flex h-full items-center rounded-md px-3.5 text-[13px] font-semibold transition-colors',
+            it.active
+              ? 'bg-surface text-accent shadow-[0_1px_2px_rgba(17,24,39,0.10),0_0_0_1px_rgba(37,99,235,0.08)]'
+              : 'text-muted hover:bg-surface hover:text-ink',
+          )}
+        >
+          {it.label}
+        </button>
+      ))}
+    </nav>
   );
 }
 
@@ -92,6 +90,7 @@ export default function TopBar({ title, right }: { title?: string; right?: React
               <span className="hidden text-xs font-medium text-muted sm:inline">· Prompt Management</span>
             </span>
           </button>
+          <SectionNav />
         </div>
         <div className="flex items-center gap-3">
           {title && <span className="text-sm text-muted">{title}</span>}

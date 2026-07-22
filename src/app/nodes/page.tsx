@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import TopBar, { PromptsNavChip } from '@/components/ui/TopBar';
+import TopBar from '@/components/ui/TopBar';
 import Modal from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -67,10 +67,7 @@ export default function NodesPage() {
                 노드를 선택해 시스템/유저 프롬프트와 모델 버전을 관리하세요.
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <PromptsNavChip />
-              <Button onClick={() => setShowNew(true)}>+ Add node</Button>
-            </div>
+            <Button onClick={() => setShowNew(true)}>+ Add node</Button>
           </div>
           <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {nodes.map((n) => (
