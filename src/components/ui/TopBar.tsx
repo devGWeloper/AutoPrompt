@@ -30,15 +30,41 @@ function EnvBadge() {
   );
 }
 
-const NAV: { label: string; href: string; match: (p: string) => boolean }[] = [
-  { label: 'RAGAS Eval', href: '/', match: (p) => p === '/' },
-  { label: 'Prompts', href: '/nodes', match: (p) => p.startsWith('/nodes') },
-];
+/** Prompt-management nav chip (inview nav-agent styling: gradient border +
+ * soft tinted background). One button that toggles by location — on the RAGAS
+ * home it leads to prompt management, on /nodes pages it leads back home. */
+export function PromptsNavChip() {
+  const router = useRouter();
+  const pathname = usePathname() || '/';
+  const onPrompts = pathname.startsWith('/nodes');
+  return (
+    <button
+      onClick={() => router.push(onPrompts ? '/' : '/nodes')}
+      className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border border-transparent px-3.5 text-[13px] font-semibold text-ink shadow-sm transition hover:shadow-seg active:translate-y-px"
+      style={{
+        background:
+          'linear-gradient(135deg, #f7f9ff, #faf6ff) padding-box, linear-gradient(135deg, rgba(37,99,235,0.45), rgba(124,58,237,0.45)) border-box',
+      }}
+    >
+      {onPrompts ? (
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden className="text-accent">
+          <path d="M9.5 3.5 5 8l4.5 4.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ) : (
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden className="text-accent">
+          <path d="M9.5 2H4.5A1.5 1.5 0 0 0 3 3.5v9A1.5 1.5 0 0 0 4.5 14h7a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 2Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+          <path d="M9.5 2v3.5H13" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+          <path d="M5.5 9h5M5.5 11.5h3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+      )}
+      {onPrompts ? 'RAGAS Eval' : 'Prompts'}
+    </button>
+  );
+}
 
 /** App top bar: gradient brand mark + pill nav (inview tone). */
 export default function TopBar({ title, right }: { title?: string; right?: ReactNode }) {
   const router = useRouter();
-  const pathname = usePathname() || '/';
 
   return (
     <header className="border-b border-line bg-gradient-to-b from-surface to-[#fbfcfe] shadow-[0_1px_0_rgba(17,24,39,0.02),0_10px_22px_-20px_rgba(17,24,39,0.25)]">
@@ -66,25 +92,6 @@ export default function TopBar({ title, right }: { title?: string; right?: React
               <span className="hidden text-xs font-medium text-muted sm:inline">· Prompt Management</span>
             </span>
           </button>
-          <nav className="flex items-center gap-0.5 rounded-[9px] border border-line bg-surface p-1">
-            {NAV.map((n) => {
-              const active = n.match(pathname);
-              return (
-                <button
-                  key={n.href}
-                  onClick={() => router.push(n.href)}
-                  className={cn(
-                    'rounded-sm px-4 py-1.5 text-[13.5px] font-semibold tracking-[0.2px] transition-colors',
-                    active
-                      ? 'bg-accent text-accent-fg shadow-sm'
-                      : 'text-muted hover:bg-surface-3 hover:text-ink',
-                  )}
-                >
-                  {n.label}
-                </button>
-              );
-            })}
-          </nav>
         </div>
         <div className="flex items-center gap-3">
           {title && <span className="text-sm text-muted">{title}</span>}

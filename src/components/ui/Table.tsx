@@ -51,15 +51,17 @@ export function TD({
   className,
   colSpan,
   rowSpan,
+  title,
   children,
 }: {
   className?: string;
   colSpan?: number;
   rowSpan?: number;
+  title?: string;
   children?: ReactNode;
 }) {
   return (
-    <td colSpan={colSpan} rowSpan={rowSpan} className={cn('px-3.5 py-3 align-top', className)}>
+    <td colSpan={colSpan} rowSpan={rowSpan} title={title} className={cn('px-3.5 py-3 align-top', className)}>
       {children}
     </td>
   );

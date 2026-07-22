@@ -188,7 +188,12 @@ export async function resolvePromptLabels(
 
 export async function listRuns(): Promise<RagasRunSummary[]> {
   return readConn(async (conn) => {
-    const res = await conn.execute(`SELECT ${RUN_COLS} FROM PM_RAGAS_RUN ORDER BY RAGAS_RUN_ID DESC`);
+    // Scalar subquery (not a join) so RUN_COLS' bare column names stay unambiguous.
+    const res = await conn.execute(
+      `SELECT ${RUN_COLS},
+              (SELECT d.DATASET_NM FROM PM_TEST_DATASET d WHERE d.DATASET_ID = PM_RAGAS_RUN.DATASET_ID) AS DATASET_NM
+         FROM PM_RAGAS_RUN ORDER BY RAGAS_RUN_ID DESC`,
+    );
     const rows = (res.rows ?? []) as Record<string, unknown>[];
     const summaries = rows.map(mapRagasRunSummary);
     const labels = await resolvePromptLabels(conn, rows.map((r) => (r.PROMPT_ID != null ? Number(r.PROMPT_ID) : null)));

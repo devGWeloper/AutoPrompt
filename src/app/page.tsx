@@ -1,7 +1,7 @@
 'use client';
 
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
-import TopBar from '@/components/ui/TopBar';
+import TopBar, { PromptsNavChip } from '@/components/ui/TopBar';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -31,8 +31,23 @@ const errText = (e: unknown) => (e instanceof ApiError ? JSON.stringify(e.detail
 const fmt2 = (v: number | null | undefined) => (v != null ? Number(v).toFixed(2) : '—');
 const fmt3 = (v: number | null | undefined) => (v != null ? Number(v).toFixed(3) : '—');
 
-// Overall run score = mean of the available metric averages (null if none scored).
-function runMean(d: RagasRunDetail): number | null {
+/** Compact table timestamp from the server's YYYY-MM-DDTHH:MM:SS string: time
+ * only if today, MM-DD HH:MM within the year, full date otherwise. The full
+ * string stays available via the cell's title tooltip. */
+function fmtDt(iso: string): string {
+  const [d, t] = iso.split('T');
+  if (!d || !t) return iso;
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const hm = t.slice(0, 5);
+  if (d === today) return hm;
+  return d.startsWith(`${now.getFullYear()}-`) ? `${d.slice(5)} ${hm}` : `${d} ${hm}`;
+}
+
+// Overall run score = mean of the available metric averages (null if none
+// scored). Accepts anything carrying the metric fields (details and summaries).
+function runMean(d: { [K in RagasMetric]?: number | null }): number | null {
   const vs = RAGAS_METRICS.map((m) => d[m]).filter((v): v is number => v != null);
   return vs.length ? vs.reduce((s, v) => s + Number(v), 0) / vs.length : null;
 }
@@ -63,8 +78,9 @@ export default function RagasHomePage() {
   return (
     <div className="flex h-full flex-col">
       <TopBar />
-      <div className="px-6 pt-5">
+      <div className="flex items-center justify-between gap-3 px-6 pt-5">
         <Tabs items={TABS} value={tab} onChange={setTab} />
+        <PromptsNavChip />
       </div>
       <div className="flex-1 overflow-auto px-6 py-6">
         <header className="mb-5">
@@ -753,35 +769,155 @@ function groupRuns(runs: RagasRunSummary[]): RunGroup[] {
   return groups;
 }
 
+// Records-tab type filter: an A/B pair is 'compare', a raw external call is
+// 'direct', everything else is a scored single run.
+type RunTypeFilter = 'all' | 'ragas' | 'compare' | 'direct';
+const RUN_TYPE_FILTERS: { id: RunTypeFilter; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'ragas', label: 'RAGAS' },
+  { id: 'compare', label: 'Compare' },
+  { id: 'direct', label: 'Direct' },
+];
+function groupType(g: RunGroup): Exclude<RunTypeFilter, 'all'> {
+  if (g.kind === 'ab') return 'compare';
+  return g.run.engine === 'direct' ? 'direct' : 'ragas';
+}
+
+type RunSortKey = 'created' | 'avg';
+
+function TypeFilterSeg({ value, onChange }: { value: RunTypeFilter; onChange: (v: RunTypeFilter) => void }) {
+  return (
+    <div className="inline-flex rounded-md border border-line bg-surface p-0.5">
+      {RUN_TYPE_FILTERS.map((o) => (
+        <button
+          key={o.id}
+          type="button"
+          onClick={() => onChange(o.id)}
+          className={cnstr(
+            'rounded px-2.5 py-1 text-[11px] font-medium transition-colors',
+            value === o.id ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink',
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function DownloadIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path d="M8 2.5v7m0 0L5.25 6.75M8 9.5l2.75-2.75M3 12.5h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function TrashIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path d="M2.75 4.25h10.5M6.5 2.5h3M5.5 4.5l.4 8a1 1 0 0 0 1 .95h2.2a1 1 0 0 0 1-.95l.4-8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** Per-row actions: quiet icon-only ghost buttons (inview .btn idiom at table
+ * density). Row expansion lives on the row itself, so only export + delete
+ * remain here; stopPropagation keeps clicks from toggling the row. */
+function RowActionsCell({ csvHref, onDelete }: { csvHref: string; onDelete: () => void }) {
+  const base =
+    'inline-flex h-7 w-7 items-center justify-center rounded-sm text-muted transition-colors ' +
+    'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40';
+  return (
+    <TD className="whitespace-nowrap text-right">
+      <div className="inline-flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+        <a href={csvHref} title="Export CSV" className={cnstr(base, 'hover:bg-surface-3 hover:text-ink')}>
+          <DownloadIcon />
+        </a>
+        <button type="button" title="Delete run" onClick={onDelete} className={cnstr(base, 'hover:bg-bad/10 hover:text-bad')}>
+          <TrashIcon />
+        </button>
+      </div>
+    </TD>
+  );
+}
+
+/** Sortable column header — the arrow slot is always reserved so column widths
+ * don't shift when the active sort moves between columns. */
+function SortTH({
+  k, label, sort, onSort, className, title,
+}: {
+  k: RunSortKey; label: string;
+  sort: { key: RunSortKey; dir: 'asc' | 'desc' };
+  onSort: (k: RunSortKey) => void;
+  className?: string; title?: string;
+}) {
+  const active = sort.key === k;
+  return (
+    <TH className={cnstr('whitespace-nowrap', className)}>
+      <button
+        type="button"
+        onClick={() => onSort(k)}
+        title={title}
+        className={cnstr('inline-flex items-center gap-1 transition-colors hover:text-ink', active && 'text-ink')}
+      >
+        {label}
+        <span className={cnstr('text-[9px] leading-none', !active && 'invisible')}>
+          {active && sort.dir === 'asc' ? '▲' : '▼'}
+        </span>
+      </button>
+    </TH>
+  );
+}
+
 function RecordsPanel() {
   const [ragas, setRagas] = useState<RagasRunSummary[]>([]);
   const [open, setOpen] = useState<number | null>(null);
+  const [filter, setFilter] = useState<RunTypeFilter>('all');
+  const [sort, setSort] = useState<{ key: RunSortKey; dir: 'asc' | 'desc' }>({ key: 'created', dir: 'desc' });
   const reload = useCallback(() => {
     api.get<RagasRunSummary[]>('/ragas-runs').then(setRagas).catch(() => setRagas([]));
   }, []);
   useEffect(reload, [reload]);
   async function del(id: number) { await api.del(`/ragas-runs/${id}`); if (open === id) setOpen(null); reload(); }
   async function delPair(ids: number[]) { await Promise.all(ids.map((i) => api.del(`/ragas-runs/${i}`))); setOpen(null); reload(); }
-  // Columns: Run, Type/Status, Engine, <metrics>, Created, actions.
-  const cols = 5 + RAGAS_METRICS.length;
-  const groups = groupRuns(ragas);
+  const toggleSort = (key: RunSortKey) =>
+    setSort((cur) => (cur.key === key ? { key, dir: cur.dir === 'desc' ? 'asc' : 'desc' } : { key, dir: 'desc' }));
+
+  // The avg sort reads the pair's B side (the Avg cell shows B); the created
+  // sort uses the run id, which is monotonic with creation time.
+  const sortVal = (g: RunGroup): number | null => {
+    if (sort.key === 'created') return g.kind === 'single' ? g.run.ragas_run_id : g.a.ragas_run_id;
+    return runMean(g.kind === 'single' ? g.run : g.b);
+  };
+  const groups = groupRuns(ragas)
+    .filter((g) => filter === 'all' || groupType(g) === filter)
+    .sort((x, y) => {
+      const vx = sortVal(x); const vy = sortVal(y);
+      if (vx == null && vy == null) return 0;
+      if (vx == null) return 1; // unscored rows sink to the bottom either way
+      if (vy == null) return -1;
+      return sort.dir === 'asc' ? vx - vy : vy - vx;
+    });
+  // Columns: Run, Type/Status, Dataset, Engine, Avg, Created, actions.
+  // Per-metric scores live in the expanded Details view, not the list.
+  const cols = 7;
 
   return (
     <Card>
-      <div className="flex items-center justify-between border-b border-line px-4 py-3">
+      <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
         <h2 className="text-sm font-semibold text-ink">Runs <span className="text-muted">({groups.length})</span></h2>
-        <Button variant="secondary" size="sm" onClick={reload}>Refresh</Button>
+        <div className="flex items-center gap-2.5">
+          <TypeFilterSeg value={filter} onChange={setFilter} />
+          <Button variant="secondary" size="sm" onClick={reload}>Refresh</Button>
+        </div>
       </div>
       <Table>
         <THead>
           <TR>
-            <TH>Run</TH><TH>Type / Status</TH><TH>Engine</TH>
-            {RAGAS_METRICS.map((m) => (
-              <TH key={m} className="text-right whitespace-nowrap">
-                <span title={METRIC_DESCRIPTIONS[m]}>{METRIC_LABELS[m]}</span>
-              </TH>
-            ))}
-            <TH>Created</TH><TH />
+            <TH>Run</TH><TH>Type / Status</TH><TH>Dataset</TH><TH>Engine</TH>
+            <SortTH k="avg" label="Avg" sort={sort} onSort={toggleSort} className="text-right" title="Mean of the scored metrics" />
+            <SortTH k="created" label="Created" sort={sort} onSort={toggleSort} />
+            <TH />
           </TR>
         </THead>
         <TBody>
@@ -790,8 +926,22 @@ function RecordsPanel() {
               const r = g.run;
               return (
                 <Fragment key={`r${r.ragas_run_id}`}>
-                  <TR>
-                    <TD className="font-mono text-xs text-muted">#{r.ragas_run_id}</TD>
+                  {/* Direct calls carry no scores — dim the whole row so scored runs dominate the scan. */}
+                  <TR
+                    className={cnstr('cursor-pointer', r.engine === 'direct' && 'opacity-60')}
+                    onClick={() => setOpen(open === r.ragas_run_id ? null : r.ragas_run_id)}
+                  >
+                    <TD>
+                      <div className="flex items-center gap-1.5 whitespace-nowrap text-sm text-ink">
+                        <Chevron open={open === r.ragas_run_id} className="-ml-0.5" />
+                        {r.engine === 'direct'
+                          ? <span className="text-muted">—</span>
+                          : r.node_nm
+                            ? <>{r.node_nm} <span className="text-muted">· v{r.version_no ?? '—'}</span></>
+                            : 'As-is'}
+                      </div>
+                      <div className="pl-[18px] font-mono text-[11px] text-muted">#{r.ragas_run_id}</div>
+                    </TD>
                     <TD>
                       {r.engine === 'direct' ? (
                         <div className="flex items-center gap-1.5">
@@ -802,16 +952,17 @@ function RecordsPanel() {
                         <Badge tone={r.status === 'FAILED' ? 'bad' : r.status === 'DONE' ? 'ok' : 'neutral'}>{r.status}</Badge>
                       )}
                     </TD>
-                    <TD className="text-xs text-muted">{r.engine === 'direct' ? '—' : (r.engine ?? '—')}</TD>
-                    {RAGAS_METRICS.map((m) => (<TD key={m} className="text-right font-mono text-xs tabular-nums">{fmt2(r[m])}</TD>))}
-                    <TD className="whitespace-nowrap text-xs text-muted">{r.created_dt}</TD>
-                    <TD className="whitespace-nowrap text-right">
-                      <button onClick={() => setOpen(open === r.ragas_run_id ? null : r.ragas_run_id)} className="mr-3 text-xs font-medium text-accent hover:underline">
-                        {open === r.ragas_run_id ? 'Collapse' : 'Details'}
-                      </button>
-                      <a href={`${API_BASE}/ragas-runs/${r.ragas_run_id}/export?fmt=csv`} className="mr-3 text-xs font-medium text-muted hover:text-ink">CSV</a>
-                      <button onClick={() => del(r.ragas_run_id)} className="text-xs font-medium text-bad hover:underline">Delete</button>
+                    {/* Direct calls log into the hidden sink dataset — not meaningful, show a dash. */}
+                    <TD className="text-xs text-muted" title={r.engine === 'direct' ? undefined : r.dataset_nm ?? undefined}>
+                      <div className="max-w-[11rem] truncate">{r.engine === 'direct' ? '—' : (r.dataset_nm ?? '—')}</div>
                     </TD>
+                    <TD className="text-xs text-muted">{r.engine === 'direct' ? '—' : (r.engine ?? '—')}</TD>
+                    <TD className="text-right font-mono text-xs font-semibold tabular-nums text-ink">{fmt2(runMean(r))}</TD>
+                    <TD className="whitespace-nowrap text-xs text-muted" title={r.created_dt}>{fmtDt(r.created_dt)}</TD>
+                    <RowActionsCell
+                      csvHref={`${API_BASE}/ragas-runs/${r.ragas_run_id}/export?fmt=csv`}
+                      onDelete={() => del(r.ragas_run_id)}
+                    />
                   </TR>
                   {r.error_msg && <TR><TD colSpan={cols} className="bg-bad/5 text-xs text-bad">⚠ {r.error_msg}</TD></TR>}
                   {open === r.ragas_run_id && (
@@ -825,24 +976,30 @@ function RecordsPanel() {
             const stat = g.a.status === g.b.status ? g.a.status : `${g.a.status}/${g.b.status}`;
             return (
               <Fragment key={`ab${g.groupId}`}>
-                <TR>
-                  <TD className="font-mono text-xs text-muted">#{g.a.ragas_run_id}/#{g.b.ragas_run_id}</TD>
+                <TR className="cursor-pointer" onClick={() => setOpen(open2 ? null : g.groupId)}>
+                  <TD>
+                    <div className="flex items-center gap-1.5 whitespace-nowrap text-sm text-ink">
+                      <Chevron open={open2} className="-ml-0.5" />
+                      {g.a.node_nm ?? '—'}
+                    </div>
+                    <div className="pl-[18px] font-mono text-[11px] text-muted">#{g.a.ragas_run_id}/#{g.b.ragas_run_id}</div>
+                  </TD>
                   <TD>
                     <div className="flex items-center gap-1.5">
                       <Badge tone="accent">Compare v{g.a.version_no ?? '—'}→v{g.b.version_no ?? '—'}</Badge>
                       <span className="text-xs text-muted">{stat}</span>
                     </div>
                   </TD>
-                  <TD className="text-xs text-muted">{g.b.engine ?? '—'}</TD>
-                  {RAGAS_METRICS.map((m) => (<TD key={m} className="text-right font-mono text-xs tabular-nums">{fmt2(g.b[m])}</TD>))}
-                  <TD className="whitespace-nowrap text-xs text-muted">{g.a.created_dt}</TD>
-                  <TD className="whitespace-nowrap text-right">
-                    <button onClick={() => setOpen(open2 ? null : g.groupId)} className="mr-3 text-xs font-medium text-accent hover:underline">
-                      {open2 ? 'Collapse' : 'Compare'}
-                    </button>
-                    <a href={`${API_BASE}/ragas-runs/ab/${g.groupId}/export?fmt=csv`} className="mr-3 text-xs font-medium text-muted hover:text-ink">CSV</a>
-                    <button onClick={() => delPair([g.a.ragas_run_id, g.b.ragas_run_id])} className="text-xs font-medium text-bad hover:underline">Delete</button>
+                  <TD className="text-xs text-muted" title={g.a.dataset_nm ?? undefined}>
+                    <div className="max-w-[11rem] truncate">{g.a.dataset_nm ?? '—'}</div>
                   </TD>
+                  <TD className="text-xs text-muted">{g.b.engine ?? '—'}</TD>
+                  <TD className="text-right font-mono text-xs font-semibold tabular-nums text-ink">{fmt2(runMean(g.b))}</TD>
+                  <TD className="whitespace-nowrap text-xs text-muted" title={g.a.created_dt}>{fmtDt(g.a.created_dt)}</TD>
+                  <RowActionsCell
+                    csvHref={`${API_BASE}/ragas-runs/ab/${g.groupId}/export?fmt=csv`}
+                    onDelete={() => delPair([g.a.ragas_run_id, g.b.ragas_run_id])}
+                  />
                 </TR>
                 {open2 && (
                   <TR><TD colSpan={cols} className="bg-bg/60 p-3"><AbCompareView aId={g.a.ragas_run_id} bId={g.b.ragas_run_id} labelA={g.a.version_no ?? ''} labelB={g.b.version_no ?? ''} /></TD></TR>
@@ -850,7 +1007,11 @@ function RecordsPanel() {
               </Fragment>
             );
           })}
-          {groups.length === 0 && (<TR><TD colSpan={cols} className="py-10 text-center text-sm text-muted">No evaluation runs yet.</TD></TR>)}
+          {groups.length === 0 && (
+            <TR><TD colSpan={cols} className="py-10 text-center text-sm text-muted">
+              {ragas.length === 0 ? 'No evaluation runs yet.' : 'No runs match this filter.'}
+            </TD></TR>
+          )}
         </TBody>
       </Table>
     </Card>

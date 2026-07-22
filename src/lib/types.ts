@@ -253,6 +253,7 @@ export interface RagasRunSummary {
   ab_group_id: number | null;
   node_nm: string | null;
   version_no: string | null;
+  dataset_nm: string | null;
   status: string;
   engine: string | null;
   faithfulness: number | null;

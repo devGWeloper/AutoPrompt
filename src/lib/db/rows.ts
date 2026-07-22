@@ -245,6 +245,7 @@ export function mapRagasRunSummary(r: Row): RagasRunSummary {
     ab_group_id: run.ab_group_id,
     node_nm: run.node_nm,
     version_no: run.version_no,
+    dataset_nm: str(r.DATASET_NM), // only listRuns' SELECT provides this
     status: run.status,
     engine: run.engine,
     faithfulness: run.faithfulness,
