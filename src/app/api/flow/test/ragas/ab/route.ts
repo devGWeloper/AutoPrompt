@@ -14,6 +14,7 @@ export async function POST(req: Request) {
       promptIdA: body.prompt_id_a,
       promptIdB: body.prompt_id_b,
       metrics: body.metrics ?? [],
+      score: body.score,
     });
     return ok(out);
   } catch (e) {

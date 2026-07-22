@@ -13,8 +13,10 @@ export async function POST(req: Request) {
       baseUrl: body.base_url,
       authKey: body.auth_key,
       userId: body.user_id,
+      score: body.score,
+      metrics: body.metrics,
     });
-    return ok({ response: data.response, docs: data.docs, raw: data.raw ?? "" });
+    return ok({ response: data.response, docs: data.docs, raw: data.raw ?? "", scores: data.scores });
   } catch (e) {
     return errorResponse(e);
   }

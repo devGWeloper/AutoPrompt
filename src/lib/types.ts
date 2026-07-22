@@ -4,6 +4,10 @@
 
 export const SYSTEM_USER = "system";
 
+/** Hidden sink dataset that manual (single-message) runs are recorded under.
+ * Rows whose dataset carries this name are "manual" in the records UI. */
+export const DIRECT_SINK_NM = "(직접 호출)";
+
 // ---- RAGAS metrics ----
 
 export const ALL_METRICS = [
@@ -254,6 +258,8 @@ export interface RagasRunSummary {
   node_nm: string | null;
   version_no: string | null;
   dataset_nm: string | null;
+  first_question: string | null;
+  is_manual: boolean;
   status: string;
   engine: string | null;
   faithfulness: number | null;
@@ -272,6 +278,8 @@ export interface FlowRagasRequest {
   metrics?: string[];
   node_nm?: string | null;
   prompt_id?: number | null;
+  /** false = answers only, no RAGAS scoring (stored as METRICS='[]'). */
+  score?: boolean;
 }
 
 export interface FlowRagasAbRequest {
@@ -280,6 +288,7 @@ export interface FlowRagasAbRequest {
   prompt_id_a: number;
   prompt_id_b: number;
   metrics?: string[];
+  score?: boolean;
 }
 
 export interface FlowRagasAbOut {
@@ -292,12 +301,16 @@ export interface DirectTestRequest {
   base_url?: string | null;
   auth_key?: string | null;
   user_id?: string | null;
+  /** true = RAGAS-score the single answer inline (no ground truth → gt metrics stay null). */
+  score?: boolean;
+  metrics?: string[];
 }
 
 export interface DirectTestOut {
   response: string;
   docs: string[];
   raw: Record<string, unknown> | unknown[] | string;
+  scores?: Partial<Record<RagasMetric, number | null>> | null;
 }
 
 // ---- run progress events (SSE; same shape the old WebSocket used) ----

@@ -2,6 +2,7 @@
 // rows as objects with UPPERCASE column keys (see db.ts outFormat); CLOBs come
 // back as strings and timestamps are TO_CHAR'd to ISO strings in the SELECTs.
 
+import { DIRECT_SINK_NM } from "@/lib/types";
 import type {
   ActivePrompt,
   AuditLog,
@@ -245,7 +246,9 @@ export function mapRagasRunSummary(r: Row): RagasRunSummary {
     ab_group_id: run.ab_group_id,
     node_nm: run.node_nm,
     version_no: run.version_no,
-    dataset_nm: str(r.DATASET_NM), // only listRuns' SELECT provides this
+    dataset_nm: str(r.DATASET_NM), // only listRuns' SELECT provides these two
+    first_question: str(r.FIRST_QUESTION),
+    is_manual: str(r.DATASET_NM) === DIRECT_SINK_NM,
     status: run.status,
     engine: run.engine,
     faithfulness: run.faithfulness,

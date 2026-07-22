@@ -188,10 +188,16 @@ export async function resolvePromptLabels(
 
 export async function listRuns(): Promise<RagasRunSummary[]> {
   return readConn(async (conn) => {
-    // Scalar subquery (not a join) so RUN_COLS' bare column names stay unambiguous.
+    // Scalar subqueries (not joins) so RUN_COLS' bare column names stay unambiguous.
+    // FIRST_QUESTION labels direct calls in the list (their run has no node/dataset
+    // identity) and feeds the client-side search; 200 chars is plenty for both.
     const res = await conn.execute(
       `SELECT ${RUN_COLS},
-              (SELECT d.DATASET_NM FROM PM_TEST_DATASET d WHERE d.DATASET_ID = PM_RAGAS_RUN.DATASET_ID) AS DATASET_NM
+              (SELECT d.DATASET_NM FROM PM_TEST_DATASET d WHERE d.DATASET_ID = PM_RAGAS_RUN.DATASET_ID) AS DATASET_NM,
+              (SELECT DBMS_LOB.SUBSTR(x.QUESTION, 200, 1) FROM PM_RAGAS_RESULT x
+                WHERE x.RAGAS_RESULT_ID =
+                      (SELECT MIN(y.RAGAS_RESULT_ID) FROM PM_RAGAS_RESULT y
+                        WHERE y.RAGAS_RUN_ID = PM_RAGAS_RUN.RAGAS_RUN_ID)) AS FIRST_QUESTION
          FROM PM_RAGAS_RUN ORDER BY RAGAS_RUN_ID DESC`,
     );
     const rows = (res.rows ?? []) as Record<string, unknown>[];

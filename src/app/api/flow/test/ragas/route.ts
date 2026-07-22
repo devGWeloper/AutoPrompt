@@ -13,6 +13,7 @@ export async function POST(req: Request) {
       metrics: body.metrics ?? [],
       nodeNm: body.node_nm,
       promptId: body.prompt_id,
+      score: body.score,
     });
     return ok(run);
   } catch (e) {

@@ -2,7 +2,7 @@ import { readConn, withConn } from "@/lib/db";
 import type { OracleConnection, OracleModule } from "@/lib/db";
 import { notFound } from "@/lib/http";
 import { RUN_COLS, insertReturningId, mapRagasRun } from "@/lib/db/rows";
-import { ALL_METRICS, SYSTEM_USER } from "@/lib/types";
+import { ALL_METRICS, DIRECT_SINK_NM, SYSTEM_USER } from "@/lib/types";
 import type {
   FlowCurrent,
   RagasMetric,
@@ -14,6 +14,7 @@ import { resolveRagasEngine } from "@/lib/config";
 import { requireDataset } from "./datasets";
 import * as agent from "./externalAgent";
 import { avg, chosenMetrics, parseCase, scoreCaseAsync, toScore } from "./ragas";
+import type { CaseScore } from "./ragas";
 
 // ---- current flow (node list) ----
 
@@ -83,6 +84,7 @@ export async function createFlowRagasRun(args: {
   metrics: string[];
   nodeNm?: string | null;
   promptId?: number | null;
+  score?: boolean;
 }): Promise<RagasRunOut> {
   await requireDataset(args.datasetId);
   return withConn(async (conn, oracle) => {
@@ -92,7 +94,9 @@ export async function createFlowRagasRun(args: {
         throw notFound(`prompt version ${args.promptId} not found for node ${JSON.stringify(args.nodeNm)}`);
       }
     }
-    const chosen = chosenMetrics(args.metrics);
+    // METRICS='[]' marks a no-scoring run (answers only); chosenMetrics never
+    // returns [] so the marker can't collide with a real selection.
+    const chosen = args.score === false ? [] : chosenMetrics(args.metrics);
     const id = await insertReturningId(
       conn,
       oracle,
@@ -110,6 +114,7 @@ export async function createFlowRagasAbRun(args: {
   promptIdA: number;
   promptIdB: number;
   metrics: string[];
+  score?: boolean;
 }): Promise<{ ragas_run_a_id: number; ragas_run_b_id: number }> {
   await requireDataset(args.datasetId);
   return withConn(async (conn, oracle) => {
@@ -119,7 +124,7 @@ export async function createFlowRagasAbRun(args: {
         throw notFound(`prompt version ${pid} not found for node ${JSON.stringify(args.nodeNm)}`);
       }
     }
-    const chosen = chosenMetrics(args.metrics);
+    const chosen = args.score === false ? [] : chosenMetrics(args.metrics);
     const ids: number[] = [];
     for (const pid of [args.promptIdA, args.promptIdB]) {
       const id = await insertReturningId(
@@ -144,7 +149,6 @@ export async function createFlowRagasAbRun(args: {
 // ---- direct external-API calls (recorded as ENGINE='direct') ----
 
 const DIRECT_ENGINE = "direct";
-const DIRECT_SINK_NM = "(직접 호출)";
 
 async function directSinkDatasetId(conn: OracleConnection, oracle: OracleModule): Promise<number> {
   const res = await conn.execute(
@@ -167,24 +171,74 @@ export async function recordDirectRun(args: {
   baseUrl?: string | null;
   authKey?: string | null;
   userId?: string | null;
-}): Promise<agent.AgentAnswer> {
+  score?: boolean;
+  metrics?: string[];
+}): Promise<agent.AgentAnswer & { scores: CaseScore | null }> {
   const data = await agent.runDirect(args);
+  // Optional inline scoring — a single case with no ground truth, so gt-based
+  // metrics come back null and only the rest carry values.
+  let scores: CaseScore | null = null;
+  let scoreErr: string | null = null;
+  let metrics: RagasMetric[] = [];
+  let engine: "RAGAS" | "FALLBACK" | null = null;
+  if (args.score) {
+    engine = resolveRagasEngine();
+    metrics = chosenMetrics(args.metrics ?? []);
+    try {
+      scores = await scoreCaseAsync({
+        question: args.message,
+        answer: data.response,
+        contexts: data.docs,
+        groundTruth: null,
+        metrics,
+        engine,
+      });
+    } catch (e) {
+      scoreErr = String(e).slice(0, 1000);
+    }
+  }
+  const scored = scores != null;
+  const dec = (m: RagasMetric) => (scored ? toScore(scores![m] ?? null) : null);
   await withConn(async (conn, oracle) => {
     const sinkId = await directSinkDatasetId(conn, oracle);
     const runId = await insertReturningId(
       conn,
       oracle,
-      `INSERT INTO PM_RAGAS_RUN (DATASET_ID, STATUS, ENGINE, CREATED_BY, STARTED_DT, ENDED_DT)
-       VALUES (:did, 'DONE', :eng, :by, SYSTIMESTAMP, SYSTIMESTAMP) RETURNING RAGAS_RUN_ID INTO :out_id`,
-      { did: sinkId, eng: DIRECT_ENGINE, cby: SYSTEM_USER },
+      `INSERT INTO PM_RAGAS_RUN (DATASET_ID, STATUS, ENGINE, METRICS, CREATED_BY, STARTED_DT, ENDED_DT,
+                                 FAITHFULNESS, ANSWER_RELEVANCY, CONTEXT_PRECISION, CONTEXT_RECALL, ANSWER_CORRECTNESS)
+       VALUES (:did, 'DONE', :eng, :met, :cby, SYSTIMESTAMP, SYSTIMESTAMP, :f, :ar, :cp, :cr, :ac)
+       RETURNING RAGAS_RUN_ID INTO :out_id`,
+      {
+        did: sinkId,
+        eng: scored ? engine : DIRECT_ENGINE,
+        met: scored ? JSON.stringify(metrics) : "[]",
+        cby: SYSTEM_USER,
+        f: dec("faithfulness"),
+        ar: dec("answer_relevancy"),
+        cp: dec("context_precision"),
+        cr: dec("context_recall"),
+        ac: dec("answer_correctness"),
+      },
     );
     await conn.execute(
-      `INSERT INTO PM_RAGAS_RESULT (RAGAS_RUN_ID, CASE_ID, QUESTION, ANSWER, CONTEXTS)
-       VALUES (:rid, NULL, :q, :a, :ctx)`,
-      { rid: runId, q: args.message, a: data.response, ctx: JSON.stringify(data.docs) },
+      `INSERT INTO PM_RAGAS_RESULT (RAGAS_RUN_ID, CASE_ID, QUESTION, ANSWER, CONTEXTS, ERROR_MSG,
+                                    FAITHFULNESS, ANSWER_RELEVANCY, CONTEXT_PRECISION, CONTEXT_RECALL, ANSWER_CORRECTNESS)
+       VALUES (:rid, NULL, :q, :a, :ctx, :err, :f, :ar, :cp, :cr, :ac)`,
+      {
+        rid: runId,
+        q: args.message,
+        a: data.response,
+        ctx: JSON.stringify(data.docs),
+        err: scoreErr,
+        f: dec("faithfulness"),
+        ar: dec("answer_relevancy"),
+        cp: dec("context_precision"),
+        cr: dec("context_recall"),
+        ac: dec("answer_correctness"),
+      },
     );
   }, { commit: true });
-  return data;
+  return { ...data, scores };
 }
 
 function messageFromInputs(inputData: string): string {
@@ -282,6 +336,8 @@ async function deactivateNode(conn: OracleConnection, nodeNm: string): Promise<v
 interface RunCtx {
   runId: number;
   engine: "RAGAS" | "FALLBACK";
+  /** false = answers-only run (METRICS='[]'): phase2 is skipped entirely. */
+  score: boolean;
   metrics: RagasMetric[];
   cases: CaseRow[];
   swapNode: string | null;
@@ -306,21 +362,23 @@ async function setupRun(conn: OracleConnection, oracle: OracleModule, runId: num
     }
     return null;
   }
+  // METRICS='[]' = answers-only run: skip scoring later and leave ENGINE empty.
+  let parsedMetrics: string[] | null = null;
+  try {
+    parsedMetrics = run.metrics ? (JSON.parse(run.metrics) as string[]) : null;
+  } catch {
+    parsedMetrics = null;
+  }
+  const score = !(parsedMetrics && parsedMetrics.length === 0);
+  const metrics = score ? chosenMetrics(parsedMetrics ?? [...ALL_METRICS]) : [];
   const engine = resolveRagasEngine();
-  await conn.execute(`UPDATE PM_RAGAS_RUN SET STATUS = 'RUNNING', STARTED_DT = SYSTIMESTAMP, ENGINE = :eng WHERE RAGAS_RUN_ID = :id`, {
-    eng: engine,
-    id: runId,
-  });
+  await conn.execute(
+    `UPDATE PM_RAGAS_RUN SET STATUS = 'RUNNING', STARTED_DT = SYSTIMESTAMP${score ? ", ENGINE = :eng" : ""} WHERE RAGAS_RUN_ID = :id`,
+    score ? { eng: engine, id: runId } : { id: runId },
+  );
   await conn.commit();
   const cases = await loadCases(conn, run.dataset_id);
   emit({ event: "RUNNING", run_id: runId, total: cases.length });
-
-  let metrics: RagasMetric[];
-  try {
-    metrics = chosenMetrics(run.metrics ? (JSON.parse(run.metrics) as string[]) : [...ALL_METRICS]);
-  } catch {
-    metrics = [...ALL_METRICS];
-  }
 
   let swapNode: string | null = null;
   if (run.prompt_id) {
@@ -332,7 +390,7 @@ async function setupRun(conn: OracleConnection, oracle: OracleModule, runId: num
   }
 
   const sums = Object.fromEntries(ALL_METRICS.map((m) => [m, [] as number[]])) as Record<RagasMetric, number[]>;
-  return { runId, engine, metrics, cases, swapNode, pending: [], sums, cancelled: false };
+  return { runId, engine, score, metrics, cases, swapNode, pending: [], sums, cancelled: false };
 }
 
 async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx, emit: Emit, signal?: AbortSignal): Promise<void> {
@@ -466,7 +524,7 @@ async function finalize(conn: OracleConnection, ctx: RunCtx, emit: Emit): Promis
     binds,
   );
   await conn.commit();
-  emit({ event: "DONE", run_id: ctx.runId, engine: ctx.engine, summary });
+  emit({ event: "DONE", run_id: ctx.runId, engine: ctx.score ? ctx.engine : null, summary });
 }
 
 async function recordFailure(conn: OracleConnection, runId: number, msg: string, emit: Emit): Promise<void> {
@@ -495,7 +553,7 @@ export async function executeRun(runId: number, emit: Emit, signal?: AbortSignal
       if (!ctx) return;
       try {
         await phase1(conn, oracle, ctx, emit, signal);
-        if (!ctx.cancelled) await phase2(conn, ctx, emit, signal);
+        if (!ctx.cancelled && ctx.score) await phase2(conn, ctx, emit, signal);
       } finally {
         if (ctx.swapNode) await deactivateNode(conn, ctx.swapNode);
       }
@@ -539,7 +597,7 @@ export async function executeAbRun(aId: number, bId: number, emit: Emit, signal?
       }
       // Phase 2 — scores for A, then B.
       for (const ctx of ctxs) {
-        if (!ctx || ctx.cancelled) continue;
+        if (!ctx || ctx.cancelled || !ctx.score) continue;
         await phase2(conn, ctx, emit, signal);
       }
       for (const ctx of ctxs) {

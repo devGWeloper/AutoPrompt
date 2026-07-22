@@ -66,7 +66,7 @@ function parseCaseInput(raw: string): { question: string; contexts: string[]; gr
 
 type Tab = 'single' | 'compare' | 'datasets' | 'records';
 const TABS: { id: Tab; label: string; desc: string; group?: string }[] = [
-  { id: 'single', label: 'Single run', desc: '데이터셋을 RAGAS 지표로 평가합니다 — 프롬프트 버전을 교체해 평가하거나 As-is(현재 상태 그대로)로 평가할 수 있고, Manual 모드는 채점 없이 메시지 하나를 직접 보냅니다.' },
+  { id: 'single', label: 'Single run', desc: '데이터셋 또는 단일 메시지(Manual)를 실행합니다 — 프롬프트 버전을 교체하거나 As-is(현재 상태 그대로)로 실행할 수 있고, RAGAS 채점은 켜고 끌 수 있습니다.' },
   { id: 'compare', label: 'Compare', desc: '같은 노드의 두 프롬프트 버전을 하나의 데이터셋으로 평가해 지표를 비교합니다.' },
   { id: 'datasets', label: 'Datasets', desc: '평가에 사용할 질문 · 컨텍스트 · 정답(ground truth) 케이스를 관리합니다.', group: 'secondary' },
   { id: 'records', label: 'Records', desc: '지난 평가 실행 기록을 조회하고 CSV로 내보냅니다.', group: 'secondary' },
@@ -120,7 +120,53 @@ function usePromptNodes() {
 
 // ---- direct call (raw external-API smoke test, no scoring) ------------------
 
-type DirectResult = { response: string; docs: string[]; raw: Record<string, unknown> };
+type DirectResult = {
+  response: string;
+  docs: string[];
+  raw: Record<string, unknown>;
+  scores: Partial<Record<RagasMetric, number | null>> | null;
+};
+
+/** Adapt a manual call's inline scores to the RagasResultRow shape ScoreBars renders. */
+function directScoresRow(res: DirectResult): RagasResultRow | null {
+  if (!res.scores) return null;
+  const metricVals = Object.fromEntries(RAGAS_METRICS.map((m) => [m, res.scores?.[m] ?? null]));
+  return {
+    ragas_result_id: 0, ragas_run_id: 0, case_id: null, question: '',
+    answer: res.response, contexts: null, ground_truth: null, error_msg: null,
+    ...metricVals,
+  } as RagasResultRow;
+}
+
+/** 'RAGAS 채점' master switch, shared by every run mode. A real track+knob
+ * switch — unlike a dimmed chip, its on/off affordance is unmistakable. */
+function ScoreToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      onClick={() => onChange(!on)}
+      className="group inline-flex items-center gap-2 whitespace-nowrap text-xs font-semibold"
+    >
+      <span
+        aria-hidden
+        className={cnstr(
+          'relative h-4 w-7 shrink-0 rounded-full transition-colors',
+          on ? 'bg-accent' : 'bg-muted/30 group-hover:bg-muted/45',
+        )}
+      >
+        <span
+          className={cnstr(
+            'absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform',
+            on && 'translate-x-3',
+          )}
+        />
+      </span>
+      <span className={cnstr('transition-colors', on ? 'text-ink' : 'text-muted')}>RAGAS 채점</span>
+    </button>
+  );
+}
 
 /** Optional endpoint overrides shared by both direct modes. Left blank, the
  * server's EXTERNAL_* settings are used. */
@@ -172,6 +218,7 @@ function SingleRunPanel() {
   const [ver, setVer] = useState<number | null>(null);
   const [datasetId, setDatasetId] = useState<number | null>(null);
   const [metrics, setMetrics] = useState<string[]>([...RAGAS_METRICS]);
+  const [scoreOn, setScoreOn] = useState(true);
   const [status, setStatus] = useState('idle');
   const [detail, setDetail] = useState<RagasRunDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -199,8 +246,8 @@ function SingleRunPanel() {
   // Default to the latest version of the selected node (list is newest-first).
   useEffect(() => { setVer(versions[0]?.prompt_id ?? null); }, [versions]);
 
-  const canRun = !!datasetId && metrics.length > 0 && (!nodeNm || ver != null);
-  const canCall = callStatus !== 'running' && !!message.trim();
+  const canRun = !!datasetId && (!scoreOn || metrics.length > 0) && (!nodeNm || ver != null);
+  const canCall = callStatus !== 'running' && !!message.trim() && (!scoreOn || metrics.length > 0);
 
   async function run() {
     if (!canRun) return;
@@ -208,7 +255,7 @@ function SingleRunPanel() {
     setLive([]); setTotal(0); setCancelling(false); runIdRef.current = null;
     try {
       const r = await api.post<{ ragas_run_id: number }>('/flow/test/ragas', {
-        dataset_id: datasetId, metrics,
+        dataset_id: datasetId, metrics: scoreOn ? metrics : [], score: scoreOn,
         node_nm: nodeNm || null, prompt_id: nodeNm ? ver : null,
       });
       runIdRef.current = r.ragas_run_id;
@@ -248,6 +295,8 @@ function SingleRunPanel() {
         base_url: baseUrl.trim() || null,
         auth_key: authKey.trim() || null,
         user_id: userId.trim() || null,
+        score: scoreOn,
+        metrics: scoreOn ? metrics : undefined,
       }));
       setCallStatus('done');
     } catch (e) { setCallError(errText(e)); setCallStatus('failed'); }
@@ -255,6 +304,7 @@ function SingleRunPanel() {
 
   const answered = live.filter((r) => r.answer !== null || r.error_msg).length;
   const scored = live.filter((r) => RAGAS_METRICS.some((m) => r[m] !== null) || r.error_msg).length;
+  const manualScores = callResult ? directScoresRow(callResult) : null;
 
   return (
     <div className="space-y-5">
@@ -289,15 +339,20 @@ function SingleRunPanel() {
               onChange={setSource}
               options={[{ id: 'dataset', label: 'Dataset' }, { id: 'manual', label: 'Manual' }]}
             />
-            <span className="text-xs text-muted">외부 에이전트에 메시지 하나를 그대로 보냅니다 — 채점 없음.</span>
+            <span className="text-xs text-muted">외부 에이전트에 메시지 하나를 그대로 보냅니다.</span>
           </div>
         )}
 
-        {source === 'dataset' && (
-          <div className="mt-3 border-t border-line pt-3">
-            <MetricChecks metrics={metrics} setMetrics={setMetrics} />
-          </div>
-        )}
+        <div className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-2 border-t border-line pt-3">
+          <ScoreToggle on={scoreOn} onChange={setScoreOn} />
+          {scoreOn && (
+            <>
+              <span aria-hidden className="mx-1.5 h-4 w-px shrink-0 bg-line" />
+              <MetricChips metrics={metrics} setMetrics={setMetrics} />
+              {metrics.length === 0 && <span className="ml-1 text-[11px] text-bad">지표를 하나 이상 선택하세요</span>}
+            </>
+          )}
+        </div>
 
         {source === 'manual' && (
           <>
@@ -343,7 +398,7 @@ function SingleRunPanel() {
           {callStatus === 'idle' && !callError && (
             <Card className="flex flex-col items-center justify-center gap-1 px-6 py-16 text-center">
               <div className="text-sm text-ink">메시지를 입력하고 <span className="font-medium">Call</span>을 누르세요.</div>
-              <div className="text-xs text-muted">외부 API 응답을 채점 없이 그대로 보여줍니다.</div>
+              <div className="text-xs text-muted">외부 API 응답을 그대로 보여주며, RAGAS 채점을 켜면 점수도 함께 표시됩니다.</div>
             </Card>
           )}
           {callStatus === 'running' && (
@@ -356,6 +411,7 @@ function SingleRunPanel() {
               </div>
               <div className="p-4">
                 <AnswerBox text={callResult.response} />
+                {manualScores && <div className="mt-4"><ScoreBars row={manualScores} /></div>}
                 {callResult.docs.length > 0 && (
                   <div className="mt-4 border-t border-line pt-3">
                     <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Contexts ({callResult.docs.length})</p>
@@ -396,11 +452,11 @@ function SingleRunPanel() {
           <div className="flex items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
             <h3 className="mr-1 text-sm font-semibold text-ink">Results</h3>
             <Badge tone="neutral" dot>{cancelling ? 'CANCELLING' : 'RUNNING'}</Badge>
-            <span className="ml-auto">Answered {answered}/{total || '…'} · Scored {scored}/{total || '…'}</span>
+            <span className="ml-auto">Answered {answered}/{total || '…'}{scoreOn ? ` · Scored ${scored}/${total || '…'}` : ''}</span>
           </div>
           <div className="p-4">
             {live.length > 0
-              ? <CaseTable detail={{ results: live } as RagasRunDetail} />
+              ? <CaseTable detail={{ results: live } as RagasRunDetail} scored={scoreOn} />
               : <div className="py-8 text-center text-xs text-muted">Generating answers…</div>}
           </div>
         </Card>
@@ -441,6 +497,7 @@ function ComparePanel() {
   const [verB, setVerB] = useState<number | null>(null);
   const [datasetId, setDatasetId] = useState<number | null>(null);
   const [metrics, setMetrics] = useState<string[]>([...RAGAS_METRICS]);
+  const [scoreOn, setScoreOn] = useState(true);
   const [status, setStatus] = useState('idle');
   const [detailA, setDetailA] = useState<RagasRunDetail | null>(null);
   const [detailB, setDetailB] = useState<RagasRunDetail | null>(null);
@@ -463,7 +520,7 @@ function ComparePanel() {
     setVerB(versions[1]?.prompt_id ?? null);
   }, [versions]);
 
-  const canRun = !!(nodeNm && verA && verB && verA !== verB && datasetId) && metrics.length > 0 && status !== 'running';
+  const canRun = !!(nodeNm && verA && verB && verA !== verB && datasetId) && (!scoreOn || metrics.length > 0) && status !== 'running';
   const verLabel = (id: number | null) => versions.find((v) => v.prompt_id === id)?.version_no ?? '';
 
   async function run() {
@@ -472,7 +529,8 @@ function ComparePanel() {
     setLiveA([]); setLiveB([]); setTotal(0); setCancelling(false); runIdsRef.current = [];
     try {
       const r = await api.post<{ ragas_run_a_id: number; ragas_run_b_id: number }>('/flow/test/ragas/ab', {
-        dataset_id: datasetId, node_nm: nodeNm, prompt_id_a: verA, prompt_id_b: verB, metrics,
+        dataset_id: datasetId, node_nm: nodeNm, prompt_id_a: verA, prompt_id_b: verB,
+        metrics: scoreOn ? metrics : [], score: scoreOn,
       });
       runIdsRef.current = [r.ragas_run_a_id, r.ragas_run_b_id];
       const waitDone = (
@@ -540,8 +598,15 @@ function ComparePanel() {
         {verA && verB && verA === verB && (
           <p className="mt-2 text-xs text-bad">Version A and B must be different.</p>
         )}
-        <div className="mt-3 border-t border-line pt-3">
-          <MetricChecks metrics={metrics} setMetrics={setMetrics} />
+        <div className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-2 border-t border-line pt-3">
+          <ScoreToggle on={scoreOn} onChange={setScoreOn} />
+          {scoreOn && (
+            <>
+              <span aria-hidden className="mx-1.5 h-4 w-px shrink-0 bg-line" />
+              <MetricChips metrics={metrics} setMetrics={setMetrics} />
+              {metrics.length === 0 && <span className="ml-1 text-[11px] text-bad">지표를 하나 이상 선택하세요</span>}
+            </>
+          )}
         </div>
       </Card>
 
@@ -572,6 +637,7 @@ function ComparePanel() {
                     detailA={{ results: liveA } as RagasRunDetail}
                     detailB={{ results: liveB } as RagasRunDetail}
                     labelA={verLabel(verA)} labelB={verLabel(verB)}
+                    scored={scoreOn}
                   />
                 </div>
               : <div className="py-8 text-center text-xs text-muted">Generating answers…</div>}
@@ -769,18 +835,16 @@ function groupRuns(runs: RagasRunSummary[]): RunGroup[] {
   return groups;
 }
 
-// Records-tab type filter: an A/B pair is 'compare', a raw external call is
-// 'direct', everything else is a scored single run.
-type RunTypeFilter = 'all' | 'ragas' | 'compare' | 'direct';
+// Records-tab type filter: an A/B pair is 'compare', everything else (dataset
+// or manual, scored or not) is a 'single' run.
+type RunTypeFilter = 'all' | 'single' | 'compare';
 const RUN_TYPE_FILTERS: { id: RunTypeFilter; label: string }[] = [
   { id: 'all', label: '전체' },
-  { id: 'ragas', label: 'RAGAS' },
+  { id: 'single', label: 'Single' },
   { id: 'compare', label: 'Compare' },
-  { id: 'direct', label: '직접 호출' },
 ];
 function groupType(g: RunGroup): Exclude<RunTypeFilter, 'all'> {
-  if (g.kind === 'ab') return 'compare';
-  return g.run.engine === 'direct' ? 'direct' : 'ragas';
+  return g.kind === 'ab' ? 'compare' : 'single';
 }
 
 type RunSortKey = 'created' | 'avg';
@@ -796,33 +860,12 @@ function StatusText({ s }: { s: string }) {
 }
 
 /** Run-type label — plain colored text (badges read too heavy at this density):
- * RAGAS blue, Compare purple (= inview node/model chip colors), direct muted. */
+ * Single blue, Compare purple (= inview node/model chip colors). */
 function TypeText({ t }: { t: Exclude<RunTypeFilter, 'all'> }) {
-  const cls = t === 'ragas' ? 'text-accent' : t === 'compare' ? 'text-[#7c3aed]' : 'text-muted';
   return (
-    <span className={cnstr('text-xs font-semibold', cls)}>
-      {t === 'ragas' ? 'RAGAS' : t === 'compare' ? 'Compare' : '직접 호출'}
+    <span className={cnstr('text-xs font-semibold', t === 'compare' ? 'text-[#7c3aed]' : 'text-accent')}>
+      {t === 'compare' ? 'Compare' : 'Single'}
     </span>
-  );
-}
-
-function TypeFilterSeg({ value, onChange }: { value: RunTypeFilter; onChange: (v: RunTypeFilter) => void }) {
-  return (
-    <div className="inline-flex rounded-md border border-line bg-surface p-0.5">
-      {RUN_TYPE_FILTERS.map((o) => (
-        <button
-          key={o.id}
-          type="button"
-          onClick={() => onChange(o.id)}
-          className={cnstr(
-            'rounded px-2.5 py-1 text-[11px] font-medium transition-colors',
-            value === o.id ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink',
-          )}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
   );
 }
 
@@ -915,8 +958,9 @@ function RecordsPanel() {
   const [open, setOpen] = useState<number | null>(null);
   const [filter, setFilter] = useState<RunTypeFilter>('all');
   const [sort, setSort] = useState<{ key: RunSortKey; dir: 'asc' | 'desc' }>({ key: 'created', dir: 'desc' });
+  const [query, setQuery] = useState('');
   const [page, setPage] = useState(0);
-  useEffect(() => { setPage(0); }, [filter, sort]);
+  useEffect(() => { setPage(0); }, [filter, sort, query]);
   const reload = useCallback(() => {
     api.get<RagasRunSummary[]>('/ragas-runs').then(setRagas).catch(() => setRagas([]));
   }, []);
@@ -932,8 +976,19 @@ function RecordsPanel() {
     if (sort.key === 'created') return g.kind === 'single' ? g.run.ragas_run_id : g.a.ragas_run_id;
     return runMean(g.kind === 'single' ? g.run : g.b);
   };
+  // Free-text search over what identifies a run: node/version, dataset,
+  // (first) question — which is the message for direct calls — and run id.
+  const q = query.trim().toLowerCase();
+  const matches = (g: RunGroup): boolean => {
+    if (!q) return true;
+    const rs = g.kind === 'single' ? [g.run] : [g.a, g.b];
+    return rs.some((r) =>
+      [r.node_nm, r.version_no != null ? `v${r.version_no}` : null, r.dataset_nm, r.first_question, `#${r.ragas_run_id}`]
+        .some((v) => v != null && v.toLowerCase().includes(q)),
+    );
+  };
   const groups = groupRuns(ragas)
-    .filter((g) => filter === 'all' || groupType(g) === filter)
+    .filter((g) => (filter === 'all' || groupType(g) === filter) && matches(g))
     .sort((x, y) => {
       const vx = sortVal(x); const vy = sortVal(y);
       if (vx == null && vy == null) return 0;
@@ -953,7 +1008,13 @@ function RecordsPanel() {
       <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
         <h2 className="text-sm font-semibold text-ink">실행 기록 <span className="text-muted">({groups.length})</span></h2>
         <div className="flex items-center gap-2.5">
-          <TypeFilterSeg value={filter} onChange={setFilter} />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="노드 · 데이터셋 · 질문 검색"
+            className="h-8 w-56 text-xs"
+          />
+          <SegToggle value={filter} onChange={setFilter} options={RUN_TYPE_FILTERS} />
           <Button variant="secondary" size="sm" onClick={reload}>새로고침</Button>
         </div>
       </div>
@@ -975,29 +1036,33 @@ function RecordsPanel() {
               const mean = runMean(r);
               return (
                 <Fragment key={`r${r.ragas_run_id}`}>
-                  {/* Direct calls carry no scores — dim the whole row so scored runs dominate the scan.
-                      An open row keeps the hover surface (= inview .qrow.open) so it reads as one
-                      block with the detail panel below. */}
+                  {/* An open row keeps the hover surface (= inview .qrow.open) so it reads as
+                      one block with the detail panel below. */}
                   <TR
-                    className={cnstr('cursor-pointer', isOpen && 'bg-surface-2', r.engine === 'direct' && 'opacity-60')}
+                    className={cnstr('cursor-pointer', isOpen && 'bg-surface-2')}
                     onClick={() => setOpen(isOpen ? null : r.ragas_run_id)}
                   >
                     <TD className="px-2 text-center text-muted">{isOpen ? '▾' : '▸'}</TD>
                     <TD>
-                      <div className="whitespace-nowrap text-sm text-ink">
-                        {r.engine === 'direct'
-                          ? <span className="text-muted">—</span>
-                          : r.node_nm
+                      {/* Manual runs have no node/version identity — the sent message is the run's name. */}
+                      {r.is_manual ? (
+                        <div className="max-w-[18rem] truncate text-sm text-ink" title={r.first_question ?? undefined}>
+                          {r.first_question ?? '—'}
+                        </div>
+                      ) : (
+                        <div className="whitespace-nowrap text-sm text-ink">
+                          {r.node_nm
                             ? <>{r.node_nm} <span className="text-muted">· v{r.version_no ?? '—'}</span></>
                             : 'As-is'}
-                      </div>
+                        </div>
+                      )}
                       <div className="font-mono text-[11px] text-muted">#{r.ragas_run_id}</div>
                     </TD>
-                    <TD><TypeText t={r.engine === 'direct' ? 'direct' : 'ragas'} /></TD>
+                    <TD><TypeText t="single" /></TD>
                     <TD><StatusText s={r.status} /></TD>
-                    {/* Direct calls log into the hidden sink dataset — not meaningful, show a dash. */}
-                    <TD className="text-xs text-muted" title={r.engine === 'direct' ? undefined : r.dataset_nm ?? undefined}>
-                      <div className="max-w-[11rem] truncate">{r.engine === 'direct' ? '—' : (r.dataset_nm ?? '—')}</div>
+                    {/* Manual runs log into the hidden sink dataset — not meaningful, show a dash. */}
+                    <TD className="text-xs text-muted" title={r.is_manual ? undefined : r.dataset_nm ?? undefined}>
+                      <div className="max-w-[11rem] truncate">{r.is_manual ? '—' : (r.dataset_nm ?? '—')}</div>
                     </TD>
                     <TD className="text-xs text-muted">{r.engine === 'direct' ? '—' : (r.engine ?? '—')}</TD>
                     <AvgCell mean={mean} />
@@ -1048,7 +1113,7 @@ function RecordsPanel() {
           })}
           {groups.length === 0 && (
             <TR><TD colSpan={cols} className="py-10 text-center text-sm text-muted">
-              {ragas.length === 0 ? '아직 평가 실행 기록이 없습니다.' : '필터 조건에 맞는 기록이 없습니다.'}
+              {ragas.length === 0 ? '아직 평가 실행 기록이 없습니다.' : '검색 · 필터 조건에 맞는 기록이 없습니다.'}
             </TD></TR>
           )}
         </TBody>
@@ -1220,17 +1285,22 @@ function CaseCompareTable({
   detailB,
   labelA,
   labelB,
+  scored,
 }: {
   detailA: RagasRunDetail;
   detailB: RagasRunDetail;
   labelA: string;
   labelB: string;
+  scored?: boolean;
 }) {
   const byA = new Map(detailA.results.map((r) => [r.case_id, r] as const));
   const byB = new Map(detailB.results.map((r) => [r.case_id, r] as const));
   const ids = Array.from(new Set([...byA.keys(), ...byB.keys()]));
-  // If either run was cancelled, scoring is incomplete → answers only, no scores.
-  const showScores = detailA.status !== 'CANCELLED' && detailB.status !== 'CANCELLED';
+  // Answers only if either run was cancelled (incomplete scoring) or the pair
+  // ran without scoring (METRICS='[]'); live streaming passes `scored` directly.
+  const showScores =
+    detailA.status !== 'CANCELLED' && detailB.status !== 'CANCELLED' &&
+    (scored ?? (detailA.metrics !== '[]' && detailB.metrics !== '[]'));
   const [closed, setClosed] = useState<Set<string>>(new Set());
   const keys = ids.map((cid) => String(cid));
   const allClosed = keys.length > 0 && keys.every((k) => closed.has(k));
@@ -1411,10 +1481,12 @@ function CollapseAllStrip({ allClosed, onToggle }: { allClosed: boolean; onToggl
 // Answer-centric case view: each case is a collapsible block. The header line is
 // the question (plus its average score when collapsed); the body holds ground
 // truth, answer, and the per-metric score bars.
-function CaseTable({ detail, bordered }: { detail: RagasRunDetail; bordered?: boolean }) {
-  // Cancelled runs (incomplete scoring) and direct calls (never scored) → show
-  // answers only, hide score chips.
-  const showScores = detail.status !== 'CANCELLED' && detail.engine !== 'direct';
+function CaseTable({ detail, bordered, scored }: { detail: RagasRunDetail; bordered?: boolean; scored?: boolean }) {
+  // Answers only (no score chips) for: cancelled runs (incomplete scoring),
+  // legacy direct calls (engine 'direct'), and no-scoring runs (METRICS='[]').
+  // Live streaming passes `scored` explicitly since its detail stub has no metadata.
+  const showScores =
+    detail.status !== 'CANCELLED' && (scored ?? (detail.engine !== 'direct' && detail.metrics !== '[]'));
   const [closed, setClosed] = useState<Set<number>>(new Set());
   const ids = detail.results.map((r) => r.ragas_result_id);
   const allClosed = ids.length > 0 && ids.every((id) => closed.has(id));
@@ -1481,40 +1553,31 @@ function CaseTable({ detail, bordered }: { detail: RagasRunDetail; bordered?: bo
   return bordered ? <div className="overflow-hidden rounded-sm border border-line bg-surface">{list}</div> : list;
 }
 
-// Metric picker, collapsed to a one-line summary by default — most runs use all
-// metrics, so the checkboxes only unfold on demand.
-function MetricChecks({ metrics, setMetrics }: { metrics: string[]; setMetrics: (f: (cur: string[]) => string[]) => void }) {
-  const [open, setOpen] = useState(false);
-  const summary =
-    metrics.length === RAGAS_METRICS.length ? `All (${RAGAS_METRICS.length})`
-    : metrics.length === 0 ? 'None selected'
-    : `${metrics.length} of ${RAGAS_METRICS.length}`;
+/** Metric picker as an always-visible chip row (= inview .exclude-chip):
+ * selected chips are accent-tinted, deselected ones sit quiet. No disclosure
+ * to unfold, so the settings strip keeps a single stable line. */
+function MetricChips({ metrics, setMetrics }: { metrics: string[]; setMetrics: (f: (cur: string[]) => string[]) => void }) {
   return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 text-xs font-medium text-muted transition-colors hover:text-ink"
-      >
-        <Chevron open={open} />
-        Metrics · <span className={metrics.length === 0 ? 'text-bad' : 'text-ink'}>{summary}</span>
-      </button>
-      {open && (
-        <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-2 pl-[22px] text-xs">
-          {RAGAS_METRICS.map((m) => (
-            <label key={m} className="flex cursor-pointer items-center gap-1.5 text-muted" title={METRIC_DESCRIPTIONS[m]}>
-              <input
-                type="checkbox"
-                className="accent-accent"
-                checked={metrics.includes(m)}
-                onChange={(e) => setMetrics((cur) => (e.target.checked ? [...cur, m] : cur.filter((x) => x !== m)))}
-              />
-              {METRIC_LABELS[m]}
-            </label>
-          ))}
-        </div>
-      )}
-    </div>
+    <>
+      {RAGAS_METRICS.map((m) => {
+        const on = metrics.includes(m);
+        return (
+          <button
+            key={m}
+            type="button"
+            title={METRIC_DESCRIPTIONS[m]}
+            aria-pressed={on}
+            onClick={() => setMetrics((cur) => (on ? cur.filter((x) => x !== m) : [...cur, m]))}
+            className={cnstr(
+              'inline-flex items-center whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+              on ? 'border-accent/25 bg-accent-soft/60 text-accent' : 'border-transparent text-muted hover:bg-surface-2',
+            )}
+          >
+            {METRIC_LABELS[m]}
+          </button>
+        );
+      })}
+    </>
   );
 }
 
