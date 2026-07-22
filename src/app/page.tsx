@@ -773,10 +773,10 @@ function groupRuns(runs: RagasRunSummary[]): RunGroup[] {
 // 'direct', everything else is a scored single run.
 type RunTypeFilter = 'all' | 'ragas' | 'compare' | 'direct';
 const RUN_TYPE_FILTERS: { id: RunTypeFilter; label: string }[] = [
-  { id: 'all', label: 'All' },
+  { id: 'all', label: '전체' },
   { id: 'ragas', label: 'RAGAS' },
   { id: 'compare', label: 'Compare' },
-  { id: 'direct', label: 'Direct' },
+  { id: 'direct', label: '직접 호출' },
 ];
 function groupType(g: RunGroup): Exclude<RunTypeFilter, 'all'> {
   if (g.kind === 'ab') return 'compare';
@@ -784,6 +784,27 @@ function groupType(g: RunGroup): Exclude<RunTypeFilter, 'all'> {
 }
 
 type RunSortKey = 'created' | 'avg';
+
+const RUNS_PAGE_SIZE = 20; // rows per Records page — same as inview's question table
+
+/** Status pill = inview .pill: tinted rounded background + dot + text.
+ * FAILED red (wins in mixed pair states like DONE/FAILED), DONE green,
+ * everything else (RUNNING/CANCELLED…) muted. */
+function StatusText({ s }: { s: string }) {
+  const tone = s.includes('FAILED') ? 'bad' : s.includes('DONE') ? 'ok' : 'neutral';
+  return <Badge tone={tone} dot>{s}</Badge>;
+}
+
+/** Run-type label — plain colored text (badges read too heavy at this density):
+ * RAGAS blue, Compare purple (= inview node/model chip colors), direct muted. */
+function TypeText({ t }: { t: Exclude<RunTypeFilter, 'all'> }) {
+  const cls = t === 'ragas' ? 'text-accent' : t === 'compare' ? 'text-[#7c3aed]' : 'text-muted';
+  return (
+    <span className={cnstr('text-xs font-semibold', cls)}>
+      {t === 'ragas' ? 'RAGAS' : t === 'compare' ? 'Compare' : '직접 호출'}
+    </span>
+  );
+}
 
 function TypeFilterSeg({ value, onChange }: { value: RunTypeFilter; onChange: (v: RunTypeFilter) => void }) {
   return (
@@ -830,10 +851,10 @@ function RowActionsCell({ csvHref, onDelete }: { csvHref: string; onDelete: () =
   return (
     <TD className="whitespace-nowrap text-right">
       <div className="inline-flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
-        <a href={csvHref} title="Export CSV" className={cnstr(base, 'hover:bg-surface-3 hover:text-ink')}>
+        <a href={csvHref} title="CSV 내보내기" className={cnstr(base, 'hover:bg-surface-3 hover:text-ink')}>
           <DownloadIcon />
         </a>
-        <button type="button" title="Delete run" onClick={onDelete} className={cnstr(base, 'hover:bg-bad/10 hover:text-bad')}>
+        <button type="button" title="삭제" onClick={onDelete} className={cnstr(base, 'hover:bg-bad/10 hover:text-bad')}>
           <TrashIcon />
         </button>
       </div>
@@ -841,8 +862,8 @@ function RowActionsCell({ csvHref, onDelete }: { csvHref: string; onDelete: () =
   );
 }
 
-/** Sortable column header — the arrow slot is always reserved so column widths
- * don't shift when the active sort moves between columns. */
+/** Sortable column header = inview .qth-sort: sortable columns always show a
+ * faint ↕ affordance; the active sort darkens to ink with a solid ▲/▼. */
 function SortTH({
   k, label, sort, onSort, className, title,
 }: {
@@ -858,14 +879,34 @@ function SortTH({
         type="button"
         onClick={() => onSort(k)}
         title={title}
-        className={cnstr('inline-flex items-center gap-1 transition-colors hover:text-ink', active && 'text-ink')}
+        className={cnstr('inline-flex items-center gap-1 transition-colors', active ? 'text-ink' : 'hover:text-ink')}
       >
         {label}
-        <span className={cnstr('text-[9px] leading-none', !active && 'invisible')}>
-          {active && sort.dir === 'asc' ? '▲' : '▼'}
+        <span className={cnstr('text-[9px] leading-none', !active && 'opacity-50')} aria-hidden>
+          {active ? (sort.dir === 'asc' ? '▲' : '▼') : '↕'}
         </span>
       </button>
     </TH>
+  );
+}
+
+/** Score cell: a small 0..1 track bar beside the value — same visual language
+ * as the detail views' MetricBar, without overlapping the number. */
+function AvgCell({ mean }: { mean: number | null }) {
+  return (
+    <TD className="font-mono text-xs font-semibold tabular-nums text-ink">
+      <div className="flex items-center gap-2">
+        {mean != null && (
+          <span aria-hidden className="relative h-1.5 w-10 overflow-hidden rounded-full bg-bg">
+            <span
+              className="absolute inset-y-0 left-0 rounded-full bg-accent"
+              style={{ width: `${Math.max(0, Math.min(1, mean)) * 100}%` }}
+            />
+          </span>
+        )}
+        <span>{fmt2(mean)}</span>
+      </div>
+    </TD>
   );
 }
 
@@ -874,6 +915,8 @@ function RecordsPanel() {
   const [open, setOpen] = useState<number | null>(null);
   const [filter, setFilter] = useState<RunTypeFilter>('all');
   const [sort, setSort] = useState<{ key: RunSortKey; dir: 'asc' | 'desc' }>({ key: 'created', dir: 'desc' });
+  const [page, setPage] = useState(0);
+  useEffect(() => { setPage(0); }, [filter, sort]);
   const reload = useCallback(() => {
     api.get<RagasRunSummary[]>('/ragas-runs').then(setRagas).catch(() => setRagas([]));
   }, []);
@@ -898,66 +941,66 @@ function RecordsPanel() {
       if (vy == null) return -1;
       return sort.dir === 'asc' ? vx - vy : vy - vx;
     });
-  // Columns: Run, Type/Status, Dataset, Engine, Avg, Created, actions.
+  const pageCount = Math.max(1, Math.ceil(groups.length / RUNS_PAGE_SIZE));
+  const curPage = Math.min(page, pageCount - 1); // clamp after deletes shrink the list
+  const paged = groups.slice(curPage * RUNS_PAGE_SIZE, curPage * RUNS_PAGE_SIZE + RUNS_PAGE_SIZE);
+  // Columns: expand, Run, Type, Status, Dataset, Engine, Avg, Created, actions.
   // Per-metric scores live in the expanded Details view, not the list.
-  const cols = 7;
+  const cols = 9;
 
   return (
     <Card>
       <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
-        <h2 className="text-sm font-semibold text-ink">Runs <span className="text-muted">({groups.length})</span></h2>
+        <h2 className="text-sm font-semibold text-ink">실행 기록 <span className="text-muted">({groups.length})</span></h2>
         <div className="flex items-center gap-2.5">
           <TypeFilterSeg value={filter} onChange={setFilter} />
-          <Button variant="secondary" size="sm" onClick={reload}>Refresh</Button>
+          <Button variant="secondary" size="sm" onClick={reload}>새로고침</Button>
         </div>
       </div>
       <Table>
         <THead>
           <TR>
-            <TH>Run</TH><TH>Type / Status</TH><TH>Dataset</TH><TH>Engine</TH>
-            <SortTH k="avg" label="Avg" sort={sort} onSort={toggleSort} className="text-right" title="Mean of the scored metrics" />
-            <SortTH k="created" label="Created" sort={sort} onSort={toggleSort} />
+            <TH className="w-7 px-2" />
+            <TH>실행</TH><TH>유형</TH><TH>상태</TH><TH>데이터셋</TH><TH>엔진</TH>
+            <SortTH k="avg" label="평균" sort={sort} onSort={toggleSort} title="채점된 지표들의 평균" />
+            <SortTH k="created" label="생성일시" sort={sort} onSort={toggleSort} />
             <TH />
           </TR>
         </THead>
         <TBody>
-          {groups.map((g) => {
+          {paged.map((g) => {
             if (g.kind === 'single') {
               const r = g.run;
+              const isOpen = open === r.ragas_run_id;
+              const mean = runMean(r);
               return (
                 <Fragment key={`r${r.ragas_run_id}`}>
-                  {/* Direct calls carry no scores — dim the whole row so scored runs dominate the scan. */}
+                  {/* Direct calls carry no scores — dim the whole row so scored runs dominate the scan.
+                      An open row keeps the hover surface (= inview .qrow.open) so it reads as one
+                      block with the detail panel below. */}
                   <TR
-                    className={cnstr('cursor-pointer', r.engine === 'direct' && 'opacity-60')}
-                    onClick={() => setOpen(open === r.ragas_run_id ? null : r.ragas_run_id)}
+                    className={cnstr('cursor-pointer', isOpen && 'bg-surface-2', r.engine === 'direct' && 'opacity-60')}
+                    onClick={() => setOpen(isOpen ? null : r.ragas_run_id)}
                   >
+                    <TD className="px-2 text-center text-muted">{isOpen ? '▾' : '▸'}</TD>
                     <TD>
-                      <div className="flex items-center gap-1.5 whitespace-nowrap text-sm text-ink">
-                        <Chevron open={open === r.ragas_run_id} className="-ml-0.5" />
+                      <div className="whitespace-nowrap text-sm text-ink">
                         {r.engine === 'direct'
                           ? <span className="text-muted">—</span>
                           : r.node_nm
                             ? <>{r.node_nm} <span className="text-muted">· v{r.version_no ?? '—'}</span></>
                             : 'As-is'}
                       </div>
-                      <div className="pl-[18px] font-mono text-[11px] text-muted">#{r.ragas_run_id}</div>
+                      <div className="font-mono text-[11px] text-muted">#{r.ragas_run_id}</div>
                     </TD>
-                    <TD>
-                      {r.engine === 'direct' ? (
-                        <div className="flex items-center gap-1.5">
-                          <Badge tone="neutral">Direct call</Badge>
-                          <span className="text-xs text-muted">{r.status}</span>
-                        </div>
-                      ) : (
-                        <Badge tone={r.status === 'FAILED' ? 'bad' : r.status === 'DONE' ? 'ok' : 'neutral'}>{r.status}</Badge>
-                      )}
-                    </TD>
+                    <TD><TypeText t={r.engine === 'direct' ? 'direct' : 'ragas'} /></TD>
+                    <TD><StatusText s={r.status} /></TD>
                     {/* Direct calls log into the hidden sink dataset — not meaningful, show a dash. */}
                     <TD className="text-xs text-muted" title={r.engine === 'direct' ? undefined : r.dataset_nm ?? undefined}>
                       <div className="max-w-[11rem] truncate">{r.engine === 'direct' ? '—' : (r.dataset_nm ?? '—')}</div>
                     </TD>
                     <TD className="text-xs text-muted">{r.engine === 'direct' ? '—' : (r.engine ?? '—')}</TD>
-                    <TD className="text-right font-mono text-xs font-semibold tabular-nums text-ink">{fmt2(runMean(r))}</TD>
+                    <AvgCell mean={mean} />
                     <TD className="whitespace-nowrap text-xs text-muted" title={r.created_dt}>{fmtDt(r.created_dt)}</TD>
                     <RowActionsCell
                       csvHref={`${API_BASE}/ragas-runs/${r.ragas_run_id}/export?fmt=csv`}
@@ -965,8 +1008,8 @@ function RecordsPanel() {
                     />
                   </TR>
                   {r.error_msg && <TR><TD colSpan={cols} className="bg-bad/5 text-xs text-bad">⚠ {r.error_msg}</TD></TR>}
-                  {open === r.ragas_run_id && (
-                    <TR><TD colSpan={cols} className="bg-bg/60 p-3"><RagasRunDetailView ragasId={r.ragas_run_id} /></TD></TR>
+                  {isOpen && (
+                    <TR><TD colSpan={cols} className="bg-surface-2 p-3"><RagasRunDetailView ragasId={r.ragas_run_id} /></TD></TR>
                   )}
                 </Fragment>
               );
@@ -976,25 +1019,21 @@ function RecordsPanel() {
             const stat = g.a.status === g.b.status ? g.a.status : `${g.a.status}/${g.b.status}`;
             return (
               <Fragment key={`ab${g.groupId}`}>
-                <TR className="cursor-pointer" onClick={() => setOpen(open2 ? null : g.groupId)}>
+                <TR className={cnstr('cursor-pointer', open2 && 'bg-surface-2')} onClick={() => setOpen(open2 ? null : g.groupId)}>
+                  <TD className="px-2 text-center text-muted">{open2 ? '▾' : '▸'}</TD>
                   <TD>
-                    <div className="flex items-center gap-1.5 whitespace-nowrap text-sm text-ink">
-                      <Chevron open={open2} className="-ml-0.5" />
-                      {g.a.node_nm ?? '—'}
+                    <div className="whitespace-nowrap text-sm text-ink">
+                      {g.a.node_nm ?? '—'} <span className="text-muted">· v{g.a.version_no ?? '—'}→v{g.b.version_no ?? '—'}</span>
                     </div>
-                    <div className="pl-[18px] font-mono text-[11px] text-muted">#{g.a.ragas_run_id}/#{g.b.ragas_run_id}</div>
+                    <div className="font-mono text-[11px] text-muted">#{g.a.ragas_run_id}/#{g.b.ragas_run_id}</div>
                   </TD>
-                  <TD>
-                    <div className="flex items-center gap-1.5">
-                      <Badge tone="accent">Compare v{g.a.version_no ?? '—'}→v{g.b.version_no ?? '—'}</Badge>
-                      <span className="text-xs text-muted">{stat}</span>
-                    </div>
-                  </TD>
+                  <TD><TypeText t="compare" /></TD>
+                  <TD><StatusText s={stat} /></TD>
                   <TD className="text-xs text-muted" title={g.a.dataset_nm ?? undefined}>
                     <div className="max-w-[11rem] truncate">{g.a.dataset_nm ?? '—'}</div>
                   </TD>
                   <TD className="text-xs text-muted">{g.b.engine ?? '—'}</TD>
-                  <TD className="text-right font-mono text-xs font-semibold tabular-nums text-ink">{fmt2(runMean(g.b))}</TD>
+                  <AvgCell mean={runMean(g.b)} />
                   <TD className="whitespace-nowrap text-xs text-muted" title={g.a.created_dt}>{fmtDt(g.a.created_dt)}</TD>
                   <RowActionsCell
                     csvHref={`${API_BASE}/ragas-runs/ab/${g.groupId}/export?fmt=csv`}
@@ -1002,19 +1041,59 @@ function RecordsPanel() {
                   />
                 </TR>
                 {open2 && (
-                  <TR><TD colSpan={cols} className="bg-bg/60 p-3"><AbCompareView aId={g.a.ragas_run_id} bId={g.b.ragas_run_id} labelA={g.a.version_no ?? ''} labelB={g.b.version_no ?? ''} /></TD></TR>
+                  <TR><TD colSpan={cols} className="bg-surface-2 p-3"><AbCompareView aId={g.a.ragas_run_id} bId={g.b.ragas_run_id} labelA={g.a.version_no ?? ''} labelB={g.b.version_no ?? ''} /></TD></TR>
                 )}
               </Fragment>
             );
           })}
           {groups.length === 0 && (
             <TR><TD colSpan={cols} className="py-10 text-center text-sm text-muted">
-              {ragas.length === 0 ? 'No evaluation runs yet.' : 'No runs match this filter.'}
+              {ragas.length === 0 ? '아직 평가 실행 기록이 없습니다.' : '필터 조건에 맞는 기록이 없습니다.'}
             </TD></TR>
           )}
         </TBody>
       </Table>
+      {groups.length > RUNS_PAGE_SIZE && (
+        <RunsPager
+          curPage={curPage}
+          pageCount={pageCount}
+          total={groups.length}
+          onPage={setPage}
+        />
+      )}
     </Card>
+  );
+}
+
+/** Centered prev/next pager under the runs table = inview .qpager. */
+function RunsPager({
+  curPage, pageCount, total, onPage,
+}: {
+  curPage: number; pageCount: number; total: number; onPage: (f: (p: number) => number) => void;
+}) {
+  const btn =
+    'rounded-md border border-line bg-surface px-3 py-1.5 text-xs font-semibold text-muted transition-colors ' +
+    'hover:border-line-strong hover:bg-surface-2 disabled:pointer-events-none disabled:opacity-40';
+  const from = curPage * RUNS_PAGE_SIZE + 1;
+  const to = Math.min(total, from + RUNS_PAGE_SIZE - 1);
+  return (
+    <div className="flex items-center justify-center gap-3.5 border-t border-line px-4 py-3">
+      <button type="button" disabled={curPage === 0} onClick={() => onPage((p) => Math.max(0, p - 1))} className={btn}>
+        ‹ 이전
+      </button>
+      <span className="font-mono text-xs font-semibold tabular-nums text-muted">
+        {curPage + 1} / {pageCount}
+        <span className="font-normal text-muted/60"> · {from}–{to} / {total}</span>
+      </span>
+      <button
+        type="button"
+        disabled={curPage >= pageCount - 1}
+        onClick={() => onPage((p) => Math.min(pageCount - 1, p + 1))}
+        className={btn}
+      >
+        다음 ›
+      </button>
+    </div>
   );
 }
 
@@ -1025,7 +1104,7 @@ function AbCompareView({ aId, bId, labelA, labelB }: { aId: number; bId: number;
     api.get<RagasRunDetail>(`/ragas-runs/${aId}`).then(setA).catch(() => setA(null));
     api.get<RagasRunDetail>(`/ragas-runs/${bId}`).then(setB).catch(() => setB(null));
   }, [aId, bId]);
-  if (!a || !b) return <div className="text-xs text-muted">Loading…</div>;
+  if (!a || !b) return <div className="text-xs text-muted">불러오는 중…</div>;
   return (
     <div className="space-y-3">
       <div className="overflow-hidden rounded-sm border border-line bg-surface">
@@ -1041,7 +1120,7 @@ function AbCompareView({ aId, bId, labelA, labelB }: { aId: number; bId: number;
 function RagasRunDetailView({ ragasId }: { ragasId: number }) {
   const [detail, setDetail] = useState<RagasRunDetail | null>(null);
   useEffect(() => { api.get<RagasRunDetail>(`/ragas-runs/${ragasId}`).then(setDetail).catch(() => setDetail(null)); }, [ragasId]);
-  if (!detail) return <div className="text-xs text-muted">Loading…</div>;
+  if (!detail) return <div className="text-xs text-muted">불러오는 중…</div>;
   return <CaseTable detail={detail} bordered />;
 }
 
@@ -1158,7 +1237,7 @@ function CaseCompareTable({
   const toggle = (k: string) =>
     setClosed((cur) => { const n = new Set(cur); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   if (ids.length === 0) {
-    return <div className="py-8 text-center text-xs text-muted">No result rows</div>;
+    return <div className="py-8 text-center text-xs text-muted">결과가 없습니다</div>;
   }
   return (
     <div className="divide-y divide-line">
@@ -1192,7 +1271,7 @@ function CaseCompareTable({
                       {' · '}
                       <span className={cnstr(aMean != null && bMean != null && bMean > aMean && 'font-semibold text-ink')}>B {fmt3(bMean)}</span>
                     </span>
-                  : <span className="shrink-0 text-[11px] text-muted">Scoring…</span>
+                  : <span className="shrink-0 text-[11px] text-muted">채점 중…</span>
               )}
             </button>
             {!isClosed && (
@@ -1229,7 +1308,7 @@ function CaseScoreBars({ a, b }: { a?: RagasResultRow; b?: RagasResultRow }) {
   if (!scored) {
     return (
       <div className="mt-3 overflow-hidden rounded-sm border border-line bg-surface">
-        <div className="py-3 text-center text-[11px] text-muted">Scoring…</div>
+        <div className="py-3 text-center text-[11px] text-muted">채점 중…</div>
       </div>
     );
   }
@@ -1241,7 +1320,7 @@ function CaseScoreBars({ a, b }: { a?: RagasResultRow; b?: RagasResultRow }) {
         className="flex w-full items-center gap-1.5 bg-surface-2/60 px-3 py-2 text-left transition-colors hover:bg-surface-2"
       >
         <Chevron open={open} />
-        <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Scores</span>
+        <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">점수</span>
         <span className="ml-auto font-mono text-xs tabular-nums text-muted">
           <span className={cnstr(aMean != null && bMean != null && aMean > bMean && 'font-semibold text-ink')}>A {fmt3(aMean)}</span>
           {' · '}
@@ -1262,7 +1341,7 @@ function ScoreBars({ row }: { row: RagasResultRow }) {
   if (!scored) {
     return row.answer == null && row.error_msg
       ? <span className="text-[11px] text-bad">{row.error_msg}</span>
-      : <span className="text-[11px] text-muted">Scoring…</span>;
+      : <span className="text-[11px] text-muted">채점 중…</span>;
   }
   const mean = caseMean(row);
   return (
@@ -1273,8 +1352,8 @@ function ScoreBars({ row }: { row: RagasResultRow }) {
         className="flex w-full items-center gap-1.5 bg-surface-2/60 px-3 py-2 text-left transition-colors hover:bg-surface-2"
       >
         <Chevron open={open} />
-        <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Scores</span>
-        <span className="ml-auto font-mono text-xs tabular-nums text-muted">Avg <span className="font-semibold text-ink">{fmt3(mean)}</span></span>
+        <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">점수</span>
+        <span className="ml-auto font-mono text-xs tabular-nums text-muted">평균 <span className="font-semibold text-ink">{fmt3(mean)}</span></span>
       </button>
       {open && (
         <ul className="flex flex-col gap-2 border-t border-line px-3 py-2.5">
@@ -1323,7 +1402,7 @@ function CollapseAllStrip({ allClosed, onToggle }: { allClosed: boolean; onToggl
   return (
     <div className="flex justify-end bg-surface-2/60 px-4 py-1.5">
       <button type="button" onClick={onToggle} className="text-[11px] font-medium text-muted hover:text-ink">
-        {allClosed ? 'Expand all' : 'Collapse all'}
+        {allClosed ? '모두 펼치기' : '모두 접기'}
       </button>
     </div>
   );
@@ -1362,10 +1441,10 @@ function CaseTable({ detail, bordered }: { detail: RagasRunDetail; bordered?: bo
               </span>
               {isClosed && showScores && (
                 mean != null
-                  ? <span className="shrink-0 font-mono text-xs tabular-nums text-muted">Avg <span className="font-semibold text-ink">{fmt3(mean)}</span></span>
+                  ? <span className="shrink-0 font-mono text-xs tabular-nums text-muted">평균 <span className="font-semibold text-ink">{fmt3(mean)}</span></span>
                   : r.answer == null && r.error_msg
-                    ? <span className="shrink-0 text-[11px] text-bad">error</span>
-                    : <span className="shrink-0 text-[11px] text-muted">Scoring…</span>
+                    ? <span className="shrink-0 text-[11px] text-bad">오류</span>
+                    : <span className="shrink-0 text-[11px] text-muted">채점 중…</span>
               )}
             </button>
             {!isClosed && (
@@ -1377,7 +1456,7 @@ function CaseTable({ detail, bordered }: { detail: RagasRunDetail; bordered?: bo
                   </div>
                 )}
                 <div className="min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Answer</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">답변</p>
                   <div className="mt-0.5"><AnswerBox text={r.answer} error={r.error_msg} /></div>
                   {showScores && <div className="mt-3"><ScoreBars row={r} /></div>}
                 </div>
@@ -1387,7 +1466,7 @@ function CaseTable({ detail, bordered }: { detail: RagasRunDetail; bordered?: bo
         );
       })}
       {detail.results.length === 0 && (
-        <div className="py-8 text-center text-xs text-muted">No result rows</div>
+        <div className="py-8 text-center text-xs text-muted">결과가 없습니다</div>
       )}
     </div>
   );
