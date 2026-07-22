@@ -6,7 +6,7 @@ import TopBar from '@/components/ui/TopBar';
 import Modal from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Input, Textarea } from '@/components/ui/field';
+import { Input, Textarea } from '@/components/ui/Field';
 import { Tabs } from '@/components/ui/Tabs';
 import { api, ApiError } from '@/lib/api';
 import type { AuditLog, PromptVersionDetail, PromptVersionSummary } from '@/lib/types';

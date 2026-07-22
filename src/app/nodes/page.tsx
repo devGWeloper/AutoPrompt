@@ -6,7 +6,7 @@ import TopBar from '@/components/ui/TopBar';
 import Modal from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Input, Textarea } from '@/components/ui/field';
+import { Input, Textarea } from '@/components/ui/Field';
 import { api, ApiError } from '@/lib/api';
 import type { FlowCurrent, FlowNode, PromptVersionDetail } from '@/lib/types';
 

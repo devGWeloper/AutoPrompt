@@ -30,12 +30,8 @@ function connect(path: string, handlers: RunWsHandlers): EventSource {
 }
 
 /** Stream a single RAGAS run (`/api/ragas-runs/{id}/stream`). Returns an
- * EventSource; call `.close()` on a terminal event (same as the old WebSocket). */
+ * EventSource; call `.close()` on a terminal event (same as the old WebSocket).
+ * A/B comparisons open two of these (one per run) — there is no pair stream. */
 export function connectRagasRunWs(ragasRunId: number, handlers: RunWsHandlers): EventSource {
   return connect(`/api/ragas-runs/${ragasRunId}/stream`, handlers);
-}
-
-/** Stream an A/B pair by group id (`/api/ragas-runs/ab/{groupId}/stream`). */
-export function connectRagasAbWs(abGroupId: number, handlers: RunWsHandlers): EventSource {
-  return connect(`/api/ragas-runs/ab/${abGroupId}/stream`, handlers);
 }
