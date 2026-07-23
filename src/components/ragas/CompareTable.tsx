@@ -67,8 +67,7 @@ export function CompareVerdict({ detailA, detailB }: { detailA: RagasRunDetail; 
 }
 
 // The shared leaderboard body: one row per metric with paired A/B bars on a
-// 0..1 scale and Δ (B−A) on the right. Used by both the averages table and each
-// A/B case so the whole compare view speaks one visual language.
+// 0..1 scale and Δ (B−A) on the right as a high-contrast diff badge.
 function PairedMetricList({ rows }: { rows: MetricRow[] }) {
   return (
     <ul className="divide-y divide-line">
@@ -79,7 +78,18 @@ function PairedMetricList({ rows }: { rows: MetricRow[] }) {
             <MetricBar side="A" value={av} win={d != null && d < 0} />
             <MetricBar side="B" value={bv} win={d != null && d > 0} />
           </div>
-          <span className={'w-14 shrink-0 text-right font-mono text-xs tabular-nums ' + (d == null ? 'text-muted' : d > 0 ? 'text-ok' : d < 0 ? 'text-bad' : 'text-muted')}>
+          <span
+            className={cn(
+              'inline-flex min-w-[60px] items-center justify-center rounded-md px-2 py-0.5 font-mono text-xs font-semibold tabular-nums border',
+              d == null
+                ? 'border-transparent text-muted'
+                : d > 0
+                ? 'border-[#bbf7d0] bg-[#f0fdf4] text-[#15803d]'
+                : d < 0
+                ? 'border-[#fecdd3] bg-[#fff1f2] text-[#be123c]'
+                : 'border-[#e2e8f0] bg-[#f8fafc] text-muted'
+            )}
+          >
             {d == null ? '—' : (d > 0 ? '+' : '') + d.toFixed(3)}
           </span>
         </li>
@@ -89,13 +99,15 @@ function PairedMetricList({ rows }: { rows: MetricRow[] }) {
 }
 
 // Per-case A/B score box — its own collapsible section (collapsed by default):
-// the header always shows both means (winner bold); bars unfold on demand.
+// the header always shows both means (winner bold) + delta badge; bars unfold on demand.
 function CaseScoreBars({ a, b }: { a?: RagasResultRow; b?: RagasResultRow }) {
   const [open, setOpen] = useState(false);
   const rows = buildMetricRows(a, b);
   const scored = rows.some((r) => r.av != null || r.bv != null);
   const aMean = caseMean(a);
   const bMean = caseMean(b);
+  const delta = aMean != null && bMean != null ? bMean - aMean : null;
+
   if (!scored) {
     return (
       <div className="mt-3 overflow-hidden rounded-sm border border-line bg-surface">
@@ -112,11 +124,27 @@ function CaseScoreBars({ a, b }: { a?: RagasResultRow; b?: RagasResultRow }) {
       >
         <Chevron open={open} />
         <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">점수</span>
-        <span className="ml-auto font-mono text-xs tabular-nums text-muted">
-          <span className={cn(aMean != null && bMean != null && aMean > bMean && 'font-semibold text-ink')}>A {fmt3(aMean)}</span>
-          {' · '}
-          <span className={cn(aMean != null && bMean != null && bMean > aMean && 'font-semibold text-ink')}>B {fmt3(bMean)}</span>
-        </span>
+        <div className="ml-auto flex items-center gap-2 font-mono text-xs tabular-nums text-muted">
+          <span>
+            <span className={cn(aMean != null && bMean != null && aMean > bMean && 'font-semibold text-ink')}>A {fmt3(aMean)}</span>
+            {' · '}
+            <span className={cn(aMean != null && bMean != null && bMean > aMean && 'font-semibold text-ink')}>B {fmt3(bMean)}</span>
+          </span>
+          {delta != null && (
+            <span
+              className={cn(
+                'inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-semibold border',
+                delta > 0
+                  ? 'border-[#bbf7d0] bg-[#f0fdf4] text-[#15803d]'
+                  : delta < 0
+                  ? 'border-[#fecdd3] bg-[#fff1f2] text-[#be123c]'
+                  : 'border-[#e2e8f0] bg-[#f8fafc] text-muted'
+              )}
+            >
+              {(delta > 0 ? '+' : '') + delta.toFixed(3)}
+            </span>
+          )}
+        </div>
       </button>
       {open && <div className="border-t border-line"><PairedMetricList rows={rows} /></div>}
     </div>
@@ -170,6 +198,8 @@ export function CaseCompareTable({
         const gt = a?.ground_truth ?? b?.ground_truth ?? null;
         const aMean = caseMean(a);
         const bMean = caseMean(b);
+        const delta = aMean != null && bMean != null ? bMean - aMean : null;
+
         return (
           <div key={key}>
             <button
@@ -189,11 +219,27 @@ export function CaseCompareTable({
               )}
               {isClosed && showScores && (
                 aMean != null || bMean != null
-                  ? <span className="shrink-0 font-mono text-xs tabular-nums text-muted">
-                      <span className={cn(aMean != null && bMean != null && aMean > bMean && 'font-semibold text-ink')}>A {fmt3(aMean)}</span>
-                      {' · '}
-                      <span className={cn(aMean != null && bMean != null && bMean > aMean && 'font-semibold text-ink')}>B {fmt3(bMean)}</span>
-                    </span>
+                  ? <div className="flex items-center gap-1.5 shrink-0 font-mono text-xs tabular-nums text-muted">
+                      <span>
+                        <span className={cn(aMean != null && bMean != null && aMean > bMean && 'font-semibold text-ink')}>A {fmt3(aMean)}</span>
+                        {' · '}
+                        <span className={cn(aMean != null && bMean != null && bMean > aMean && 'font-semibold text-ink')}>B {fmt3(bMean)}</span>
+                      </span>
+                      {delta != null && (
+                        <span
+                          className={cn(
+                            'inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-semibold border',
+                            delta > 0
+                              ? 'border-[#bbf7d0] bg-[#f0fdf4] text-[#15803d]'
+                              : delta < 0
+                              ? 'border-[#fecdd3] bg-[#fff1f2] text-[#be123c]'
+                              : 'border-[#e2e8f0] bg-[#f8fafc] text-muted'
+                          )}
+                        >
+                          {(delta > 0 ? '+' : '') + delta.toFixed(3)}
+                        </span>
+                      )}
+                    </div>
                   : <span className="shrink-0 text-[11px] text-muted">채점 중…</span>
               )}
             </button>

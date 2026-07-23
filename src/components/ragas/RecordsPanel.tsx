@@ -10,6 +10,7 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import type { RagasRunDetail, RagasRunSummary } from '@/lib/types';
 import { CaseCompareTable } from './CompareTable';
+import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import { CaseTable, fmt2, fmt3, fmtDt, runMean, SegToggle } from './shared';
 
 const API_BASE = '/api';
@@ -133,22 +134,40 @@ function SortTH({
   );
 }
 
-/** Score cell: a small 0..1 track bar beside the value — same visual language
- * as the detail views' MetricBar, without overlapping the number. */
-function AvgCell({ mean }: { mean: number | null }) {
-  return (
-    <TD className="font-mono text-xs font-semibold tabular-nums text-ink">
-      <div className="flex items-center gap-2">
-        {mean != null && (
-          <span aria-hidden className="relative h-1.5 w-10 overflow-hidden rounded-full bg-bg">
+/** Score cell: Single run shows 1 mean score; Compare run displays BOTH Version A and Version B mean scores + delta badge. */
+function AvgCell({ mean, meanA, meanB }: { mean?: number | null; meanA?: number | null; meanB?: number | null }) {
+  if (meanA !== undefined || meanB !== undefined) {
+    const delta = meanA != null && meanB != null ? meanB - meanA : null;
+    return (
+      <TD className="font-mono text-xs tabular-nums text-ink whitespace-nowrap">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className="text-muted font-normal">A <span className="font-semibold text-ink">{fmt2(meanA)}</span></span>
+            <span className="text-muted/60">·</span>
+            <span className="text-muted font-normal">B <span className="font-semibold text-ink">{fmt2(meanB)}</span></span>
+          </div>
+          {delta != null && (
             <span
-              className="absolute inset-y-0 left-0 rounded-full bg-accent"
-              style={{ width: `${Math.max(0, Math.min(1, mean)) * 100}%` }}
-            />
-          </span>
-        )}
-        <span>{fmt2(mean)}</span>
-      </div>
+              className={cn(
+                'inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold border',
+                delta > 0
+                  ? 'border-[#bbf7d0] bg-[#f0fdf4] text-[#15803d]'
+                  : delta < 0
+                  ? 'border-[#fecdd3] bg-[#fff1f2] text-[#be123c]'
+                  : 'border-[#e2e8f0] bg-[#f8fafc] text-muted'
+              )}
+            >
+              {(delta > 0 ? '+' : '') + delta.toFixed(2)}
+            </span>
+          )}
+        </div>
+      </TD>
+    );
+  }
+
+  return (
+    <TD className="font-mono text-xs font-semibold tabular-nums text-ink whitespace-nowrap">
+      {fmt2(mean)}
     </TD>
   );
 }
@@ -199,8 +218,6 @@ export default function RecordsPanel() {
   const pageCount = Math.max(1, Math.ceil(groups.length / RUNS_PAGE_SIZE));
   const curPage = Math.min(page, pageCount - 1); // clamp after deletes shrink the list
   const paged = groups.slice(curPage * RUNS_PAGE_SIZE, curPage * RUNS_PAGE_SIZE + RUNS_PAGE_SIZE);
-  // Columns: expand, Run, Type, Status, Dataset, Engine, Avg, Created, actions.
-  // Per-metric scores live in the expanded Details view, not the list.
   const cols = 9;
 
   return (
@@ -236,15 +253,12 @@ export default function RecordsPanel() {
               const mean = runMean(r);
               return (
                 <Fragment key={`r${r.ragas_run_id}`}>
-                  {/* An open row keeps the hover surface (= inview .qrow.open) so it reads as
-                      one block with the detail panel below. */}
                   <TR
                     className={cn('cursor-pointer', isOpen && 'bg-surface-2')}
                     onClick={() => setOpen(isOpen ? null : r.ragas_run_id)}
                   >
                     <TD className="px-2 text-center text-muted">{isOpen ? '▾' : '▸'}</TD>
                     <TD>
-                      {/* Manual runs have no node/version identity — the sent message is the run's name. */}
                       {r.is_manual ? (
                         <div className="max-w-[18rem] truncate text-sm text-ink" title={r.first_question ?? undefined}>
                           {r.first_question ?? '—'}
@@ -260,7 +274,6 @@ export default function RecordsPanel() {
                     </TD>
                     <TD><TypeText t="single" /></TD>
                     <TD><StatusText s={r.status} /></TD>
-                    {/* Manual runs log into the hidden sink dataset — not meaningful, show a dash. */}
                     <TD className="text-xs text-muted" title={r.is_manual ? undefined : r.dataset_nm ?? undefined}>
                       <div className="max-w-[11rem] truncate">{r.is_manual ? '—' : (r.dataset_nm ?? '—')}</div>
                     </TD>
@@ -279,7 +292,7 @@ export default function RecordsPanel() {
                 </Fragment>
               );
             }
-            // A/B pair → one row (metric cells show candidate B; expand shows A-vs-B delta)
+            // A/B pair → shows BOTH Version A and Version B mean scores + delta badge in the table before expanding!
             const open2 = open === g.groupId;
             const stat = g.a.status === g.b.status ? g.a.status : `${g.a.status}/${g.b.status}`;
             return (
@@ -288,7 +301,7 @@ export default function RecordsPanel() {
                   <TD className="px-2 text-center text-muted">{open2 ? '▾' : '▸'}</TD>
                   <TD>
                     <div className="whitespace-nowrap text-sm text-ink">
-                      {g.a.node_nm ?? '—'} <span className="text-muted">· v{g.a.version_no ?? '—'}→v{g.b.version_no ?? '—'}</span>
+                      {g.a.node_nm ?? '—'} <span className="text-muted">· v{g.a.version_no ?? '—'} vs v{g.b.version_no ?? '—'}</span>
                     </div>
                     <div className="font-mono text-[11px] text-muted">#{g.a.ragas_run_id}/#{g.b.ragas_run_id}</div>
                   </TD>
@@ -298,7 +311,7 @@ export default function RecordsPanel() {
                     <div className="max-w-[11rem] truncate">{g.a.dataset_nm ?? '—'}</div>
                   </TD>
                   <TD className="text-xs text-muted">{g.b.engine ?? '—'}</TD>
-                  <AvgCell mean={runMean(g.b)} />
+                  <AvgCell meanA={runMean(g.a)} meanB={runMean(g.b)} />
                   <TD className="whitespace-nowrap text-xs text-muted" title={g.a.created_dt}>{fmtDt(g.a.created_dt)}</TD>
                   <RowActionsCell
                     csvHref={`${API_BASE}/ragas-runs/ab/${g.groupId}/export?fmt=csv`}
@@ -369,15 +382,28 @@ function AbCompareView({ aId, bId, labelA, labelB }: { aId: number; bId: number;
     api.get<RagasRunDetail>(`/ragas-runs/${aId}`).then(setA).catch(() => setA(null));
     api.get<RagasRunDetail>(`/ragas-runs/${bId}`).then(setB).catch(() => setB(null));
   }, [aId, bId]);
-  if (!a || !b) return <div className="text-xs text-muted">불러오는 중…</div>;
+  if (!a || !b) return <div className="p-3 text-xs text-muted">불러오는 중…</div>;
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+      <CompareSummaryDashboard detailA={a} detailB={b} labelA={labelA} labelB={labelB} />
       <div className="overflow-hidden rounded-sm border border-line bg-surface">
-        <CaseCompareTable detailA={a} detailB={b} labelA={labelA} labelB={labelB} />
+        <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
+          <h3 className="mr-1 text-sm font-semibold text-ink">Compare Detail</h3>
+          {a.node_nm && <span className="font-medium text-ink">{a.node_nm}</span>}
+          <Badge tone="neutral">A · v{labelA || '—'}</Badge>
+          <span>vs</span>
+          <Badge tone="accent">B · v{labelB || '—'}</Badge>
+          <span className="ml-auto flex items-center gap-2">
+            <span>Engine {a.engine ?? '—'}</span>
+          </span>
+        </div>
+        <div className="p-4">
+          <CaseCompareTable detailA={a} detailB={b} labelA={labelA} labelB={labelB} />
+          {(a.status === 'CANCELLED' || b.status === 'CANCELLED') && (
+            <p className="mt-3 text-xs text-muted">취소된 실행 — 답변만 저장되고 점수는 없습니다.</p>
+          )}
+        </div>
       </div>
-      {(a.status === 'CANCELLED' || b.status === 'CANCELLED') && (
-        <p className="text-xs text-muted">취소된 실행 — 답변만 저장되고 점수는 없습니다.</p>
-      )}
     </div>
   );
 }
@@ -385,6 +411,32 @@ function AbCompareView({ aId, bId, labelA, labelB }: { aId: number; bId: number;
 function RagasRunDetailView({ ragasId }: { ragasId: number }) {
   const [detail, setDetail] = useState<RagasRunDetail | null>(null);
   useEffect(() => { api.get<RagasRunDetail>(`/ragas-runs/${ragasId}`).then(setDetail).catch(() => setDetail(null)); }, [ragasId]);
-  if (!detail) return <div className="text-xs text-muted">불러오는 중…</div>;
-  return <CaseTable detail={detail} bordered />;
+  if (!detail) return <div className="p-3 text-xs text-muted">불러오는 중…</div>;
+
+  const verLabel = detail.version_no != null ? `v${detail.version_no}` : (detail.prompt_id ? `ID ${detail.prompt_id}` : 'As-is');
+
+  return (
+    <div className="space-y-4">
+      {runMean(detail) != null && <SingleRunSummaryDashboard detail={detail} />}
+      <div className="overflow-hidden rounded-sm border border-line bg-surface">
+        <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
+          <h3 className="mr-1 text-sm font-semibold text-ink">Single Run Detail</h3>
+          <Badge tone={detail.status === 'FAILED' ? 'bad' : 'neutral'} dot>{detail.status}</Badge>
+          {detail.node_nm && <span className="font-medium text-ink">{detail.node_nm}</span>}
+          <Badge tone="neutral">{verLabel}</Badge>
+          <span className="ml-auto flex items-center gap-2">
+            <span>Engine {detail.engine ?? '—'}</span>
+            <span>·</span>
+            <span>{detail.results.length} case{detail.results.length === 1 ? '' : 's'}</span>
+          </span>
+        </div>
+        <div className="p-4">
+          <CaseTable detail={detail} />
+          {detail.status === 'CANCELLED' && (
+            <p className="mt-3 text-xs text-muted">취소된 실행 — 답변만 저장되고 점수는 없습니다.</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }

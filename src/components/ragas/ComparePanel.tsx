@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Select } from '@/components/ui/Field';
 import { api } from '@/lib/api';
-import { connectRagasRunWs } from '@/lib/ws';
+import { connectRagasRunStream as connectRagasRunWs } from '@/lib/sse-client';
+import { CompareSummaryDashboard } from './RunSummaryDashboard';
 import {
   RAGAS_METRICS,
   type PromptVersionSummary,
@@ -186,27 +187,35 @@ export default function ComparePanel() {
       )}
 
       {detailA && detailB && status !== 'running' && (
-        <Card>
-          <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
-            <h3 className="mr-1 text-sm font-semibold text-ink">Comparison</h3>
-            <span className="font-medium text-ink">{nodeNm}</span>
-            <Badge tone="neutral">A · v{verLabel(verA)}</Badge>
-            <span>vs</span>
-            <Badge tone="accent">B · v{verLabel(verB)}</Badge>
-            <span className="ml-auto flex items-center gap-2.5">
-              <CompareVerdict detailA={detailA} detailB={detailB} />
-              <span>Engine {detailA.engine ?? '—'}</span>
-            </span>
-          </div>
-          <div className="p-4">
-            <div className="overflow-hidden rounded-sm border border-line bg-surface">
-              <CaseCompareTable detailA={detailA} detailB={detailB} labelA={verLabel(verA)} labelB={verLabel(verB)} />
+        <div className="space-y-4">
+          <CompareSummaryDashboard
+            detailA={detailA}
+            detailB={detailB}
+            labelA={verLabel(verA)}
+            labelB={verLabel(verB)}
+          />
+          <Card>
+            <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
+              <h3 className="mr-1 text-sm font-semibold text-ink">Comparison Detail</h3>
+              <span className="font-medium text-ink">{nodeNm}</span>
+              <Badge tone="neutral">A · v{verLabel(verA)}</Badge>
+              <span>vs</span>
+              <Badge tone="accent">B · v{verLabel(verB)}</Badge>
+              <span className="ml-auto flex items-center gap-2.5">
+                <CompareVerdict detailA={detailA} detailB={detailB} />
+                <span>Engine {detailA.engine ?? '—'}</span>
+              </span>
             </div>
-            {(detailA.status === 'CANCELLED' || detailB.status === 'CANCELLED') && (
-              <p className="mt-3 text-xs text-muted">취소된 실행 — 답변만 저장되고 점수는 없습니다.</p>
-            )}
-          </div>
-        </Card>
+            <div className="p-4">
+              <div className="overflow-hidden rounded-sm border border-line bg-surface">
+                <CaseCompareTable detailA={detailA} detailB={detailB} labelA={verLabel(verA)} labelB={verLabel(verB)} />
+              </div>
+              {(detailA.status === 'CANCELLED' || detailB.status === 'CANCELLED') && (
+                <p className="mt-3 text-xs text-muted">취소된 실행 — 답변만 저장되고 점수는 없습니다.</p>
+              )}
+            </div>
+          </Card>
+        </div>
       )}
     </div>
   );

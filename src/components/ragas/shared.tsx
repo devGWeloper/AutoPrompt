@@ -84,8 +84,7 @@ export function usePromptNodes() {
 
 // ---- small shared controls -------------------------------------------------
 
-/** 'RAGAS 채점' master switch, shared by every run mode. A real track+knob
- * switch — unlike a dimmed chip, its on/off affordance is unmistakable. */
+/** 'RAGAS 채점' master switch, shared by every run mode. */
 export function ScoreToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
     <button
@@ -114,9 +113,7 @@ export function ScoreToggle({ on, onChange }: { on: boolean; onChange: (v: boole
   );
 }
 
-/** Metric picker as an always-visible chip row (= inview .exclude-chip):
- * selected chips are accent-tinted, deselected ones sit quiet. No disclosure
- * to unfold, so the settings strip keeps a single stable line. */
+/** Metric picker as an always-visible chip row. */
 export function MetricChips({ metrics, setMetrics }: { metrics: string[]; setMetrics: (f: (cur: string[]) => string[]) => void }) {
   return (
     <>
@@ -197,8 +194,7 @@ export function ErrBox({ msg }: { msg: string }) {
   return <div className="rounded-md border border-bad/20 bg-bad/5 px-4 py-3 text-sm text-bad">{msg}</div>;
 }
 
-// Bounded, scrollable answer box — answers can be long, so cap the height and
-// scroll inside (break-words so long unbroken tokens/URLs don't overflow wide).
+// Bounded, scrollable answer box.
 export function AnswerBox({ text, error }: { text?: string | null; error?: string | null }) {
   if (text == null) return <p className="text-sm text-bad">{error ?? '—'}</p>;
   return (
@@ -279,13 +275,8 @@ export function ScoreBars({ row }: { row: RagasResultRow }) {
 // the question (plus its average score when collapsed); the body holds ground
 // truth, answer, and the per-metric score bars.
 export function CaseTable({ detail, bordered, scored }: { detail: RagasRunDetail; bordered?: boolean; scored?: boolean }) {
-  // Answers only (no score chips) for: cancelled runs (incomplete scoring),
-  // legacy direct calls (engine 'direct'), and no-scoring runs (METRICS='[]').
-  // Live streaming passes `scored` explicitly since its detail stub has no metadata.
   const showScores =
     detail.status !== 'CANCELLED' && (scored ?? (detail.engine !== 'direct' && detail.metrics !== '[]'));
-  // Collapsed by default — tracking the *opened* set keeps late-arriving
-  // (streamed) rows collapsed too.
   const [opened, setOpened] = useState<Set<number>>(new Set());
   const ids = detail.results.map((r) => r.ragas_result_id);
   const allClosed = opened.size === 0;

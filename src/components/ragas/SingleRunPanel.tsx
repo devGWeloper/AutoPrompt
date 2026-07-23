@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input, Select, Textarea } from '@/components/ui/Field';
 import { api } from '@/lib/api';
-import { connectRagasRunWs } from '@/lib/ws';
+import { connectRagasRunStream as connectRagasRunWs } from '@/lib/sse-client';
+import { SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import {
   RAGAS_METRICS,
   type RagasMetric,
@@ -179,46 +180,47 @@ export default function SingleRunPanel() {
     } catch (e) { setCallError(errText(e)); setCallStatus('failed'); }
   }
 
-  const answered = live.filter((r) => r.answer !== null || r.error_msg).length;
-  const scored = live.filter((r) => RAGAS_METRICS.some((m) => r[m] !== null) || r.error_msg).length;
-  const manualScores = callResult ? directScoresRow(callResult) : null;
+  const verLabel = (id: number | null) => {
+    if (!id) return 'As-is';
+    const found = versions.find((v) => v.prompt_id === id);
+    return found ? `v${found.version_no}` : `ID ${id}`;
+  };
 
   return (
     <div className="space-y-5">
       <Card tone="muted" className="p-4">
-        {source === 'dataset' ? (
-          <div className="flex items-center gap-3 overflow-x-auto [&>*]:shrink-0">
-            <SegToggle
-              value={source}
-              onChange={setSource}
-              options={[{ id: 'dataset', label: 'Dataset' }, { id: 'manual', label: 'Manual' }]}
-            />
-            <Select value={nodeNm} onChange={(e) => setNodeNm(e.target.value)} className="w-52">
-              <option value="">As-is (no prompt swap)</option>
-              {nodes.map((n) => (<option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>))}
-            </Select>
-            {nodeNm && <VersionSelect versions={versions} value={ver} onChange={setVer} placeholder="Select version" />}
-            <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />
-            <Button
-              variant={status === 'running' ? 'secondary' : 'primary'}
-              className="whitespace-nowrap"
-              disabled={status === 'running' ? cancelling : !canRun}
-              onClick={status === 'running' ? cancel : run}
-            >
-              {status === 'running' ? (cancelling ? 'Cancelling…' : 'Cancel run') : 'Run'}
-            </Button>
-            <StatusPill status={status} />
-          </div>
-        ) : (
-          <div className="flex items-center gap-3">
-            <SegToggle
-              value={source}
-              onChange={setSource}
-              options={[{ id: 'dataset', label: 'Dataset' }, { id: 'manual', label: 'Manual' }]}
-            />
+        <div className="flex items-center gap-3 overflow-x-auto [&>*]:shrink-0">
+          <SegToggle
+            value={source}
+            onChange={setSource}
+            options={[{ id: 'dataset', label: 'Dataset' }, { id: 'manual', label: 'Manual' }]}
+          />
+          {source === 'dataset' ? (
+            <>
+              <Select value={nodeNm ?? ''} onChange={(e) => setNodeNm(e.target.value)} className="w-44">
+                <option value="">As-is (Current prompt)</option>
+                {nodes.map((n) => (
+                  <option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>
+                ))}
+              </Select>
+              {nodeNm && (
+                <VersionSelect versions={versions} value={ver} onChange={setVer} className="w-44" placeholder="Select version" />
+              )}
+              <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />
+            </>
+          ) : (
             <span className="text-xs text-muted">외부 에이전트에 메시지 하나를 그대로 보냅니다.</span>
-          </div>
-        )}
+          )}
+          <Button
+            variant={status === 'running' ? 'secondary' : 'primary'}
+            className="whitespace-nowrap"
+            disabled={status === 'running' ? cancelling : !canRun}
+            onClick={status === 'running' ? cancel : run}
+          >
+            {status === 'running' ? (cancelling ? 'Cancelling…' : 'Cancel run') : 'Run evaluation'}
+          </Button>
+          <StatusPill status={status} />
+        </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-2 border-t border-line pt-3">
           <ScoreToggle on={scoreOn} onChange={setScoreOn} />
@@ -233,7 +235,7 @@ export default function SingleRunPanel() {
 
         {source === 'manual' && (
           <>
-            <div className="mt-3">
+            <div className="mt-3 border-t border-line pt-3">
               <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Message <span className="text-bad">*</span></label>
               <Textarea
                 value={message}
@@ -313,52 +315,64 @@ export default function SingleRunPanel() {
         </>
       ) : (
         <>
-      {error && <ErrBox msg={error} />}
-      {detail?.error_msg && <ErrBox msg={detail.error_msg} />}
+          {error && <ErrBox msg={error} />}
+          {detail?.error_msg && <ErrBox msg={detail.error_msg} />}
 
-      {status === 'idle' && !error && (
-        <Card className="flex flex-col items-center justify-center gap-1 px-6 py-16 text-center">
-          <div className="text-sm text-ink">데이터셋을 선택한 뒤 <span className="font-medium">Run</span>을 누르세요.</div>
-          <div className="text-xs text-muted">프롬프트 버전을 고르면 그 버전으로 교체해 평가하고, As-is면 현재 상태 그대로 평가합니다. 지난 결과는 Records 탭에서 확인할 수 있습니다.</div>
-        </Card>
-      )}
+          {status === 'idle' && !error && (
+            <Card className="flex flex-col items-center justify-center gap-1 px-6 py-16 text-center">
+              <div className="text-sm text-ink">데이터셋을 선택한 뒤 <span className="font-medium">Run evaluation</span>을 누르세요.</div>
+              <div className="text-xs text-muted">프롬프트 버전을 고르면 그 버전으로 교체해 평가하고, As-is면 현재 상태 그대로 평가합니다. 지난 결과는 Records 탭에서 확인할 수 있습니다.</div>
+            </Card>
+          )}
 
-      {/* Live streaming view while running: answers appear first, scores fill in. */}
-      {status === 'running' && (
-        <Card>
-          <div className="flex items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
-            <h3 className="mr-1 text-sm font-semibold text-ink">Results</h3>
-            <Badge tone="neutral" dot>{cancelling ? 'CANCELLING' : 'RUNNING'}</Badge>
-            <span className="ml-auto">Answered {answered}/{total || '…'}{scoreOn ? ` · Scored ${scored}/${total || '…'}` : ''}</span>
-          </div>
-          <div className="p-4">
-            {live.length > 0
-              ? <CaseTable detail={{ results: live } as RagasRunDetail} scored={scoreOn} />
-              : <div className="py-8 text-center text-xs text-muted">Generating answers…</div>}
-          </div>
-        </Card>
-      )}
+          {/* Live streaming view while running: answers appear first, scores fill in. */}
+          {status === 'running' && (
+            <Card>
+              <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
+                <h3 className="mr-1 text-sm font-semibold text-ink">Results</h3>
+                <Badge tone="neutral" dot>{cancelling ? 'CANCELLING' : 'RUNNING'}</Badge>
+                {nodeNm && <span className="font-medium text-ink">{nodeNm}</span>}
+                <Badge tone="neutral">{verLabel(ver)}</Badge>
+                <span className="ml-auto">Answered {answered}/{total || '…'}{scoreOn ? ` · Scored ${scored}/${total || '…'}` : ''}</span>
+              </div>
+              <div className="p-4">
+                {live.length > 0 ? (
+                  <div className="overflow-hidden rounded-sm border border-line bg-surface">
+                    <CaseTable detail={{ results: live } as RagasRunDetail} scored={scoreOn} />
+                  </div>
+                ) : (
+                  <div className="py-8 text-center text-xs text-muted">Generating answers…</div>
+                )}
+              </div>
+            </Card>
+          )}
 
-      {detail && status !== 'running' && (
-        <Card>
-          <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
-            <h3 className="mr-1 text-sm font-semibold text-ink">Results</h3>
-            <Badge tone={detail.status === 'FAILED' ? 'bad' : 'neutral'} dot>{detail.status}</Badge>
-            <span>Engine {detail.engine ?? '—'}</span>
-            <span>·</span>
-            <span>{detail.results.length} case{detail.results.length === 1 ? '' : 's'}</span>
-            {runMean(detail) != null && (
-              <span className="ml-auto text-ink">Avg <span className="font-mono tabular-nums font-semibold">{fmt3(runMean(detail))}</span></span>
-            )}
-          </div>
-          <div className="p-4">
-            <CaseTable detail={detail} />
-            {detail.status === 'CANCELLED' && (
-              <p className="mt-3 text-xs text-muted">취소된 실행 — 답변만 저장되고 점수는 없습니다.</p>
-            )}
-          </div>
-        </Card>
-      )}
+          {detail && status !== 'running' && (
+            <div className="space-y-4">
+              {runMean(detail) != null && <SingleRunSummaryDashboard detail={detail} />}
+              <Card>
+                <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
+                  <h3 className="mr-1 text-sm font-semibold text-ink">Results Detail</h3>
+                  <Badge tone={detail.status === 'FAILED' ? 'bad' : 'neutral'} dot>{detail.status}</Badge>
+                  {detail.node_nm && <span className="font-medium text-ink">{detail.node_nm}</span>}
+                  {detail.prompt_id && <Badge tone="neutral">{verLabel(detail.prompt_id)}</Badge>}
+                  <span className="ml-auto flex items-center gap-2">
+                    <span>Engine {detail.engine ?? '—'}</span>
+                    <span>·</span>
+                    <span>{detail.results.length} case{detail.results.length === 1 ? '' : 's'}</span>
+                  </span>
+                </div>
+                <div className="p-4">
+                  <div className="overflow-hidden rounded-sm border border-line bg-surface">
+                    <CaseTable detail={detail} />
+                  </div>
+                  {detail.status === 'CANCELLED' && (
+                    <p className="mt-3 text-xs text-muted">취소된 실행 — 답변만 저장되고 점수는 없습니다.</p>
+                  )}
+                </div>
+              </Card>
+            </div>
+          )}
         </>
       )}
     </div>

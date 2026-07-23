@@ -4,29 +4,55 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 
-/** Environment pill (inview .env-badge): dev = blue tint, prd = amber tint. */
-function EnvBadge() {
-  const [env, setEnv] = useState<string | null>(null);
+interface HealthData {
+  env?: string;
+  dbConnected?: boolean;
+}
+
+/** Status badges: dev/prd pill + DB connection status pill (inview style). */
+function StatusBadges() {
+  const [health, setHealth] = useState<HealthData | null>(null);
+
   useEffect(() => {
     fetch('/api/health', { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d: { env?: string } | null) => setEnv(d?.env ?? null))
+      .then((d: HealthData | null) => setHealth(d ?? null))
       .catch(() => {});
   }, []);
-  if (!env) return null;
-  const prd = env === 'prd';
+
+  if (!health || !health.env) return null;
+  const prd = health.env === 'prd';
+  const dbConnected = !!health.dbConnected;
+
   return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.04em]',
-        prd
-          ? 'border-[#fde68a] bg-[#fffbeb] text-[#b45309]'
-          : 'border-[#bfdbfe] bg-[#eff6ff] text-accent',
-      )}
-    >
-      <span className={cn('h-1.5 w-1.5 rounded-full', prd ? 'bg-[#b45309]' : 'bg-accent')} />
-      {env}
-    </span>
+    <div className="flex items-center gap-2">
+      {/* Environment Badge */}
+      <span
+        className={cn(
+          'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.04em]',
+          prd
+            ? 'border-[#fde68a] bg-[#fffbeb] text-[#b45309]'
+            : 'border-[#bfdbfe] bg-[#eff6ff] text-accent',
+        )}
+      >
+        <span className={cn('h-1.5 w-1.5 rounded-full', prd ? 'bg-[#b45309]' : 'bg-accent')} />
+        {health.env}
+      </span>
+
+      {/* DB Connection Status Badge */}
+      <span
+        className={cn(
+          'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold tracking-[0.02em]',
+          dbConnected
+            ? 'border-[#bbf7d0] bg-[#f0fdf4] text-[#15803d]'
+            : 'border-[#e2e8f0] bg-[#f8fafc] text-[#64748b]',
+        )}
+        title={dbConnected ? 'Oracle DB Connected' : 'DB Not Configured (Running in Mock / Fallback Mode)'}
+      >
+        <span className={cn('h-1.5 w-1.5 rounded-full', dbConnected ? 'bg-[#16a34a]' : 'bg-[#94a3b8]')} />
+        {dbConnected ? 'DB Connected' : 'DB Mock'}
+      </span>
+    </div>
   );
 }
 
@@ -95,7 +121,7 @@ export default function TopBar({ title, right }: { title?: string; right?: React
         <div className="flex items-center gap-3">
           {title && <span className="text-sm text-muted">{title}</span>}
           {right}
-          <EnvBadge />
+          <StatusBadges />
         </div>
       </div>
     </header>

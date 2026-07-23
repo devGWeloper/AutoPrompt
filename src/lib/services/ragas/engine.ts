@@ -150,9 +150,19 @@ export async function scoreWithLlm(args: {
     contexts: args.contexts,
     groundTruth: args.groundTruth,
   };
+  const results = await Promise.all(
+    args.metrics.map(async (m) => {
+      try {
+        const val = await COMPUTE[m](f);
+        return [m, val] as const;
+      } catch {
+        return [m, null] as const;
+      }
+    })
+  );
   const out: CaseScore = {};
-  for (const m of args.metrics) {
-    out[m] = await COMPUTE[m](f);
+  for (const [m, score] of results) {
+    out[m] = score;
   }
   return out;
 }
