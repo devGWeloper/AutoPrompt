@@ -148,9 +148,9 @@ export function DatasetSelect({ datasets, value, onChange }: { datasets: Dataset
   );
 }
 
-export function VersionSelect({ versions, value, onChange, placeholder }: { versions: PromptVersionSummary[]; value: number | null; onChange: (id: number) => void; placeholder: string }) {
+export function VersionSelect({ versions, value, onChange, placeholder, className }: { versions: PromptVersionSummary[]; value: number | null; onChange: (id: number) => void; placeholder: string; className?: string }) {
   return (
-    <Select value={value ?? ''} onChange={(e) => onChange(Number(e.target.value))} className="w-36">
+    <Select value={value ?? ''} onChange={(e) => onChange(Number(e.target.value))} className={cn('w-36', className)}>
       <option value="" disabled>{placeholder}</option>
       {versions.map((v) => (
         <option key={v.prompt_id} value={v.prompt_id}>v{v.version_no}</option>
@@ -227,46 +227,31 @@ export function CollapseAllStrip({ allClosed, onToggle }: { allClosed: boolean; 
   );
 }
 
-// Single-run score view: one bar per metric on a 0..1 scale — the single-side
-// counterpart of the A/B paired bars. Wrapped in its own collapsible section
-// (collapsed by default) whose header always shows the case average.
 export function ScoreBars({ row }: { row: RagasResultRow }) {
-  const [open, setOpen] = useState(false);
   const scored = RAGAS_METRICS.some((m) => row[m] != null);
   if (!scored) {
     return row.answer == null && row.error_msg
       ? <span className="text-[11px] text-bad">{row.error_msg}</span>
       : <span className="text-[11px] text-muted">채점 중…</span>;
   }
-  const mean = caseMean(row);
   return (
-    <div className="overflow-hidden rounded-sm border border-line bg-surface">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-1.5 bg-surface-2/60 px-3 py-2 text-left transition-colors hover:bg-surface-2"
-      >
-        <Chevron open={open} />
-        <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">점수</span>
-        <span className="ml-auto font-mono text-xs tabular-nums text-muted">평균 <span className="font-semibold text-ink">{fmt3(mean)}</span></span>
-      </button>
-      {open && (
-        <ul className="flex flex-col gap-2 border-t border-line px-3 py-2.5">
-          {RAGAS_METRICS.map((m) => {
-            const v = row[m] != null ? Number(row[m]) : null;
-            const pct = v != null ? Math.max(0, Math.min(1, v)) * 100 : 0;
-            return (
-              <li key={m} className="grid grid-cols-[minmax(92px,auto)_1fr_auto] items-center gap-3">
-                <span className="truncate text-[11px] text-muted" title={METRIC_DESCRIPTIONS[m]}>{METRIC_LABELS[m]}</span>
-                <div className="relative h-2 overflow-hidden rounded-full bg-bg">
-                  <span className="absolute inset-y-0 left-0 rounded-full bg-accent" style={{ width: pct + '%' }} />
-                </div>
-                <span className={'w-12 shrink-0 text-right font-mono text-xs tabular-nums ' + (v != null ? 'text-ink' : 'text-muted')}>{fmt3(v)}</span>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+    <div className="overflow-hidden rounded-sm border border-line bg-surface p-3">
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">지표 점수</p>
+      <ul className="flex flex-col gap-2">
+        {RAGAS_METRICS.map((m) => {
+          const v = row[m] != null ? Number(row[m]) : null;
+          const pct = v != null ? Math.max(0, Math.min(1, v)) * 100 : 0;
+          return (
+            <li key={m} className="grid grid-cols-[minmax(92px,auto)_1fr_auto] items-center gap-3">
+              <span className="truncate text-[11px] text-muted" title={METRIC_DESCRIPTIONS[m]}>{METRIC_LABELS[m]}</span>
+              <div className="relative h-2 overflow-hidden rounded-full bg-bg">
+                <span className="absolute inset-y-0 left-0 rounded-full bg-accent" style={{ width: pct + '%' }} />
+              </div>
+              <span className={'w-12 shrink-0 text-right font-mono text-xs tabular-nums ' + (v != null ? 'text-ink' : 'text-muted')}>{fmt3(v)}</span>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -274,11 +259,13 @@ export function ScoreBars({ row }: { row: RagasResultRow }) {
 // Answer-centric case view: each case is a collapsible block. The header line is
 // the question (plus its average score when collapsed); the body holds ground
 // truth, answer, and the per-metric score bars.
-export function CaseTable({ detail, bordered, scored }: { detail: RagasRunDetail; bordered?: boolean; scored?: boolean }) {
+export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: { detail: RagasRunDetail; bordered?: boolean; scored?: boolean; defaultAllOpen?: boolean }) {
   const showScores =
     detail.status !== 'CANCELLED' && (scored ?? (detail.engine !== 'direct' && detail.metrics !== '[]'));
-  const [opened, setOpened] = useState<Set<number>>(new Set());
   const ids = detail.results.map((r) => r.ragas_result_id);
+  const [opened, setOpened] = useState<Set<number>>(() =>
+    defaultAllOpen ? new Set(ids) : new Set()
+  );
   const allClosed = opened.size === 0;
   const toggle = (id: number) =>
     setOpened((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); return n; });

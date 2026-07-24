@@ -174,29 +174,37 @@ function AvgCell({ mean, meanA, meanB }: { mean?: number | null; meanA?: number 
 
 export default function RecordsPanel() {
   const [ragas, setRagas] = useState<RagasRunSummary[]>([]);
-  const [open, setOpen] = useState<number | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [filter, setFilter] = useState<RunTypeFilter>('all');
   const [sort, setSort] = useState<{ key: RunSortKey; dir: 'asc' | 'desc' }>({ key: 'created', dir: 'desc' });
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(0);
+
   useEffect(() => { setPage(0); }, [filter, sort, query]);
   const reload = useCallback(() => {
     api.get<RagasRunSummary[]>('/ragas-runs').then(setRagas).catch(() => setRagas([]));
   }, []);
   useEffect(reload, [reload]);
-  async function del(id: number) { await api.del(`/ragas-runs/${id}`); if (open === id) setOpen(null); reload(); }
-  async function delPair(ids: number[]) { await Promise.all(ids.map((i) => api.del(`/ragas-runs/${i}`))); setOpen(null); reload(); }
+
+  async function del(id: number) {
+    await api.del(`/ragas-runs/${id}`);
+    if (selectedKey === `s_${id}`) setSelectedKey(null);
+    reload();
+  }
+  async function delPair(ids: number[], groupId: number) {
+    await Promise.all(ids.map((i) => api.del(`/ragas-runs/${i}`)));
+    if (selectedKey === `ab_${groupId}`) setSelectedKey(null);
+    reload();
+  }
+
   const toggleSort = (key: RunSortKey) =>
     setSort((cur) => (cur.key === key ? { key, dir: cur.dir === 'desc' ? 'asc' : 'desc' } : { key, dir: 'desc' }));
 
-  // The avg sort reads the pair's B side (the Avg cell shows B); the created
-  // sort uses the run id, which is monotonic with creation time.
   const sortVal = (g: RunGroup): number | null => {
     if (sort.key === 'created') return g.kind === 'single' ? g.run.ragas_run_id : g.a.ragas_run_id;
     return runMean(g.kind === 'single' ? g.run : g.b);
   };
-  // Free-text search over what identifies a run: node/version, dataset,
-  // (first) question — which is the message for direct calls — and run id.
+
   const q = query.trim().toLowerCase();
   const matches = (g: RunGroup): boolean => {
     if (!q) return true;
@@ -206,67 +214,99 @@ export default function RecordsPanel() {
         .some((v) => v != null && v.toLowerCase().includes(q)),
     );
   };
+
   const groups = groupRuns(ragas)
     .filter((g) => (filter === 'all' || groupType(g) === filter) && matches(g))
     .sort((x, y) => {
       const vx = sortVal(x); const vy = sortVal(y);
       if (vx == null && vy == null) return 0;
-      if (vx == null) return 1; // unscored rows sink to the bottom either way
+      if (vx == null) return 1;
       if (vy == null) return -1;
       return sort.dir === 'asc' ? vx - vy : vy - vx;
     });
+
   const pageCount = Math.max(1, Math.ceil(groups.length / RUNS_PAGE_SIZE));
-  const curPage = Math.min(page, pageCount - 1); // clamp after deletes shrink the list
+  const curPage = Math.min(page, pageCount - 1);
   const paged = groups.slice(curPage * RUNS_PAGE_SIZE, curPage * RUNS_PAGE_SIZE + RUNS_PAGE_SIZE);
-  const cols = 9;
+
+  // Key generator helper
+  const getGroupKey = (g: RunGroup) => (g.kind === 'single' ? `s_${g.run.ragas_run_id}` : `ab_${g.groupId}`);
+
+  const selectedIndex = groups.findIndex((g) => getGroupKey(g) === selectedKey);
+  const selectedGroup = selectedIndex >= 0 ? groups[selectedIndex] : null;
+
+  // ESC key to close drawer
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelectedKey(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const handlePrevGroup = () => {
+    if (selectedIndex > 0) setSelectedKey(getGroupKey(groups[selectedIndex - 1]));
+  };
+  const handleNextGroup = () => {
+    if (selectedIndex >= 0 && selectedIndex < groups.length - 1) {
+      setSelectedKey(getGroupKey(groups[selectedIndex + 1]));
+    }
+  };
 
   return (
-    <Card>
-      <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
-        <h2 className="text-sm font-semibold text-ink">실행 기록 <span className="text-muted">({groups.length})</span></h2>
-        <div className="flex items-center gap-2.5">
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="노드 · 데이터셋 · 질문 검색"
-            className="h-8 w-56 text-xs"
-          />
-          <SegToggle value={filter} onChange={setFilter} options={RUN_TYPE_FILTERS} />
-          <Button variant="secondary" size="sm" onClick={reload}>새로고침</Button>
+    <>
+      <Card>
+        <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
+          <h2 className="text-sm font-semibold text-ink">실행 기록 <span className="text-muted">({groups.length})</span></h2>
+          <div className="flex items-center gap-2.5">
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="노드 · 데이터셋 · 질문 검색"
+              className="h-8 w-56 text-xs"
+            />
+            <SegToggle value={filter} onChange={setFilter} options={RUN_TYPE_FILTERS} />
+            <Button variant="secondary" size="sm" onClick={reload}>새로고침</Button>
+          </div>
         </div>
-      </div>
-      <Table>
-        <THead>
-          <TR>
-            <TH className="w-7 px-2" />
-            <TH>실행</TH><TH>유형</TH><TH>상태</TH><TH>데이터셋</TH><TH>엔진</TH>
-            <SortTH k="avg" label="평균" sort={sort} onSort={toggleSort} title="채점된 지표들의 평균" />
-            <SortTH k="created" label="생성일시" sort={sort} onSort={toggleSort} />
-            <TH />
-          </TR>
-        </THead>
-        <TBody>
-          {paged.map((g) => {
-            if (g.kind === 'single') {
-              const r = g.run;
-              const isOpen = open === r.ragas_run_id;
-              const mean = runMean(r);
-              return (
-                <Fragment key={`r${r.ragas_run_id}`}>
+        <Table>
+          <THead>
+            <TR>
+              <TH className="w-6 px-2" />
+              <TH>실행</TH><TH>유형</TH><TH>상태</TH><TH>데이터셋</TH><TH>엔진</TH>
+              <SortTH k="avg" label="평균" sort={sort} onSort={toggleSort} title="채점된 지표들의 평균" />
+              <SortTH k="created" label="생성일시" sort={sort} onSort={toggleSort} />
+              <TH className="w-16" />
+            </TR>
+          </THead>
+          <TBody>
+            {paged.map((g) => {
+              const key = getGroupKey(g);
+              const isSelected = selectedKey === key;
+
+              if (g.kind === 'single') {
+                const r = g.run;
+                const mean = runMean(r);
+                return (
                   <TR
-                    className={cn('cursor-pointer', isOpen && 'bg-surface-2')}
-                    onClick={() => setOpen(isOpen ? null : r.ragas_run_id)}
+                    key={key}
+                    className={cn('cursor-pointer transition-colors hover:bg-surface-2/70', isSelected && 'bg-accent/10 hover:bg-accent/15')}
+                    onClick={() => setSelectedKey(isSelected ? null : key)}
                   >
-                    <TD className="px-2 text-center text-muted">{isOpen ? '▾' : '▸'}</TD>
+                    <TD className="px-2 text-center text-muted">
+                      <span className={cn('text-xs font-bold transition-transform inline-block', isSelected ? 'text-accent translate-x-0.5' : 'opacity-40')}>
+                        ›
+                      </span>
+                    </TD>
                     <TD>
                       {r.is_manual ? (
-                        <div className="max-w-[18rem] truncate text-sm text-ink" title={r.first_question ?? undefined}>
+                        <div className="max-w-[18rem] truncate text-sm font-medium text-ink" title={r.first_question ?? undefined}>
                           {r.first_question ?? '—'}
                         </div>
                       ) : (
-                        <div className="whitespace-nowrap text-sm text-ink">
+                        <div className="whitespace-nowrap text-sm font-medium text-ink">
                           {r.node_nm
-                            ? <>{r.node_nm} <span className="text-muted">· v{r.version_no ?? '—'}</span></>
+                            ? <>{r.node_nm} <span className="text-muted font-normal">· v{r.version_no ?? '—'}</span></>
                             : 'As-is'}
                         </div>
                       )}
@@ -285,23 +325,24 @@ export default function RecordsPanel() {
                       onDelete={() => del(r.ragas_run_id)}
                     />
                   </TR>
-                  {r.error_msg && <TR><TD colSpan={cols} className="bg-bad/5 text-xs text-bad">⚠ {r.error_msg}</TD></TR>}
-                  {isOpen && (
-                    <TR><TD colSpan={cols} className="bg-surface-2 p-3"><RagasRunDetailView ragasId={r.ragas_run_id} /></TD></TR>
-                  )}
-                </Fragment>
-              );
-            }
-            // A/B pair → shows BOTH Version A and Version B mean scores + delta badge in the table before expanding!
-            const open2 = open === g.groupId;
-            const stat = g.a.status === g.b.status ? g.a.status : `${g.a.status}/${g.b.status}`;
-            return (
-              <Fragment key={`ab${g.groupId}`}>
-                <TR className={cn('cursor-pointer', open2 && 'bg-surface-2')} onClick={() => setOpen(open2 ? null : g.groupId)}>
-                  <TD className="px-2 text-center text-muted">{open2 ? '▾' : '▸'}</TD>
+                );
+              }
+
+              const stat = g.a.status === g.b.status ? g.a.status : `${g.a.status}/${g.b.status}`;
+              return (
+                <TR
+                  key={key}
+                  className={cn('cursor-pointer transition-colors hover:bg-surface-2/70', isSelected && 'bg-accent/10 hover:bg-accent/15')}
+                  onClick={() => setSelectedKey(isSelected ? null : key)}
+                >
+                  <TD className="px-2 text-center text-muted">
+                    <span className={cn('text-xs font-bold transition-transform inline-block', isSelected ? 'text-accent translate-x-0.5' : 'opacity-40')}>
+                      ›
+                    </span>
+                  </TD>
                   <TD>
-                    <div className="whitespace-nowrap text-sm text-ink">
-                      {g.a.node_nm ?? '—'} <span className="text-muted">· v{g.a.version_no ?? '—'} vs v{g.b.version_no ?? '—'}</span>
+                    <div className="whitespace-nowrap text-sm font-medium text-ink">
+                      {g.a.node_nm ?? '—'} <span className="text-muted font-normal">· v{g.a.version_no ?? '—'} vs v{g.b.version_no ?? '—'}</span>
                     </div>
                     <div className="font-mono text-[11px] text-muted">#{g.a.ragas_run_id}/#{g.b.ragas_run_id}</div>
                   </TD>
@@ -315,31 +356,156 @@ export default function RecordsPanel() {
                   <TD className="whitespace-nowrap text-xs text-muted" title={g.a.created_dt}>{fmtDt(g.a.created_dt)}</TD>
                   <RowActionsCell
                     csvHref={`${API_BASE}/ragas-runs/ab/${g.groupId}/export?fmt=csv`}
-                    onDelete={() => delPair([g.a.ragas_run_id, g.b.ragas_run_id])}
+                    onDelete={() => delPair([g.a.ragas_run_id, g.b.ragas_run_id], g.groupId)}
                   />
                 </TR>
-                {open2 && (
-                  <TR><TD colSpan={cols} className="bg-surface-2 p-3"><AbCompareView aId={g.a.ragas_run_id} bId={g.b.ragas_run_id} labelA={g.a.version_no ?? ''} labelB={g.b.version_no ?? ''} /></TD></TR>
-                )}
-              </Fragment>
-            );
-          })}
-          {groups.length === 0 && (
-            <TR><TD colSpan={cols} className="py-10 text-center text-sm text-muted">
-              {ragas.length === 0 ? '아직 평가 실행 기록이 없습니다.' : '검색 · 필터 조건에 맞는 기록이 없습니다.'}
-            </TD></TR>
-          )}
-        </TBody>
-      </Table>
-      {groups.length > RUNS_PAGE_SIZE && (
-        <RunsPager
-          curPage={curPage}
-          pageCount={pageCount}
-          total={groups.length}
-          onPage={setPage}
+              );
+            })}
+            {groups.length === 0 && (
+              <TR><TD colSpan={9} className="py-10 text-center text-sm text-muted">
+                {ragas.length === 0 ? '아직 평가 실행 기록이 없습니다.' : '검색 · 필터 조건에 맞는 기록이 없습니다.'}
+              </TD></TR>
+            )}
+          </TBody>
+        </Table>
+        {groups.length > RUNS_PAGE_SIZE && (
+          <RunsPager
+            curPage={curPage}
+            pageCount={pageCount}
+            total={groups.length}
+            onPage={setPage}
+          />
+        )}
+      </Card>
+
+      {/* Side Drawer for Master-Detail View */}
+      {selectedGroup && (
+        <RecordDetailDrawer
+          group={selectedGroup}
+          onClose={() => setSelectedKey(null)}
+          onPrev={selectedIndex > 0 ? handlePrevGroup : undefined}
+          onNext={selectedIndex < groups.length - 1 ? handleNextGroup : undefined}
+          onDelete={() => {
+            if (selectedGroup.kind === 'single') del(selectedGroup.run.ragas_run_id);
+            else delPair([selectedGroup.a.ragas_run_id, selectedGroup.b.ragas_run_id], selectedGroup.groupId);
+          }}
         />
       )}
-    </Card>
+    </>
+  );
+}
+
+/** Side Drawer Component for viewing Run Details without nested table expansion */
+function RecordDetailDrawer({
+  group,
+  onClose,
+  onPrev,
+  onNext,
+  onDelete,
+}: {
+  group: RunGroup;
+  onClose: () => void;
+  onPrev?: () => void;
+  onNext?: () => void;
+  onDelete: () => void;
+}) {
+  const isSingle = group.kind === 'single';
+  const csvHref = isSingle
+    ? `${API_BASE}/ragas-runs/${group.run.ragas_run_id}/export?fmt=csv`
+    : `${API_BASE}/ragas-runs/ab/${group.groupId}/export?fmt=csv`;
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end">
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-ink/30 backdrop-blur-[1.5px] transition-opacity"
+        onClick={onClose}
+        aria-hidden
+      />
+
+      {/* Drawer Content */}
+      <aside className="relative z-10 flex h-full w-full max-w-5xl flex-col border-l border-line bg-surface shadow-2xl animate-in slide-in-from-right duration-200">
+        {/* Drawer Header */}
+        <div className="flex items-center justify-between border-b border-line px-6 py-4">
+          <div className="flex items-center gap-3">
+            <h2 className="text-base font-semibold text-ink">
+              {isSingle ? (
+                <>Single Run <span className="font-mono text-xs font-normal text-muted">#{group.run.ragas_run_id}</span></>
+              ) : (
+                <>Compare Run <span className="font-mono text-xs font-normal text-muted">#{group.a.ragas_run_id}/#{group.b.ragas_run_id}</span></>
+              )}
+            </h2>
+            <TypeText t={isSingle ? 'single' : 'compare'} />
+            <StatusText s={isSingle ? group.run.status : (group.a.status === group.b.status ? group.a.status : `${group.a.status}/${group.b.status}`)} />
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Quick Navigation */}
+            <div className="mr-2 flex items-center rounded-md border border-line bg-surface-2 p-0.5">
+              <button
+                type="button"
+                disabled={!onPrev}
+                onClick={onPrev}
+                className="rounded px-2 py-1 text-xs text-muted hover:bg-surface hover:text-ink disabled:opacity-30"
+                title="이전 기록"
+              >
+                ‹ 이전
+              </button>
+              <button
+                type="button"
+                disabled={!onNext}
+                onClick={onNext}
+                className="rounded px-2 py-1 text-xs text-muted hover:bg-surface hover:text-ink disabled:opacity-30"
+                title="다음 기록"
+              >
+                다음 ›
+              </button>
+            </div>
+
+            <a
+              href={csvHref}
+              title="CSV 내보내기"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-line px-3 text-xs font-medium text-muted hover:bg-surface-2 hover:text-ink transition-colors"
+            >
+              <DownloadIcon /> CSV
+            </a>
+            <button
+              type="button"
+              title="삭제"
+              onClick={onDelete}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-bad/20 bg-bad/5 px-3 text-xs font-medium text-bad hover:bg-bad/10 transition-colors"
+            >
+              <TrashIcon /> 삭제
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="ml-1 rounded-md p-1.5 text-muted hover:bg-surface-2 hover:text-ink transition-colors"
+              aria-label="닫기 (Esc)"
+              title="닫기 (Esc)"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Drawer Body */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {isSingle ? (
+            <RagasRunDetailView ragasId={group.run.ragas_run_id} />
+          ) : (
+            <AbCompareView
+              aId={group.a.ragas_run_id}
+              bId={group.b.ragas_run_id}
+              labelA={group.a.version_no != null ? String(group.a.version_no) : ''}
+              labelB={group.b.version_no != null ? String(group.b.version_no) : ''}
+            />
+          )}
+        </div>
+      </aside>
+    </div>
   );
 }
 
@@ -382,7 +548,7 @@ function AbCompareView({ aId, bId, labelA, labelB }: { aId: number; bId: number;
     api.get<RagasRunDetail>(`/ragas-runs/${aId}`).then(setA).catch(() => setA(null));
     api.get<RagasRunDetail>(`/ragas-runs/${bId}`).then(setB).catch(() => setB(null));
   }, [aId, bId]);
-  if (!a || !b) return <div className="p-3 text-xs text-muted">불러오는 중…</div>;
+  if (!a || !b) return <div className="p-4 text-xs text-muted">불러오는 중…</div>;
   return (
     <div className="space-y-4">
       <CompareSummaryDashboard detailA={a} detailB={b} labelA={labelA} labelB={labelB} />
@@ -398,7 +564,7 @@ function AbCompareView({ aId, bId, labelA, labelB }: { aId: number; bId: number;
           </span>
         </div>
         <div className="p-4">
-          <CaseCompareTable detailA={a} detailB={b} labelA={labelA} labelB={labelB} />
+          <CaseCompareTable detailA={a} detailB={b} labelA={labelA} labelB={labelB} defaultAllOpen={false} />
           {(a.status === 'CANCELLED' || b.status === 'CANCELLED') && (
             <p className="mt-3 text-xs text-muted">취소된 실행 — 답변만 저장되고 점수는 없습니다.</p>
           )}
@@ -411,7 +577,7 @@ function AbCompareView({ aId, bId, labelA, labelB }: { aId: number; bId: number;
 function RagasRunDetailView({ ragasId }: { ragasId: number }) {
   const [detail, setDetail] = useState<RagasRunDetail | null>(null);
   useEffect(() => { api.get<RagasRunDetail>(`/ragas-runs/${ragasId}`).then(setDetail).catch(() => setDetail(null)); }, [ragasId]);
-  if (!detail) return <div className="p-3 text-xs text-muted">불러오는 중…</div>;
+  if (!detail) return <div className="p-4 text-xs text-muted">불러오는 중…</div>;
 
   const verLabel = detail.version_no != null ? `v${detail.version_no}` : (detail.prompt_id ? `ID ${detail.prompt_id}` : 'As-is');
 
@@ -431,7 +597,7 @@ function RagasRunDetailView({ ragasId }: { ragasId: number }) {
           </span>
         </div>
         <div className="p-4">
-          <CaseTable detail={detail} />
+          <CaseTable detail={detail} defaultAllOpen={false} />
           {detail.status === 'CANCELLED' && (
             <p className="mt-3 text-xs text-muted">취소된 실행 — 답변만 저장되고 점수는 없습니다.</p>
           )}

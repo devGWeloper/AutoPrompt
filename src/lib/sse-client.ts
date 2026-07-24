@@ -17,7 +17,7 @@ function connect(path: string, handlers: SseStreamHandlers): EventSource {
       const parsed = JSON.parse(ev.data) as RunWsMessage;
       handlers.onMessage(parsed);
       // Auto-close on terminal statuses
-      if (parsed.status === 'DONE' || parsed.status === 'FAILED' || parsed.status === 'CANCELLED') {
+      if (parsed.event === 'DONE' || parsed.event === 'FAILED' || parsed.event === 'CANCELLED') {
         es.close();
         handlers.onClose?.(new Event('close'));
       }

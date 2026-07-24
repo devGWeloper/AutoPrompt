@@ -98,55 +98,23 @@ function PairedMetricList({ rows }: { rows: MetricRow[] }) {
   );
 }
 
-// Per-case A/B score box — its own collapsible section (collapsed by default):
-// the header always shows both means (winner bold) + delta badge; bars unfold on demand.
 function CaseScoreBars({ a, b }: { a?: RagasResultRow; b?: RagasResultRow }) {
-  const [open, setOpen] = useState(false);
   const rows = buildMetricRows(a, b);
   const scored = rows.some((r) => r.av != null || r.bv != null);
-  const aMean = caseMean(a);
-  const bMean = caseMean(b);
-  const delta = aMean != null && bMean != null ? bMean - aMean : null;
 
   if (!scored) {
     return (
-      <div className="mt-3 overflow-hidden rounded-sm border border-line bg-surface">
-        <div className="py-3 text-center text-[11px] text-muted">채점 중…</div>
+      <div className="mt-3 overflow-hidden rounded-sm border border-line bg-surface p-3 text-center text-[11px] text-muted">
+        채점 중…
       </div>
     );
   }
   return (
     <div className="mt-3 overflow-hidden rounded-sm border border-line bg-surface">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-1.5 bg-surface-2/60 px-3 py-2 text-left transition-colors hover:bg-surface-2"
-      >
-        <Chevron open={open} />
-        <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">점수</span>
-        <div className="ml-auto flex items-center gap-2 font-mono text-xs tabular-nums text-muted">
-          <span>
-            <span className={cn(aMean != null && bMean != null && aMean > bMean && 'font-semibold text-ink')}>A {fmt3(aMean)}</span>
-            {' · '}
-            <span className={cn(aMean != null && bMean != null && bMean > aMean && 'font-semibold text-ink')}>B {fmt3(bMean)}</span>
-          </span>
-          {delta != null && (
-            <span
-              className={cn(
-                'inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-semibold border',
-                delta > 0
-                  ? 'border-[#bbf7d0] bg-[#f0fdf4] text-[#15803d]'
-                  : delta < 0
-                  ? 'border-[#fecdd3] bg-[#fff1f2] text-[#be123c]'
-                  : 'border-[#e2e8f0] bg-[#f8fafc] text-muted'
-              )}
-            >
-              {(delta > 0 ? '+' : '') + delta.toFixed(3)}
-            </span>
-          )}
-        </div>
-      </button>
-      {open && <div className="border-t border-line"><PairedMetricList rows={rows} /></div>}
+      <div className="border-b border-line bg-surface-2/60 px-3.5 py-2">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">지표 비교</span>
+      </div>
+      <PairedMetricList rows={rows} />
     </div>
   );
 }
@@ -160,12 +128,14 @@ export function CaseCompareTable({
   labelA,
   labelB,
   scored,
+  defaultAllOpen = false,
 }: {
   detailA: RagasRunDetail;
   detailB: RagasRunDetail;
   labelA: string;
   labelB: string;
   scored?: boolean;
+  defaultAllOpen?: boolean;
 }) {
   const byA = new Map(detailA.results.map((r) => [r.case_id, r] as const));
   const byB = new Map(detailB.results.map((r) => [r.case_id, r] as const));
@@ -175,9 +145,10 @@ export function CaseCompareTable({
   const showScores =
     detailA.status !== 'CANCELLED' && detailB.status !== 'CANCELLED' &&
     (scored ?? (detailA.metrics !== '[]' && detailB.metrics !== '[]'));
-  // Collapsed by default — see CaseTable.
-  const [opened, setOpened] = useState<Set<string>>(new Set());
   const keys = ids.map((cid) => String(cid));
+  const [opened, setOpened] = useState<Set<string>>(() =>
+    defaultAllOpen ? new Set(keys) : new Set()
+  );
   const allClosed = opened.size === 0;
   const toggle = (k: string) =>
     setOpened((cur) => { const n = new Set(cur); if (n.has(k)) n.delete(k); else n.add(k); return n; });

@@ -33,7 +33,7 @@ function ScoreBadge({ score }: { score: number | null }) {
       )}
     >
       <span className={cn('h-1.5 w-1.5 rounded-full', lvl.color)} />
-      {fmt3(score)}
+      {lvl.label}
     </span>
   );
 }

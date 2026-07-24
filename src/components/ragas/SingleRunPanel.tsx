@@ -116,6 +116,9 @@ export default function SingleRunPanel() {
   const [callStatus, setCallStatus] = useState<'idle' | 'running' | 'done' | 'failed'>('idle');
   const [callResult, setCallResult] = useState<DirectResult | null>(null);
   const [callError, setCallError] = useState<string | null>(null);
+  const manualScores = callResult ? directScoresRow(callResult) : null;
+  const answered = live.filter((r) => r.answer != null || r.error_msg != null).length;
+  const scored = live.filter((r) => RAGAS_METRICS.some((m) => r[m] != null)).length;
 
   useEffect(() => {
     if (!nodeNm) { setVersions([]); return; }
