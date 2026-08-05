@@ -204,7 +204,8 @@ function chatPayload(message: string, uid: string, traceId: string): Record<stri
 
 /** Body for a JSON-RPC 2.0 / A2A endpoint (protocol=jsonrpc). The chat fields are
  * rejected there ("Extra fields: message, user_id, …"), so the turn is wrapped in
- * an A2A message and the session context rides along as `params.metadata`. */
+ * an A2A message and the session context rides along as `params.metadata` under
+ * the same `session_system_prompt` key (and same stringified form) as chat. */
 function rpcPayload(message: string, uid: string, traceId: string): Record<string, unknown> {
   return {
     jsonrpc: "2.0",
@@ -216,7 +217,7 @@ function rpcPayload(message: string, uid: string, traceId: string): Record<strin
         messageId: traceId,
         parts: [{ kind: "text", text: message }],
       },
-      metadata: sessionContext(uid, traceId),
+      metadata: { session_system_prompt: JSON.stringify(sessionContext(uid, traceId)) },
     },
   };
 }
