@@ -223,15 +223,16 @@ function gaiaParams(message: string, uid: string, traceId: string, url: string):
   };
 }
 
-/** The gaia endpoint speaks JSON-RPC 2.0: anything but jsonrpc/id/method/params at
- * the top level comes back as `-32600 Invalid Request (Extra fields …)`, so the
- * body above is carried as `params`. */
+/** The gaia endpoint validates the JSON-RPC trio (`jsonrpc`/`id`/`method`) on the
+ * SAME level as the body fields — nesting the body under `params` just lands the
+ * whole object in the handler's first argument (`query`), so the trio is merged
+ * into the flat body instead. */
 function gaiaPayload(message: string, uid: string, traceId: string, url: string): Record<string, unknown> {
   return {
     jsonrpc: "2.0",
     id: traceId,
     method: getAgentConfig().rpcMethod,
-    params: gaiaParams(message, uid, traceId, url),
+    ...gaiaParams(message, uid, traceId, url),
   };
 }
 
