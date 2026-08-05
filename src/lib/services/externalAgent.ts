@@ -1,15 +1,42 @@
 import { getAgentConfig, getFlowBaseUrl } from "@/lib/config";
 import { badGateway } from "@/lib/http";
 
-// Hardcoded session context sent as ``session_system_prompt`` (a STRING that is a
-// stringified JSON object — the agent json.loads it to read CUBE_CHANNEL_ID & co).
-const SESSION_SYSTEM_PROMPT = JSON.stringify({
-  CUBE_CHANNEL_ID: "200461700",
-  CUBE_CHANNEL_NM: "이억수 Agent 모니터링 채널",
-  CUBE_USER_ID: "I0103083",
-  CUBE_USER_NM: "김기웅",
-  TRACE_ID: "AI-20260416-171758-44399577",
-});
+// Session context sent as ``session_system_prompt`` (a STRING that is a stringified
+// JSON object — the agent json.loads it to read CUBE_CHANNEL_ID & co). Channel and
+// user name are fixed for this tool; the user id is whoever is calling (config
+// agent.userId / the request's user_id) and TRACE_ID is issued per call.
+const CUBE_CHANNEL_ID = "11111111";
+const CUBE_CHANNEL_NM = "프롬프트 자동화 테스트";
+const CUBE_USER_NM = "이억수";
+
+let traceDay = "";
+let traceSeq = 0;
+
+/** ``PM-YYYYMMDD-NNNN`` — the sequence restarts at 1 on each new day (and on
+ * server restart, since the counter lives in-process). */
+function nextTraceId(): string {
+  const d = new Date();
+  const day =
+    `${d.getFullYear()}` +
+    `${String(d.getMonth() + 1).padStart(2, "0")}` +
+    `${String(d.getDate()).padStart(2, "0")}`;
+  if (day !== traceDay) {
+    traceDay = day;
+    traceSeq = 0;
+  }
+  traceSeq += 1;
+  return `PM-${day}-${String(traceSeq).padStart(4, "0")}`;
+}
+
+function sessionSystemPrompt(userId: string): string {
+  return JSON.stringify({
+    CUBE_CHANNEL_ID,
+    CUBE_CHANNEL_NM,
+    CUBE_USER_ID: userId,
+    CUBE_USER_NM,
+    TRACE_ID: nextTraceId(),
+  });
+}
 
 export interface AgentAnswer {
   response: string;
@@ -112,15 +139,16 @@ function requestHeaders(authKey?: string | null, userId?: string | null): Record
 
 function chatPayload(message: string, userId?: string | null): Record<string, unknown> {
   const a = getAgentConfig();
+  const uid = userId ?? a.userId;
   return {
     message,
-    user_id: userId ?? a.userId,
+    user_id: uid,
     session_id: "",
     chat_type: "default",
     a2a_remote_urls: null,
     is_super_agent: null,
     main_model_name: null,
-    session_system_prompt: SESSION_SYSTEM_PROMPT,
+    session_system_prompt: sessionSystemPrompt(uid),
   };
 }
 
