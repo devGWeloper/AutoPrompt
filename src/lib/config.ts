@@ -33,6 +33,8 @@ export interface AgentConfig {
    * different protocols while the two versions live behind different URLs. */
   protocolA: AgentProtocol | "";
   protocolB: AgentProtocol | "";
+  /** JSON-RPC method name sent when protocol=gaia (the body rides in `params`). */
+  rpcMethod: string;
   /** Shared default auth key; used when the per-side key is empty. */
   authKey: string;
   /** Per-side auth key — the A/B endpoints are different services and may each
@@ -127,6 +129,7 @@ function normalizeAgent(raw: RawConfig | null): AgentConfig {
     protocol: normalizeProtocol(a.protocol, "chat"),
     protocolA: normalizeProtocol(a.protocolA, ""),
     protocolB: normalizeProtocol(a.protocolB, ""),
+    rpcMethod: (a.rpcMethod ?? "").trim() || "message/send",
     authKey: (a.authKey ?? "").trim(),
     authKeyA: (a.authKeyA ?? "").trim(),
     authKeyB: (a.authKeyB ?? "").trim(),

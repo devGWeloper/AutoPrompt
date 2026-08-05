@@ -93,7 +93,7 @@ npm run typecheck      # tsc --noEmit  (npm run build 는 dev .next 캐시를 �
 `src/lib/services/externalAgent.ts`. 엔드포인트마다 요청 형식이 달라서 `agent.protocol`(및 `protocolA`/`protocolB`)로 고른다. 어느 쪽이든 세션 컨텍스트(`CUBE_CHANNEL_ID`/`CUBE_CHANNEL_NM`/`CUBE_USER_ID`/`CUBE_USER_NM`/`TRACE_ID`)가 함께 나가며, `CUBE_USER_ID`는 호출자 사번(`agent.userId` 또는 요청의 `user_id`), `TRACE_ID`는 호출마다 `PM-YYYYMMDD-NNNN`으로 발급된다(일 단위 리셋, 카운터는 프로세스 메모리).
 
 - **`chat`** (기본) — `{message, user_id, session_id, chat_type, a2a_remote_urls, is_super_agent, main_model_name, session_system_prompt}`. `session_system_prompt`는 세션 컨텍스트를 **문자열로 직렬화**한 값이다.
-- **`gaia`** — 두 번째 엔드포인트(gaia 게이트웨이)용. `{query, user_id, session_id, gaia_session_name, gaia_input_channel, chat_type, a2a_remote_urls, is_super_agent, main_model_name, session_system_prompt, request_url, trace_id}`. 질문은 `message`가 아니라 **`query`**, `gaia_input_channel`은 `"api"` 고정, `request_url`은 실제로 호출하는 URL, 최상위 `trace_id`는 빈 문자열이다(실제 번호는 `session_system_prompt.TRACE_ID`).
+- **`gaia`** — 두 번째 엔드포인트(gaia 게이트웨이)용. 이쪽은 **JSON-RPC 2.0**이라 최상위에 `jsonrpc`/`id`/`method`(=`rpcMethod`) 외의 필드가 있으면 `-32600 Invalid Request (Extra fields …)`가 난다. 그래서 본문은 `params`에 담는다: `params = {query, user_id, session_id, gaia_session_name, gaia_input_channel, chat_type, a2a_remote_urls, is_super_agent, main_model_name, session_system_prompt, request_url, trace_id}`. 질문은 `message`가 아니라 **`query`**, `gaia_input_channel`은 `"api"` 고정, `request_url`은 실제로 호출하는 URL, `trace_id`는 빈 문자열이다(실제 번호는 `session_system_prompt.TRACE_ID`).
 
 응답이 JSON-RPC 봉투(`{jsonrpc, result|error}`)로 오면 `error`는 그대로 실패 처리하고 `result`를 벗겨 `parts[].text`를 이어붙인다.
 

@@ -28,6 +28,7 @@ agent:
   protocol: "chat"          # 공용 요청 형식. chat = {message,…} / gaia = {query, gaia_*, request_url,…}
   protocolA: ""             # A 쪽 요청 형식 (비우면 위 protocol)
   protocolB: ""             # B 쪽 요청 형식 (비우면 위 protocol)
+  rpcMethod: "message/send" # protocol=gaia 일 때 JSON-RPC method 이름
   authKey: ""               # 공용 인증 키 (아래 A/B 가 비면 이 값)
   authKeyA: ""              # A 쪽 인증 키
   authKeyB: ""              # B 쪽 인증 키

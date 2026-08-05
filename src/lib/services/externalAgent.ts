@@ -202,10 +202,10 @@ function chatPayload(message: string, uid: string, traceId: string): Record<stri
   };
 }
 
-/** Body for the gaia gateway (protocol=gaia) — the second endpoint takes `query`
- * instead of `message` and wants the gaia channel fields plus the URL it was
- * called on. `trace_id` stays empty; the run's id rides in TRACE_ID. */
-function gaiaPayload(message: string, uid: string, traceId: string, url: string): Record<string, unknown> {
+/** Body for the gaia gateway (protocol=gaia) — takes `query` instead of `message`
+ * and wants the gaia channel fields plus the URL it was called on. `trace_id`
+ * stays empty; the run's id rides in TRACE_ID. */
+function gaiaParams(message: string, uid: string, traceId: string, url: string): Record<string, unknown> {
   return {
     query: message,
     user_id: uid,
@@ -219,6 +219,18 @@ function gaiaPayload(message: string, uid: string, traceId: string, url: string)
     session_system_prompt: JSON.stringify(sessionContext(uid, traceId)),
     request_url: url,
     trace_id: "",
+  };
+}
+
+/** The gaia endpoint speaks JSON-RPC 2.0: anything but jsonrpc/id/method/params at
+ * the top level comes back as `-32600 Invalid Request (Extra fields …)`, so the
+ * body above is carried as `params`. */
+function gaiaPayload(message: string, uid: string, traceId: string, url: string): Record<string, unknown> {
+  return {
+    jsonrpc: "2.0",
+    id: traceId,
+    method: getAgentConfig().rpcMethod,
+    params: gaiaParams(message, uid, traceId, url),
   };
 }
 
