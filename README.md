@@ -33,7 +33,13 @@ agent:                    # flow-level RAGAS 답변 생성용 외부 채팅 엔�
   baseUrl: ""             # 공용 기본 엔드포인트 (A/B 가 비면 이 값)
   baseUrlA: ""            # 비교 A 쪽 기본 엔드포인트 (단일 실행/단건 호출도 A)
   baseUrlB: ""            # 비교 B 쪽 기본 엔드포인트
-  authKey: ""
+  protocol: "chat"        # 요청 형식: chat(기존 채팅 body) | jsonrpc(JSON-RPC 2.0 / A2A)
+  protocolA: ""           # A 쪽 요청 형식 (비우면 protocol)
+  protocolB: ""           # B 쪽 요청 형식 (비우면 protocol)
+  rpcMethod: "message/send"  # protocol=jsonrpc 일 때의 method
+  authKey: ""             # 공용 인증 키 (A/B 가 비면 이 값)
+  authKeyA: ""            # A 쪽 인증 키
+  authKeyB: ""            # B 쪽 인증 키
   userId: "pm-test"
 ragasEngine: "auto"       # auto=LLM 설정 시 LLM 심판, 아니면 FALLBACK / fallback / ragas
 llm:                      # 심판 LLM (OpenAI 호환). 비우면 LLM 채점 꺼짐 → FALLBACK
@@ -81,6 +87,15 @@ npm run typecheck      # tsc --noEmit  (npm run build 는 dev .next 캐시를 �
 - **FALLBACK** — 토큰 겹침 휴리스틱(의존성 없음, 한국어 조사 제거 포함). 결정론적이지만 lexical 근사일 뿐 semantic 판정이 아니다.
 
 `ragasEngine: auto`(기본)는 `llm.endpoint`가 있으면 RAGAS, 없으면 FALLBACK으로 동작한다. `fallback`은 항상 FALLBACK 강제. 답변 생성은 `agent.runMode=external`이면 실제 채팅 엔드포인트를, 기본 `stub`이면 placeholder를 사용한다.
+
+## 외부 엔드포인트 호출 형식
+
+`src/lib/services/externalAgent.ts`. 엔드포인트마다 요청 형식이 달라서 `agent.protocol`(및 `protocolA`/`protocolB`)로 고른다. 어느 쪽이든 세션 컨텍스트(`CUBE_CHANNEL_ID`/`CUBE_CHANNEL_NM`/`CUBE_USER_ID`/`CUBE_USER_NM`/`TRACE_ID`)가 함께 나가며, `CUBE_USER_ID`는 호출자 사번(`agent.userId` 또는 요청의 `user_id`), `TRACE_ID`는 호출마다 `PM-YYYYMMDD-NNNN`으로 발급된다(일 단위 리셋, 카운터는 프로세스 메모리).
+
+- **`chat`** (기본) — `{message, user_id, session_id, chat_type, a2a_remote_urls, is_super_agent, main_model_name, session_system_prompt}`. `session_system_prompt`는 세션 컨텍스트를 **문자열로 직렬화**한 값이다.
+- **`jsonrpc`** — JSON-RPC 2.0 / A2A. 위 chat 필드를 그대로 보내면 `-32600 Invalid Request (Extra fields …)`가 나므로, `{jsonrpc:"2.0", id:<TRACE_ID>, method:<rpcMethod>, params:{message:{role:"user", messageId, parts:[{kind:"text", text}]}, metadata:<세션 컨텍스트>}}` 형태로 보낸다. 응답은 `error`면 그대로 실패 처리하고, `result`를 벗겨 `parts[].text`를 이어붙여 답변으로 쓴다.
+
+헤더는 `auth-key`/`user-id`(이름은 `authHeader`/`userHeader`로 변경 가능)이고, 인증 키는 `authKeyA`/`authKeyB`로 A/B를 나눠 줄 수 있다. URL은 설정값 뒤 슬래시만 떼고 **그 주소로 그대로 POST**한다(코드가 `/chat` 같은 경로를 붙이지 않음).
 
 ## 진행 스트리밍 (SSE)
 

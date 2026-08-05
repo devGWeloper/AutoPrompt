@@ -1,4 +1,10 @@
-import { getAgentConfig, getFlowBaseUrl } from "@/lib/config";
+import {
+  getAgentConfig,
+  getFlowAuthKey,
+  getFlowBaseUrl,
+  getFlowProtocol,
+  type AgentProtocol,
+} from "@/lib/config";
 import { badGateway } from "@/lib/http";
 
 // Session context sent as ``session_system_prompt`` (a STRING that is a stringified
@@ -28,14 +34,14 @@ function nextTraceId(): string {
   return `PM-${day}-${String(traceSeq).padStart(4, "0")}`;
 }
 
-function sessionSystemPrompt(userId: string): string {
-  return JSON.stringify({
+function sessionContext(userId: string, traceId: string): Record<string, string> {
+  return {
     CUBE_CHANNEL_ID,
     CUBE_CHANNEL_NM,
     CUBE_USER_ID: userId,
     CUBE_USER_NM,
-    TRACE_ID: nextTraceId(),
-  });
+    TRACE_ID: traceId,
+  };
 }
 
 export interface AgentAnswer {
@@ -79,6 +85,21 @@ function collectTxt(obj: unknown, out: string[]): void {
   }
 }
 
+/** Walk an A2A result for `{kind|type: "text", text}` parts (message / artifacts). */
+function collectParts(obj: unknown, out: string[]): void {
+  if (Array.isArray(obj)) {
+    for (const item of obj) collectParts(item, out);
+    return;
+  }
+  if (!obj || typeof obj !== "object") return;
+  const o = obj as Record<string, unknown>;
+  if (typeof o.text === "string" && (o.kind === "text" || o.type === "text")) {
+    out.push(o.text);
+    return;
+  }
+  for (const v of Object.values(o)) collectParts(v, out);
+}
+
 /** Aggregate a text/event-stream reply into {response, docs, raw}. */
 function parseSse(text: string): AgentAnswer {
   const parts: string[] = [];
@@ -114,7 +135,32 @@ async function parseChatResponse(resp: Response): Promise<AgentAnswer> {
     return { response: t, docs: [], raw: t };
   }
   if (data && typeof data === "object" && !Array.isArray(data)) {
-    const o = data as Record<string, unknown>;
+    let o = data as Record<string, unknown>;
+    let rpc = false;
+    // JSON-RPC 2.0 envelope: raise the error, else unwrap `result` and score that.
+    if (o.jsonrpc !== undefined || o.error !== undefined || o.result !== undefined) {
+      rpc = true;
+      if (o.error && typeof o.error === "object") {
+        const e = o.error as Record<string, unknown>;
+        const detail = e.data === undefined ? "" : ` ${JSON.stringify(e.data)}`;
+        throw new Error(`RPC error ${String(e.code ?? "")}: ${String(e.message ?? "")}${detail}`);
+      }
+      const result = o.result;
+      if (result !== undefined) {
+        if (result && typeof result === "object" && !Array.isArray(result)) {
+          o = result as Record<string, unknown>;
+        } else {
+          const txt = typeof result === "string" ? result : JSON.stringify(result);
+          return { response: txt, docs: [], raw: Array.isArray(result) ? result : txt };
+        }
+      }
+    }
+    // A2A results carry the reply as message/artifact `parts`, not a `response` key.
+    if (rpc) {
+      const parts: string[] = [];
+      collectParts(o, parts);
+      if (parts.length) return { response: parts.join(""), docs: normalizeDocs(o.docs), raw: o };
+    }
     // Endpoints that reply with a different envelope (no `response` key, e.g.
     // {header, body}) keep their whole JSON as the answer so 정답 일치 can
     // compare it instead of scoring an empty string.
@@ -127,9 +173,13 @@ async function parseChatResponse(resp: Response): Promise<AgentAnswer> {
   return { response: String(data), docs: [], raw: data as string };
 }
 
-function requestHeaders(authKey?: string | null, userId?: string | null): Record<string, string> {
+function requestHeaders(
+  side?: FlowSide | null,
+  authKey?: string | null,
+  userId?: string | null,
+): Record<string, string> {
   const a = getAgentConfig();
-  const ak = (authKey ?? a.authKey).trim();
+  const ak = (authKey ?? getFlowAuthKey(side)).trim();
   const uid = (userId ?? a.userId).trim();
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (ak) headers[a.authHeader || "auth-key"] = ak;
@@ -137,9 +187,8 @@ function requestHeaders(authKey?: string | null, userId?: string | null): Record
   return headers;
 }
 
-function chatPayload(message: string, userId?: string | null): Record<string, unknown> {
-  const a = getAgentConfig();
-  const uid = userId ?? a.userId;
+/** Body for the plain chat endpoint (protocol=chat). */
+function chatPayload(message: string, uid: string, traceId: string): Record<string, unknown> {
   return {
     message,
     user_id: uid,
@@ -148,8 +197,38 @@ function chatPayload(message: string, userId?: string | null): Record<string, un
     a2a_remote_urls: null,
     is_super_agent: null,
     main_model_name: null,
-    session_system_prompt: sessionSystemPrompt(uid),
+    // A STRING that is a stringified JSON object — the agent json.loads it.
+    session_system_prompt: JSON.stringify(sessionContext(uid, traceId)),
   };
+}
+
+/** Body for a JSON-RPC 2.0 / A2A endpoint (protocol=jsonrpc). The chat fields are
+ * rejected there ("Extra fields: message, user_id, …"), so the turn is wrapped in
+ * an A2A message and the session context rides along as `params.metadata`. */
+function rpcPayload(message: string, uid: string, traceId: string): Record<string, unknown> {
+  return {
+    jsonrpc: "2.0",
+    id: traceId,
+    method: getAgentConfig().rpcMethod,
+    params: {
+      message: {
+        role: "user",
+        messageId: traceId,
+        parts: [{ kind: "text", text: message }],
+      },
+      metadata: sessionContext(uid, traceId),
+    },
+  };
+}
+
+function buildPayload(
+  protocol: AgentProtocol,
+  message: string,
+  userId?: string | null,
+): Record<string, unknown> {
+  const uid = userId ?? getAgentConfig().userId;
+  const traceId = nextTraceId();
+  return protocol === "jsonrpc" ? rpcPayload(message, uid, traceId) : chatPayload(message, uid, traceId);
 }
 
 async function post(url: string, body: unknown, headers: Record<string, string>, timeoutMs = 60000): Promise<Response> {
@@ -189,7 +268,7 @@ export function ensureDirectUrl(override?: string | null): string {
 export async function runFlow(message: string, urlOverride?: string | null, side?: FlowSide | null): Promise<AgentAnswer> {
   try {
     const url = urlOverride ? ensureDirectUrl(urlOverride) : baseUrl(side);
-    const resp = await post(url, chatPayload(message), requestHeaders());
+    const resp = await post(url, buildPayload(getFlowProtocol(side), message), requestHeaders(side));
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const parsed = await parseChatResponse(resp);
     return { response: parsed.response, docs: parsed.docs };
@@ -209,8 +288,8 @@ export async function runDirect(args: {
   try {
     const resp = await post(
       url,
-      chatPayload(args.message, args.userId),
-      requestHeaders(args.authKey, args.userId),
+      buildPayload(getFlowProtocol("a"), args.message, args.userId),
+      requestHeaders("a", args.authKey, args.userId),
     );
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     return await parseChatResponse(resp);
@@ -232,7 +311,8 @@ export async function flowAnswer(
   urlOverride?: string | null,
   side?: FlowSide | null,
 ): Promise<AgentAnswer> {
-  if (urlOverride) return runFlow(message, urlOverride);
+  // The side still decides the protocol even when the URL is typed in the UI.
+  if (urlOverride) return runFlow(message, urlOverride, side);
   if (externalEnabled()) return runFlow(message, null, side);
   return stubRunFlow(message);
 }

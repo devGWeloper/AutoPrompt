@@ -12,6 +12,9 @@ export interface DbConfig {
   connectString: string;
 }
 
+/** Request format an endpoint speaks: the plain chat body, or JSON-RPC 2.0 (A2A). */
+export type AgentProtocol = "chat" | "jsonrpc";
+
 /** External chat / super-agent integration (flow-level RAGAS answer generation). */
 export interface AgentConfig {
   /** "external" routes answer generation to the real chat endpoint; "stub" returns a placeholder. */
@@ -23,7 +26,20 @@ export interface AgentConfig {
   /** Compare side B endpoint — the two versions currently live behind
    * different URLs, so B is configured separately (falls back to baseUrl). */
   baseUrlB: string;
+  /** Shared default request format; used when the per-side value is empty. */
+  protocol: AgentProtocol;
+  /** Per-side request format ("" → use `protocol`). The A/B endpoints may speak
+   * different protocols while the two versions live behind different URLs. */
+  protocolA: AgentProtocol | "";
+  protocolB: AgentProtocol | "";
+  /** JSON-RPC method name used when protocol=jsonrpc (A2A default: message/send). */
+  rpcMethod: string;
+  /** Shared default auth key; used when the per-side key is empty. */
   authKey: string;
+  /** Per-side auth key — the A/B endpoints are different services and may each
+   * want their own credential (falls back to authKey). */
+  authKeyA: string;
+  authKeyB: string;
   userId: string;
   authHeader: string;
   userHeader: string;
@@ -56,7 +72,12 @@ interface AppConfig {
 
 interface RawConfig {
   db?: Partial<DbConfig>;
-  agent?: Partial<AgentConfig> & { runMode?: string };
+  agent?: Partial<Omit<AgentConfig, "runMode" | "protocol" | "protocolA" | "protocolB">> & {
+    runMode?: string;
+    protocol?: string;
+    protocolA?: string;
+    protocolB?: string;
+  };
   llm?: Partial<OpenAiCompatConfig>;
   embedding?: Partial<OpenAiCompatConfig>;
   ragasEngine?: string;
@@ -88,6 +109,14 @@ function normalizeDb(raw: RawConfig | null): DbConfig | null {
   return { user, password, connectString };
 }
 
+/** "jsonrpc"/"rpc"/"a2a" → jsonrpc; empty → `fallback` (so a blank per-side value
+ * defers to the shared setting); anything else → chat. */
+function normalizeProtocol<T extends AgentProtocol | "">(v: unknown, fallback: T): AgentProtocol | T {
+  const m = String(v ?? "").trim().toLowerCase();
+  if (!m) return fallback;
+  return m === "jsonrpc" || m === "rpc" || m === "a2a" ? "jsonrpc" : "chat";
+}
+
 function normalizeAgent(raw: RawConfig | null): AgentConfig {
   const a = raw?.agent ?? {};
   const runMode = (a.runMode ?? "").trim().toLowerCase() === "external" ? "external" : "stub";
@@ -96,7 +125,13 @@ function normalizeAgent(raw: RawConfig | null): AgentConfig {
     baseUrl: (a.baseUrl ?? "").trim(),
     baseUrlA: (a.baseUrlA ?? "").trim(),
     baseUrlB: (a.baseUrlB ?? "").trim(),
+    protocol: normalizeProtocol(a.protocol, "chat"),
+    protocolA: normalizeProtocol(a.protocolA, ""),
+    protocolB: normalizeProtocol(a.protocolB, ""),
+    rpcMethod: (a.rpcMethod ?? "").trim() || "message/send",
     authKey: (a.authKey ?? "").trim(),
+    authKeyA: (a.authKeyA ?? "").trim(),
+    authKeyB: (a.authKeyB ?? "").trim(),
     userId: (a.userId ?? "pm-test").trim() || "pm-test",
     authHeader: (a.authHeader ?? "auth-key").trim() || "auth-key",
     userHeader: (a.userHeader ?? "user-id").trim() || "user-id",
@@ -157,6 +192,8 @@ export function loadConfig(): AppConfig {
     runMode: cached.agent.runMode,
     agentBaseUrlA: cached.agent.baseUrlA || cached.agent.baseUrl,
     agentBaseUrlB: cached.agent.baseUrlB || cached.agent.baseUrl,
+    agentProtocolA: cached.agent.protocolA || cached.agent.protocol,
+    agentProtocolB: cached.agent.protocolB || cached.agent.protocol,
     ragasEngine: cached.ragasEngine,
     llmConfigured: cached.llm.endpoint !== "",
     embeddingConfigured: cached.embedding.endpoint !== "",
@@ -182,6 +219,20 @@ export function getFlowBaseUrl(side?: "a" | "b" | null): string {
   const a = loadConfig().agent;
   const perSide = side === "b" ? a.baseUrlB : side === "a" ? a.baseUrlA : "";
   return perSide || a.baseUrl;
+}
+
+/** Which request format that side's endpoint speaks (per-side, else shared). */
+export function getFlowProtocol(side?: "a" | "b" | null): AgentProtocol {
+  const a = loadConfig().agent;
+  const perSide = side === "b" ? a.protocolB : side === "a" ? a.protocolA : "";
+  return perSide || a.protocol;
+}
+
+/** Auth key for that side's endpoint (per-side, else shared). '' when unset. */
+export function getFlowAuthKey(side?: "a" | "b" | null): string {
+  const a = loadConfig().agent;
+  const perSide = side === "b" ? a.authKeyB : side === "a" ? a.authKeyA : "";
+  return perSide || a.authKey;
 }
 
 export function getLlmConfig(): OpenAiCompatConfig {
