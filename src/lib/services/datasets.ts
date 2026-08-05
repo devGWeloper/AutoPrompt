@@ -222,6 +222,11 @@ export async function deleteCase(datasetId: number, caseId: number): Promise<voi
   await withConn(async (conn) => {
     const existing = await fetchCase(conn, datasetId, caseId);
     if (!existing) throw notFound("test case not found");
+    // Past run results reference this case (PM_RAGAS_RESULT.CASE_ID FK), so a
+    // plain DELETE raises ORA-02292 once the case has been evaluated. Detach the
+    // results instead of deleting them — CASE_ID is nullable (direct runs use
+    // NULL) and the rows keep their question/answer, so Records stays intact.
+    await conn.execute(`UPDATE PM_RAGAS_RESULT SET CASE_ID = NULL WHERE CASE_ID = :cid`, { cid: caseId });
     await conn.execute(`DELETE FROM PM_TEST_CASE WHERE CASE_ID = :cid`, { cid: caseId });
   }, { commit: true });
 }
