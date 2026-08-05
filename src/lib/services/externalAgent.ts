@@ -223,16 +223,32 @@ function gaiaParams(message: string, uid: string, traceId: string, url: string):
   };
 }
 
-/** The gaia endpoint validates the JSON-RPC trio (`jsonrpc`/`id`/`method`) on the
- * SAME level as the body fields — nesting the body under `params` just lands the
- * whole object in the handler's first argument (`query`), so the trio is merged
- * into the flat body instead. */
+/** The A2A `Message` — the one field `SendMessageRequest` requires under `params`
+ * ("1 validation error for SendMessageRequest params.message"). The question
+ * travels as text parts, not as a plain string. */
+function a2aMessage(message: string, traceId: string): Record<string, unknown> {
+  return {
+    role: "user",
+    parts: [{ kind: "text", text: message }],
+    messageId: traceId,
+    kind: "message",
+  };
+}
+
+/** The gaia endpoint speaks standard A2A `message/send`: the JSON-RPC trio at the
+ * top level and a `params.message` object. The gaia body fields cannot sit
+ * directly under `params` (the request model only knows message/configuration/
+ * metadata and pushes anything else into the handler's first argument), so they
+ * ride in `params.metadata`. */
 function gaiaPayload(message: string, uid: string, traceId: string, url: string): Record<string, unknown> {
   return {
     jsonrpc: "2.0",
     id: traceId,
     method: getAgentConfig().rpcMethod,
-    ...gaiaParams(message, uid, traceId, url),
+    params: {
+      message: a2aMessage(message, traceId),
+      metadata: gaiaParams(message, uid, traceId, url),
+    },
   };
 }
 
@@ -271,9 +287,14 @@ function sentTag(protocol: AgentProtocol, body: unknown): string {
   const o = body as Record<string, unknown>;
   const keys = Object.keys(o).join(",");
   const method = typeof o.method === "string" ? ` method=${o.method}` : "";
-  const params = o.params && typeof o.params === "object"
-    ? ` params=[${Object.keys(o.params as Record<string, unknown>).join(",")}]`
-    : "";
+  let params = "";
+  if (o.params && typeof o.params === "object") {
+    const p = o.params as Record<string, unknown>;
+    params = ` params=[${Object.keys(p).join(",")}]`;
+    if (p.metadata && typeof p.metadata === "object") {
+      params += ` metadata=[${Object.keys(p.metadata as Record<string, unknown>).join(",")}]`;
+    }
+  }
   return ` | sent: protocol=${protocol}${method} keys=[${keys}]${params}`;
 }
 
