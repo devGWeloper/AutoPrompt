@@ -6,6 +6,7 @@ import {
   type AgentProtocol,
 } from "@/lib/config";
 import { badGateway } from "@/lib/http";
+import { logger } from "@/lib/logger";
 
 // Session context sent as ``session_system_prompt`` (a STRING that is a stringified
 // JSON object — the agent json.loads it to read CUBE_CHANNEL_ID & co). Channel and
@@ -262,6 +263,19 @@ async function post(url: string, body: unknown, headers: Record<string, string>,
   }
 }
 
+/** Short "what we actually sent" tag appended to failures — the terminal log is
+ * not always visible, so the shape of the request has to reach the UI. */
+function sentTag(protocol: AgentProtocol, body: unknown): string {
+  if (!body || typeof body !== "object") return "";
+  const o = body as Record<string, unknown>;
+  const keys = Object.keys(o).join(",");
+  const method = typeof o.method === "string" ? ` method=${o.method}` : "";
+  const params = o.params && typeof o.params === "object"
+    ? ` params=[${Object.keys(o.params as Record<string, unknown>).join(",")}]`
+    : "";
+  return ` | sent: protocol=${protocol}${method} keys=[${keys}]${params}`;
+}
+
 function baseUrl(side?: FlowSide | null): string {
   const url = getFlowBaseUrl(side).trim().replace(/\/+$/, "");
   if (!url) throw badGateway(`agent.baseUrl${side ? side.toUpperCase() : ""} is not set (config.yml)`);
@@ -282,14 +296,26 @@ export function ensureDirectUrl(override?: string | null): string {
  * ``urlOverride`` pins this call to a specific endpoint; otherwise the side's
  * configured endpoint is used (agent.baseUrlA / agent.baseUrlB). */
 export async function runFlow(message: string, urlOverride?: string | null, side?: FlowSide | null): Promise<AgentAnswer> {
+  // Kept outside the try so a failure can log exactly what went on the wire.
+  let url = "";
+  let body: unknown = null;
+  const protocol = getFlowProtocol(side);
   try {
-    const url = urlOverride ? ensureDirectUrl(urlOverride) : baseUrl(side);
-    const resp = await post(url, buildPayload(getFlowProtocol(side), message, url), requestHeaders(side));
+    url = urlOverride ? ensureDirectUrl(urlOverride) : baseUrl(side);
+    body = buildPayload(protocol, message, url);
+    const resp = await post(url, body, requestHeaders(side));
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const parsed = await parseChatResponse(resp);
     return { response: parsed.response, docs: parsed.docs };
   } catch (e) {
-    throw badGateway(`chat run failed: ${String(e)}`);
+    logger.error("chat run failed", {
+      side: side ?? null,
+      protocol,
+      url,
+      body: body === null ? null : JSON.stringify(body),
+      err: String(e),
+    });
+    throw badGateway(`chat run failed: ${String(e)}${sentTag(protocol, body)}`);
   }
 }
 
@@ -301,16 +327,15 @@ export async function runDirect(args: {
   userId?: string | null;
 }): Promise<AgentAnswer> {
   const url = ensureDirectUrl(args.baseUrl);
+  const protocol = getFlowProtocol("a");
+  const body = buildPayload(protocol, args.message, url, args.userId);
   try {
-    const resp = await post(
-      url,
-      buildPayload(getFlowProtocol("a"), args.message, url, args.userId),
-      requestHeaders("a", args.authKey, args.userId),
-    );
+    const resp = await post(url, body, requestHeaders("a", args.authKey, args.userId));
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     return await parseChatResponse(resp);
   } catch (e) {
-    throw badGateway(`direct call failed: ${String(e)}`);
+    logger.error("direct call failed", { protocol, url, body: JSON.stringify(body), err: String(e) });
+    throw badGateway(`direct call failed: ${String(e)}${sentTag(protocol, body)}`);
   }
 }
 
