@@ -4,9 +4,10 @@ import { badGateway } from "@/lib/http";
 // Hardcoded session context sent as ``session_system_prompt`` (a STRING that is a
 // stringified JSON object — the agent json.loads it to read CUBE_CHANNEL_ID & co).
 const SESSION_SYSTEM_PROMPT = JSON.stringify({
-  CUBE_CHANNEL_ID: "509108549",
-  CUBE_USER_ID: "2074340",
-  CUBE_USER_NM: "김태윤",
+  CUBE_CHANNEL_ID: "200461700",
+  CUBE_CHANNEL_NM: "이억수 Agent 모니터링 채널",
+  CUBE_USER_ID: "I0103083",
+  CUBE_USER_NM: "김기웅",
   TRACE_ID: "AI-20260416-171758-44399577",
 });
 
