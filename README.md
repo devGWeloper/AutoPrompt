@@ -93,7 +93,9 @@ npm run typecheck      # tsc --noEmit  (npm run build 는 dev .next 캐시를 �
 `src/lib/services/externalAgent.ts`. 엔드포인트마다 요청 형식이 달라서 `agent.protocol`(및 `protocolA`/`protocolB`)로 고른다. 어느 쪽이든 세션 컨텍스트(`CUBE_CHANNEL_ID`/`CUBE_CHANNEL_NM`/`CUBE_USER_ID`/`CUBE_USER_NM`/`TRACE_ID`)가 함께 나가며, `CUBE_USER_ID`는 호출자 사번(`agent.userId` 또는 요청의 `user_id`), `TRACE_ID`는 호출마다 `PM-YYYYMMDD-NNNN`으로 발급된다(일 단위 리셋, 카운터는 프로세스 메모리).
 
 - **`chat`** (기본) — `{message, user_id, session_id, chat_type, a2a_remote_urls, is_super_agent, main_model_name, session_system_prompt}`. `session_system_prompt`는 세션 컨텍스트를 **문자열로 직렬화**한 값이다.
-- **`jsonrpc`** — JSON-RPC 2.0 / A2A. 위 chat 필드를 그대로 보내면 `-32600 Invalid Request (Extra fields …)`가 나므로, `{jsonrpc:"2.0", id:<TRACE_ID>, method:<rpcMethod>, params:{message:{role:"user", messageId, parts:[{kind:"text", text}]}, metadata:{session_system_prompt:"<세션 컨텍스트 문자열>"}}}` 형태로 보낸다(세션 컨텍스트는 chat 과 동일한 키·동일한 직렬화 문자열). 응답은 `error`면 그대로 실패 처리하고, `result`를 벗겨 `parts[].text`를 이어붙여 답변으로 쓴다.
+- **`gaia`** — 두 번째 엔드포인트(gaia 게이트웨이)용. `{query, user_id, session_id, gaia_session_name, gaia_input_channel, chat_type, a2a_remote_urls, is_super_agent, main_model_name, session_system_prompt, request_url, trace_id}`. 질문은 `message`가 아니라 **`query`**, `gaia_input_channel`은 `"api"` 고정, `request_url`은 실제로 호출하는 URL, 최상위 `trace_id`는 빈 문자열이다(실제 번호는 `session_system_prompt.TRACE_ID`).
+
+응답이 JSON-RPC 봉투(`{jsonrpc, result|error}`)로 오면 `error`는 그대로 실패 처리하고 `result`를 벗겨 `parts[].text`를 이어붙인다.
 
 헤더는 `auth-key`/`user-id`(이름은 `authHeader`/`userHeader`로 변경 가능)이고, 인증 키는 `authKeyA`/`authKeyB`로 A/B를 나눠 줄 수 있다. URL은 설정값 뒤 슬래시만 떼고 **그 주소로 그대로 POST**한다(코드가 `/chat` 같은 경로를 붙이지 않음).
 

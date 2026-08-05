@@ -12,8 +12,9 @@ export interface DbConfig {
   connectString: string;
 }
 
-/** Request format an endpoint speaks: the plain chat body, or JSON-RPC 2.0 (A2A). */
-export type AgentProtocol = "chat" | "jsonrpc";
+/** Request format an endpoint speaks: the plain chat body ({message, …}) or the
+ * gaia gateway body ({query, gaia_*, request_url, …}). */
+export type AgentProtocol = "chat" | "gaia";
 
 /** External chat / super-agent integration (flow-level RAGAS answer generation). */
 export interface AgentConfig {
@@ -32,8 +33,6 @@ export interface AgentConfig {
    * different protocols while the two versions live behind different URLs. */
   protocolA: AgentProtocol | "";
   protocolB: AgentProtocol | "";
-  /** JSON-RPC method name used when protocol=jsonrpc (A2A default: message/send). */
-  rpcMethod: string;
   /** Shared default auth key; used when the per-side key is empty. */
   authKey: string;
   /** Per-side auth key — the A/B endpoints are different services and may each
@@ -109,12 +108,12 @@ function normalizeDb(raw: RawConfig | null): DbConfig | null {
   return { user, password, connectString };
 }
 
-/** "jsonrpc"/"rpc"/"a2a" → jsonrpc; empty → `fallback` (so a blank per-side value
- * defers to the shared setting); anything else → chat. */
+/** "gaia" (and the older jsonrpc/rpc/a2a spellings) → gaia; empty → `fallback`
+ * (so a blank per-side value defers to the shared setting); else → chat. */
 function normalizeProtocol<T extends AgentProtocol | "">(v: unknown, fallback: T): AgentProtocol | T {
   const m = String(v ?? "").trim().toLowerCase();
   if (!m) return fallback;
-  return m === "jsonrpc" || m === "rpc" || m === "a2a" ? "jsonrpc" : "chat";
+  return m === "gaia" || m === "jsonrpc" || m === "rpc" || m === "a2a" ? "gaia" : "chat";
 }
 
 function normalizeAgent(raw: RawConfig | null): AgentConfig {
@@ -128,7 +127,6 @@ function normalizeAgent(raw: RawConfig | null): AgentConfig {
     protocol: normalizeProtocol(a.protocol, "chat"),
     protocolA: normalizeProtocol(a.protocolA, ""),
     protocolB: normalizeProtocol(a.protocolB, ""),
-    rpcMethod: (a.rpcMethod ?? "").trim() || "message/send",
     authKey: (a.authKey ?? "").trim(),
     authKeyA: (a.authKeyA ?? "").trim(),
     authKeyB: (a.authKeyB ?? "").trim(),

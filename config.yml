@@ -25,10 +25,9 @@ agent:
   baseUrl: ""               # 공용 기본 엔드포인트 (아래 A/B 가 비면 이 값을 쓴다)
   baseUrlA: ""              # 비교 A 쪽 기본 엔드포인트 (단일 실행/단건 호출도 A 를 쓴다)
   baseUrlB: ""              # 비교 B 쪽 기본 엔드포인트
-  protocol: "chat"          # 공용 요청 형식. chat = 기존 채팅 body / jsonrpc = JSON-RPC 2.0(A2A)
+  protocol: "chat"          # 공용 요청 형식. chat = {message,…} / gaia = {query, gaia_*, request_url,…}
   protocolA: ""             # A 쪽 요청 형식 (비우면 위 protocol)
   protocolB: ""             # B 쪽 요청 형식 (비우면 위 protocol)
-  rpcMethod: "message/send" # protocol=jsonrpc 일 때 보낼 method 이름
   authKey: ""               # 공용 인증 키 (아래 A/B 가 비면 이 값)
   authKeyA: ""              # A 쪽 인증 키
   authKeyB: ""              # B 쪽 인증 키

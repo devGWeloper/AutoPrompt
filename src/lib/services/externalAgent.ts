@@ -202,34 +202,37 @@ function chatPayload(message: string, uid: string, traceId: string): Record<stri
   };
 }
 
-/** Body for a JSON-RPC 2.0 / A2A endpoint (protocol=jsonrpc). The chat fields are
- * rejected there ("Extra fields: message, user_id, …"), so the turn is wrapped in
- * an A2A message and the session context rides along as `params.metadata` under
- * the same `session_system_prompt` key (and same stringified form) as chat. */
-function rpcPayload(message: string, uid: string, traceId: string): Record<string, unknown> {
+/** Body for the gaia gateway (protocol=gaia) — the second endpoint takes `query`
+ * instead of `message` and wants the gaia channel fields plus the URL it was
+ * called on. `trace_id` stays empty; the run's id rides in TRACE_ID. */
+function gaiaPayload(message: string, uid: string, traceId: string, url: string): Record<string, unknown> {
   return {
-    jsonrpc: "2.0",
-    id: traceId,
-    method: getAgentConfig().rpcMethod,
-    params: {
-      message: {
-        role: "user",
-        messageId: traceId,
-        parts: [{ kind: "text", text: message }],
-      },
-      metadata: { session_system_prompt: JSON.stringify(sessionContext(uid, traceId)) },
-    },
+    query: message,
+    user_id: uid,
+    session_id: "",
+    gaia_session_name: "",
+    gaia_input_channel: "api",
+    chat_type: "default",
+    a2a_remote_urls: null,
+    is_super_agent: null,
+    main_model_name: null,
+    session_system_prompt: JSON.stringify(sessionContext(uid, traceId)),
+    request_url: url,
+    trace_id: "",
   };
 }
 
 function buildPayload(
   protocol: AgentProtocol,
   message: string,
+  url: string,
   userId?: string | null,
 ): Record<string, unknown> {
   const uid = userId ?? getAgentConfig().userId;
   const traceId = nextTraceId();
-  return protocol === "jsonrpc" ? rpcPayload(message, uid, traceId) : chatPayload(message, uid, traceId);
+  return protocol === "gaia"
+    ? gaiaPayload(message, uid, traceId, url)
+    : chatPayload(message, uid, traceId);
 }
 
 async function post(url: string, body: unknown, headers: Record<string, string>, timeoutMs = 60000): Promise<Response> {
@@ -269,7 +272,7 @@ export function ensureDirectUrl(override?: string | null): string {
 export async function runFlow(message: string, urlOverride?: string | null, side?: FlowSide | null): Promise<AgentAnswer> {
   try {
     const url = urlOverride ? ensureDirectUrl(urlOverride) : baseUrl(side);
-    const resp = await post(url, buildPayload(getFlowProtocol(side), message), requestHeaders(side));
+    const resp = await post(url, buildPayload(getFlowProtocol(side), message, url), requestHeaders(side));
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const parsed = await parseChatResponse(resp);
     return { response: parsed.response, docs: parsed.docs };
@@ -289,7 +292,7 @@ export async function runDirect(args: {
   try {
     const resp = await post(
       url,
-      buildPayload(getFlowProtocol("a"), args.message, args.userId),
+      buildPayload(getFlowProtocol("a"), args.message, url, args.userId),
       requestHeaders("a", args.authKey, args.userId),
     );
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
