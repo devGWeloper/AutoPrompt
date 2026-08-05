@@ -4,14 +4,15 @@ import { useState } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/cn';
 import {
-  RAGAS_METRICS,
+  ALL_METRICS,
+  EXACT_MATCH,
   METRIC_LABELS,
   METRIC_DESCRIPTIONS,
   type RagasMetric,
   type RagasResultRow,
   type RagasRunDetail,
 } from '@/lib/types';
-import { AnswerBox, caseMean, Chevron, CollapseAllStrip, fmt3 } from './shared';
+import { AnswerBox, caseMean, Chevron, CollapseAllStrip, exactOnly, fmt3, OxBadge, sideLabel } from './shared';
 
 // One side's absolute-score bar (fills 0→value on a 0..1 scale). B is the accent
 // colour, A is neutral grey; the winning side's number is inked + bold.
@@ -41,12 +42,12 @@ function buildMetricRows(
   a: RagasResultRow | RagasRunDetail | undefined,
   b: RagasResultRow | RagasRunDetail | undefined,
 ): MetricRow[] {
-  return RAGAS_METRICS.map((m) => {
+  return ALL_METRICS.map((m) => {
     const av = a && a[m] != null ? Number(a[m]) : null;
     const bv = b && b[m] != null ? Number(b[m]) : null;
     const d = av != null && bv != null ? bv - av : null;
     return { m, av, bv, d };
-  });
+  }).filter((r) => r.av != null || r.bv != null);
 }
 
 // One-line A/B verdict for the Comparison card header: who leads + the win tally.
@@ -74,24 +75,38 @@ function PairedMetricList({ rows }: { rows: MetricRow[] }) {
       {rows.map(({ m, av, bv, d }) => (
         <li key={m} className="grid grid-cols-[minmax(104px,0.8fr)_2fr_auto] items-center gap-4 px-3.5 py-2.5">
           <span className="truncate text-sm font-medium text-ink" title={METRIC_DESCRIPTIONS[m]}>{METRIC_LABELS[m]}</span>
-          <div className="flex flex-col gap-1.5">
-            <MetricBar side="A" value={av} win={d != null && d < 0} />
-            <MetricBar side="B" value={bv} win={d != null && d > 0} />
-          </div>
-          <span
-            className={cn(
-              'inline-flex min-w-[60px] items-center justify-center rounded-md px-2 py-0.5 font-mono text-xs font-semibold tabular-nums border',
-              d == null
-                ? 'border-transparent text-muted'
-                : d > 0
-                ? 'border-[#bbf7d0] bg-[#f0fdf4] text-[#15803d]'
-                : d < 0
-                ? 'border-[#fecdd3] bg-[#fff1f2] text-[#be123c]'
-                : 'border-[#e2e8f0] bg-[#f8fafc] text-muted'
-            )}
-          >
-            {d == null ? '—' : (d > 0 ? '+' : '') + d.toFixed(3)}
-          </span>
+          {/* 정답 일치 is a per-case verdict — O/X reads better than a 0/1 bar. */}
+          {m === EXACT_MATCH ? (
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center gap-2"><span className="w-3 shrink-0 text-[10px] font-semibold text-muted">A</span><OxBadge value={av} /></div>
+              <div className="flex items-center gap-2"><span className="w-3 shrink-0 text-[10px] font-semibold text-muted">B</span><OxBadge value={bv} /></div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              <MetricBar side="A" value={av} win={d != null && d < 0} />
+              <MetricBar side="B" value={bv} win={d != null && d > 0} />
+            </div>
+          )}
+          {m === EXACT_MATCH ? (
+            <span className="min-w-[60px] text-center text-[11px] font-medium text-muted">
+              {d == null ? '—' : d === 0 ? '동일' : d > 0 ? 'B만 일치' : 'A만 일치'}
+            </span>
+          ) : (
+            <span
+              className={cn(
+                'inline-flex min-w-[60px] items-center justify-center rounded-md px-2 py-0.5 font-mono text-xs font-semibold tabular-nums border',
+                d == null
+                  ? 'border-transparent text-muted'
+                  : d > 0
+                  ? 'border-[#bbf7d0] bg-[#f0fdf4] text-[#15803d]'
+                  : d < 0
+                  ? 'border-[#fecdd3] bg-[#fff1f2] text-[#be123c]'
+                  : 'border-[#e2e8f0] bg-[#f8fafc] text-muted'
+              )}
+            >
+              {d == null ? '—' : (d > 0 ? '+' : '') + d.toFixed(3)}
+            </span>
+          )}
         </li>
       ))}
     </ul>
@@ -188,7 +203,12 @@ export function CaseCompareTable({
                   <span className="min-w-0 flex-1 truncate"><span className="font-semibold">B</span> {b?.answer ?? '—'}</span>
                 </span>
               )}
-              {isClosed && showScores && (
+              {isClosed && showScores && (exactOnly(a ?? {}) || exactOnly(b ?? {})) ? (
+                <div className="flex shrink-0 items-center gap-1.5 text-[10px] font-semibold text-muted">
+                  A <OxBadge value={a?.exact_match ?? null} />
+                  B <OxBadge value={b?.exact_match ?? null} />
+                </div>
+              ) : isClosed && showScores && (
                 aMean != null || bMean != null
                   ? <div className="flex items-center gap-1.5 shrink-0 font-mono text-xs tabular-nums text-muted">
                       <span>
@@ -219,11 +239,11 @@ export function CaseCompareTable({
                 {gt && <p className="mb-3 whitespace-pre-wrap text-xs text-muted"><span className="font-medium">Ground truth ·</span> {gt}</p>}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="rounded-sm border border-line bg-bg/40 p-3">
-                    <Badge tone="neutral">A · v{labelA}</Badge>
+                    <Badge tone="neutral">A · {sideLabel(labelA)}</Badge>
                     <div className="mt-2"><AnswerBox text={a?.answer} error={a?.error_msg} /></div>
                   </div>
                   <div className="rounded-sm border border-line bg-bg/40 p-3">
-                    <Badge tone="accent">B · v{labelB}</Badge>
+                    <Badge tone="accent">B · {sideLabel(labelB)}</Badge>
                     <div className="mt-2"><AnswerBox text={b?.answer} error={b?.error_msg} /></div>
                   </div>
                 </div>

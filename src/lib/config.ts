@@ -16,7 +16,13 @@ export interface DbConfig {
 export interface AgentConfig {
   /** "external" routes answer generation to the real chat endpoint; "stub" returns a placeholder. */
   runMode: "external" | "stub";
+  /** Shared default endpoint; used when the per-side URL is empty. */
   baseUrl: string;
+  /** Compare side A endpoint (falls back to baseUrl). */
+  baseUrlA: string;
+  /** Compare side B endpoint — the two versions currently live behind
+   * different URLs, so B is configured separately (falls back to baseUrl). */
+  baseUrlB: string;
   authKey: string;
   userId: string;
   authHeader: string;
@@ -88,6 +94,8 @@ function normalizeAgent(raw: RawConfig | null): AgentConfig {
   return {
     runMode,
     baseUrl: (a.baseUrl ?? "").trim(),
+    baseUrlA: (a.baseUrlA ?? "").trim(),
+    baseUrlB: (a.baseUrlB ?? "").trim(),
     authKey: (a.authKey ?? "").trim(),
     userId: (a.userId ?? "pm-test").trim() || "pm-test",
     authHeader: (a.authHeader ?? "auth-key").trim() || "auth-key",
@@ -147,6 +155,8 @@ export function loadConfig(): AppConfig {
     sourceFile: cached.sourceFile,
     dbConfigured: cached.db !== null,
     runMode: cached.agent.runMode,
+    agentBaseUrlA: cached.agent.baseUrlA || cached.agent.baseUrl,
+    agentBaseUrlB: cached.agent.baseUrlB || cached.agent.baseUrl,
     ragasEngine: cached.ragasEngine,
     llmConfigured: cached.llm.endpoint !== "",
     embeddingConfigured: cached.embedding.endpoint !== "",
@@ -164,6 +174,14 @@ export function getDbConfig(): DbConfig | null {
 
 export function getAgentConfig(): AgentConfig {
   return loadConfig().agent;
+}
+
+/** Which chat endpoint a run should call: the A/B side URL when configured,
+ * otherwise the shared default. '' when nothing is configured. */
+export function getFlowBaseUrl(side?: "a" | "b" | null): string {
+  const a = loadConfig().agent;
+  const perSide = side === "b" ? a.baseUrlB : side === "a" ? a.baseUrlA : "";
+  return perSide || a.baseUrl;
 }
 
 export function getLlmConfig(): OpenAiCompatConfig {

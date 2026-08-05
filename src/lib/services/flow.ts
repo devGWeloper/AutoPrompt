@@ -2,18 +2,20 @@ import { readConn, withConn } from "@/lib/db";
 import type { OracleConnection, OracleModule } from "@/lib/db";
 import { notFound } from "@/lib/http";
 import { RUN_COLS, insertReturningId, mapRagasRun } from "@/lib/db/rows";
-import { ALL_METRICS, DIRECT_SINK_NM, SYSTEM_USER } from "@/lib/types";
+import { ALL_METRICS, DIRECT_SINK_NM, EXACT_MATCH, SYSTEM_USER } from "@/lib/types";
 import type {
   FlowCurrent,
+  LlmMetric,
   RagasMetric,
   RagasRunOut,
   RagasResultRow,
   RunEvent,
 } from "@/lib/types";
+import { exactMatchScore } from "@/lib/exactMatch";
 import { resolveRagasEngine } from "@/lib/config";
 import { requireDataset } from "./datasets";
 import * as agent from "./externalAgent";
-import { avg, chosenMetrics, parseCase, scoreCaseAsync, toScore } from "./ragas";
+import { avg, chosenMetrics, llmMetrics, parseCase, scoreCaseAsync, toScore } from "./ragas";
 import type { CaseScore } from "./ragas";
 
 // ---- current flow (node list) ----
@@ -110,23 +112,27 @@ export async function createFlowRagasRun(args: {
 
 export async function createFlowRagasAbRun(args: {
   datasetId: number;
-  nodeNm: string;
-  promptIdA: number;
-  promptIdB: number;
+  nodeNm?: string | null;
+  promptIdA?: number | null;
+  promptIdB?: number | null;
   metrics: string[];
   score?: boolean;
 }): Promise<{ ragas_run_a_id: number; ragas_run_b_id: number }> {
   await requireDataset(args.datasetId);
   return withConn(async (conn, oracle) => {
+    // Prompt versions are optional: an A/B may instead pin each side to its own
+    // endpoint (base_url passed on the run's stream), in which case there is no
+    // version to swap and PROMPT_ID stays null.
     for (const pid of [args.promptIdA, args.promptIdB]) {
+      if (pid == null) continue;
       const nm = await promptNode(conn, pid);
-      if (nm === null || nm !== args.nodeNm) {
+      if (nm === null || (args.nodeNm != null && nm !== args.nodeNm)) {
         throw notFound(`prompt version ${pid} not found for node ${JSON.stringify(args.nodeNm)}`);
       }
     }
     const chosen = args.score === false ? [] : chosenMetrics(args.metrics);
     const ids: number[] = [];
-    for (const pid of [args.promptIdA, args.promptIdB]) {
+    for (const pid of [args.promptIdA ?? null, args.promptIdB ?? null]) {
       const id = await insertReturningId(
         conn,
         oracle,
@@ -149,6 +155,8 @@ export async function createFlowRagasAbRun(args: {
 // ---- direct external-API calls (recorded as ENGINE='direct') ----
 
 const DIRECT_ENGINE = "direct";
+/** ENGINE value for a run scored only by 정답 일치 (no judge LLM involved). */
+const EXACT_ENGINE = "exact";
 
 async function directSinkDatasetId(conn: OracleConnection, oracle: OracleModule): Promise<number> {
   const res = await conn.execute(
@@ -173,46 +181,49 @@ export async function recordDirectRun(args: {
   userId?: string | null;
   score?: boolean;
   metrics?: string[];
+  expectedOutput?: string | null;
 }): Promise<agent.AgentAnswer & { scores: CaseScore | null }> {
   const data = await agent.runDirect(args);
-  // Optional inline scoring — a single case with no ground truth, so gt-based
-  // metrics come back null and only the rest carry values.
+  // Optional inline scoring — a single case whose ground truth is whatever the
+  // caller typed as the expected answer (blank → gt-based metrics stay null).
+  const groundTruth = args.expectedOutput?.trim() ? args.expectedOutput : null;
+  const metrics: RagasMetric[] = args.score ? chosenMetrics(args.metrics ?? []) : [];
+  const llm = llmMetrics(metrics);
   let scores: CaseScore | null = null;
   let scoreErr: string | null = null;
-  let metrics: RagasMetric[] = [];
   let engine: "RAGAS" | "FALLBACK" | null = null;
-  if (args.score) {
+  if (llm.length) {
     engine = resolveRagasEngine();
-    metrics = chosenMetrics(args.metrics ?? []);
     try {
       scores = await scoreCaseAsync({
         question: args.message,
         answer: data.response,
         contexts: data.docs,
-        groundTruth: null,
-        metrics,
+        groundTruth,
+        metrics: llm,
         engine,
       });
     } catch (e) {
       scoreErr = String(e).slice(0, 1000);
     }
   }
-  const scored = scores != null;
-  const dec = (m: RagasMetric) => (scored ? toScore(scores![m] ?? null) : null);
+  const em = metrics.includes(EXACT_MATCH) ? exactMatchScore(data.response, groundTruth) : null;
+  const dec = (m: LlmMetric) => (scores ? toScore(scores[m] ?? null) : null);
   await withConn(async (conn, oracle) => {
     const sinkId = await directSinkDatasetId(conn, oracle);
     const runId = await insertReturningId(
       conn,
       oracle,
       `INSERT INTO PM_RAGAS_RUN (DATASET_ID, STATUS, ENGINE, METRICS, CREATED_BY, STARTED_DT, ENDED_DT,
-                                 FAITHFULNESS, ANSWER_RELEVANCY, CONTEXT_PRECISION, CONTEXT_RECALL, ANSWER_CORRECTNESS)
-       VALUES (:did, 'DONE', :eng, :met, :cby, SYSTIMESTAMP, SYSTIMESTAMP, :f, :ar, :cp, :cr, :ac)
+                                 EXACT_MATCH, FAITHFULNESS, ANSWER_RELEVANCY, CONTEXT_PRECISION, CONTEXT_RECALL, ANSWER_CORRECTNESS)
+       VALUES (:did, 'DONE', :eng, :met, :cby, SYSTIMESTAMP, SYSTIMESTAMP, :em, :f, :ar, :cp, :cr, :ac)
        RETURNING RAGAS_RUN_ID INTO :out_id`,
       {
         did: sinkId,
-        eng: scored ? engine : DIRECT_ENGINE,
-        met: scored ? JSON.stringify(metrics) : "[]",
+        eng: engine ?? (metrics.length ? EXACT_ENGINE : DIRECT_ENGINE),
+        met: metrics.length ? JSON.stringify(metrics) : "[]",
         cby: SYSTEM_USER,
+        em,
         f: dec("faithfulness"),
         ar: dec("answer_relevancy"),
         cp: dec("context_precision"),
@@ -221,15 +232,17 @@ export async function recordDirectRun(args: {
       },
     );
     await conn.execute(
-      `INSERT INTO PM_RAGAS_RESULT (RAGAS_RUN_ID, CASE_ID, QUESTION, ANSWER, CONTEXTS, ERROR_MSG,
-                                    FAITHFULNESS, ANSWER_RELEVANCY, CONTEXT_PRECISION, CONTEXT_RECALL, ANSWER_CORRECTNESS)
-       VALUES (:rid, NULL, :q, :a, :ctx, :err, :f, :ar, :cp, :cr, :ac)`,
+      `INSERT INTO PM_RAGAS_RESULT (RAGAS_RUN_ID, CASE_ID, QUESTION, ANSWER, CONTEXTS, GROUND_TRUTH, ERROR_MSG,
+                                    EXACT_MATCH, FAITHFULNESS, ANSWER_RELEVANCY, CONTEXT_PRECISION, CONTEXT_RECALL, ANSWER_CORRECTNESS)
+       VALUES (:rid, NULL, :q, :a, :ctx, :gt, :err, :em, :f, :ar, :cp, :cr, :ac)`,
       {
         rid: runId,
         q: args.message,
         a: data.response,
         ctx: JSON.stringify(data.docs),
+        gt: groundTruth,
         err: scoreErr,
+        em,
         f: dec("faithfulness"),
         ar: dec("answer_relevancy"),
         cp: dec("context_precision"),
@@ -238,7 +251,8 @@ export async function recordDirectRun(args: {
       },
     );
   }, { commit: true });
-  return { ...data, scores };
+  if (!metrics.length) return { ...data, scores: null };
+  return { ...data, scores: { ...(scores ?? {}), ...(metrics.includes(EXACT_MATCH) ? { exact_match: em } : {}) } };
 }
 
 function messageFromInputs(inputData: string): string {
@@ -339,6 +353,14 @@ interface RunCtx {
   /** false = answers-only run (METRICS='[]'): phase2 is skipped entirely. */
   score: boolean;
   metrics: RagasMetric[];
+  /** Metrics that need the judge LLM — empty for a 정답 일치 only run. */
+  llm: LlmMetric[];
+  /** true when 정답 일치 is selected (scored inline in phase 1). */
+  exact: boolean;
+  /** Endpoint typed into the UI for this run; null = use the side's config URL. */
+  baseUrl: string | null;
+  /** Which configured endpoint this run calls (agent.baseUrlA / baseUrlB). */
+  side: agent.FlowSide | null;
   cases: CaseRow[];
   swapNode: string | null;
   pending: Pending[];
@@ -346,7 +368,14 @@ interface RunCtx {
   cancelled: boolean;
 }
 
-async function setupRun(conn: OracleConnection, oracle: OracleModule, runId: number, emit: Emit): Promise<RunCtx | null> {
+async function setupRun(
+  conn: OracleConnection,
+  oracle: OracleModule,
+  runId: number,
+  emit: Emit,
+  baseUrl: string | null,
+  side: agent.FlowSide | null,
+): Promise<RunCtx | null> {
   const run = await fetchRun(conn, runId);
   if (!run) return null;
   // Already finished (e.g. an EventSource reconnected after completion) → replay
@@ -371,15 +400,21 @@ async function setupRun(conn: OracleConnection, oracle: OracleModule, runId: num
   }
   const score = !(parsedMetrics && parsedMetrics.length === 0);
   const metrics = score ? chosenMetrics(parsedMetrics ?? [...ALL_METRICS]) : [];
+  const llm = llmMetrics(metrics);
+  const exact = metrics.includes(EXACT_MATCH);
   const engine = resolveRagasEngine();
+  // A run scored only by 정답 일치 never touches the judge LLM, so it records
+  // ENGINE='exact' rather than claiming RAGAS/FALLBACK.
   await conn.execute(
     `UPDATE PM_RAGAS_RUN SET STATUS = 'RUNNING', STARTED_DT = SYSTIMESTAMP${score ? ", ENGINE = :eng" : ""} WHERE RAGAS_RUN_ID = :id`,
-    score ? { eng: engine, id: runId } : { id: runId },
+    score ? { eng: llm.length ? engine : EXACT_ENGINE, id: runId } : { id: runId },
   );
   await conn.commit();
   const cases = await loadCases(conn, run.dataset_id);
   emit({ event: "RUNNING", run_id: runId, total: cases.length });
 
+  // No prompt version on the run (A/B pinned to two endpoints) → nothing to swap:
+  // the endpoint itself is the version under test.
   let swapNode: string | null = null;
   if (run.prompt_id) {
     const nm = await promptNode(conn, run.prompt_id);
@@ -390,7 +425,7 @@ async function setupRun(conn: OracleConnection, oracle: OracleModule, runId: num
   }
 
   const sums = Object.fromEntries(ALL_METRICS.map((m) => [m, [] as number[]])) as Record<RagasMetric, number[]>;
-  return { runId, engine, score, metrics, cases, swapNode, pending: [], sums, cancelled: false };
+  return { runId, engine, score, metrics, llm, exact, baseUrl, side, cases, swapNode, pending: [], sums, cancelled: false };
 }
 
 async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx, emit: Emit, signal?: AbortSignal): Promise<void> {
@@ -408,7 +443,7 @@ async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx,
     let errMsg: string | null = null;
     let contexts = fields.contexts;
     try {
-      const data = await agent.flowAnswer(message);
+      const data = await agent.flowAnswer(message, ctx.baseUrl, ctx.side);
       answer = data.response;
       if (!contexts.length && data.docs.length) contexts = data.docs;
     } catch (e) {
@@ -416,11 +451,15 @@ async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx,
       answer = null;
       errMsg = String(e).slice(0, 1000);
     }
+    // 정답 일치 needs no LLM, so it is decided here with the answer instead of
+    // waiting for the scoring phase.
+    const em = ctx.exact && !error ? exactMatchScore(answer, fields.groundTruth) : null;
+    if (em !== null) ctx.sums[EXACT_MATCH].push(em);
     const resultId = await insertReturningId(
       conn,
       oracle,
-      `INSERT INTO PM_RAGAS_RESULT (RAGAS_RUN_ID, CASE_ID, QUESTION, CONTEXTS, GROUND_TRUTH, ANSWER, ERROR_MSG)
-       VALUES (:rid, :cid, :q, :ctx, :gt, :a, :err) RETURNING RAGAS_RESULT_ID INTO :out_id`,
+      `INSERT INTO PM_RAGAS_RESULT (RAGAS_RUN_ID, CASE_ID, QUESTION, CONTEXTS, GROUND_TRUTH, ANSWER, ERROR_MSG, EXACT_MATCH)
+       VALUES (:rid, :cid, :q, :ctx, :gt, :a, :err, :em) RETURNING RAGAS_RESULT_ID INTO :out_id`,
       {
         rid: ctx.runId,
         cid: c.case_id,
@@ -429,6 +468,7 @@ async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx,
         gt: fields.groundTruth,
         a: answer,
         err: errMsg,
+        em,
       },
     );
     await conn.commit();
@@ -462,13 +502,13 @@ async function phase2(conn: OracleConnection, ctx: RunCtx, emit: Emit, signal?: 
           answer: p.answer,
           contexts: p.contexts,
           groundTruth: p.groundTruth,
-          metrics: ctx.metrics,
+          metrics: ctx.llm,
           engine: ctx.engine,
         });
         const sets: string[] = [];
         const binds: Record<string, unknown> = { id: p.resultId };
         let stored = false;
-        for (const m of ctx.metrics) {
+        for (const m of ctx.llm) {
           const dec = toScore(cs[m] ?? null);
           if (dec !== null) {
             sets.push(`${m.toUpperCase()} = :${m}`);
@@ -524,7 +564,12 @@ async function finalize(conn: OracleConnection, ctx: RunCtx, emit: Emit): Promis
     binds,
   );
   await conn.commit();
-  emit({ event: "DONE", run_id: ctx.runId, engine: ctx.score ? ctx.engine : null, summary });
+  emit({
+    event: "DONE",
+    run_id: ctx.runId,
+    engine: ctx.score ? (ctx.llm.length ? ctx.engine : EXACT_ENGINE) : null,
+    summary,
+  });
 }
 
 async function recordFailure(conn: OracleConnection, runId: number, msg: string, emit: Emit): Promise<void> {
@@ -544,16 +589,23 @@ async function recordFailure(conn: OracleConnection, runId: number, msg: string,
   emit({ event: "FAILED", run_id: runId, error: msg });
 }
 
-/** Execute a single flow RAGAS run, streaming events via ``emit``. */
-export async function executeRun(runId: number, emit: Emit, signal?: AbortSignal): Promise<void> {
+/** Execute a single flow RAGAS run, streaming events via ``emit``.
+ * ``opts.side`` picks the configured endpoint (agent.baseUrlA / baseUrlB) and
+ * ``opts.baseUrl`` overrides it with a URL typed into the UI. */
+export async function executeRun(
+  runId: number,
+  emit: Emit,
+  signal?: AbortSignal,
+  opts?: { baseUrl?: string | null; side?: agent.FlowSide | null },
+): Promise<void> {
   await withConn(async (conn, oracle) => {
     let ctx: RunCtx | null = null;
     try {
-      ctx = await setupRun(conn, oracle, runId, emit);
+      ctx = await setupRun(conn, oracle, runId, emit, opts?.baseUrl ?? null, opts?.side ?? null);
       if (!ctx) return;
       try {
         await phase1(conn, oracle, ctx, emit, signal);
-        if (!ctx.cancelled && ctx.score) await phase2(conn, ctx, emit, signal);
+        if (!ctx.cancelled && ctx.score && ctx.llm.length) await phase2(conn, ctx, emit, signal);
       } finally {
         if (ctx.swapNode) await deactivateNode(conn, ctx.swapNode);
       }
@@ -585,7 +637,10 @@ export async function executeAbRun(aId: number, bId: number, emit: Emit, signal?
   await withConn(async (conn, oracle) => {
     const ctxs: (RunCtx | null)[] = [];
     try {
-      for (const id of [aId, bId]) ctxs.push(await setupRun(conn, oracle, id, emit));
+      const sides: agent.FlowSide[] = ["a", "b"];
+      for (const [i, id] of [aId, bId].entries()) {
+        ctxs.push(await setupRun(conn, oracle, id, emit, null, sides[i]));
+      }
       // Phase 1 — answers for A, then B (each under its own active-prompt swap).
       for (const ctx of ctxs) {
         if (!ctx) continue;
@@ -597,7 +652,7 @@ export async function executeAbRun(aId: number, bId: number, emit: Emit, signal?
       }
       // Phase 2 — scores for A, then B.
       for (const ctx of ctxs) {
-        if (!ctx || ctx.cancelled || !ctx.score) continue;
+        if (!ctx || ctx.cancelled || !ctx.score || !ctx.llm.length) continue;
         await phase2(conn, ctx, emit, signal);
       }
       for (const ctx of ctxs) {

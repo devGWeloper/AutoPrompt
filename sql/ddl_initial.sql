@@ -50,13 +50,19 @@ CREATE TABLE PM_TEST_CASE (
 
 -- 4) RAGAS run (flow-scoped aggregate). PROMPT_ID records the node version under
 --    test (A/B); AB_GROUP_ID links the two runs of one comparison. ENGINE='direct'
---    marks a raw external-API call (no scoring).
+--    marks a raw external-API call (no scoring), ENGINE='exact' a run scored only
+--    by 정답 일치 (EXACT_MATCH; 1/0 per case, the run average = 일치율).
+--
+--    이미 만들어진 스키마라면 EXACT_MATCH 컬럼만 추가한다:
+--      ALTER TABLE PM_RAGAS_RUN    ADD (EXACT_MATCH NUMBER(5,4));
+--      ALTER TABLE PM_RAGAS_RESULT ADD (EXACT_MATCH NUMBER(5,4));
 CREATE TABLE PM_RAGAS_RUN (
     RAGAS_RUN_ID       NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     PROMPT_ID          NUMBER REFERENCES PM_NODE_PROMPT_VER(PROMPT_ID),
     AB_GROUP_ID        NUMBER,
     DATASET_ID         NUMBER NOT NULL REFERENCES PM_TEST_DATASET(DATASET_ID),
     STATUS             VARCHAR2(20) DEFAULT 'PENDING',
+    EXACT_MATCH        NUMBER(5,4),
     FAITHFULNESS       NUMBER(5,4),
     ANSWER_RELEVANCY   NUMBER(5,4),
     CONTEXT_PRECISION  NUMBER(5,4),
@@ -82,6 +88,7 @@ CREATE TABLE PM_RAGAS_RESULT (
     ANSWER             CLOB,
     CONTEXTS           CLOB,
     GROUND_TRUTH       CLOB,
+    EXACT_MATCH        NUMBER(5,4),
     FAITHFULNESS       NUMBER(5,4),
     ANSWER_RELEVANCY   NUMBER(5,4),
     CONTEXT_PRECISION  NUMBER(5,4),

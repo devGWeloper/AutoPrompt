@@ -5,6 +5,8 @@ import { Select } from '@/components/ui/Field';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import {
+  ALL_METRICS,
+  EXACT_MATCH,
   RAGAS_METRICS,
   METRIC_LABELS,
   METRIC_DESCRIPTIONS,
@@ -37,18 +39,31 @@ export function fmtDt(iso: string): string {
   return d.startsWith(`${now.getFullYear()}-`) ? `${d.slice(5)} ${hm}` : `${d} ${hm}`;
 }
 
+type Scored = { [K in RagasMetric]?: number | null };
+
 // Overall run score = mean of the available metric averages (null if none
 // scored). Accepts anything carrying the metric fields (details and summaries).
-export function runMean(d: { [K in RagasMetric]?: number | null }): number | null {
-  const vs = RAGAS_METRICS.map((m) => d[m]).filter((v): v is number => v != null);
+export function runMean(d: Scored): number | null {
+  const vs = ALL_METRICS.map((m) => d[m]).filter((v): v is number => v != null);
   return vs.length ? vs.reduce((s, v) => s + Number(v), 0) / vs.length : null;
 }
 
 // Mean of one case's available metric scores (null until something is scored).
 export function caseMean(r: RagasResultRow | undefined): number | null {
   if (!r) return null;
-  const vs = RAGAS_METRICS.map((m) => r[m]).filter((v): v is number => v != null);
+  const vs = ALL_METRICS.map((m) => r[m]).filter((v): v is number => v != null);
   return vs.length ? vs.reduce((s, v) => s + Number(v), 0) / vs.length : null;
+}
+
+/** Metrics that actually carry a score — the only ones worth rendering. */
+export function scoredMetrics(d: Scored): RagasMetric[] {
+  return ALL_METRICS.filter((m) => d[m] != null);
+}
+
+/** True when 정답 일치 is the only thing scored → show O/X instead of an average. */
+export function exactOnly(d: Scored): boolean {
+  const s = scoredMetrics(d);
+  return s.length === 1 && s[0] === EXACT_MATCH;
 }
 
 /** Insert or replace a streamed result row, keeping case order (by result id). */
@@ -84,7 +99,7 @@ export function usePromptNodes() {
 
 // ---- small shared controls -------------------------------------------------
 
-/** 'RAGAS 채점' master switch, shared by every run mode. */
+/** '채점' master switch, shared by every run mode. */
 export function ScoreToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
     <button
@@ -108,36 +123,83 @@ export function ScoreToggle({ on, onChange }: { on: boolean; onChange: (v: boole
           )}
         />
       </span>
-      <span className={cn('transition-colors', on ? 'text-ink' : 'text-muted')}>RAGAS 채점</span>
+      <span className={cn('transition-colors', on ? 'text-ink' : 'text-muted')}>채점</span>
     </button>
   );
 }
 
-/** Metric picker as an always-visible chip row. */
-export function MetricChips({ metrics, setMetrics }: { metrics: string[]; setMetrics: (f: (cur: string[]) => string[]) => void }) {
+function Chip({
+  label, on, onClick, title, strong,
+}: { label: string; on: boolean; onClick: () => void; title?: string; strong?: boolean }) {
   return (
-    <>
-      {RAGAS_METRICS.map((m) => {
-        const on = metrics.includes(m);
-        return (
-          <button
-            key={m}
-            type="button"
-            title={METRIC_DESCRIPTIONS[m]}
-            aria-pressed={on}
-            onClick={() => setMetrics((cur) => (on ? cur.filter((x) => x !== m) : [...cur, m]))}
-            className={cn(
-              'inline-flex items-center whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
-              on ? 'border-accent/25 bg-accent-soft/60 text-accent' : 'border-transparent text-muted hover:bg-surface-2',
-            )}
-          >
-            {METRIC_LABELS[m]}
-          </button>
-        );
-      })}
-    </>
+    <button
+      type="button"
+      title={title}
+      aria-pressed={on}
+      onClick={onClick}
+      className={cn(
+        'inline-flex items-center whitespace-nowrap rounded-full border px-2.5 py-1 text-xs transition-colors',
+        strong ? 'font-semibold' : 'font-medium',
+        on ? 'border-accent/25 bg-accent-soft/60 text-accent' : 'border-transparent text-muted hover:bg-surface-2',
+      )}
+    >
+      {label}
+    </button>
   );
 }
+
+/**
+ * Evaluation-option picker: two groups — 정답 일치 (no LLM) and RAGAS. Turning
+ * RAGAS on selects all five metrics and reveals them for individual picking;
+ * turning it off (or deselecting all five) hides them again.
+ */
+export function EvalOptions({ metrics, setMetrics }: { metrics: string[]; setMetrics: (f: (cur: string[]) => string[]) => void }) {
+  const exactOn = metrics.includes(EXACT_MATCH);
+  const ragasOn = RAGAS_METRICS.some((m) => metrics.includes(m));
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Chip
+          strong
+          label={METRIC_LABELS[EXACT_MATCH]}
+          title={METRIC_DESCRIPTIONS[EXACT_MATCH]}
+          on={exactOn}
+          onClick={() => setMetrics((cur) => (exactOn ? cur.filter((x) => x !== EXACT_MATCH) : [...cur, EXACT_MATCH]))}
+        />
+        <Chip
+          strong
+          label="RAGAS"
+          title="심판 LLM으로 채점하는 RAGAS 지표입니다. 켜면 아래에서 지표를 고를 수 있습니다."
+          on={ragasOn}
+          onClick={() =>
+            setMetrics((cur) =>
+              ragasOn
+                ? cur.filter((x) => !RAGAS_METRICS.includes(x as (typeof RAGAS_METRICS)[number]))
+                : [...cur, ...RAGAS_METRICS],
+            )
+          }
+        />
+      </div>
+      {ragasOn && (
+        <div className="ml-1 flex flex-wrap items-center gap-1.5 border-l-2 border-line pl-3">
+          {RAGAS_METRICS.map((m) => (
+            <Chip
+              key={m}
+              label={METRIC_LABELS[m]}
+              title={METRIC_DESCRIPTIONS[m]}
+              on={metrics.includes(m)}
+              onClick={() => setMetrics((cur) => (cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m]))}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A/B side label: the prompt version when one was chosen, otherwise the side is
+ * identified by its own endpoint (A/B across two endpoints). */
+export const sideLabel = (label: string) => (label ? `v${label}` : '엔드포인트');
 
 export function DatasetSelect({ datasets, value, onChange }: { datasets: Dataset[]; value: number | null; onChange: (id: number) => void }) {
   return (
@@ -227,19 +289,44 @@ export function CollapseAllStrip({ allClosed, onToggle }: { allClosed: boolean; 
   );
 }
 
+/** 정답 일치 verdict: 1 → O, 0 → X (a run-level rate renders as a percentage). */
+export function OxBadge({ value, rate }: { value: number | null; rate?: boolean }) {
+  if (value == null) return <span className="text-[11px] text-muted">—</span>;
+  const ok = rate ? value >= 1 : value >= 0.5;
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold',
+        ok ? 'border-ok/30 bg-ok/10 text-ok' : 'border-bad/25 bg-bad/10 text-bad',
+      )}
+    >
+      <span className="font-mono">{ok ? 'O' : 'X'}</span>
+      {rate ? `${Math.round(value * 100)}% 일치` : ok ? '일치' : '불일치'}
+    </span>
+  );
+}
+
 export function ScoreBars({ row }: { row: RagasResultRow }) {
-  const scored = RAGAS_METRICS.some((m) => row[m] != null);
-  if (!scored) {
+  const shown = scoredMetrics(row);
+  if (!shown.length) {
     return row.answer == null && row.error_msg
       ? <span className="text-[11px] text-bad">{row.error_msg}</span>
       : <span className="text-[11px] text-muted">채점 중…</span>;
   }
   return (
     <div className="overflow-hidden rounded-sm border border-line bg-surface p-3">
-      <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">지표 점수</p>
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">평가 결과</p>
       <ul className="flex flex-col gap-2">
-        {RAGAS_METRICS.map((m) => {
+        {shown.map((m) => {
           const v = row[m] != null ? Number(row[m]) : null;
+          if (m === EXACT_MATCH) {
+            return (
+              <li key={m} className="flex items-center gap-3">
+                <span className="truncate text-[11px] text-muted" title={METRIC_DESCRIPTIONS[m]}>{METRIC_LABELS[m]}</span>
+                <OxBadge value={v} />
+              </li>
+            );
+          }
           const pct = v != null ? Math.max(0, Math.min(1, v)) * 100 : 0;
           return (
             <li key={m} className="grid grid-cols-[minmax(92px,auto)_1fr_auto] items-center gap-3">
@@ -292,11 +379,13 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
                 <span className="mt-0.5 min-w-0 flex-1 truncate text-xs text-muted">{r.answer}</span>
               )}
               {isClosed && showScores && (
-                mean != null
-                  ? <span className="shrink-0 font-mono text-xs tabular-nums text-muted">평균 <span className="font-semibold text-ink">{fmt3(mean)}</span></span>
-                  : r.answer == null && r.error_msg
-                    ? <span className="shrink-0 text-[11px] text-bad">오류</span>
-                    : <span className="shrink-0 text-[11px] text-muted">채점 중…</span>
+                exactOnly(r)
+                  ? <span className="shrink-0"><OxBadge value={r.exact_match} /></span>
+                  : mean != null
+                    ? <span className="shrink-0 font-mono text-xs tabular-nums text-muted">평균 <span className="font-semibold text-ink">{fmt3(mean)}</span></span>
+                    : r.answer == null && r.error_msg
+                      ? <span className="shrink-0 text-[11px] text-bad">오류</span>
+                      : <span className="shrink-0 text-[11px] text-muted">채점 중…</span>
               )}
             </button>
             {!isClosed && (

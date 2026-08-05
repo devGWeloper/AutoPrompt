@@ -11,7 +11,7 @@ import { cn } from '@/lib/cn';
 import type { RagasRunDetail, RagasRunSummary } from '@/lib/types';
 import { CaseCompareTable } from './CompareTable';
 import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummaryDashboard';
-import { CaseTable, fmt2, fmt3, fmtDt, runMean, SegToggle } from './shared';
+import { CaseTable, fmt2, fmt3, fmtDt, runMean, SegToggle, sideLabel } from './shared';
 
 const API_BASE = '/api';
 
@@ -556,9 +556,9 @@ function AbCompareView({ aId, bId, labelA, labelB }: { aId: number; bId: number;
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
           <h3 className="mr-1 text-sm font-semibold text-ink">Compare Detail</h3>
           {a.node_nm && <span className="font-medium text-ink">{a.node_nm}</span>}
-          <Badge tone="neutral">A · v{labelA || '—'}</Badge>
+          <Badge tone="neutral">A · {sideLabel(labelA)}</Badge>
           <span>vs</span>
-          <Badge tone="accent">B · v{labelB || '—'}</Badge>
+          <Badge tone="accent">B · {sideLabel(labelB)}</Badge>
           <span className="ml-auto flex items-center gap-2">
             <span>Engine {a.engine ?? '—'}</span>
           </span>

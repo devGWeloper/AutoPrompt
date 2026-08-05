@@ -15,6 +15,7 @@ export async function POST(req: Request) {
       userId: body.user_id,
       score: body.score,
       metrics: body.metrics,
+      expectedOutput: body.expected_output,
     });
     return ok({ response: data.response, docs: data.docs, raw: data.raw ?? "", scores: data.scores });
   } catch (e) {

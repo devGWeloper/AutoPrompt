@@ -1,4 +1,4 @@
-import { getAgentConfig } from "@/lib/config";
+import { getAgentConfig, getFlowBaseUrl } from "@/lib/config";
 import { badGateway } from "@/lib/http";
 
 // Hardcoded session context sent as ``session_system_prompt`` (a STRING that is a
@@ -16,9 +16,12 @@ export interface AgentAnswer {
   raw?: Record<string, unknown> | unknown[] | string;
 }
 
+/** A/B side of a run — each side may have its own configured endpoint. */
+export type FlowSide = "a" | "b";
+
 export function externalEnabled(): boolean {
   const a = getAgentConfig();
-  return a.runMode === "external" && a.baseUrl.length > 0;
+  return a.runMode === "external" && (a.baseUrl || a.baseUrlA || a.baseUrlB).length > 0;
 }
 
 function normalizeDocs(raw: unknown): string[] {
@@ -84,8 +87,11 @@ async function parseChatResponse(resp: Response): Promise<AgentAnswer> {
   }
   if (data && typeof data === "object" && !Array.isArray(data)) {
     const o = data as Record<string, unknown>;
+    // Endpoints that reply with a different envelope (no `response` key, e.g.
+    // {header, body}) keep their whole JSON as the answer so 정답 일치 can
+    // compare it instead of scoring an empty string.
     return {
-      response: String(o.response ?? ""),
+      response: o.response !== undefined ? String(o.response) : JSON.stringify(o),
       docs: normalizeDocs(o.docs),
       raw: o,
     };
@@ -132,14 +138,14 @@ async function post(url: string, body: unknown, headers: Record<string, string>,
   }
 }
 
-function baseUrl(): string {
-  const url = getAgentConfig().baseUrl.trim().replace(/\/+$/, "");
-  if (!url) throw badGateway("agent.baseUrl is not set (config.yml)");
+function baseUrl(side?: FlowSide | null): string {
+  const url = getFlowBaseUrl(side).trim().replace(/\/+$/, "");
+  if (!url) throw badGateway(`agent.baseUrl${side ? side.toUpperCase() : ""} is not set (config.yml)`);
   return url;
 }
 
 export function ensureDirectUrl(override?: string | null): string {
-  const url = (override || getAgentConfig().baseUrl).trim().replace(/\/+$/, "");
+  const url = (override || getFlowBaseUrl("a")).trim().replace(/\/+$/, "");
   if (!url) {
     throw badGateway(
       "호출할 외부 API URL이 없습니다 — 요청에 base_url을 넣거나 config.yml 의 agent.baseUrl 을 설정하세요",
@@ -148,10 +154,13 @@ export function ensureDirectUrl(override?: string | null): string {
   return url;
 }
 
-/** POST one turn to the external chat endpoint (RUN_MODE=external). */
-export async function runFlow(message: string): Promise<AgentAnswer> {
+/** POST one turn to the external chat endpoint (RUN_MODE=external).
+ * ``urlOverride`` pins this call to a specific endpoint; otherwise the side's
+ * configured endpoint is used (agent.baseUrlA / agent.baseUrlB). */
+export async function runFlow(message: string, urlOverride?: string | null, side?: FlowSide | null): Promise<AgentAnswer> {
   try {
-    const resp = await post(baseUrl(), chatPayload(message), requestHeaders());
+    const url = urlOverride ? ensureDirectUrl(urlOverride) : baseUrl(side);
+    const resp = await post(url, chatPayload(message), requestHeaders());
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const parsed = await parseChatResponse(resp);
     return { response: parsed.response, docs: parsed.docs };
@@ -186,8 +195,15 @@ export function stubRunFlow(message: string): AgentAnswer {
   return { response: `[stub answer] ${message}`.trim(), docs: [] };
 }
 
-/** One flow answer: real endpoint when external is enabled, else the stub. */
-export async function flowAnswer(message: string): Promise<AgentAnswer> {
-  if (externalEnabled()) return runFlow(message);
+/** One flow answer. A URL typed into the UI always wins (and is called even in
+ * stub mode); otherwise the side's configured endpoint is used when external is
+ * enabled, else the stub. */
+export async function flowAnswer(
+  message: string,
+  urlOverride?: string | null,
+  side?: FlowSide | null,
+): Promise<AgentAnswer> {
+  if (urlOverride) return runFlow(message, urlOverride);
+  if (externalEnabled()) return runFlow(message, null, side);
   return stubRunFlow(message);
 }

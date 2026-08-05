@@ -103,6 +103,7 @@ export const CASE_COLS = [
 ].join(", ");
 
 const RUN_SCORE_COLS = [
+  "EXACT_MATCH",
   "FAITHFULNESS",
   "ANSWER_RELEVANCY",
   "CONTEXT_PRECISION",
@@ -225,6 +226,7 @@ export function mapRagasRun(r: Row): RagasRunOut {
     metrics: str(r.METRICS),
     judge_provider: str(r.JUDGE_PROVIDER),
     judge_model: str(r.JUDGE_MODEL),
+    exact_match: num(r.EXACT_MATCH),
     faithfulness: num(r.FAITHFULNESS),
     answer_relevancy: num(r.ANSWER_RELEVANCY),
     context_precision: num(r.CONTEXT_PRECISION),
@@ -251,6 +253,7 @@ export function mapRagasRunSummary(r: Row): RagasRunSummary {
     is_manual: str(r.DATASET_NM) === DIRECT_SINK_NM,
     status: run.status,
     engine: run.engine,
+    exact_match: run.exact_match,
     faithfulness: run.faithfulness,
     answer_relevancy: run.answer_relevancy,
     context_precision: run.context_precision,
@@ -270,6 +273,7 @@ export function mapRagasResult(r: Row): RagasResultRow {
     answer: str(r.ANSWER),
     contexts: str(r.CONTEXTS),
     ground_truth: str(r.GROUND_TRUTH),
+    exact_match: num(r.EXACT_MATCH),
     faithfulness: num(r.FAITHFULNESS),
     answer_relevancy: num(r.ANSWER_RELEVANCY),
     context_precision: num(r.CONTEXT_PRECISION),

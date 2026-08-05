@@ -30,7 +30,9 @@ db:                       # PM_* 테이블이 있는 Oracle 접속. 비우면 DB
   connectString: "localhost:1521/XEPDB1"
 agent:                    # flow-level RAGAS 답변 생성용 외부 채팅 엔드포인트
   runMode: "stub"         # stub=결정론적 placeholder / external=실제 엔드포인트 호출
-  baseUrl: ""
+  baseUrl: ""             # 공용 기본 엔드포인트 (A/B 가 비면 이 값)
+  baseUrlA: ""            # 비교 A 쪽 기본 엔드포인트 (단일 실행/단건 호출도 A)
+  baseUrlB: ""            # 비교 B 쪽 기본 엔드포인트
   authKey: ""
   userId: "pm-test"
 ragasEngine: "auto"       # auto=LLM 설정 시 LLM 심판, 아니면 FALLBACK / fallback / ragas
@@ -64,6 +66,13 @@ npm run dev
 npm run typecheck      # tsc --noEmit  (npm run build 는 dev .next 캐시를 건드릴 수 있어 typecheck 권장)
 ```
 
+## 평가 옵션
+
+평가 옵션은 **정답 일치**(기본)와 **RAGAS** 두 갈래이고, RAGAS를 켜면 그 아래에서 5개 지표를 개별로 고른다.
+
+- **정답 일치 (`exact_match`)** — `src/lib/exactMatch.ts`. 심판 LLM이 필요 없다. 응답 JSON에 `body`가 있으면 그 부분만, 정답(ground truth / 기대 정답)과 비교해 케이스별 O(1)/X(0)로 채점한다. 양쪽이 JSON이면 키 순서를 무시한 구조 비교, 아니면 공백 정규화 후 문자열 비교(대소문자 구분). 런 평균 = 일치율이고, 이 옵션만 켠 런은 `ENGINE='exact'`로 기록되며 LLM 채점 단계를 아예 건너뛴다.
+- **RAGAS 5종** — 아래 스코어러를 탄다.
+
 ## RAGAS 스코어링 (중요)
 
 스코어러는 두 가지가 내장돼 있고 `ragasEngine` 설정으로 고른다(`src/lib/config.ts` `resolveRagasEngine`).
@@ -76,6 +85,8 @@ npm run typecheck      # tsc --noEmit  (npm run build 는 dev .next 캐시를 �
 ## 진행 스트리밍 (SSE)
 
 RAGAS 실행 진행상황은 WebSocket 대신 **SSE**로 전송된다. `POST /api/flow/test/ragas`가 run(PENDING)을 만들고, 프론트가 `GET /api/ragas-runs/{id}/stream`(EventSource)에 붙으면 그 스트림이 평가 루프를 구동하며 `RUNNING/ANSWER/SCORE/DONE` 이벤트를 흘린다. 취소는 `POST /api/ragas-runs/{id}/cancel`(STATUS=CANCELLING).
+
+스트림에 `?side=a|b` 를 붙이면 그 런은 해당 쪽 기본 엔드포인트(`agent.baseUrlA` / `baseUrlB`)를 호출하고, `?base_url=` 를 함께 주면 그 URL이 우선한다. Compare 탭의 **엔드포인트** 모드가 이 경로로, 두 버전이 서로 다른 API에 떠 있을 때 쓰는 임시 수단이다(이 모드에서는 프롬프트 버전을 고르지 않으므로 활성 버전 교체도 일어나지 않는다). **프롬프트 버전** 모드는 종전대로 한 노드의 두 버전을 같은 엔드포인트에서 비교한다.
 
 ## 내보내기
 

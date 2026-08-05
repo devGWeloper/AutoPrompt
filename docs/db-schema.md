@@ -152,7 +152,8 @@ USER_PROMPT / MODEL_NM 을 가져간다.
 | `AB_GROUP_ID`       | NUMBER           | Y    | —             | A/B 쌍 식별자 (= A 쪽 `RAGAS_RUN_ID`). 단일은 NULL.   |
 | `DATASET_ID`        | NUMBER           | N    | —             | FK → `PM_TEST_DATASET(DATASET_ID)`                    |
 | `STATUS`            | VARCHAR2(20)     | N    | 'PENDING'     | PENDING / RUNNING / DONE / FAILED                      |
-| `FAITHFULNESS`      | NUMBER(5,4)      | Y    | —             | 평균 점수 (5종)                                        |
+| `EXACT_MATCH`       | NUMBER(5,4)      | Y    | —             | 정답 일치 평균 = 일치율 (케이스별 1/0)                 |
+| `FAITHFULNESS`      | NUMBER(5,4)      | Y    | —             | RAGAS 평균 점수 (5종)                                  |
 | `ANSWER_RELEVANCY`  | NUMBER(5,4)      | Y    | —             |                                                        |
 | `CONTEXT_PRECISION` | NUMBER(5,4)      | Y    | —             |                                                        |
 | `CONTEXT_RECALL`    | NUMBER(5,4)      | Y    | —             |                                                        |
@@ -160,7 +161,7 @@ USER_PROMPT / MODEL_NM 을 가져간다.
 | `JUDGE_PROVIDER`    | VARCHAR2(50)     | Y    | —             | 요청 시 지정 가능 (실제 사용 안 함, 호환용)             |
 | `JUDGE_MODEL`       | VARCHAR2(100)    | Y    | —             | 요청별 judge LLM 모델 override                          |
 | `METRICS`           | CLOB             | Y    | —             | JSON 배열 — 이번 run 에 채점한 metric 목록             |
-| `ENGINE`            | VARCHAR2(20)     | Y    | —             | 'RAGAS' / 'FALLBACK' (실행 시 결정)                   |
+| `ENGINE`            | VARCHAR2(20)     | Y    | —             | 'RAGAS' / 'FALLBACK' / 'exact'(정답 일치만) / 'direct' |
 | `ERROR_MSG`         | CLOB             | Y    | —             | FAILED 사유                                            |
 | `STARTED_DT`        | TIMESTAMP        | Y    | —             |                                                        |
 | `ENDED_DT`          | TIMESTAMP        | Y    | —             |                                                        |
@@ -186,6 +187,7 @@ USER_PROMPT / MODEL_NM 을 가져간다.
 | `ANSWER`            | CLOB             | Y    | —             | 외부 모델 응답(`response`)                    |
 | `CONTEXTS`          | CLOB             | Y    | —             | JSON 배열 (케이스 contexts 또는 응답 docs[])  |
 | `GROUND_TRUTH`      | CLOB             | Y    | —             |                                               |
+| `EXACT_MATCH`       | NUMBER(5,4)      | Y    | —             | 정답 일치 1(O) / 0(X) / NULL(정답 없음)        |
 | `FAITHFULNESS`      | NUMBER(5,4)      | Y    | —             | 케이스 점수                                   |
 | `ANSWER_RELEVANCY`  | NUMBER(5,4)      | Y    | —             |                                               |
 | `CONTEXT_PRECISION` | NUMBER(5,4)      | Y    | —             |                                               |
@@ -285,6 +287,7 @@ CREATE TABLE PM_RAGAS_RUN (
     AB_GROUP_ID        NUMBER,
     DATASET_ID         NUMBER NOT NULL,
     STATUS             VARCHAR2(20)  DEFAULT 'PENDING' NOT NULL,
+    EXACT_MATCH        NUMBER(5,4),
     FAITHFULNESS       NUMBER(5,4),
     ANSWER_RELEVANCY   NUMBER(5,4),
     CONTEXT_PRECISION  NUMBER(5,4),
@@ -316,6 +319,7 @@ CREATE TABLE PM_RAGAS_RESULT (
     ANSWER             CLOB,
     CONTEXTS           CLOB,
     GROUND_TRUTH       CLOB,
+    EXACT_MATCH        NUMBER(5,4),
     FAITHFULNESS       NUMBER(5,4),
     ANSWER_RELEVANCY   NUMBER(5,4),
     CONTEXT_PRECISION  NUMBER(5,4),

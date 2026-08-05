@@ -8,20 +8,28 @@ export const SYSTEM_USER = "system";
  * Rows whose dataset carries this name are "manual" in the records UI. */
 export const DIRECT_SINK_NM = "(직접 호출)";
 
-// ---- RAGAS metrics ----
+// ---- evaluation metrics ----
 
-export const ALL_METRICS = [
+/** RAGAS metrics — every one of these needs the judge LLM (or the fallback). */
+export const RAGAS_METRICS = [
   "faithfulness",
   "answer_relevancy",
   "context_precision",
   "context_recall",
   "answer_correctness",
 ] as const;
+export type LlmMetric = (typeof RAGAS_METRICS)[number];
+
+export { EXACT_MATCH } from "./exactMatch";
+import { EXACT_MATCH } from "./exactMatch";
+
+/** Every selectable evaluation option. Each key doubles as a DB column name
+ * (upper-cased) on PM_RAGAS_RUN / PM_RAGAS_RESULT. */
+export const ALL_METRICS = [EXACT_MATCH, ...RAGAS_METRICS] as const;
 export type RagasMetric = (typeof ALL_METRICS)[number];
 
-export const RAGAS_METRICS = ALL_METRICS;
-
 export const METRIC_LABELS: Record<RagasMetric, string> = {
+  exact_match: "정답 일치",
   faithfulness: "Faithfulness",
   answer_relevancy: "Answer Relevancy",
   context_precision: "Context Precision",
@@ -31,6 +39,8 @@ export const METRIC_LABELS: Record<RagasMetric, string> = {
 
 /** One-line hover explanations for each metric (used as `title` tooltips). */
 export const METRIC_DESCRIPTIONS: Record<RagasMetric, string> = {
+  exact_match:
+    "답변이 정답(ground truth)과 동일한가? 응답 JSON의 body 부분을 정답과 그대로 비교해 O/X로 판정합니다. 심판 LLM이 필요 없습니다.",
   faithfulness:
     "답변이 검색된 컨텍스트에 근거하고 있는가? 컨텍스트로 뒷받침되지 않는 주장이 있으면 점수가 낮아집니다 (환각 여부 체크).",
   answer_relevancy:
@@ -215,6 +225,7 @@ export interface RagasResultRow {
   answer: string | null;
   contexts: string | null;
   ground_truth: string | null;
+  exact_match: number | null;
   faithfulness: number | null;
   answer_relevancy: number | null;
   context_precision: number | null;
@@ -235,6 +246,7 @@ export interface RagasRunOut {
   metrics: string | null;
   judge_provider: string | null;
   judge_model: string | null;
+  exact_match: number | null;
   faithfulness: number | null;
   answer_relevancy: number | null;
   context_precision: number | null;
@@ -262,6 +274,7 @@ export interface RagasRunSummary {
   is_manual: boolean;
   status: string;
   engine: string | null;
+  exact_match: number | null;
   faithfulness: number | null;
   answer_relevancy: number | null;
   context_precision: number | null;
@@ -282,11 +295,13 @@ export interface FlowRagasRequest {
   score?: boolean;
 }
 
+/** A/B request. node/prompt ids may be null when each side is pinned to its own
+ * endpoint instead of a prompt version (base_url_a / base_url_b). */
 export interface FlowRagasAbRequest {
   dataset_id: number;
-  node_nm: string;
-  prompt_id_a: number;
-  prompt_id_b: number;
+  node_nm?: string | null;
+  prompt_id_a?: number | null;
+  prompt_id_b?: number | null;
   metrics?: string[];
   score?: boolean;
 }
@@ -301,9 +316,11 @@ export interface DirectTestRequest {
   base_url?: string | null;
   auth_key?: string | null;
   user_id?: string | null;
-  /** true = RAGAS-score the single answer inline (no ground truth → gt metrics stay null). */
+  /** true = score the single answer inline (no ground truth → gt metrics stay null). */
   score?: boolean;
   metrics?: string[];
+  /** Expected answer for the 정답 일치 option; null = exact match not scored. */
+  expected_output?: string | null;
 }
 
 export interface DirectTestOut {

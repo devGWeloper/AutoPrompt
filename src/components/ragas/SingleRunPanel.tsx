@@ -9,7 +9,8 @@ import { api } from '@/lib/api';
 import { connectRagasRunStream as connectRagasRunWs } from '@/lib/sse-client';
 import { SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import {
-  RAGAS_METRICS,
+  ALL_METRICS,
+  EXACT_MATCH,
   type RagasMetric,
   type PromptVersionSummary,
   type RagasResultRow,
@@ -19,7 +20,7 @@ import {
 import {
   DatasetSelect,
   ErrBox,
-  MetricChips,
+  EvalOptions,
   ScoreToggle,
   SegToggle,
   StatusPill,
@@ -47,7 +48,9 @@ type DirectResult = {
 /** Adapt a manual call's inline scores to the RagasResultRow shape ScoreBars renders. */
 function directScoresRow(res: DirectResult): RagasResultRow | null {
   if (!res.scores) return null;
-  const metricVals = Object.fromEntries(RAGAS_METRICS.map((m) => [m, res.scores?.[m] ?? null]));
+  const metricVals = Object.fromEntries(ALL_METRICS.map((m) => [m, res.scores?.[m] ?? null]));
+  // Nothing scored (e.g. 정답 일치 with no expected answer) → no score block.
+  if (Object.values(metricVals).every((v) => v == null)) return null;
   return {
     ragas_result_id: 0, ragas_run_id: 0, case_id: null, question: '',
     answer: res.response, contexts: null, ground_truth: null, error_msg: null,
@@ -95,7 +98,8 @@ export default function SingleRunPanel() {
   const [versions, setVersions] = useState<PromptVersionSummary[]>([]);
   const [ver, setVer] = useState<number | null>(null);
   const [datasetId, setDatasetId] = useState<number | null>(null);
-  const [metrics, setMetrics] = useState<string[]>([...RAGAS_METRICS]);
+  // 정답 일치 is the default evaluation option (no judge LLM required).
+  const [metrics, setMetrics] = useState<string[]>([EXACT_MATCH]);
   const [scoreOn, setScoreOn] = useState(true);
   const [status, setStatus] = useState('idle');
   const [detail, setDetail] = useState<RagasRunDetail | null>(null);
@@ -106,8 +110,9 @@ export default function SingleRunPanel() {
   const [cancelling, setCancelling] = useState(false);
   const runIdRef = useRef<number | null>(null);
   const wsRef = useRef<EventSource | null>(null);
-  // Manual (raw single message, unscored) state.
+  // Manual (raw single message) state.
   const [message, setMessage] = useState('');
+  const [expected, setExpected] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [authKey, setAuthKey] = useState('');
   const [userId, setUserId] = useState('');
@@ -118,7 +123,8 @@ export default function SingleRunPanel() {
   const [callError, setCallError] = useState<string | null>(null);
   const manualScores = callResult ? directScoresRow(callResult) : null;
   const answered = live.filter((r) => r.answer != null || r.error_msg != null).length;
-  const scored = live.filter((r) => RAGAS_METRICS.some((m) => r[m] != null)).length;
+  const scored = live.filter((r) => ALL_METRICS.some((m) => r[m] != null)).length;
+  const exactOn = scoreOn && metrics.includes(EXACT_MATCH);
 
   useEffect(() => {
     if (!nodeNm) { setVersions([]); return; }
@@ -153,7 +159,7 @@ export default function SingleRunPanel() {
             ws.close();
           }
         },
-      });
+      }, { side: 'a', baseUrl: baseUrl.trim() || null });
       wsRef.current = ws;
     } catch (e) { setError(errText(e)); setStatus('failed'); }
   }
@@ -178,6 +184,7 @@ export default function SingleRunPanel() {
         user_id: userId.trim() || null,
         score: scoreOn,
         metrics: scoreOn ? metrics : undefined,
+        expected_output: exactOn ? expected.trim() || null : null,
       }));
       setCallStatus('done');
     } catch (e) { setCallError(errText(e)); setCallStatus('failed'); }
@@ -225,16 +232,39 @@ export default function SingleRunPanel() {
           <StatusPill status={status} />
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-2 border-t border-line pt-3">
+        <div className="mt-3 flex flex-wrap items-start gap-x-1.5 gap-y-2 border-t border-line pt-3">
           <ScoreToggle on={scoreOn} onChange={setScoreOn} />
           {scoreOn && (
             <>
-              <span aria-hidden className="mx-1.5 h-4 w-px shrink-0 bg-line" />
-              <MetricChips metrics={metrics} setMetrics={setMetrics} />
-              {metrics.length === 0 && <span className="ml-1 text-[11px] text-bad">지표를 하나 이상 선택하세요</span>}
+              <span aria-hidden className="mx-1.5 mt-1 h-4 w-px shrink-0 bg-line" />
+              <EvalOptions metrics={metrics} setMetrics={setMetrics} />
+              {metrics.length === 0 && <span className="ml-1 mt-1 text-[11px] text-bad">평가 옵션을 하나 이상 선택하세요</span>}
             </>
           )}
         </div>
+
+        {source === 'dataset' && (
+          <div className="mt-3 border-t border-line pt-3">
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((v) => !v)}
+              className="text-xs font-medium text-muted hover:text-ink"
+            >
+              {showAdvanced ? '엔드포인트 설정 숨기기' : '엔드포인트 설정 (선택)'}
+            </button>
+            {showAdvanced && (
+              <div className="mt-2">
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Base URL</label>
+                <Input
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder="비우면 config.yml 의 agent.baseUrl 을 사용합니다"
+                  className="w-full text-sm"
+                />
+              </div>
+            )}
+          </div>
+        )}
 
         {source === 'manual' && (
           <>
@@ -248,6 +278,18 @@ export default function SingleRunPanel() {
                 className="w-full text-sm"
               />
             </div>
+            {exactOn && (
+              <div className="mt-3">
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">기대 정답</label>
+                <Textarea
+                  value={expected}
+                  onChange={(e) => setExpected(e.target.value)}
+                  rows={3}
+                  placeholder="응답 JSON 의 body 와 비교할 정답 (비우면 정답 일치는 채점하지 않습니다)"
+                  className="w-full text-sm"
+                />
+              </div>
+            )}
             <div className="mt-3 flex items-center gap-3">
               <Button variant="primary" disabled={!canCall} onClick={call}>
                 {callStatus === 'running' ? 'Calling…' : 'Call'}
@@ -280,7 +322,7 @@ export default function SingleRunPanel() {
           {callStatus === 'idle' && !callError && (
             <Card className="flex flex-col items-center justify-center gap-1 px-6 py-16 text-center">
               <div className="text-sm text-ink">메시지를 입력하고 <span className="font-medium">Call</span>을 누르세요.</div>
-              <div className="text-xs text-muted">외부 API 응답을 그대로 보여주며, RAGAS 채점을 켜면 점수도 함께 표시됩니다.</div>
+              <div className="text-xs text-muted">외부 API 응답을 그대로 보여주며, 채점을 켜면 정답 일치(O/X)와 지표 점수를 함께 표시합니다.</div>
             </Card>
           )}
           {callStatus === 'running' && (

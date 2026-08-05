@@ -19,9 +19,12 @@ db:
 # 외부 채팅/슈퍼에이전트 연동 (flow-level RAGAS 답변 생성).
 #   runMode=external 이면 baseUrl 로 실제 채팅 엔드포인트를 호출,
 #   기본 stub 이면 결정론적 placeholder 답변으로 동작한다.
+#   비교(A/B)에서 두 버전이 서로 다른 API 에 떠 있으면 baseUrlA / baseUrlB 를 나눠 넣는다.
 agent:
   runMode: "stub"           # stub | external
-  baseUrl: ""
+  baseUrl: ""               # 공용 기본 엔드포인트 (아래 A/B 가 비면 이 값을 쓴다)
+  baseUrlA: ""              # 비교 A 쪽 기본 엔드포인트 (단일 실행/단건 호출도 A 를 쓴다)
+  baseUrlB: ""              # 비교 B 쪽 기본 엔드포인트
   authKey: ""
   userId: "pm-test"
   authHeader: "auth-key"

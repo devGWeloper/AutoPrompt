@@ -11,7 +11,13 @@ export const maxDuration = 300;
 export async function GET(req: NextRequest, { params }: { params: { ragas_run_id: string } }) {
   try {
     const id = intParam(params.ragas_run_id, "ragas_run_id");
-    return sseResponse((emit) => executeRun(id, emit, req.signal));
+    // Which endpoint this run calls: `side` picks the configured A/B endpoint,
+    // `base_url` overrides it with a URL typed into the UI. Passed per stream so
+    // nothing extra has to be persisted on the run.
+    const q = req.nextUrl.searchParams;
+    const rawSide = q.get("side");
+    const side = rawSide === "a" || rawSide === "b" ? rawSide : null;
+    return sseResponse((emit) => executeRun(id, emit, req.signal, { baseUrl: q.get("base_url"), side }));
   } catch (e) {
     return errorResponse(e);
   }

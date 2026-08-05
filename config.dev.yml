@@ -15,7 +15,9 @@ db:
 
 agent:
   runMode: "stub"           # stub | external
-  baseUrl: ""
+  baseUrl: ""               # 공용 기본 엔드포인트 (아래 A/B 가 비면 이 값을 쓴다)
+  baseUrlA: ""              # 비교 A 쪽 기본 엔드포인트 (단일 실행/단건 호출도 A 를 쓴다)
+  baseUrlB: ""              # 비교 B 쪽 기본 엔드포인트 (두 버전이 다른 API 에 떠 있는 경우)
   authKey: ""
   userId: "pm-test"
   authHeader: "auth-key"

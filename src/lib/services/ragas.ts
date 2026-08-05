@@ -8,8 +8,8 @@ import {
   mapRagasRun,
   mapRagasRunSummary,
 } from "@/lib/db/rows";
-import { ALL_METRICS, SYSTEM_USER } from "@/lib/types";
-import type { RagasMetric, RagasRunDetail, RagasRunSummary } from "@/lib/types";
+import { ALL_METRICS, EXACT_MATCH, SYSTEM_USER } from "@/lib/types";
+import type { LlmMetric, RagasMetric, RagasRunDetail, RagasRunSummary } from "@/lib/types";
 import { writeAudit } from "./audit";
 
 // ============================================================
@@ -76,11 +76,11 @@ export function scoreCase(args: {
   answer: string;
   contexts: string[];
   groundTruth: string | null;
-  metrics: RagasMetric[];
+  metrics: LlmMetric[];
 }): CaseScore {
   const ctx = args.contexts.join("\n");
   const gt = args.groundTruth ?? "";
-  const computed: Record<RagasMetric, number | null> = {
+  const computed: Record<LlmMetric, number | null> = {
     faithfulness: coverage(args.answer, ctx),
     answer_relevancy: coverage(args.question, args.answer),
     context_precision: gt ? coverage(ctx, gt) : null,
@@ -92,13 +92,14 @@ export function scoreCase(args: {
   return out;
 }
 
-/** Score a case with the chosen engine: LLM-judge ("RAGAS") or lexical fallback. */
+/** Score a case with the chosen engine: LLM-judge ("RAGAS") or lexical fallback.
+ * Only RAGAS metrics belong here — 정답 일치 is computed separately (no LLM). */
 export async function scoreCaseAsync(args: {
   question: string;
   answer: string;
   contexts: string[];
   groundTruth: string | null;
-  metrics: RagasMetric[];
+  metrics: LlmMetric[];
   engine: "RAGAS" | "FALLBACK";
 }): Promise<CaseScore> {
   if (args.engine === "RAGAS") {
@@ -157,6 +158,11 @@ export function chosenMetrics(metrics: string[]): RagasMetric[] {
   const set = new Set(metrics);
   const chosen = ALL_METRICS.filter((m) => set.has(m));
   return (chosen.length ? chosen : [...ALL_METRICS]) as RagasMetric[];
+}
+
+/** The subset that needs the judge LLM (everything except 정답 일치). */
+export function llmMetrics(metrics: RagasMetric[]): LlmMetric[] {
+  return metrics.filter((m): m is LlmMetric => m !== EXACT_MATCH);
 }
 
 // ---- prompt label resolution ----

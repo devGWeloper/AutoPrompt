@@ -31,9 +31,18 @@ function connect(path: string, handlers: SseStreamHandlers): EventSource {
   return es;
 }
 
-/** Stream a single RAGAS run (`/api/ragas-runs/{id}/stream`). Returns an EventSource. */
-export function connectRagasRunStream(ragasRunId: number, handlers: SseStreamHandlers): EventSource {
-  return connect(`/api/ragas-runs/${ragasRunId}/stream`, handlers);
+/** Stream a single RAGAS run (`/api/ragas-runs/{id}/stream`). Returns an EventSource.
+ * ``side`` picks the configured A/B endpoint; ``baseUrl`` overrides it. */
+export function connectRagasRunStream(
+  ragasRunId: number,
+  handlers: SseStreamHandlers,
+  opts?: { baseUrl?: string | null; side?: 'a' | 'b' | null },
+): EventSource {
+  const params = new URLSearchParams();
+  if (opts?.side) params.set('side', opts.side);
+  if (opts?.baseUrl) params.set('base_url', opts.baseUrl);
+  const q = params.toString();
+  return connect(`/api/ragas-runs/${ragasRunId}/stream${q ? `?${q}` : ''}`, handlers);
 }
 
 /** Legacy alias for connectRagasRunStream */

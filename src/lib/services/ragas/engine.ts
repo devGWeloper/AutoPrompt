@@ -1,4 +1,4 @@
-import type { RagasMetric } from "@/lib/types";
+import type { LlmMetric, RagasMetric } from "@/lib/types";
 import { chatJson, cosine, embed, embeddingConfigured } from "./llmClient";
 
 // LLM-judge RAGAS engine (OpenAI-compatible). Reimplements the RAGAS metrics as
@@ -128,7 +128,7 @@ async function answerCorrectness(f: Fields): Promise<number | null> {
   return round4(clamp01(f1));
 }
 
-const COMPUTE: Record<RagasMetric, (f: Fields) => Promise<number | null>> = {
+const COMPUTE: Record<LlmMetric, (f: Fields) => Promise<number | null>> = {
   faithfulness,
   answer_relevancy: answerRelevancy,
   context_precision: contextPrecision,
@@ -142,7 +142,7 @@ export async function scoreWithLlm(args: {
   answer: string;
   contexts: string[];
   groundTruth: string | null;
-  metrics: RagasMetric[];
+  metrics: LlmMetric[];
 }): Promise<CaseScore> {
   const f: Fields = {
     question: args.question,
