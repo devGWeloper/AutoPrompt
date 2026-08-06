@@ -1,9 +1,9 @@
-# AutoPrompt — Prompt Management & RAGAS
+# Prompt Trace Explorer (PTX) — Prompt Management & RAGAS
 
 AI Agent의 프롬프트/모델 설정을 중앙에서 버전 관리하고, 전체 플로우 단위 **RAGAS 회귀 평가**를 수행하는 웹 시스템. **백엔드 없이 단일 Next.js 14 앱**으로 동작한다(FastAPI 백엔드는 제거되고 로직이 Next.js route handler + `src/lib`로 이식됨).
 
 - Stack: **Next.js 14 (App Router)** + TypeScript + Tailwind(토큰 기반 디자인 시스템)
-- DB: **Oracle 19c+** — `oracledb` 드라이버로 직접 접근 (PTX_* 6개 테이블). Docker 미사용, 로컬 직접 설치
+- DB: **Oracle 19c+** — `oracledb` 드라이버로 직접 접근 (PTX_* 7개 테이블). Docker 미사용, 로컬 직접 설치
 - 인증: **없음** (사내 단일 신뢰 환경 가정). 네트워크 레벨에서 접근 통제할 것
 - 설계 톤: `C:\work\inview` 앱과 동일한 구조·톤앤매너(설정 yml + `deploy.sh` + `src/lib` 패턴)로 정렬 — 추후 inview 통합 대비
 

@@ -114,8 +114,10 @@ export default function TopBar({ title, right }: { title?: string; right?: React
               </svg>
             </span>
             <span className="flex items-baseline gap-1.5">
-              <span className="text-base font-bold tracking-tight text-ink">AutoPrompt</span>
-              <span className="hidden text-xs font-medium text-muted sm:inline">· Prompt Management</span>
+              <span className="whitespace-nowrap text-base font-bold tracking-tight text-ink">Prompt Trace Explorer</span>
+              {/* Longer brand name than before — the subtitle only appears once
+                  there is room for it beside the section nav. */}
+              <span className="hidden whitespace-nowrap text-xs font-medium text-muted lg:inline">· Prompt Management</span>
             </span>
           </button>
           <SectionNav />
