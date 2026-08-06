@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { cn } from '@/lib/cn';
 import TopBar from '@/components/ui/TopBar';
 import { Tabs } from '@/components/ui/Tabs';
 import SingleRunPanel from '@/components/ragas/SingleRunPanel';
@@ -16,22 +17,36 @@ const TABS: { id: Tab; label: string; desc: string; group?: string }[] = [
   { id: 'records', label: 'Records', desc: '지난 평가 실행 기록을 조회하고 CSV로 내보냅니다.', group: 'secondary' },
 ];
 
+// Run tabs are hidden rather than unmounted when you leave them. Unmounting drops
+// the live results and the run/stream handles with them, and a dropped SSE stream
+// aborts the request — which the server reads as a cancel. The read-only tabs
+// still remount, so they reload their lists on every visit.
 export default function RagasHomePage() {
   const [tab, setTab] = useState<Tab>('single');
+  // Mount a kept tab only once it has been opened, so the first paint stays cheap.
+  const [opened, setOpened] = useState<Set<Tab>>(() => new Set<Tab>(['single']));
+  const openTab = (t: Tab) => {
+    setTab(t);
+    setOpened((cur) => (cur.has(t) ? cur : new Set(cur).add(t)));
+  };
   const current = TABS.find((t) => t.id === tab)!;
   return (
     <div className="flex h-full flex-col">
       <TopBar />
       <div className="px-6 pt-5">
-        <Tabs items={TABS} value={tab} onChange={setTab} />
+        <Tabs items={TABS} value={tab} onChange={openTab} />
       </div>
       <div className="flex-1 overflow-auto px-6 py-6">
         <header className="mb-5">
           <h1 className="text-lg font-semibold tracking-tight text-ink">{current.label}</h1>
           <p className="mt-1 text-sm text-muted">{current.desc}</p>
         </header>
-        {tab === 'single' && <SingleRunPanel />}
-        {tab === 'compare' && <ComparePanel />}
+        {opened.has('single') && (
+          <div className={cn(tab !== 'single' && 'hidden')}><SingleRunPanel /></div>
+        )}
+        {opened.has('compare') && (
+          <div className={cn(tab !== 'compare' && 'hidden')}><ComparePanel /></div>
+        )}
         {tab === 'datasets' && <DatasetsPanel />}
         {tab === 'records' && <RecordsPanel />}
       </div>
