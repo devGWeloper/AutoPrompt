@@ -144,6 +144,8 @@ export const RESULT_COLS = [
   "TRUTH_CTN",
   ...RUN_SCORE_COLS,
   "ERROR_CTN",
+  "TRACE_VAR_NM",
+  "TRACE_CTN",
 ].join(", ");
 
 export const AUDIT_COLS = [
@@ -287,6 +289,10 @@ export function mapRagasResult(r: Row): RagasResultRow {
     context_recall: num(r.CNTX_RECALL_VAL),
     answer_correctness: num(r.ANS_CORRECTNESS_VAL),
     error_msg: str(r.ERROR_CTN),
+    // Set only when the agent captured an intermediate variable for this call —
+    // then the score compared this, not ANSWER_CTN.
+    trace_var_nm: str(r.TRACE_VAR_NM),
+    trace_value: str(r.TRACE_CTN),
   };
 }
 

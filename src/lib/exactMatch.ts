@@ -49,28 +49,45 @@ interface Side {
   text: string;
 }
 
-function sideOf(raw: string): Side {
+function sideOf(raw: string, unwrap: boolean): Side {
   const parsed = parseJson(raw);
   if (parsed === undefined) return { value: undefined, text: raw };
-  const value = unwrapBody(parsed);
+  const value = unwrap ? unwrapBody(parsed) : parsed;
   return { value, text: typeof value === "string" ? value : canonical(value) };
+}
+
+export interface MatchOpts {
+  /** Unwrap a top-level `body` key before comparing. True for a final answer
+   * (the endpoint's envelope); MUST be false for a traced variable, whose own
+   * `body` key is real data — unwrapping it there hides every other key and
+   * turns `{body:1,code:200}` vs `{body:1,code:500}` into a false match. */
+  unwrapBody?: boolean;
 }
 
 /**
  * Is ``answer`` the same as ``expected``?
  * null when there is no expected answer to compare against (not scored).
  */
-export function exactMatch(answer: string | null | undefined, expected: string | null | undefined): boolean | null {
+export function exactMatch(
+  answer: string | null | undefined,
+  expected: string | null | undefined,
+  opts: MatchOpts = {},
+): boolean | null {
+  const unwrap = opts.unwrapBody !== false;
   if (expected == null || !expected.trim()) return null;
   if (answer == null) return false;
-  const a = sideOf(answer);
-  const e = sideOf(expected);
+  const a = sideOf(answer, unwrap);
+  const e = sideOf(expected, unwrap);
   if (a.value !== undefined && e.value !== undefined) return canonical(a.value) === canonical(e.value);
   return normalizeText(a.text) === normalizeText(e.text);
 }
 
 /** Exact match as the stored 1/0 score (null when not comparable). */
-export function exactMatchScore(answer: string | null | undefined, expected: string | null | undefined): number | null {
-  const m = exactMatch(answer, expected);
+export function exactMatchScore(
+  answer: string | null | undefined,
+  expected: string | null | undefined,
+  opts: MatchOpts = {},
+): number | null {
+  const m = exactMatch(answer, expected, opts);
   return m === null ? null : m ? 1 : 0;
 }

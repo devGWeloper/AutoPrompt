@@ -1,6 +1,6 @@
 # PTX DB 스키마 (Oracle 19c+)
 
-Prompt Trace eXplorer(PTX) 소유 테이블 6개. 외부 테이블(`CHAT_VER_MAS` / `NODE_MAS` / `MODEL_MAS`)에 대한 FK 없음.
+Prompt Trace eXplorer(PTX) 소유 테이블 7개. 외부 테이블(`CHAT_VER_MAS` / `NODE_MAS` / `MODEL_MAS`)에 대한 FK 없음.
 노드 식별자는 `NODE_NM` 문자열이고 별도 노드 마스터 테이블은 없다.
 
 실행용 DDL은 **`sql/ddl_initial.sql`**(권위 스키마)에 있다. 이 문서는 컬럼 명세만 담는다.
@@ -19,6 +19,7 @@ Prompt Trace eXplorer(PTX) 소유 테이블 6개. 외부 테이블(`CHAT_VER_MAS
 | `PTX_RUN_MAS`     | 평가 실행 1건 (단일/AB)  | `RUN_ID`    | `PROMPT_ID` → `PTX_PROMPT_HIS`, `DATASET_ID` → `PTX_DATASET_MAS` |
 | `PTX_RUN_DET`     | 케이스별 결과            | `RESULT_ID` | `RUN_ID` → `PTX_RUN_MAS`, `CASE_ID` → `PTX_DATASET_DET`          |
 | `PTX_AUDIT_HIS`   | 변경 감사 로그           | `LOG_ID`    | 없음 (`TARGET_TABLE_NM`+`TARGET_ID`만 기록)                        |
+| `PTX_TRACE_HIS`   | 호출 중 중간 변수         | `TRACE_SEQ_ID` | 없음 (**에이전트가 쓰고 PTX가 읽는** 유일한 테이블)                 |
 
 ---
 
@@ -101,7 +102,10 @@ Prompt Trace eXplorer(PTX) 소유 테이블 6개. 외부 테이블(`CHAT_VER_MAS
 | `ANSWER_CTN` | CLOB | Y | — | 외부 API 응답 |
 | `CNTX_CTN` | CLOB | Y | — | JSON 배열 |
 | `TRUTH_CTN` | CLOB | Y | — | ground truth |
-| `EXACT_VAL` | NUMBER(5,4) | Y | — | 1(O) / 0(X) / NULL(정답 없음) |
+| `TRACE_ID` | VARCHAR2(50) | Y | — | 이 호출에 실어 보낸 상관키 (`PM-YYYYMMDD-NNNN`) |
+| `TRACE_VAR_NM` | VARCHAR2(100) | Y | — | 채점한 중간 변수명 (NULL = 최종 답변으로 채점) |
+| `TRACE_CTN` | CLOB | Y | — | 그 값의 스냅샷 — `PTX_TRACE_HIS`가 지워져도 남음 |
+| `EXACT_VAL` | NUMBER(5,4) | Y | — | 1(O) / 0(X) / NULL(정답 없음). `TRACE_CTN`이 있으면 그 값과 비교한 결과 |
 | `FAITH_VAL` | NUMBER(5,4) | Y | — | 이하 케이스별 점수 |
 | `ANS_RELEVANCY_VAL` | NUMBER(5,4) | Y | — | |
 | `CNTX_PRECISION_VAL` | NUMBER(5,4) | Y | — | |
@@ -123,6 +127,25 @@ Prompt Trace eXplorer(PTX) 소유 테이블 6개. 외부 테이블(`CHAT_VER_MAS
 | `USER_ID` | VARCHAR2(50) | N | — | |
 | `CRT_TM` | TIMESTAMP | Y | SYSTIMESTAMP | |
 
+## PTX_TRACE_HIS
+
+응답에 실을 수 없는 중간 변수를 채점하기 위한 테이블. **에이전트가 INSERT 하고 PTX 는 읽기만 한다.**
+상관키 `TRACE_ID` 는 PTX 가 발급해 `session_system_prompt` 에 실어 보낸 값이다.
+행이 있으면 그 실행은 최종 답변 대신 이 값을 정답지와 비교한다 — **행의 존재 자체가 신호**라
+노드 매핑이나 케이스 설정이 없다.
+
+| 컬럼 | 타입 | NULL | 기본값 | 비고 |
+|---|---|---|---|---|
+| `TRACE_SEQ_ID` | NUMBER | N | IDENTITY | PK |
+| `TRACE_ID` | VARCHAR2(50) | N | — | PTX 가 발급한 호출 식별자 |
+| `VAR_NM` | VARCHAR2(100) | Y | — | 변수명 (예: `parsed`) |
+| `VAR_CTN` | CLOB | Y | — | 값 (JSON) |
+| `CRT_TM` | TIMESTAMP | Y | SYSTIMESTAMP | |
+
+> FK 없음 — 에이전트가 먼저 쓰고 PTX 가 나중에 읽으므로 부모 행이 아직 없을 수 있다.
+> 계속 쌓이기만 하므로 보존기간을 정해 주기적으로 지운다 (실행 기록엔 `PTX_RUN_DET.TRACE_CTN` 로 남는다).
+> 에이전트 계정이 PTX 스키마와 다르면 `GRANT INSERT ON PTX_TRACE_HIS TO <agent_user>` 가 필요하다.
+
 ---
 
 ## 인덱스
@@ -132,6 +155,7 @@ IDX_PTX_PROMPT_NODE     ON PTX_PROMPT_HIS (NODE_NM, ACTIVE_YN)
 IDX_PTX_RUN_DET_RUN     ON PTX_RUN_DET (RUN_ID)
 IDX_PTX_RUN_MAS_DS      ON PTX_RUN_MAS (DATASET_ID)
 IDX_PTX_AUDIT_TARGET    ON PTX_AUDIT_HIS (TARGET_TABLE_NM, TARGET_ID)
+IDX_PTX_TRACE_ID        ON PTX_TRACE_HIS (TRACE_ID)
 ```
 
 ## FK 삭제 규칙
@@ -147,7 +171,9 @@ IDX_PTX_AUDIT_TARGET    ON PTX_AUDIT_HIS (TARGET_TABLE_NM, TARGET_ID)
 | `RUN_MAS.PROMPT_ID` → `PROMPT_HIS` | SET NULL | 프롬프트 버전을 지워도 실행 기록은 남음 |
 | `PROMPT_HIS.PREV_PROMPT_ID` → 자기 자신 | SET NULL | 이전 버전을 지우면 체인만 끊김 |
 
-## 기존 DB 이름 변경
+## 마이그레이션
 
-`PM_*` 스키마가 이미 있으면 `sql/migrate_ptx_rename.sql` 을 실행한다 (테이블·컬럼 rename +
-FK 규칙 재정의 + `DATASET_NM` 백필 + 감사 로그의 옛 테이블명 갱신). 데이터는 보존된다.
+- `PM_*` 스키마가 이미 있으면 → `sql/migrate_ptx_rename.sql` (테이블·컬럼 rename + FK 규칙
+  재정의 + `DATASET_NM` 백필 + 감사 로그의 옛 테이블명 갱신). 데이터는 보존된다.
+- 중간 변수 채점을 붙일 때 → `sql/migrate_trace_var.sql` (`PTX_TRACE_HIS` 생성 +
+  `PTX_RUN_DET.TRACE_*` 3컬럼 추가). 에이전트 쪽 연동은 `docs/trace-var-agent.md`.

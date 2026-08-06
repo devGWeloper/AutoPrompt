@@ -93,6 +93,10 @@ CREATE TABLE PTX_RUN_MAS (
 );
 
 -- 5) 케이스별 결과.
+--    TRACE_* 는 응답에 안 실리는 중간 변수를 채점한 경우에만 채워진다.
+--    TRACE_CTN 은 PTX_TRACE_HIS 에서 읽어온 값의 스냅샷(트레이스는 보존기간이 지나면
+--    지우지만 실행 기록은 남아야 한다). 값이 있으면 EXACT_VAL 은 ANSWER_CTN 이 아니라
+--    이 값을 정답지와 비교한 결과다.
 CREATE TABLE PTX_RUN_DET (
     RESULT_ID            NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     RUN_ID               NUMBER NOT NULL,
@@ -101,6 +105,9 @@ CREATE TABLE PTX_RUN_DET (
     ANSWER_CTN           CLOB,
     CNTX_CTN             CLOB,
     TRUTH_CTN            CLOB,
+    TRACE_ID             VARCHAR2(50),
+    TRACE_VAR_NM         VARCHAR2(100),
+    TRACE_CTN            CLOB,
     EXACT_VAL            NUMBER(5,4),
     FAITH_VAL            NUMBER(5,4),
     ANS_RELEVANCY_VAL    NUMBER(5,4),
@@ -127,7 +134,21 @@ CREATE TABLE PTX_AUDIT_HIS (
     CRT_TM           TIMESTAMP DEFAULT SYSTIMESTAMP
 );
 
+-- 7) 에이전트가 호출 도중에 남기는 중간 변수. 응답에 실을 수 없는 값(예: 슬롯 파싱
+--    노드의 `parsed`)을 채점하려고 에이전트가 직접 INSERT 한다 — PTX 는 읽기만 한다.
+--    상관키는 PTX 가 발급해 session_system_prompt 의 TRACE_ID 로 실어 보낸 값.
+--    FK 없음: 에이전트가 먼저 쓰고 PTX 가 나중에 읽는 순서라 부모 행이 아직 없다.
+--    보존기간을 정해 주기적으로 지운다(실행 기록엔 PTX_RUN_DET.TRACE_CTN 로 남는다).
+CREATE TABLE PTX_TRACE_HIS (
+    TRACE_SEQ_ID  NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    TRACE_ID      VARCHAR2(50) NOT NULL,
+    VAR_NM        VARCHAR2(100),
+    VAR_CTN       CLOB,
+    CRT_TM        TIMESTAMP DEFAULT SYSTIMESTAMP
+);
+
 CREATE INDEX IDX_PTX_PROMPT_NODE  ON PTX_PROMPT_HIS (NODE_NM, ACTIVE_YN);
+CREATE INDEX IDX_PTX_TRACE_ID     ON PTX_TRACE_HIS (TRACE_ID);
 CREATE INDEX IDX_PTX_RUN_DET_RUN  ON PTX_RUN_DET (RUN_ID);
 CREATE INDEX IDX_PTX_RUN_MAS_DS   ON PTX_RUN_MAS (DATASET_ID);
 CREATE INDEX IDX_PTX_AUDIT_TARGET ON PTX_AUDIT_HIS (TARGET_TABLE_NM, TARGET_ID);

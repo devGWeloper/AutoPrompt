@@ -15,6 +15,7 @@ import { exactMatchScore } from "@/lib/exactMatch";
 import { resolveRagasEngine } from "@/lib/config";
 import { requireDataset } from "./datasets";
 import * as agent from "./externalAgent";
+import { readTraceVar } from "./trace";
 import { avg, chosenMetrics, llmMetrics, parseCase, scoreCaseAsync, toScore } from "./ragas";
 import type { CaseScore } from "./ragas";
 
@@ -366,6 +367,9 @@ interface RunCtx {
   side: agent.FlowSide | null;
   cases: CaseRow[];
   swapNode: string | null;
+  /** Has any case captured an intermediate variable? null until the first case
+   * answers. false skips the commit-race wait for the rest of the run. */
+  traceSeen: boolean | null;
   pending: Pending[];
   sums: Record<RagasMetric, number[]>;
   cancelled: boolean;
@@ -428,7 +432,10 @@ async function setupRun(
   }
 
   const sums = Object.fromEntries(ALL_METRICS.map((m) => [m, [] as number[]])) as Record<RagasMetric, number[]>;
-  return { runId, engine, score, metrics, llm, exact, baseUrl, side, cases, swapNode, pending: [], sums, cancelled: false };
+  return {
+    runId, engine, score, metrics, llm, exact, baseUrl, side, cases, swapNode,
+    traceSeen: null, pending: [], sums, cancelled: false,
+  };
 }
 
 async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx, emit: Emit, signal?: AbortSignal): Promise<void> {
@@ -445,24 +452,46 @@ async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx,
     let error = false;
     let errMsg: string | null = null;
     let contexts = fields.contexts;
+    let traceId: string | null = null;
     try {
       const data = await agent.flowAnswer(message, ctx.baseUrl, ctx.side);
       answer = data.response;
+      traceId = data.traceId ?? null;
       if (!contexts.length && data.docs.length) contexts = data.docs;
     } catch (e) {
       error = true;
       answer = null;
       errMsg = String(e).slice(0, 1000);
+      traceId = agent.errorTraceId(e);
+    }
+    // Some nodes are judged on a variable the response never carries — the agent
+    // committed it to PTX_TRACE_HIS under this TRACE_ID. A row existing IS the
+    // signal; nothing is configured per node or per case. Only the first case
+    // waits out the commit race, so runs that never capture anything (the nodes
+    // judged on their final answer) pay that wait once, not per case.
+    const captured = await readTraceVar(conn, traceId, ctx.traceSeen !== false);
+    if (captured) ctx.traceSeen = true;
+    else if (ctx.traceSeen === null) ctx.traceSeen = false;
+    else if (ctx.traceSeen && errMsg === null) {
+      // The node records on every call, so a run that captured before and not now
+      // died ahead of the capture. Say so — otherwise the answer is scored against
+      // a ground truth meant for the variable and the X looks unexplained.
+      errMsg = "트레이스 없음 — 최종 답변으로 채점됨";
     }
     // 정답 일치 needs no LLM, so it is decided here with the answer instead of
-    // waiting for the scoring phase.
-    const em = ctx.exact && !error ? exactMatchScore(answer, fields.groundTruth) : null;
+    // waiting for the scoring phase. A captured variable is scored even when the
+    // call failed: the node may have committed it before dying downstream.
+    const em =
+      ctx.exact && (captured !== null || !error)
+        ? exactMatchScore(captured ? captured.ctn : answer, fields.groundTruth, { unwrapBody: !captured })
+        : null;
     if (em !== null) ctx.sums[EXACT_MATCH].push(em);
     const resultId = await insertReturningId(
       conn,
       oracle,
-      `INSERT INTO PTX_RUN_DET (RUN_ID, CASE_ID, QUESTION_CTN, CNTX_CTN, TRUTH_CTN, ANSWER_CTN, ERROR_CTN, EXACT_VAL)
-       VALUES (:rid, :cid, :q, :ctx, :gt, :a, :err, :em) RETURNING RESULT_ID INTO :out_id`,
+      `INSERT INTO PTX_RUN_DET (RUN_ID, CASE_ID, QUESTION_CTN, CNTX_CTN, TRUTH_CTN, ANSWER_CTN, ERROR_CTN, EXACT_VAL,
+                                TRACE_ID, TRACE_VAR_NM, TRACE_CTN)
+       VALUES (:rid, :cid, :q, :ctx, :gt, :a, :err, :em, :tid, :tvar, :tctn) RETURNING RESULT_ID INTO :out_id`,
       {
         rid: ctx.runId,
         cid: c.case_id,
@@ -472,6 +501,10 @@ async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx,
         a: answer,
         err: errMsg,
         em,
+        tid: traceId,
+        tvar: captured?.varNm ?? null,
+        // Snapshot — PTX_TRACE_HIS gets purged on retention, run records do not.
+        tctn: captured?.ctn ?? null,
       },
     );
     await conn.commit();

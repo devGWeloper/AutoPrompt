@@ -69,7 +69,14 @@ WITH expected AS (
   SELECT 'PTX_RUN_DET',          'CNTX_RECALL_VAL'        FROM dual UNION ALL
   SELECT 'PTX_RUN_DET',          'ANS_CORRECTNESS_VAL'    FROM dual UNION ALL
   SELECT 'PTX_RUN_DET',          'ERROR_CTN'              FROM dual UNION ALL
+  SELECT 'PTX_RUN_DET',          'TRACE_ID'               FROM dual UNION ALL
+  SELECT 'PTX_RUN_DET',          'TRACE_VAR_NM'           FROM dual UNION ALL
+  SELECT 'PTX_RUN_DET',          'TRACE_CTN'              FROM dual UNION ALL
   SELECT 'PTX_RUN_DET',          'CRT_TM'                 FROM dual UNION ALL
+  SELECT 'PTX_TRACE_HIS',        'TRACE_ID'               FROM dual UNION ALL
+  SELECT 'PTX_TRACE_HIS',        'VAR_NM'                 FROM dual UNION ALL
+  SELECT 'PTX_TRACE_HIS',        'VAR_CTN'                FROM dual UNION ALL
+  SELECT 'PTX_TRACE_HIS',        'CRT_TM'                 FROM dual UNION ALL
 
   SELECT 'PTX_AUDIT_HIS',        'LOG_ID'                 FROM dual UNION ALL
   SELECT 'PTX_AUDIT_HIS',        'TARGET_TABLE_NM'        FROM dual UNION ALL

@@ -232,6 +232,11 @@ export interface RagasResultRow {
   context_recall: number | null;
   answer_correctness: number | null;
   error_msg: string | null;
+  /** Name of the intermediate variable the agent captured (e.g. "parsed"), or
+   * null when this case was judged on its final answer. */
+  trace_var_nm: string | null;
+  /** The captured value as JSON text — what 정답 일치 actually compared. */
+  trace_value: string | null;
 }
 
 export interface RagasRunOut {

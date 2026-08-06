@@ -266,6 +266,54 @@ export function AnswerBox({ text, error }: { text?: string | null; error?: strin
   );
 }
 
+/** Pretty-print JSON for display; anything that isn't JSON is shown as-is. */
+function prettyJson(text: string): string {
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2);
+  } catch {
+    return text;
+  }
+}
+
+export function CopyButton({ text }: { text: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        navigator.clipboard?.writeText(text).then(
+          () => { setDone(true); setTimeout(() => setDone(false), 1200); },
+          () => {},
+        );
+      }}
+      className="rounded-sm border border-line px-1.5 py-0.5 text-[11px] text-muted transition-colors hover:bg-surface-2"
+    >
+      {done ? '복사됨' : '복사'}
+    </button>
+  );
+}
+
+/** The intermediate variable this case was judged on — the endpoint's response
+ * never carried it, so without this block there is no way to see what the O/X
+ * was decided from, or to author the expected answer (copy it and edit). */
+export function TraceValueBox({ row }: { row: RagasResultRow }) {
+  if (!row.trace_value) return null;
+  return (
+    <div className="min-w-0">
+      <div className="flex items-center gap-2">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">
+          {row.trace_var_nm || '중간 변수'}
+        </p>
+        <span className="text-[11px] text-muted">— 채점 대상</span>
+        <CopyButton text={row.trace_value} />
+      </div>
+      <pre className="mt-0.5 max-h-72 overflow-auto rounded-sm border border-line bg-surface-2/50 px-2.5 py-2 text-xs leading-relaxed text-ink">
+        {prettyJson(row.trace_value)}
+      </pre>
+    </div>
+  );
+}
+
 // Small rotating disclosure chevron shared by collapsible rows.
 export function Chevron({ open, className }: { open: boolean; className?: string }) {
   return (
@@ -396,7 +444,8 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
                     <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-ink">{r.ground_truth}</p>
                   </div>
                 )}
-                <div className="min-w-0">
+                <TraceValueBox row={r} />
+                <div className={cn('min-w-0', r.trace_value && r.ground_truth && 'sm:col-span-2')}>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">답변</p>
                   <div className="mt-0.5"><AnswerBox text={r.answer} error={r.error_msg} /></div>
                   {showScores && <div className="mt-3"><ScoreBars row={r} /></div>}

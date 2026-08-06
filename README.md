@@ -64,9 +64,13 @@ npm run dev
 
 ### DB 스키마
 
-마이그레이션 도구 없음. `sql/ddl_initial.sql`을 PTX Oracle 스키마에 직접 적용한다(PTX_* 6개 테이블만 생성; 운영 테이블은 건드리지 않음). DB 미설정 상태로도 UI는 뜨며 조회는 빈 결과가 된다. 컬럼 명세는 `docs/db-schema.md`.
+마이그레이션 도구 없음. `sql/ddl_initial.sql`을 PTX Oracle 스키마에 직접 적용한다(PTX_* 7개 테이블만 생성; 운영 테이블은 건드리지 않음). DB 미설정 상태로도 UI는 뜨며 조회는 빈 결과가 된다. 컬럼 명세는 `docs/db-schema.md`.
 
 테이블은 `PTX_<대상>_MAS|_DET|_HIS`, 컬럼은 `_ID/_NM/_NO/_CD/_CTN/_YN/_DT/_SCR` postfix 규칙을 따른다. 삭제 순서는 앱이 챙기지 않고 FK의 `ON DELETE CASCADE`/`SET NULL`에 맡긴다 — 데이터셋을 지워도 과거 실행 기록은 남고(`PTX_RUN_MAS.DATASET_NM` 스냅샷), 실행을 지우면 그 결과만 함께 사라진다. 옛 `PM_*` 스키마가 있으면 `sql/migrate_ptx_rename.sql`로 이름을 옮긴다.
+
+### 중간 변수 채점
+
+노드에 따라 최종 답변이 아니라 호출 도중의 변수(예: 슬롯 파싱 노드의 `parsed`)가 채점 대상이다. 응답에 실을 수 없으므로 에이전트가 `PTX_TRACE_HIS`에 `TRACE_ID`로 남기고 PTX가 읽어서 정답지와 비교한다. **행이 있으면 그 값을, 없으면 최종 답변을 채점한다** — 노드 매핑도 케이스 설정도 없다. 적용은 `sql/migrate_trace_var.sql`, 에이전트 쪽 연동은 `docs/trace-var-agent.md`.
 
 ### 검증
 

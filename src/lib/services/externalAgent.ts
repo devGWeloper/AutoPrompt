@@ -5,7 +5,7 @@ import {
   getFlowProtocol,
   type AgentProtocol,
 } from "@/lib/config";
-import { badGateway } from "@/lib/http";
+import { badGateway, type ApiError } from "@/lib/http";
 import { logger } from "@/lib/logger";
 
 // Session context sent as ``session_system_prompt`` (a STRING that is a stringified
@@ -19,8 +19,15 @@ const CUBE_USER_NM = "이억수";
 let traceDay = "";
 let traceSeq = 0;
 
-/** ``PM-YYYYMMDD-NNNN`` — the sequence restarts at 1 on each new day (and on
- * server restart, since the counter lives in-process). */
+/** Seed the counter from the wall clock (centiseconds since midnight) so a
+ * restart cannot reissue ids an earlier process already used. That matters
+ * because the agent stores captured variables in PTX_TRACE_HIS under this id: a
+ * reused id would let a stale row be read back as this call's value. */
+function seedSeq(d: Date): number {
+  return (d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds()) * 100;
+}
+
+/** ``PM-YYYYMMDD-NNNN`` — monotonic within a day, across restarts. */
 function nextTraceId(): string {
   const d = new Date();
   const day =
@@ -29,7 +36,7 @@ function nextTraceId(): string {
     `${String(d.getDate()).padStart(2, "0")}`;
   if (day !== traceDay) {
     traceDay = day;
-    traceSeq = 0;
+    traceSeq = seedSeq(d);
   }
   traceSeq += 1;
   return `PM-${day}-${String(traceSeq).padStart(4, "0")}`;
@@ -49,6 +56,15 @@ export interface AgentAnswer {
   response: string;
   docs: string[];
   raw?: Record<string, unknown> | unknown[] | string;
+  /** TRACE_ID sent with this call — the key the agent writes PTX_TRACE_HIS under. */
+  traceId?: string;
+}
+
+/** Failures carry the TRACE_ID too: a node can commit its captured variable and
+ * then die further down the flow, and that run is still scorable. */
+export function errorTraceId(e: unknown): string | null {
+  const t = (e as { traceId?: unknown } | null)?.traceId;
+  return typeof t === "string" && t ? t : null;
 }
 
 /** A/B side of a run — each side may have its own configured endpoint. */
@@ -252,17 +268,19 @@ function gaiaPayload(message: string, uid: string, traceId: string, url: string)
   };
 }
 
+/** The request body plus the TRACE_ID embedded in it — the caller needs the id to
+ * look up whatever the agent captured mid-flow. */
 function buildPayload(
   protocol: AgentProtocol,
   message: string,
   url: string,
   userId?: string | null,
-): Record<string, unknown> {
+): { body: Record<string, unknown>; traceId: string } {
   const uid = userId ?? getAgentConfig().userId;
   const traceId = nextTraceId();
-  return protocol === "gaia"
-    ? gaiaPayload(message, uid, traceId, url)
-    : chatPayload(message, uid, traceId);
+  const body =
+    protocol === "gaia" ? gaiaPayload(message, uid, traceId, url) : chatPayload(message, uid, traceId);
+  return { body, traceId };
 }
 
 async function post(url: string, body: unknown, headers: Record<string, string>, timeoutMs = 60000): Promise<Response> {
@@ -321,14 +339,15 @@ export async function runFlow(message: string, urlOverride?: string | null, side
   // Kept outside the try so a failure can log exactly what went on the wire.
   let url = "";
   let body: unknown = null;
+  let traceId = "";
   const protocol = getFlowProtocol(side);
   try {
     url = urlOverride ? ensureDirectUrl(urlOverride) : baseUrl(side);
-    body = buildPayload(protocol, message, url);
+    ({ body, traceId } = buildPayload(protocol, message, url));
     const resp = await post(url, body, requestHeaders(side));
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const parsed = await parseChatResponse(resp);
-    return { response: parsed.response, docs: parsed.docs };
+    return { response: parsed.response, docs: parsed.docs, traceId };
   } catch (e) {
     logger.error("chat run failed", {
       side: side ?? null,
@@ -337,7 +356,11 @@ export async function runFlow(message: string, urlOverride?: string | null, side
       body: body === null ? null : JSON.stringify(body),
       err: String(e),
     });
-    throw badGateway(`chat run failed: ${String(e)}${sentTag(protocol, body)}`);
+    const err = badGateway(`chat run failed: ${String(e)}${sentTag(protocol, body)}`);
+    // Carried so a run whose call died can still score a variable the agent
+    // committed before it failed.
+    (err as ApiError & { traceId?: string }).traceId = traceId;
+    throw err;
   }
 }
 
@@ -350,11 +373,11 @@ export async function runDirect(args: {
 }): Promise<AgentAnswer> {
   const url = ensureDirectUrl(args.baseUrl);
   const protocol = getFlowProtocol("a");
-  const body = buildPayload(protocol, args.message, url, args.userId);
+  const { body, traceId } = buildPayload(protocol, args.message, url, args.userId);
   try {
     const resp = await post(url, body, requestHeaders("a", args.authKey, args.userId));
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    return await parseChatResponse(resp);
+    return { ...(await parseChatResponse(resp)), traceId };
   } catch (e) {
     logger.error("direct call failed", { protocol, url, body: JSON.stringify(body), err: String(e) });
     throw badGateway(`direct call failed: ${String(e)}${sentTag(protocol, body)}`);
