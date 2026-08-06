@@ -16,6 +16,7 @@ import { resolveRagasEngine } from "@/lib/config";
 import { requireDataset } from "./datasets";
 import * as agent from "./externalAgent";
 import { readTraceVar } from "./trace";
+import * as registry from "./runRegistry";
 import { avg, chosenMetrics, llmMetrics, parseCase, scoreCaseAsync, toScore } from "./ragas";
 import type { CaseScore } from "./ragas";
 
@@ -648,6 +649,88 @@ export async function executeRun(
       await finalize(conn, ctx, emit);
     } catch (e) {
       await recordFailure(conn, runId, String(e), emit);
+    }
+  });
+}
+
+/** A run left RUNNING with nothing driving it — the process that owned it is
+ * gone. Re-executing would append a second set of PTX_RUN_DET rows, so it is
+ * failed instead and the answers already stored stay readable. */
+const INTERRUPTED = "실행이 중단되었습니다 (서버 재시작 등). 다시 실행해 주세요.";
+
+async function runStatus(runId: number): Promise<string | null> {
+  return readConn(async (conn) => {
+    const res = await conn.execute(`SELECT STATUS_CD FROM PTX_RUN_MAS WHERE RUN_ID = :id`, { id: runId });
+    const rows = (res.rows ?? []) as Record<string, unknown>[];
+    return rows.length ? String(rows[0].STATUS_CD) : null;
+  }, null as string | null);
+}
+
+async function markInterrupted(runId: number): Promise<void> {
+  await withConn(async (conn) => {
+    await conn.execute(
+      `UPDATE PTX_RUN_MAS SET STATUS_CD = 'FAILED', ERROR_CTN = :err, END_TM = SYSTIMESTAMP
+        WHERE RUN_ID = :id AND STATUS_CD NOT IN ('DONE', 'FAILED', 'CANCELLED')`,
+      { err: INTERRUPTED, id: runId },
+    );
+  }, { commit: true });
+}
+
+/**
+ * Drive one SSE connection for ``runId``: start the run if it hasn't started,
+ * attach to it if it is already going, or replay its ending if it has finished.
+ *
+ * The returned promise settles when the run reaches a terminal event or the
+ * client disconnects (``signal``). Disconnecting only detaches this listener —
+ * the run itself keeps going, which is what makes a refresh survivable.
+ */
+export async function streamRun(
+  runId: number,
+  emit: Emit,
+  signal?: AbortSignal,
+  opts?: { baseUrl?: string | null; side?: agent.FlowSide | null },
+): Promise<void> {
+  if (!registry.isLive(runId)) {
+    const status = await runStatus(runId);
+    if (status === null) {
+      emit({ event: "FAILED", run_id: runId, error: "ragas run not found" });
+      return;
+    }
+    if (status === "RUNNING" || status === "CANCELLING") {
+      await markInterrupted(runId);
+      emit({ event: "FAILED", run_id: runId, error: INTERRUPTED });
+      return;
+    }
+    if (status !== "PENDING") {
+      // Already DONE/FAILED/CANCELLED → executeRun replays the terminal event.
+      await executeRun(runId, emit, undefined, opts);
+      return;
+    }
+    registry.startRun(runId, (e) => executeRun(runId, e, undefined, opts));
+  }
+
+  await new Promise<void>((resolve) => {
+    let unsub: (() => void) | null = null;
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      unsub?.();
+      resolve();
+    };
+    unsub = registry.subscribe(runId, (e) => {
+      emit(e);
+      if (registry.isTerminalEvent(e)) finish();
+    });
+    // Replay above may already have delivered the terminal event.
+    if (settled || !unsub) {
+      unsub?.();
+      resolve();
+      return;
+    }
+    if (signal) {
+      if (signal.aborted) finish();
+      else signal.addEventListener("abort", finish, { once: true });
     }
   });
 }

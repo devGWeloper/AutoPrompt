@@ -3,9 +3,13 @@ import type { RunEvent } from "@/lib/types";
 import { logger } from "./logger";
 
 /**
- * Build a Server-Sent Events response that drives ``run`` (the RAGAS execution
- * loop), forwarding each emitted event as an SSE ``data:`` frame. Replaces the
- * old WebSocket streaming — the whole run happens inside this stream.
+ * Build a Server-Sent Events response around ``run``, forwarding each emitted
+ * event as an SSE ``data:`` frame and closing once ``run`` settles. Replaces the
+ * old WebSocket streaming.
+ *
+ * ``run`` streams an evaluation but no longer owns it — see services/runRegistry:
+ * the execution outlives this connection, so a client that drops (refresh, tab
+ * close) can reattach and be replayed rather than losing the run.
  */
 export function sseResponse(run: (emit: Emit) => Promise<void>): Response {
   const encoder = new TextEncoder();

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input, Select } from '@/components/ui/Field';
 import { api } from '@/lib/api';
+import { clearActiveRun, readActiveRun, saveActiveRun, type ActiveCompareRun } from '@/lib/activeRun';
 import { connectRagasRunStream as connectRagasRunWs } from '@/lib/sse-client';
 import { CompareSummaryDashboard } from './RunSummaryDashboard';
 import {
@@ -59,7 +60,11 @@ export default function ComparePanel() {
   const [liveB, setLiveB] = useState<RagasResultRow[]>([]);
   const [total, setTotal] = useState(0);
   const [cancelling, setCancelling] = useState(false);
+  // Side labels captured when the run started. The form resets on a refresh, but
+  // the results on screen still belong to the run that produced them.
+  const [runLabels, setRunLabels] = useState<[string, string] | null>(null);
   const runIdsRef = useRef<number[]>([]);
+  const resumedRef = useRef(false);
 
   useEffect(() => {
     if (nodeNm == null) { setVersions([]); return; }
@@ -77,11 +82,69 @@ export default function ComparePanel() {
   const canRun =
     !!datasetId && (mode === 'endpoint' || byVersion) && (!scoreOn || metrics.length > 0) && status !== 'running';
   const verLabel = (id: number | null) => (mode === 'version' ? versions.find((v) => v.prompt_id === id)?.version_no ?? '' : '');
+  const labA = runLabels?.[0] ?? verLabel(verA);
+  const labB = runLabels?.[1] ?? verLabel(verB);
+
+  const waitDone = (
+    id: number,
+    setLive: (f: (cur: RagasResultRow[]) => RagasResultRow[]) => void,
+    setDet: (d: RagasRunDetail) => void,
+    side: 'a' | 'b' | null,
+    baseUrl: string | null,
+  ) =>
+    new Promise<string>((resolve) => {
+      const ws = connectRagasRunWs(id, {
+        onMessage: async (m: RunWsMessage) => {
+          if (m.event === 'RUNNING') {
+            setTotal((t) => Math.max(t, m.total ?? 0));
+          } else if (m.event === 'ANSWER' || m.event === 'SCORE') {
+            setTotal((t) => Math.max(t, m.total));
+            setLive((cur) => upsertResult(cur, m.result));
+          } else if (m.event === 'DONE' || m.event === 'FAILED' || m.event === 'CANCELLED') {
+            setDet(await api.get<RagasRunDetail>(`/ragas-runs/${id}`));
+            ws.close();
+            resolve(m.event);
+          }
+        },
+      }, { side, baseUrl });
+    });
+
+  /** Stream both sides and settle the panel's status. Shared by a fresh run and
+   * by a resume after refresh — the server replays what each run already emitted. */
+  async function attachBoth(saved: ActiveCompareRun) {
+    runIdsRef.current = [saved.runIdA, saved.runIdB];
+    const ev = await Promise.all([
+      waitDone(saved.runIdA, setLiveA, setDetailA, saved.side ? 'a' : null, saved.urlA),
+      waitDone(saved.runIdB, setLiveB, setDetailB, saved.side ? 'b' : null, saved.urlB),
+    ]);
+    clearActiveRun('compare');
+    setStatus(ev.includes('FAILED') ? 'failed' : ev.includes('CANCELLED') ? 'cancelled' : 'done');
+  }
+
+  // Resume the pair this tab was streaming before a refresh; both runs kept
+  // executing on the server.
+  useEffect(() => {
+    if (resumedRef.current) return; // React StrictMode runs mount effects twice in dev
+    resumedRef.current = true;
+    const saved = readActiveRun<ActiveCompareRun>('compare');
+    if (!saved) return;
+    setScoreOn(saved.scoreOn);
+    setRunLabels([saved.labelA, saved.labelB]);
+    setStatus('running');
+    void attachBoth(saved);
+    // Mount only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function run() {
     if (!canRun) return;
     setError(null); setDetailA(null); setDetailB(null); setStatus('running');
     setLiveA([]); setLiveB([]); setTotal(0); setCancelling(false); runIdsRef.current = [];
+    // Version mode compares two prompt versions on the same endpoint, so the
+    // A/B side (and its own URL) only applies in endpoint mode.
+    const ep = mode === 'endpoint';
+    const labels: [string, string] = [verLabel(verA), verLabel(verB)];
+    setRunLabels(labels);
     try {
       const r = await api.post<{ ragas_run_a_id: number; ragas_run_b_id: number }>('/flow/test/ragas/ab', {
         dataset_id: datasetId,
@@ -90,38 +153,17 @@ export default function ComparePanel() {
         prompt_id_b: byVersion ? verB : null,
         metrics: scoreOn ? metrics : [], score: scoreOn,
       });
-      runIdsRef.current = [r.ragas_run_a_id, r.ragas_run_b_id];
-      const waitDone = (
-        id: number,
-        setLive: (f: (cur: RagasResultRow[]) => RagasResultRow[]) => void,
-        setDet: (d: RagasRunDetail) => void,
-        side: 'a' | 'b' | null,
-        baseUrl: string | null,
-      ) =>
-        new Promise<string>((resolve) => {
-          const ws = connectRagasRunWs(id, {
-            onMessage: async (m: RunWsMessage) => {
-              if (m.event === 'RUNNING') {
-                setTotal((t) => Math.max(t, m.total ?? 0));
-              } else if (m.event === 'ANSWER' || m.event === 'SCORE') {
-                setTotal((t) => Math.max(t, m.total));
-                setLive((cur) => upsertResult(cur, m.result));
-              } else if (m.event === 'DONE' || m.event === 'FAILED' || m.event === 'CANCELLED') {
-                setDet(await api.get<RagasRunDetail>(`/ragas-runs/${id}`));
-                ws.close();
-                resolve(m.event);
-              }
-            },
-          }, { side, baseUrl });
-        });
-      // Version mode compares two prompt versions on the same endpoint, so the
-      // A/B side (and its own URL) only applies in endpoint mode.
-      const ep = mode === 'endpoint';
-      const ev = await Promise.all([
-        waitDone(r.ragas_run_a_id, setLiveA, setDetailA, ep ? 'a' : null, ep ? urlA.trim() || null : null),
-        waitDone(r.ragas_run_b_id, setLiveB, setDetailB, ep ? 'b' : null, ep ? urlB.trim() || null : null),
-      ]);
-      setStatus(ev.includes('FAILED') ? 'failed' : ev.includes('CANCELLED') ? 'cancelled' : 'done');
+      const saved: ActiveCompareRun = {
+        runIdA: r.ragas_run_a_id,
+        runIdB: r.ragas_run_b_id,
+        side: ep,
+        urlA: ep ? urlA.trim() || null : null,
+        urlB: ep ? urlB.trim() || null : null,
+        labelA: labels[0], labelB: labels[1],
+        scoreOn,
+      };
+      saveActiveRun('compare', saved);
+      await attachBoth(saved);
     } catch (e) { setError(errText(e)); setStatus('failed'); }
   }
 
@@ -230,9 +272,9 @@ export default function ComparePanel() {
           <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
             <h3 className="mr-1 text-sm font-semibold text-ink">Comparison</h3>
             <Badge tone="neutral" dot>RUNNING</Badge>
-            <Badge tone="neutral">A · {sideLabel(verLabel(verA))}</Badge>
+            <Badge tone="neutral">A · {sideLabel(labA)}</Badge>
             <span>vs</span>
-            <Badge tone="accent">B · {sideLabel(verLabel(verB))}</Badge>
+            <Badge tone="accent">B · {sideLabel(labB)}</Badge>
             <span className="ml-auto">Answered A {answeredA}/{total || '…'} · B {answeredB}/{total || '…'}</span>
           </div>
           <div className="p-4">
@@ -241,7 +283,7 @@ export default function ComparePanel() {
                   <CaseCompareTable
                     detailA={{ results: liveA } as RagasRunDetail}
                     detailB={{ results: liveB } as RagasRunDetail}
-                    labelA={verLabel(verA)} labelB={verLabel(verB)}
+                    labelA={labA} labelB={labB}
                     scored={scoreOn}
                   />
                 </div>
@@ -255,16 +297,16 @@ export default function ComparePanel() {
           <CompareSummaryDashboard
             detailA={detailA}
             detailB={detailB}
-            labelA={verLabel(verA)}
-            labelB={verLabel(verB)}
+            labelA={labA}
+            labelB={labB}
           />
           <Card>
             <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
               <h3 className="mr-1 text-sm font-semibold text-ink">Comparison Detail</h3>
               {nodeNm && <span className="font-medium text-ink">{nodeNm}</span>}
-              <Badge tone="neutral">A · {sideLabel(verLabel(verA))}</Badge>
+              <Badge tone="neutral">A · {sideLabel(labA)}</Badge>
               <span>vs</span>
-              <Badge tone="accent">B · {sideLabel(verLabel(verB))}</Badge>
+              <Badge tone="accent">B · {sideLabel(labB)}</Badge>
               <span className="ml-auto flex items-center gap-2.5">
                 <CompareVerdict detailA={detailA} detailB={detailB} />
                 <span>Engine {detailA.engine ?? '—'}</span>
@@ -272,7 +314,7 @@ export default function ComparePanel() {
             </div>
             <div className="p-4">
               <div className="overflow-hidden rounded-sm border border-line bg-surface">
-                <CaseCompareTable detailA={detailA} detailB={detailB} labelA={verLabel(verA)} labelB={verLabel(verB)} />
+                <CaseCompareTable detailA={detailA} detailB={detailB} labelA={labA} labelB={labB} />
               </div>
               {(detailA.status === 'CANCELLED' || detailB.status === 'CANCELLED') && (
                 <p className="mt-3 text-xs text-muted">취소된 실행 — 답변만 저장되고 점수는 없습니다.</p>

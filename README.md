@@ -107,7 +107,9 @@ npm run typecheck      # tsc --noEmit  (npm run build 는 dev .next 캐시를 �
 
 ## 진행 스트리밍 (SSE)
 
-RAGAS 실행 진행상황은 WebSocket 대신 **SSE**로 전송된다. `POST /api/flow/test/ragas`가 run(PENDING)을 만들고, 프론트가 `GET /api/ragas-runs/{id}/stream`(EventSource)에 붙으면 그 스트림이 평가 루프를 구동하며 `RUNNING/ANSWER/SCORE/DONE` 이벤트를 흘린다. 취소는 `POST /api/ragas-runs/{id}/cancel`(STATUS=CANCELLING).
+RAGAS 실행 진행상황은 WebSocket 대신 **SSE**로 전송된다. `POST /api/flow/test/ragas`가 run(PENDING)을 만들고, 프론트가 `GET /api/ragas-runs/{id}/stream`(EventSource)에 붙으면 `RUNNING/ANSWER/SCORE/DONE` 이벤트가 흘러나온다. 취소는 `POST /api/ragas-runs/{id}/cancel`(STATUS=CANCELLING) 뿐이다.
+
+**실행은 연결이 아니라 `src/lib/services/runRegistry.ts` 가 소유한다.** 스트림은 실행에 붙었다 떨어질 뿐이라 새로고침·탭 닫기·네트워크 끊김이 실행을 죽이지 않는다. 다시 붙으면 그동안의 이벤트(RUNNING → 케이스별 최신 결과 → 종료)를 재생받아 화면이 그대로 복구된다. 프론트는 진행 중인 run id 를 `sessionStorage`(`ptx.activeRun.*`)에 남겨 새로고침 후 자동 재접속한다. 레지스트리는 프로세스 메모리이므로 **서버가 재시작되면** 그 run 은 되살릴 수 없다 — 이 경우 재접속 시 케이스를 다시 실행해 행을 중복 적재하지 않고 해당 run 을 FAILED(`실행이 중단되었습니다…`)로 마감한다.
 
 스트림에 `?side=a|b` 를 붙이면 그 런은 해당 쪽 기본 엔드포인트(`agent.baseUrlA` / `baseUrlB`)를 호출하고, `?base_url=` 를 함께 주면 그 URL이 우선한다. Compare 탭의 **엔드포인트** 모드가 이 경로로, 두 버전이 서로 다른 API에 떠 있을 때 쓰는 임시 수단이다(이 모드에서는 프롬프트 버전을 고르지 않으므로 활성 버전 교체도 일어나지 않는다). **프롬프트 버전** 모드는 종전대로 한 노드의 두 버전을 같은 엔드포인트에서 비교한다.
 

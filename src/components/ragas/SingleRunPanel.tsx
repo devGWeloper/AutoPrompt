@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input, Select, Textarea } from '@/components/ui/Field';
 import { api } from '@/lib/api';
+import { clearActiveRun, readActiveRun, saveActiveRun, type ActiveSingleRun } from '@/lib/activeRun';
 import { connectRagasRunStream as connectRagasRunWs } from '@/lib/sse-client';
 import { SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import {
@@ -109,7 +110,12 @@ export default function SingleRunPanel() {
   const [live, setLive] = useState<RagasResultRow[]>([]);
   const [total, setTotal] = useState(0);
   const [cancelling, setCancelling] = useState(false);
+  // Node/version the running run was started with. Kept separately from the form
+  // so the live header stays right after a refresh, when the form is back to
+  // its defaults but the run is still going.
+  const [runMeta, setRunMeta] = useState<{ nodeNm: string; verLabel: string } | null>(null);
   const runIdRef = useRef<number | null>(null);
+  const resumedRef = useRef(false);
   const wsRef = useRef<EventSource | null>(null);
   // Manual (raw single message) state.
   const [message, setMessage] = useState('');
@@ -137,31 +143,59 @@ export default function SingleRunPanel() {
   const canRun = !!datasetId && (!scoreOn || metrics.length > 0) && (!nodeNm || ver != null);
   const canCall = callStatus !== 'running' && !!message.trim() && (!scoreOn || metrics.length > 0);
 
+  /** Open the run's event stream. Used both when starting a run and when
+   * reattaching to one a previous page load left in flight — the server replays
+   * everything already emitted, so either entry point ends up with the same view. */
+  function attach(runId: number, url: string | null) {
+    runIdRef.current = runId;
+    const ws = connectRagasRunWs(runId, {
+      onMessage: async (m: RunWsMessage) => {
+        if (m.event === 'RUNNING') {
+          setTotal(m.total ?? 0);
+        } else if (m.event === 'ANSWER' || m.event === 'SCORE') {
+          setTotal(m.total);
+          setLive((cur) => upsertResult(cur, m.result));
+        } else if (m.event === 'DONE' || m.event === 'FAILED' || m.event === 'CANCELLED') {
+          clearActiveRun('single');
+          setDetail(await api.get<RagasRunDetail>(`/ragas-runs/${runId}`));
+          setStatus(m.event === 'DONE' ? 'done' : m.event === 'CANCELLED' ? 'cancelled' : 'failed');
+          ws.close();
+        }
+      },
+    }, { side: 'a', baseUrl: url });
+    wsRef.current = ws;
+  }
+
+  // Resume a run this tab was streaming before a refresh. The run kept executing
+  // on the server; only the connection was lost.
+  useEffect(() => {
+    if (resumedRef.current) return; // React StrictMode runs mount effects twice in dev
+    resumedRef.current = true;
+    const saved = readActiveRun<ActiveSingleRun>('single');
+    if (!saved) return;
+    setSource('dataset');
+    setScoreOn(saved.scoreOn);
+    setRunMeta({ nodeNm: saved.nodeNm, verLabel: saved.verLabel });
+    setStatus('running');
+    attach(saved.runId, saved.baseUrl);
+    // Mount only: a resume must not re-fire when the form state settles.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function run() {
     if (!canRun) return;
     setError(null); setDetail(null); setStatus('running');
     setLive([]); setTotal(0); setCancelling(false); runIdRef.current = null;
+    const url = baseUrl.trim() || null;
+    const meta = { nodeNm, verLabel: verLabel(nodeNm ? ver : null) };
+    setRunMeta(meta);
     try {
       const r = await api.post<{ ragas_run_id: number }>('/flow/test/ragas', {
         dataset_id: datasetId, metrics: scoreOn ? metrics : [], score: scoreOn,
         node_nm: nodeNm || null, prompt_id: nodeNm ? ver : null,
       });
-      runIdRef.current = r.ragas_run_id;
-      const ws = connectRagasRunWs(r.ragas_run_id, {
-        onMessage: async (m: RunWsMessage) => {
-          if (m.event === 'RUNNING') {
-            setTotal(m.total ?? 0);
-          } else if (m.event === 'ANSWER' || m.event === 'SCORE') {
-            setTotal(m.total);
-            setLive((cur) => upsertResult(cur, m.result));
-          } else if (m.event === 'DONE' || m.event === 'FAILED' || m.event === 'CANCELLED') {
-            setDetail(await api.get<RagasRunDetail>(`/ragas-runs/${r.ragas_run_id}`));
-            setStatus(m.event === 'DONE' ? 'done' : m.event === 'CANCELLED' ? 'cancelled' : 'failed');
-            ws.close();
-          }
-        },
-      }, { side: 'a', baseUrl: baseUrl.trim() || null });
-      wsRef.current = ws;
+      saveActiveRun('single', { runId: r.ragas_run_id, baseUrl: url, scoreOn, ...meta });
+      attach(r.ragas_run_id, url);
     } catch (e) { setError(errText(e)); setStatus('failed'); }
   }
 
@@ -377,8 +411,8 @@ export default function SingleRunPanel() {
               <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
                 <h3 className="mr-1 text-sm font-semibold text-ink">Results</h3>
                 <Badge tone="neutral" dot>{cancelling ? 'CANCELLING' : 'RUNNING'}</Badge>
-                {nodeNm && <span className="font-medium text-ink">{nodeNm}</span>}
-                <Badge tone="neutral">{verLabel(ver)}</Badge>
+                {(runMeta?.nodeNm ?? nodeNm) && <span className="font-medium text-ink">{runMeta?.nodeNm ?? nodeNm}</span>}
+                <Badge tone="neutral">{runMeta?.verLabel ?? verLabel(ver)}</Badge>
                 <span className="ml-auto">Answered {answered}/{total || '…'}{scoreOn ? ` · Scored ${scored}/${total || '…'}` : ''}</span>
               </div>
               <div className="p-4">

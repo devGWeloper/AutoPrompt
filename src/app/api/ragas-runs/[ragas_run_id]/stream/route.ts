@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { executeRun } from "@/lib/services/flow";
+import { streamRun } from "@/lib/services/flow";
 import { sseResponse } from "@/lib/sse";
 import { intParam } from "@/lib/route-utils";
 import { errorResponse } from "@/lib/http";
@@ -17,7 +17,9 @@ export async function GET(req: NextRequest, { params }: { params: { ragas_run_id
     const q = req.nextUrl.searchParams;
     const rawSide = q.get("side");
     const side = rawSide === "a" || rawSide === "b" ? rawSide : null;
-    return sseResponse((emit) => executeRun(id, emit, req.signal, { baseUrl: q.get("base_url"), side }));
+    // The run itself is owned by the run registry, not by this connection:
+    // reconnecting (after a refresh) attaches and replays, it does not re-run.
+    return sseResponse((emit) => streamRun(id, emit, req.signal, { baseUrl: q.get("base_url"), side }));
   } catch (e) {
     return errorResponse(e);
   }

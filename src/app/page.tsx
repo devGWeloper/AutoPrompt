@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { cn } from '@/lib/cn';
+import { readActiveRun } from '@/lib/activeRun';
 import TopBar from '@/components/ui/TopBar';
 import { Tabs } from '@/components/ui/Tabs';
 import SingleRunPanel from '@/components/ragas/SingleRunPanel';
@@ -29,6 +30,13 @@ export default function RagasHomePage() {
     setTab(t);
     setOpened((cur) => (cur.has(t) ? cur : new Set(cur).add(t)));
   };
+  // Land on Compare when this tab was streaming a comparison before a refresh —
+  // otherwise the panel would not mount, and nothing would reattach to the pair.
+  // In an effect (not the initial state) so server and client render the same tab.
+  useEffect(() => {
+    if (readActiveRun('compare')) openTab('compare');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const current = TABS.find((t) => t.id === tab)!;
   return (
     <div className="flex h-full flex-col">
