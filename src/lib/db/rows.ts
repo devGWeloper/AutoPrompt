@@ -197,7 +197,7 @@ export function mapActivePrompt(r: Row): ActivePrompt {
 }
 
 export function mapDataset(r: Row): Dataset {
-  return {
+  const d: Dataset = {
     dataset_id: num(r.DATASET_ID)!,
     dataset_nm: String(r.DATASET_NM),
     description: str(r.DESC_CTN),
@@ -205,6 +205,10 @@ export function mapDataset(r: Row): Dataset {
     created_by: String(r.USER_ID),
     created_dt: String(r.CRT_TM),
   };
+  // Only the list query selects CASE_CNT; leave it undefined elsewhere rather
+  // than reporting a confident 0.
+  if (r.CASE_CNT !== undefined) d.case_count = num(r.CASE_CNT) ?? 0;
+  return d;
 }
 
 export function mapCase(r: Row): TestCase {

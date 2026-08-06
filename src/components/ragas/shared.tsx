@@ -205,7 +205,11 @@ export function DatasetSelect({ datasets, value, onChange }: { datasets: Dataset
   return (
     <Select value={value ?? ''} onChange={(e) => onChange(Number(e.target.value))} className="w-48">
       <option value="" disabled>Dataset</option>
-      {datasets.map((d) => (<option key={d.dataset_id} value={d.dataset_id}>{d.dataset_nm}</option>))}
+      {datasets.map((d) => (
+        <option key={d.dataset_id} value={d.dataset_id}>
+          {d.dataset_nm}{d.case_count != null ? ` (${d.case_count})` : ''}
+        </option>
+      ))}
     </Select>
   );
 }

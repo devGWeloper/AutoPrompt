@@ -167,6 +167,8 @@ export interface Dataset {
   is_active: "Y" | "N";
   created_by: string;
   created_dt: string;
+  /** Present on list/detail reads; absent where the query didn't count. */
+  case_count?: number;
 }
 
 export interface DatasetDetail extends Dataset {

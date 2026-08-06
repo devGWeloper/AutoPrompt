@@ -24,8 +24,14 @@ import { writeAudit } from "./audit";
 
 export async function listFlowDatasets(): Promise<Dataset[]> {
   return readConn(async (conn) => {
+    // CASE_CNT rides along so the picker can show how many cases a dataset holds
+    // without a request per dataset.
     const res = await conn.execute(
-      `SELECT ${DATASET_COLS} FROM PTX_DATASET_MAS WHERE ACTIVE_YN = 'Y' ORDER BY CRT_TM DESC`,
+      `SELECT ${DATASET_COLS},
+              (SELECT COUNT(*) FROM PTX_DATASET_DET d WHERE d.DATASET_ID = m.DATASET_ID) AS CASE_CNT
+         FROM PTX_DATASET_MAS m
+        WHERE m.ACTIVE_YN = 'Y'
+        ORDER BY m.CRT_TM DESC`,
     );
     return ((res.rows ?? []) as Record<string, unknown>[]).map(mapDataset);
   }, []);
