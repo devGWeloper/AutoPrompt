@@ -5,8 +5,9 @@
 //
 // Answers arrive as JSON from the chat API, and only the `body` part is the real
 // payload, so both sides are unwrapped to `body` when present. Comparison is
-// structural (key order ignored) when both sides parse as JSON, and a
-// whitespace-normalized string compare otherwise.
+// structural (key order ignored) when both sides parse as JSON, and a string
+// compare otherwise. Either way whitespace is ignored — indentation, newlines
+// and padding inside string values never decide the result.
 
 /** Metric key for the exact-match option (a column name once upper-cased). */
 export const EXACT_MATCH = "exact_match";
@@ -27,19 +28,25 @@ function unwrapBody(v: unknown): unknown {
   return v;
 }
 
-/** Stable stringification: object keys sorted, array order preserved. */
+/** Whitespace is never meaningful for this judgement: runs collapse to a single
+ * space and the ends are trimmed. Pretty-printed vs compact JSON, an indented
+ * ground truth pasted from the result screen, and padding inside a value all
+ * compare equal — only the text itself decides O/X. */
+function normalizeText(s: string): string {
+  return s.replace(/\s+/g, " ").trim();
+}
+
+/** Stable stringification: object keys sorted, array order preserved, every
+ * string leaf whitespace-normalized. */
 function canonical(v: unknown): string {
+  if (typeof v === "string") return JSON.stringify(normalizeText(v));
   if (v === null || typeof v !== "object") return JSON.stringify(v) ?? "null";
   if (Array.isArray(v)) return `[${v.map(canonical).join(",")}]`;
   const o = v as Record<string, unknown>;
   return `{${Object.keys(o)
     .sort()
-    .map((k) => `${JSON.stringify(k)}:${canonical(o[k])}`)
+    .map((k) => `${JSON.stringify(normalizeText(k))}:${canonical(o[k])}`)
     .join(",")}}`;
-}
-
-function normalizeText(s: string): string {
-  return s.replace(/\s+/g, " ").trim();
 }
 
 interface Side {
