@@ -14,7 +14,7 @@ import {
 } from '@/lib/types';
 import {
   AnswerBox, caseMean, Chevron, CollapseAllStrip, exactOnly, fmt3, OxBadge,
-  ScoredPreview, sideLabel, TraceValueBox,
+  PendingHint, ScoredPreview, sideLabel, TraceValueBox,
 } from './shared';
 
 // One side's absolute-score bar (fills 0→value on a 0..1 scale). B is the accent
@@ -200,15 +200,15 @@ export function CaseCompareTable({
               <span className={cn('min-w-0 flex-1 text-sm text-ink', isClosed ? 'truncate' : 'whitespace-pre-wrap break-words font-medium')}>
                 {q}
               </span>
-              {isClosed && (a?.answer != null || b?.answer != null || a?.trace_value || b?.trace_value) && (
+              {isClosed && (a || b) && (
                 <span className="mt-0.5 flex min-w-0 flex-[2] items-baseline gap-2.5 text-xs text-muted">
                   <span className="flex min-w-0 flex-1 items-baseline gap-1">
                     <span className="shrink-0 font-semibold">A</span>
-                    {a ? <ScoredPreview row={a} className="min-w-0 flex-1" /> : '—'}
+                    {a ? <ScoredPreview row={a} className="min-w-0 flex-1" /> : <PendingHint label="대기 중" className="min-w-0 flex-1" />}
                   </span>
                   <span className="flex min-w-0 flex-1 items-baseline gap-1">
                     <span className="shrink-0 font-semibold">B</span>
-                    {b ? <ScoredPreview row={b} className="min-w-0 flex-1" /> : '—'}
+                    {b ? <ScoredPreview row={b} className="min-w-0 flex-1" /> : <PendingHint label="대기 중" className="min-w-0 flex-1" />}
                   </span>
                 </span>
               )}

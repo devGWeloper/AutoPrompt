@@ -21,6 +21,7 @@ import {
   ErrBox,
   EvalOptions,
   ScoreToggle,
+  PendingHint,
   SegToggle,
   StatusPill,
   VersionSelect,
@@ -244,7 +245,7 @@ export default function ComparePanel() {
                     scored={scoreOn}
                   />
                 </div>
-              : <div className="py-8 text-center text-xs text-muted">Generating answers…</div>}
+              : <div className="py-8 text-center"><PendingHint label="답변 생성 중…" /></div>}
           </div>
         </Card>
       )}

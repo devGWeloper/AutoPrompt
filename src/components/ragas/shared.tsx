@@ -256,9 +256,20 @@ export function ErrBox({ msg }: { msg: string }) {
   return <div className="rounded-md border border-bad/20 bg-bad/5 px-4 py-3 text-sm text-bad">{msg}</div>;
 }
 
+/** Placeholder for an answer that hasn't arrived yet. A bare '—' in error red
+ * reads as a failure; a pulsing dot reads as "still running". */
+export function PendingHint({ label = '응답 대기 중…', className }: { label?: string; className?: string }) {
+  return (
+    <span className={cn('inline-flex items-center gap-1.5 text-xs text-muted', className)}>
+      <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-accent" />
+      {label}
+    </span>
+  );
+}
+
 // Bounded, scrollable answer box.
 export function AnswerBox({ text, error }: { text?: string | null; error?: string | null }) {
-  if (text == null) return <p className="text-sm text-bad">{error ?? '—'}</p>;
+  if (text == null) return error ? <p className="text-sm text-bad">{error}</p> : <PendingHint />;
   return (
     <div className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words pr-1 text-sm leading-relaxed text-ink">
       {text}
@@ -301,7 +312,11 @@ export function ScoredPreview({ row, className }: { row: RagasResultRow; classNa
       </span>
     );
   }
-  if (row.answer == null) return null;
+  if (row.answer == null) {
+    return row.error_msg
+      ? <span className={cn('truncate text-xs text-bad', className)}>{oneLine(row.error_msg)}</span>
+      : <PendingHint label="대기 중" className={className} />;
+  }
   return <span className={cn('truncate text-xs text-muted', className)}>{row.answer}</span>;
 }
 

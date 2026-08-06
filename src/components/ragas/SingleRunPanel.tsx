@@ -28,6 +28,7 @@ import {
   CaseTable,
   ScoreBars,
   AnswerBox,
+  PendingHint,
   errText,
   fmt3,
   runMean,
@@ -326,7 +327,7 @@ export default function SingleRunPanel() {
             </Card>
           )}
           {callStatus === 'running' && (
-            <Card className="px-6 py-12 text-center text-xs text-muted">Calling external API…</Card>
+            <Card className="px-6 py-12 text-center"><PendingHint label="외부 API 호출 중…" /></Card>
           )}
           {callResult && callStatus !== 'running' && (
             <Card>
@@ -386,7 +387,7 @@ export default function SingleRunPanel() {
                     <CaseTable detail={{ results: live } as RagasRunDetail} scored={scoreOn} />
                   </div>
                 ) : (
-                  <div className="py-8 text-center text-xs text-muted">Generating answers…</div>
+                  <div className="py-8 text-center"><PendingHint label="답변 생성 중…" /></div>
                 )}
               </div>
             </Card>
