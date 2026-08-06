@@ -3,10 +3,10 @@ name: connect-prompt-mgmt
 description: >-
   Wire this prompt-management backend to the internal chat / super-agent model.
   Two paths: (A) refactor the agent so it reads its per-node SYSTEM_PROMPT +
-  USER_PROMPT from the shared Oracle DB (the active PM_NODE_PROMPT_VER row) instead
+  USER_PROMPT from the shared Oracle DB (the active PTX_PROMPT_HIS row) instead
   of hardcoded prompt.py constants, and (B) this system drives the model's chat
   endpoint to run flow tests & RAGAS. Single shared Oracle DB — CHAT_VER_MAS /
-  NODE_MAS owned by the agent, PM_NODE_PROMPT_VER owned by PM and read by the agent,
+  NODE_MAS owned by the agent, PTX_PROMPT_HIS owned by PTX and read by the agent,
   join key NODE_NM, no sync job. Use when connecting the backend in `backend/` to
   the internal model, on an internal network.
 ---
@@ -25,19 +25,19 @@ at the end of each stage before moving on.
 ## Ground truth (this repo) — read before wiring
 
 - **One flow, one shared Oracle DB.** No projects. The agent owns two FIXED tables
-  (structure never changed by PM): `CHAT_VER_MAS` (`GRAPH_STRUCT` mermaid +
+  (structure never changed by PTX): `CHAT_VER_MAS` (`GRAPH_STRUCT` mermaid +
   `MAIN_MODEL_NM`) and `NODE_MAS` (nodes; `PROMPT_EDIT_ENABLE_YN='Y'` = a prompt
   node). **Join key = `NODE_NM`** (unique within the current flow).
-- **PM owns `PM_NODE_PROMPT_VER`** — versioned prompts split into `SYSTEM_PROMPT` +
+- **PTX owns `PTX_PROMPT_HIS`** — versioned prompts split into `SYSTEM_PROMPT` +
   `USER_PROMPT`, with `IS_ACTIVE` (one active row per node). This is a **shared-read
   contract table**: the agent reads the active row to get BOTH prompts for a node.
 - **The agent currently HARDCODES prompts** in its own project under
   `prompt/<node>/prompt.py` as `<node>_SYSTEM_PROMPT = "..."` /
   `<node>_USER_PROMPT = "..."`, filling variables at runtime. **Path A replaces those
-  constants with a DB loader** that reads the active `PM_NODE_PROMPT_VER` row for the
+  constants with a DB loader** that reads the active `PTX_PROMPT_HIS` row for the
   node by `NODE_NM` (`IS_ACTIVE='Y'`) and returns both prompts; the agent fills its
   variables exactly as before.
-- **`NODE_MAS.PROMPT` is not read by anyone.** The agent reads `PM_NODE_PROMPT_VER`,
+- **`NODE_MAS.PROMPT` is not read by anyone.** The agent reads `PTX_PROMPT_HIS`,
   not `NODE_MAS.PROMPT`. The activation step in this backend that mirrors
   `SYSTEM_PROMPT` into `NODE_MAS.PROMPT` is **vestigial** — activation only needs to
   flip `IS_ACTIVE` and cut a `PM_FLOW_VER` snapshot.
@@ -62,7 +62,7 @@ loader that reads the active row (Oracle):
 
 ```sql
 SELECT v.SYSTEM_PROMPT, v.USER_PROMPT
-FROM   PM_NODE_PROMPT_VER v
+FROM   PTX_PROMPT_HIS v
 JOIN   NODE_MAS n ON n.ID = v.NODE_MAS_ID
 WHERE  n.NODE_NM = :node_nm AND v.IS_ACTIVE = 'Y'
 ```
@@ -85,7 +85,7 @@ response: { "response": "<answer>",
 The backend uses only `response` (the answer) and `docs` (used as RAGAS retrieved
 contexts when the dataset case doesn't pin its own). All other fields are
 accepted and ignored. The model resolves SYSTEM_PROMPT/USER_PROMPT itself from
-the active `PM_NODE_PROMPT_VER` row — not from the request. See
+the active `PTX_PROMPT_HIS` row — not from the request. See
 `references/02-api-contract.md`.
 
 ## Stages

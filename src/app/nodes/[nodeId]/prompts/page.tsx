@@ -263,7 +263,7 @@ function EditorTab({
       </div>
       <PromptField
         label="System prompt"
-        caption="Read as-is by the external model from the active PM_NODE_PROMPT_VER row"
+        caption="Read as-is by the external model from the active PTX_PROMPT_HIS row"
         value={system}
         onChange={(e) => setSystem(e.target.value)}
         rows={10}

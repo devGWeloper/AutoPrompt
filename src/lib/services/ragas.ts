@@ -181,7 +181,7 @@ export async function resolvePromptLabels(
     return `:p${i}`;
   });
   const res = await conn.execute(
-    `SELECT PROMPT_ID, NODE_NM, VERSION_NO FROM PM_NODE_PROMPT_VER WHERE PROMPT_ID IN (${names.join(", ")})`,
+    `SELECT PROMPT_ID, NODE_NM, VERSION_NO FROM PTX_PROMPT_HIS WHERE PROMPT_ID IN (${names.join(", ")})`,
     binds,
   );
   for (const r of (res.rows ?? []) as Record<string, unknown>[]) {
@@ -199,12 +199,11 @@ export async function listRuns(): Promise<RagasRunSummary[]> {
     // identity) and feeds the client-side search; 200 chars is plenty for both.
     const res = await conn.execute(
       `SELECT ${RUN_COLS},
-              (SELECT d.DATASET_NM FROM PM_TEST_DATASET d WHERE d.DATASET_ID = PM_RAGAS_RUN.DATASET_ID) AS DATASET_NM,
-              (SELECT DBMS_LOB.SUBSTR(x.QUESTION, 200, 1) FROM PM_RAGAS_RESULT x
-                WHERE x.RAGAS_RESULT_ID =
-                      (SELECT MIN(y.RAGAS_RESULT_ID) FROM PM_RAGAS_RESULT y
-                        WHERE y.RAGAS_RUN_ID = PM_RAGAS_RUN.RAGAS_RUN_ID)) AS FIRST_QUESTION
-         FROM PM_RAGAS_RUN ORDER BY RAGAS_RUN_ID DESC`,
+              (SELECT DBMS_LOB.SUBSTR(x.QUESTION_CTN, 200, 1) FROM PTX_RUN_DET x
+                WHERE x.RESULT_ID =
+                      (SELECT MIN(y.RESULT_ID) FROM PTX_RUN_DET y
+                        WHERE y.RUN_ID = PTX_RUN_MAS.RUN_ID)) AS FIRST_QUESTION
+         FROM PTX_RUN_MAS ORDER BY RUN_ID DESC`,
     );
     const rows = (res.rows ?? []) as Record<string, unknown>[];
     const summaries = rows.map(mapRagasRunSummary);
@@ -224,12 +223,12 @@ export async function listRuns(): Promise<RagasRunSummary[]> {
 
 export async function getRunDetail(runId: number): Promise<RagasRunDetail> {
   const detail = await readConn(async (conn) => {
-    const runRes = await conn.execute(`SELECT ${RUN_COLS} FROM PM_RAGAS_RUN WHERE RAGAS_RUN_ID = :id`, { id: runId });
+    const runRes = await conn.execute(`SELECT ${RUN_COLS} FROM PTX_RUN_MAS WHERE RUN_ID = :id`, { id: runId });
     const runRows = (runRes.rows ?? []) as Record<string, unknown>[];
     if (runRows.length === 0) return null;
     const run = mapRagasRun(runRows[0]);
     const resultsRes = await conn.execute(
-      `SELECT ${RESULT_COLS} FROM PM_RAGAS_RESULT WHERE RAGAS_RUN_ID = :id ORDER BY RAGAS_RESULT_ID ASC`,
+      `SELECT ${RESULT_COLS} FROM PTX_RUN_DET WHERE RUN_ID = :id ORDER BY RESULT_ID ASC`,
       { id: runId },
     );
     const results = ((resultsRes.rows ?? []) as Record<string, unknown>[]).map(mapRagasResult);
@@ -249,12 +248,12 @@ export async function getRunDetail(runId: number): Promise<RagasRunDetail> {
 
 export async function deleteRun(runId: number): Promise<void> {
   await withConn(async (conn) => {
-    const res = await conn.execute(`SELECT RAGAS_RUN_ID FROM PM_RAGAS_RUN WHERE RAGAS_RUN_ID = :id`, { id: runId });
+    const res = await conn.execute(`SELECT RUN_ID FROM PTX_RUN_MAS WHERE RUN_ID = :id`, { id: runId });
     if (((res.rows ?? []) as unknown[]).length === 0) throw notFound("ragas run not found");
-    await conn.execute(`DELETE FROM PM_RAGAS_RESULT WHERE RAGAS_RUN_ID = :id`, { id: runId });
-    await conn.execute(`DELETE FROM PM_RAGAS_RUN WHERE RAGAS_RUN_ID = :id`, { id: runId });
+    // PTX_RUN_DET.RUN_ID is ON DELETE CASCADE — the per-case rows go with the run.
+    await conn.execute(`DELETE FROM PTX_RUN_MAS WHERE RUN_ID = :id`, { id: runId });
     await writeAudit(conn, {
-      targetTable: "PM_RAGAS_RUN",
+      targetTable: "PTX_RUN_MAS",
       targetId: runId,
       action: "DELETE",
       before: { ragas_run_id: runId },

@@ -3,7 +3,7 @@
 AI Agent의 프롬프트/모델 설정을 중앙에서 버전 관리하고, 전체 플로우 단위 **RAGAS 회귀 평가**를 수행하는 웹 시스템. **백엔드 없이 단일 Next.js 14 앱**으로 동작한다(FastAPI 백엔드는 제거되고 로직이 Next.js route handler + `src/lib`로 이식됨).
 
 - Stack: **Next.js 14 (App Router)** + TypeScript + Tailwind(토큰 기반 디자인 시스템)
-- DB: **Oracle 19c+** — `oracledb` 드라이버로 직접 접근 (PM_* 6개 테이블). Docker 미사용, 로컬 직접 설치
+- DB: **Oracle 19c+** — `oracledb` 드라이버로 직접 접근 (PTX_* 6개 테이블). Docker 미사용, 로컬 직접 설치
 - 인증: **없음** (사내 단일 신뢰 환경 가정). 네트워크 레벨에서 접근 통제할 것
 - 설계 톤: `C:\work\inview` 앱과 동일한 구조·톤앤매너(설정 yml + `deploy.sh` + `src/lib` 패턴)로 정렬 — 추후 inview 통합 대비
 
@@ -12,7 +12,7 @@ AI Agent의 프롬프트/모델 설정을 중앙에서 버전 관리하고, 전�
 ```
 config.yml / config.dev.yml   Oracle 접속 + 외부 에이전트 설정 (dev.yml 존재 → dev, 없으면 prd)
 deploy.sh                     배포 스크립트 (git reset → build → nohup next start)
-sql/ddl_initial.sql           PM_* 스키마 (권위 스키마)
+sql/ddl_initial.sql           PTX_* 스키마 (권위 스키마)
 src/
   app/            페이지(page.tsx=RAGAS, nodes/…) + api/**/route.ts (모든 API)
   lib/            config·logger·db, db/rows, services/*(prompt·dataset·flow·ragas·export·externalAgent), types
@@ -24,7 +24,7 @@ src/
 `config.dev.yml`이 있으면 dev, 없으면 `config.yml`(prd)로 동작한다. `deploy.sh prd`는 `config.dev.yml`을 지워 prd로 강제한다.
 
 ```yaml
-db:                       # PM_* 테이블이 있는 Oracle 접속. 비우면 DB 미연결(조회=빈결과, 쓰기=명확한 에러)
+db:                       # PTX_* 테이블이 있는 Oracle 접속. 비우면 DB 미연결(조회=빈결과, 쓰기=명확한 에러)
   user: "pm_user"
   password: "pm_password"
   connectString: "localhost:1521/XEPDB1"
@@ -64,7 +64,9 @@ npm run dev
 
 ### DB 스키마
 
-마이그레이션 도구 없음. `sql/ddl_initial.sql`을 PM Oracle 스키마에 직접 적용한다(PM_* 6개 테이블만 생성; 운영 테이블은 건드리지 않음). DB 미설정 상태로도 UI는 뜨며 조회는 빈 결과가 된다.
+마이그레이션 도구 없음. `sql/ddl_initial.sql`을 PTX Oracle 스키마에 직접 적용한다(PTX_* 6개 테이블만 생성; 운영 테이블은 건드리지 않음). DB 미설정 상태로도 UI는 뜨며 조회는 빈 결과가 된다. 컬럼 명세는 `docs/db-schema.md`.
+
+테이블은 `PTX_<대상>_MAS|_DET|_HIS`, 컬럼은 `_ID/_NM/_NO/_CD/_CTN/_YN/_DT/_SCR` postfix 규칙을 따른다. 삭제 순서는 앱이 챙기지 않고 FK의 `ON DELETE CASCADE`/`SET NULL`에 맡긴다 — 데이터셋을 지워도 과거 실행 기록은 남고(`PTX_RUN_MAS.DATASET_NM` 스냅샷), 실행을 지우면 그 결과만 함께 사라진다. 옛 `PM_*` 스키마가 있으면 `sql/migrate_ptx_rename.sql`로 이름을 옮긴다.
 
 ### 검증
 

@@ -1,5 +1,5 @@
 // Domain types shared by server (route handlers / services) and client (pages).
-// Node identity is NODE_NM (PM is self-contained; no external anchors). Metric
+// Node identity is NODE_NM (PTX is self-contained; no external anchors). Metric
 // scores are plain numbers (0..1) or null; timestamps are ISO strings.
 
 export const SYSTEM_USER = "system";
@@ -24,7 +24,7 @@ export { EXACT_MATCH } from "./exactMatch";
 import { EXACT_MATCH } from "./exactMatch";
 
 /** Every selectable evaluation option. Each key doubles as a DB column name
- * (upper-cased) on PM_RAGAS_RUN / PM_RAGAS_RESULT. */
+ * (upper-cased) on PTX_RUN_MAS / PTX_RUN_DET. */
 export const ALL_METRICS = [EXACT_MATCH, ...RAGAS_METRICS] as const;
 export type RagasMetric = (typeof ALL_METRICS)[number];
 

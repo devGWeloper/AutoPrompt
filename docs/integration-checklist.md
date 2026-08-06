@@ -9,15 +9,15 @@
 - **고정 테이블 2개 (구조 변경 금지)** — 운영 프로젝트 소유, PM은 노드 메타만 읽음:
   - `CHAT_VER_MAS` : 현재 플로우 1행. PM 은 `ID` 만 사용 (`MAIN_MODEL_NM` / `GRAPH_STRUCT` 는 미사용).
   - `NODE_MAS` : 현재 노드들. PM 은 노드 메타 (`ID`, `CHAT_VER_ID`, `NODE_NM`, `NODE_DESC`,
-    `PROMPT_EDIT_ENABLE_YN`) 만 읽음. **`PROMPT` 컬럼은 PM/외부 모델 어디서도 안 읽음**(미러링은 vestigial — 외부 모델은 `PM_NODE_PROMPT_VER` 만 봄).
+    `PROMPT_EDIT_ENABLE_YN`) 만 읽음. **`PROMPT` 컬럼은 PM/외부 모델 어디서도 안 읽음**(미러링은 vestigial — 외부 모델은 `PTX_PROMPT_HIS` 만 봄).
 - **PM_* 테이블 (6개)** : 같은 Oracle DB에 존재.
-  - `PM_NODE_PROMPT_VER`(노드 프롬프트 버전 — `SYSTEM_PROMPT`/`USER_PROMPT` 2컬럼 분리),
-    `PM_TEST_DATASET`/`PM_TEST_CASE`(RAGAS 데이터셋), `PM_RAGAS_RUN`/`PM_RAGAS_RESULT`, `PM_AUDIT_LOG`.
+  - `PTX_PROMPT_HIS`(노드 프롬프트 버전 — `SYSTEM_PROMPT`/`USER_PROMPT` 2컬럼 분리),
+    `PTX_DATASET_MAS`/`PTX_DATASET_DET`(RAGAS 데이터셋), `PTX_RUN_MAS`/`PTX_RUN_DET`, `PTX_AUDIT_HIS`.
   - `PM_TEST_RUN`/`PM_TEST_RESULT`(비-RAGAS 테스트)·`PM_FLOW_VER`/`PM_FLOW_VER_NODE`(플로우 버전 이력)는
     RAGAS 중심 전환 때 **삭제**됨.
-- **ACTIVATE** : 웹에서 노드 프롬프트 버전을 활성화하면 → ① `PM_NODE_PROMPT_VER.IS_ACTIVE` 플래그 전환
+- **ACTIVATE** : 웹에서 노드 프롬프트 버전을 활성화하면 → ① `PTX_PROMPT_HIS.IS_ACTIVE` 플래그 전환
   (해당 노드 1행만 'Y') → ② `NODE_MAS.PROMPT` / `UPDATE_DATE` 미러링은 현재 코드가 같이 하지만 외부
-  모델이 더 이상 안 읽으므로 vestigial. 외부 모델은 `PM_NODE_PROMPT_VER` 의 active row 만 본다.
+  모델이 더 이상 안 읽으므로 vestigial. 외부 모델은 `PTX_PROMPT_HIS` 의 active row 만 본다.
 - **A·B RAGAS** : 평가 도중에만 PM 이 `IS_ACTIVE` 를 일시 토글해 외부 모델이 비활성 버전의 프롬프트를
   읽게 하고, 끝나면 `finally` 에서 원래 active 로 복구한다 (`flow_service._swap_active_prompt` /
   `_restore_active_prompt`). 외부 모델 측 로더는 캐시를 짧게 두거나 매 호출 시 재조회해야 토글이 반영된다.
@@ -86,7 +86,7 @@ POST {EXTERNAL_AGENT_BASE_URL}{EXTERNAL_CHAT_PATH}
 }
 ```
 - 백엔드는 `response` (답변) 와 `docs` (RAGAS retrieved contexts — 데이터셋 케이스에 `contexts` 가 비었을 때만 사용) 만 읽고, 나머지 필드는 받아도 무시한다.
-- 내부 모델은 자기 노드별 `SYSTEM_PROMPT`/`USER_PROMPT` 를 **공유 Oracle DB 의 `PM_NODE_PROMPT_VER` active row 에서 직접 로드**한다. 요청 페이로드엔 프롬프트가 실리지 않는다.
+- 내부 모델은 자기 노드별 `SYSTEM_PROMPT`/`USER_PROMPT` 를 **공유 Oracle DB 의 `PTX_PROMPT_HIS` active row 에서 직접 로드**한다. 요청 페이로드엔 프롬프트가 실리지 않는다.
 - **A·B RAGAS 동안엔 PM 이 `IS_ACTIVE` 를 일시 토글**한다. 모델 측 로더는 캐시 TTL 을 짧게 두거나 매 호출 재조회해야 토글이 반영된다.
 
 > 기본값 `RUN_MODE=stub` 에서는 RAGAS 평가가 임시 placeholder 답변으로 끝까지 동작한다(외부 미연결).
@@ -146,4 +146,4 @@ GET  /api/v1/ragas-runs/ab/{ab_group_id}/export?fmt=csv|xlsx
 > 프롬프트는 `SYSTEM_PROMPT`/`USER_PROMPT` 2컬럼 분리, 활성화 시 `SYSTEM_PROMPT`만 `NODE_MAS.PROMPT` 로 반영(`0006`).
 > RAGAS 중심 전환(`0008`)으로 단건/일괄/A·B 테스트·플로우 버전 이력·메인 모델 변경 기능과 관련 테이블
 > (`PM_TEST_RUN`/`PM_TEST_RESULT`/`PM_FLOW_VER`/`PM_FLOW_VER_NODE`) 및 사장 컬럼
-> (`PM_RAGAS_RUN.NODE_MAS_ID/PROMPT_ID`, `PM_NODE_PROMPT_VER` 모델 파라미터)이 제거됐다. RAGAS는 **전체 플로우** 단위로만 실행한다.
+> (`PTX_RUN_MAS.NODE_MAS_ID/PROMPT_ID`, `PTX_PROMPT_HIS` 모델 파라미터)이 제거됐다. RAGAS는 **전체 플로우** 단위로만 실행한다.

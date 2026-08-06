@@ -2,7 +2,7 @@
 """Fetch the current flow's active prompts from the prompt-management backend.
 
 Verification tool: the data returned here (system_prompt + user_prompt per node)
-must match what the agent's DB loader reads from the active PM_NODE_PROMPT_VER row
+must match what the agent's DB loader reads from the active PTX_PROMPT_HIS row
 (see references/03-mapping.md). At runtime the agent reads that table directly from
 the shared Oracle DB; this HTTP read is for inspection only. Keyed by NODE_NM.
 Stdlib only.

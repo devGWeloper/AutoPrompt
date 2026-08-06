@@ -6,7 +6,7 @@
 #   - 없으면 이 파일이 사용되며 appEnv = prd
 #   prd 배포에서는 deploy.sh 가 config.dev.yml 을 제거합니다.
 #
-# db: PM 소유 테이블(PM_*)이 들어있는 Oracle 접속 정보.
+# db: PTX 소유 테이블(PTX_*)이 들어있는 Oracle 접속 정보.
 #   connectString 예: host:port/service  ex) 10.0.0.10:1521/XEPDB1
 #   값을 비워두면 DB 미연결로 간주(조회는 빈 결과 / 쓰기는 명확한 에러).
 # ============================================================

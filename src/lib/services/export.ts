@@ -10,7 +10,7 @@ type Rows = { header: string[]; data: unknown[][] };
 
 async function runResults(conn: OracleConnection, runId: number): Promise<RagasResultRow[]> {
   const res = await conn.execute(
-    `SELECT ${RESULT_COLS} FROM PM_RAGAS_RESULT WHERE RAGAS_RUN_ID = :id ORDER BY RAGAS_RESULT_ID ASC`,
+    `SELECT ${RESULT_COLS} FROM PTX_RUN_DET WHERE RUN_ID = :id ORDER BY RESULT_ID ASC`,
     { id: runId },
   );
   return ((res.rows ?? []) as Record<string, unknown>[]).map(mapRagasResult);
@@ -18,7 +18,7 @@ async function runResults(conn: OracleConnection, runId: number): Promise<RagasR
 
 export async function ragasRunRows(runId: number): Promise<Rows> {
   const rows = await readConn(async (conn) => {
-    const runRes = await conn.execute(`SELECT RAGAS_RUN_ID FROM PM_RAGAS_RUN WHERE RAGAS_RUN_ID = :id`, { id: runId });
+    const runRes = await conn.execute(`SELECT RUN_ID FROM PTX_RUN_MAS WHERE RUN_ID = :id`, { id: runId });
     if (((runRes.rows ?? []) as unknown[]).length === 0) return null;
     const results = await runResults(conn, runId);
     const header = ["ragas_result_id", "case_id", "question", "answer", "ground_truth", ...ALL_METRICS, "error_msg"];
@@ -40,13 +40,13 @@ export async function ragasRunRows(runId: number): Promise<Rows> {
 export async function ragasAbRows(abGroupId: number): Promise<Rows> {
   const rows = await readConn(async (conn) => {
     const runsRes = await conn.execute(
-      `SELECT RAGAS_RUN_ID, PROMPT_ID FROM PM_RAGAS_RUN WHERE AB_GROUP_ID = :g ORDER BY RAGAS_RUN_ID ASC`,
+      `SELECT RUN_ID, PROMPT_ID FROM PTX_RUN_MAS WHERE AB_GROUP_ID = :g ORDER BY RUN_ID ASC`,
       { g: abGroupId },
     );
     const runs = (runsRes.rows ?? []) as Record<string, unknown>[];
     if (runs.length !== 2) return "notpair" as const;
-    const runA = Number(runs[0].RAGAS_RUN_ID);
-    const runB = Number(runs[1].RAGAS_RUN_ID);
+    const runA = Number(runs[0].RUN_ID);
+    const runB = Number(runs[1].RUN_ID);
     const pidA = runs[0].PROMPT_ID != null ? Number(runs[0].PROMPT_ID) : null;
     const pidB = runs[1].PROMPT_ID != null ? Number(runs[1].PROMPT_ID) : null;
 

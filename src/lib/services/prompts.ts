@@ -27,9 +27,9 @@ function bumpPatch(versionNo: string): string {
 
 async function suggestNextVersion(conn: OracleConnection, nodeNm: string): Promise<string> {
   const res = await conn.execute(
-    `SELECT VERSION_NO FROM PM_NODE_PROMPT_VER
+    `SELECT VERSION_NO FROM PTX_PROMPT_HIS
       WHERE NODE_NM = :nm
-      ORDER BY CREATED_DT DESC, PROMPT_ID DESC
+      ORDER BY CRT_TM DESC, PROMPT_ID DESC
       FETCH FIRST 1 ROWS ONLY`,
     { nm: nodeNm },
   );
@@ -41,9 +41,9 @@ async function suggestNextVersion(conn: OracleConnection, nodeNm: string): Promi
 export async function listVersions(nodeNm: string): Promise<PromptVersionSummary[]> {
   return readConn(async (conn) => {
     const res = await conn.execute(
-      `SELECT ${PROMPT_COLS_SUMMARY} FROM PM_NODE_PROMPT_VER
+      `SELECT ${PROMPT_COLS_SUMMARY} FROM PTX_PROMPT_HIS
         WHERE NODE_NM = :nm
-        ORDER BY CREATED_DT DESC, PROMPT_ID DESC`,
+        ORDER BY CRT_TM DESC, PROMPT_ID DESC`,
       { nm: nodeNm },
     );
     return ((res.rows ?? []) as Record<string, unknown>[]).map(mapPromptSummary);
@@ -52,7 +52,7 @@ export async function listVersions(nodeNm: string): Promise<PromptVersionSummary
 
 async function fetchDetail(conn: OracleConnection, promptId: number): Promise<PromptVersionDetail | null> {
   const res = await conn.execute(
-    `SELECT ${PROMPT_COLS_DETAIL} FROM PM_NODE_PROMPT_VER WHERE PROMPT_ID = :id`,
+    `SELECT ${PROMPT_COLS_DETAIL} FROM PTX_PROMPT_HIS WHERE PROMPT_ID = :id`,
     { id: promptId },
   );
   const rows = (res.rows ?? []) as Record<string, unknown>[];
@@ -68,8 +68,8 @@ export async function getVersion(promptId: number): Promise<PromptVersionDetail>
 export async function activePromptsForFlow(): Promise<Record<string, ActivePrompt>> {
   return readConn(async (conn) => {
     const res = await conn.execute(
-      `SELECT NODE_NM, PROMPT_ID, VERSION_NO, MODEL_NM, SYSTEM_PROMPT, USER_PROMPT
-         FROM PM_NODE_PROMPT_VER WHERE IS_ACTIVE = 'Y'`,
+      `SELECT NODE_NM, PROMPT_ID, VERSION_NO, MODEL_NM, SYSTEM_CTN, USER_CTN
+         FROM PTX_PROMPT_HIS WHERE ACTIVE_YN = 'Y'`,
     );
     const out: Record<string, ActivePrompt> = {};
     for (const r of (res.rows ?? []) as Record<string, unknown>[]) {
@@ -83,8 +83,8 @@ export async function activePromptsForFlow(): Promise<Record<string, ActivePromp
 export async function activePromptForNode(nodeNm: string): Promise<ActivePrompt> {
   const ap = await readConn(async (conn) => {
     const res = await conn.execute(
-      `SELECT NODE_NM, PROMPT_ID, VERSION_NO, MODEL_NM, SYSTEM_PROMPT, USER_PROMPT
-         FROM PM_NODE_PROMPT_VER WHERE NODE_NM = :nm AND IS_ACTIVE = 'Y'
+      `SELECT NODE_NM, PROMPT_ID, VERSION_NO, MODEL_NM, SYSTEM_CTN, USER_CTN
+         FROM PTX_PROMPT_HIS WHERE NODE_NM = :nm AND ACTIVE_YN = 'Y'
          FETCH FIRST 1 ROWS ONLY`,
       { nm: nodeNm },
     );
@@ -97,7 +97,7 @@ export async function activePromptForNode(nodeNm: string): Promise<ActivePrompt>
 
 async function nodeExists(conn: OracleConnection, nodeNm: string): Promise<boolean> {
   const res = await conn.execute(
-    `SELECT PROMPT_ID FROM PM_NODE_PROMPT_VER WHERE NODE_NM = :nm FETCH FIRST 1 ROWS ONLY`,
+    `SELECT PROMPT_ID FROM PTX_PROMPT_HIS WHERE NODE_NM = :nm FETCH FIRST 1 ROWS ONLY`,
     { nm: nodeNm },
   );
   return ((res.rows ?? []) as unknown[]).length > 0;
@@ -114,7 +114,7 @@ async function insertVersion(
   const versionNo = payload.version_no || (await suggestNextVersion(conn, nodeNm));
 
   const dup = await conn.execute(
-    `SELECT PROMPT_ID FROM PM_NODE_PROMPT_VER WHERE NODE_NM = :nm AND VERSION_NO = :vno`,
+    `SELECT PROMPT_ID FROM PTX_PROMPT_HIS WHERE NODE_NM = :nm AND VERSION_NO = :vno`,
     { nm: nodeNm, vno: versionNo },
   );
   if (((dup.rows ?? []) as unknown[]).length > 0) {
@@ -124,9 +124,9 @@ async function insertVersion(
   const newId = await insertReturningId(
     conn,
     oracle,
-    `INSERT INTO PM_NODE_PROMPT_VER
-       (NODE_NM, VERSION_NO, SYSTEM_PROMPT, USER_PROMPT, MODEL_NM, IS_ACTIVE,
-        CHANGE_SUMMARY, CHANGE_REASON, PREV_PROMPT_ID, CREATED_BY)
+    `INSERT INTO PTX_PROMPT_HIS
+       (NODE_NM, VERSION_NO, SYSTEM_CTN, USER_CTN, MODEL_NM, ACTIVE_YN,
+        SUMMARY_CTN, REASON_CTN, PREV_PROMPT_ID, USER_ID)
      VALUES (:node_nm, :version_no, :system_prompt, :user_prompt, :model_nm, 'N',
         :change_summary, :change_reason, :prev_prompt_id, :created_by)
      RETURNING PROMPT_ID INTO :out_id`,
@@ -145,7 +145,7 @@ async function insertVersion(
 
   const { writeAudit } = await import("./audit");
   await writeAudit(conn, {
-    targetTable: "PM_NODE_PROMPT_VER",
+    targetTable: "PTX_PROMPT_HIS",
     targetId: newId,
     action: "CREATE",
     before: null,
@@ -201,11 +201,11 @@ export async function updateVersionPrompt(
     if (before === null) throw notFound("prompt version not found");
 
     await conn.execute(
-      `UPDATE PM_NODE_PROMPT_VER
-          SET SYSTEM_PROMPT = :sp, USER_PROMPT = :up, MODEL_NM = :model,
-              CHANGE_SUMMARY = COALESCE(:cs, CHANGE_SUMMARY),
-              CHANGE_REASON  = COALESCE(:cr, CHANGE_REASON),
-              UPDATED_DT = SYSTIMESTAMP
+      `UPDATE PTX_PROMPT_HIS
+          SET SYSTEM_CTN = :sp, USER_CTN = :up, MODEL_NM = :model,
+              SUMMARY_CTN = COALESCE(:cs, SUMMARY_CTN),
+              REASON_CTN  = COALESCE(:cr, REASON_CTN),
+              UPDATE_TM = SYSTIMESTAMP
         WHERE PROMPT_ID = :id`,
       {
         sp: args.system_prompt ?? "",
@@ -219,7 +219,7 @@ export async function updateVersionPrompt(
 
     const { writeAudit } = await import("./audit");
     await writeAudit(conn, {
-      targetTable: "PM_NODE_PROMPT_VER",
+      targetTable: "PTX_PROMPT_HIS",
       targetId: promptId,
       action: "UPDATE",
       before: {
@@ -245,15 +245,15 @@ export async function deleteVersion(promptId: number, actor: string): Promise<vo
 
     // Clear FK references so the delete doesn't violate integrity.
     await conn.execute(
-      `UPDATE PM_NODE_PROMPT_VER SET PREV_PROMPT_ID = NULL WHERE PREV_PROMPT_ID = :id`,
+      `UPDATE PTX_PROMPT_HIS SET PREV_PROMPT_ID = NULL WHERE PREV_PROMPT_ID = :id`,
       { id: promptId },
     );
-    await conn.execute(`UPDATE PM_RAGAS_RUN SET PROMPT_ID = NULL WHERE PROMPT_ID = :id`, { id: promptId });
-    await conn.execute(`DELETE FROM PM_NODE_PROMPT_VER WHERE PROMPT_ID = :id`, { id: promptId });
+    await conn.execute(`UPDATE PTX_RUN_MAS SET PROMPT_ID = NULL WHERE PROMPT_ID = :id`, { id: promptId });
+    await conn.execute(`DELETE FROM PTX_PROMPT_HIS WHERE PROMPT_ID = :id`, { id: promptId });
 
     const { writeAudit } = await import("./audit");
     await writeAudit(conn, {
-      targetTable: "PM_NODE_PROMPT_VER",
+      targetTable: "PTX_PROMPT_HIS",
       targetId: promptId,
       action: "DELETE",
       before: {
@@ -274,8 +274,8 @@ export async function deleteVersion(promptId: number, actor: string): Promise<vo
 export async function deleteNode(nodeNm: string, actor: string): Promise<number> {
   return withConn(async (conn) => {
     const res = await conn.execute(
-      `SELECT PROMPT_ID, VERSION_NO FROM PM_NODE_PROMPT_VER WHERE NODE_NM = :nm
-        ORDER BY CREATED_DT DESC, PROMPT_ID DESC`,
+      `SELECT PROMPT_ID, VERSION_NO FROM PTX_PROMPT_HIS WHERE NODE_NM = :nm
+        ORDER BY CRT_TM DESC, PROMPT_ID DESC`,
       { nm: nodeNm },
     );
     const rows = (res.rows ?? []) as Record<string, unknown>[];
@@ -283,13 +283,13 @@ export async function deleteNode(nodeNm: string, actor: string): Promise<number>
     const ids = rows.map((r) => Number(r.PROMPT_ID));
 
     // Clear FK references, then delete every version of the node.
-    await conn.execute(`UPDATE PM_RAGAS_RUN SET PROMPT_ID = NULL WHERE PROMPT_ID IN (SELECT PROMPT_ID FROM PM_NODE_PROMPT_VER WHERE NODE_NM = :nm)`, { nm: nodeNm });
-    await conn.execute(`UPDATE PM_NODE_PROMPT_VER SET PREV_PROMPT_ID = NULL WHERE PREV_PROMPT_ID IN (SELECT PROMPT_ID FROM PM_NODE_PROMPT_VER WHERE NODE_NM = :nm)`, { nm: nodeNm });
-    await conn.execute(`DELETE FROM PM_NODE_PROMPT_VER WHERE NODE_NM = :nm`, { nm: nodeNm });
+    await conn.execute(`UPDATE PTX_RUN_MAS SET PROMPT_ID = NULL WHERE PROMPT_ID IN (SELECT PROMPT_ID FROM PTX_PROMPT_HIS WHERE NODE_NM = :nm)`, { nm: nodeNm });
+    await conn.execute(`UPDATE PTX_PROMPT_HIS SET PREV_PROMPT_ID = NULL WHERE PREV_PROMPT_ID IN (SELECT PROMPT_ID FROM PTX_PROMPT_HIS WHERE NODE_NM = :nm)`, { nm: nodeNm });
+    await conn.execute(`DELETE FROM PTX_PROMPT_HIS WHERE NODE_NM = :nm`, { nm: nodeNm });
 
     const { writeAudit } = await import("./audit");
     await writeAudit(conn, {
-      targetTable: "PM_NODE_PROMPT_VER",
+      targetTable: "PTX_PROMPT_HIS",
       targetId: ids[0],
       action: "DELETE",
       before: {

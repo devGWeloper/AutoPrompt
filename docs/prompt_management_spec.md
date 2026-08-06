@@ -18,11 +18,11 @@
   `PM_PROMPT_VERSION`에 `MODEL_PROVIDER/MODEL_NM/TEMPERATURE/MAX_TOKENS/
   TOP_P/EXTRA_PARAMS` 컬럼으로 종속. (본문 §3 DDL의 PM_MODEL_CONFIG·CONFIG_ID는
   미반영 — 편차 주석 참조.)
-- **PM_TEST_CASE.CASE_NM 제거** — 케이스 식별은 `CASE_ID`. CSV 업로드 컬럼:
+- **PTX_DATASET_DET.CASE_NM 제거** — 케이스 식별은 `CASE_ID`. CSV 업로드 컬럼:
   `input_json, expected_output, eval_criteria, case_type`.
 - **RAGAS(§4.6)** — 플러그형: 실제 `ragas` + 결정론 로컬 폴백. Judge 키는
   `.env`의 첫 provider 키 자동감지(openai>anthropic>google),
-  `RAGAS_ENGINE=auto|fallback|ragas`. `PM_RAGAS_RUN` 확장 + `PM_RAGAS_RESULT`.
+  `RAGAS_ENGINE=auto|fallback|ragas`. `PTX_RUN_MAS` 확장 + `PTX_RUN_DET`.
 - **결과 내보내기** — CSV / Excel(openpyxl)만. **PDF 미지원**.
 - **의존성** — 단일 `backend/requirements.txt`(runtime+dev+ragas).
   `pyproject.toml`은 ruff/pytest 설정만.
@@ -130,25 +130,25 @@ AI Agent 프로젝트를 구성하는 LangGraph 기반 각 노드(Node)의 **프
 > ⚠️ 아래 §3.1/§3.2 는 **최초 명세안(다중 프로젝트)** 이다. 구현은 단일 플로우
 > (`CHAT_VER_MAS`/`NODE_MAS`) 구조로 리팩터링됐고, 이어 **RAGAS 중심으로 정리**됐다.
 > **현행 권위 스키마는 [`backend/sql/ddl_initial.sql`](./backend/sql/ddl_initial.sql)
-> + `backend/app/models/*`** 를 본다. 현재 PM 소유 테이블은 **6개**: `PM_NODE_PROMPT_VER`,
-> `PM_TEST_DATASET`, `PM_TEST_CASE`, `PM_RAGAS_RUN`, `PM_RAGAS_RESULT`, `PM_AUDIT_LOG`.
+> + `backend/app/models/*`** 를 본다. 현재 PM 소유 테이블은 **6개**: `PTX_PROMPT_HIS`,
+> `PTX_DATASET_MAS`, `PTX_DATASET_DET`, `PTX_RUN_MAS`, `PTX_RUN_DET`, `PTX_AUDIT_HIS`.
 
 ```
 PM_PROJECT          - (제거) 다중 프로젝트 구조 폐지 → 단일 플로우 CHAT_VER_MAS
 PM_NODE             - (제거) → 운영 고정 테이블 NODE_MAS 사용
 PM_NODE_EDGE        - (제거)
 PM_MODEL_CONFIG     - (제거) 모델 설정 기능 폐지
-PM_PROMPT_VERSION   - → PM_NODE_PROMPT_VER (NODE_MAS_ID 기준, SYSTEM_PROMPT/USER_PROMPT 분리)
+PM_PROMPT_VERSION   - → PTX_PROMPT_HIS (NODE_MAS_ID 기준, SYSTEM_PROMPT/USER_PROMPT 분리)
 PM_PROMPT_VARIABLE  - (제거)
-PM_TEST_DATASET     - 골든 데이터셋 (RAGAS) — 유지
-PM_TEST_CASE        - 테스트 케이스 (question/contexts/ground_truth) — 유지
+PTX_DATASET_MAS     - 골든 데이터셋 (RAGAS) — 유지
+PTX_DATASET_DET        - 테스트 케이스 (question/contexts/ground_truth) — 유지
 PM_TEST_RUN         - (제거, 0008) 비-RAGAS 테스트 실행 기록
 PM_TEST_RESULT      - (제거, 0008) 비-RAGAS 테스트 결과
 PM_FLOW_VER         - (제거, 0008) 전체 플로우 버전 이력
 PM_FLOW_VER_NODE    - (제거, 0008) 플로우 버전 매니페스트
-PM_RAGAS_RUN        - RAGAS 평가 실행 (전체 플로우 단위) — 유지
-PM_RAGAS_RESULT     - RAGAS 평가 결과 (지표별) — 유지
-PM_AUDIT_LOG        - 변경 이력 감사 로그 — 유지
+PTX_RUN_MAS        - RAGAS 평가 실행 (전체 플로우 단위) — 유지
+PTX_RUN_DET     - RAGAS 평가 결과 (지표별) — 유지
+PTX_AUDIT_HIS        - 변경 이력 감사 로그 — 유지
 ```
 
 ### 3.2 주요 테이블 DDL
@@ -242,7 +242,7 @@ CREATE TABLE PM_PROMPT_VARIABLE (
 );
 
 -- 골든 데이터셋 (테스트 케이스)
-CREATE TABLE PM_TEST_DATASET (
+CREATE TABLE PTX_DATASET_MAS (
     DATASET_ID      NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     NODE_ID         NUMBER NOT NULL REFERENCES PM_NODE(NODE_ID),
     DATASET_NM      VARCHAR2(200) NOT NULL,
@@ -252,9 +252,9 @@ CREATE TABLE PM_TEST_DATASET (
     CREATED_DT      TIMESTAMP DEFAULT SYSTIMESTAMP
 );
 
-CREATE TABLE PM_TEST_CASE (
+CREATE TABLE PTX_DATASET_DET (
     CASE_ID         NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    DATASET_ID      NUMBER NOT NULL REFERENCES PM_TEST_DATASET(DATASET_ID),
+    DATASET_ID      NUMBER NOT NULL REFERENCES PTX_DATASET_MAS(DATASET_ID),
     INPUT_DATA      CLOB NOT NULL,            -- JSON (변수별 입력값)
     EXPECTED_OUTPUT CLOB,                     -- 기대 출력 (JSON 또는 텍스트)
     EVAL_CRITERIA   CLOB,                     -- 평가 기준 JSON (예: {"category": "배송"})
@@ -270,7 +270,7 @@ CREATE TABLE PM_TEST_RUN (
     NODE_ID         NUMBER REFERENCES PM_NODE(NODE_ID),
     PROJECT_ID      NUMBER REFERENCES PM_PROJECT(PROJECT_ID),
     PROMPT_ID       NUMBER REFERENCES PM_PROMPT_VERSION(PROMPT_ID),
-    DATASET_ID      NUMBER REFERENCES PM_TEST_DATASET(DATASET_ID),
+    DATASET_ID      NUMBER REFERENCES PTX_DATASET_MAS(DATASET_ID),
     STATUS          VARCHAR2(20) DEFAULT 'PENDING',  -- PENDING/RUNNING/DONE/FAILED
     TOTAL_CASES     NUMBER DEFAULT 0,
     PASSED_CASES    NUMBER DEFAULT 0,
@@ -287,7 +287,7 @@ CREATE TABLE PM_TEST_RUN (
 CREATE TABLE PM_TEST_RESULT (
     RESULT_ID       NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     RUN_ID          NUMBER NOT NULL REFERENCES PM_TEST_RUN(RUN_ID),
-    CASE_ID         NUMBER REFERENCES PM_TEST_CASE(CASE_ID),
+    CASE_ID         NUMBER REFERENCES PTX_DATASET_DET(CASE_ID),
     ACTUAL_OUTPUT   CLOB,
     IS_PASSED       CHAR(1),
     EVAL_DETAIL     CLOB,                     -- 평가 상세 JSON
@@ -299,11 +299,11 @@ CREATE TABLE PM_TEST_RESULT (
 );
 
 -- RAGAS 평가 실행
-CREATE TABLE PM_RAGAS_RUN (
+CREATE TABLE PTX_RUN_MAS (
     RAGAS_RUN_ID    NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     NODE_ID         NUMBER NOT NULL REFERENCES PM_NODE(NODE_ID),
     PROMPT_ID       NUMBER NOT NULL REFERENCES PM_PROMPT_VERSION(PROMPT_ID),
-    DATASET_ID      NUMBER NOT NULL REFERENCES PM_TEST_DATASET(DATASET_ID),
+    DATASET_ID      NUMBER NOT NULL REFERENCES PTX_DATASET_MAS(DATASET_ID),
     STATUS          VARCHAR2(20) DEFAULT 'PENDING',
     FAITHFULNESS    NUMBER(5,4),              -- 0~1
     ANSWER_RELEVANCY NUMBER(5,4),
@@ -317,7 +317,7 @@ CREATE TABLE PM_RAGAS_RUN (
 );
 
 -- 감사 로그
-CREATE TABLE PM_AUDIT_LOG (
+CREATE TABLE PTX_AUDIT_HIS (
     LOG_ID          NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     TARGET_TABLE    VARCHAR2(50) NOT NULL,
     TARGET_ID       NUMBER NOT NULL,
@@ -415,7 +415,7 @@ LangGraph의 구조를 시각적으로 표현하는 **인터랙티브 그래프*
 - 목록에서 특정 버전 선택 후 "이 버전으로 적용" 클릭
 - 확인 모달: "현재 v1.2.0 → v1.3.0으로 전환합니다. 계속하시겠습니까?"
 - 전환 시 기존 Active 버전의 IS_ACTIVE = 'N', 신규 버전 IS_ACTIVE = 'Y' 업데이트
-- PM_AUDIT_LOG에 변경 전/후 기록
+- PTX_AUDIT_HIS에 변경 전/후 기록
 
 **F-14. 이전 버전 롤백**
 - Active 버전에서 "롤백" 버튼 클릭 시 이전 버전(PREV_PROMPT_ID) 자동 선택 후 전환
@@ -468,7 +468,7 @@ LangGraph의 구조를 시각적으로 표현하는 **인터랙티브 그래프*
 - 결과 영역: 실제 출력, 소요 시간(ms), 입출력 토큰 수 표시
 
 **F-31. 골든 데이터셋 배치 테스트**
-- 사용할 데이터셋 선택 (PM_TEST_DATASET)
+- 사용할 데이터셋 선택 (PTX_DATASET_MAS)
 - 테스트할 프롬프트 버전 선택 (비교 목적 시 2개까지 동시 선택 가능)
 - "테스트 시작" → PM_TEST_RUN 레코드 생성 후 비동기 실행
 - 실행 진행률 바 표시 (WebSocket 실시간 업데이트)
@@ -546,7 +546,7 @@ RAGAS 프레임워크를 활용하여 프롬프트의 품질을 자동으로 정
 - 평가할 지표 선택 (체크박스)
 
 **F-51. RAGAS 평가 실행**
-- "평가 시작" 클릭 → PM_RAGAS_RUN 레코드 생성 후 비동기 실행
+- "평가 시작" 클릭 → PTX_RUN_MAS 레코드 생성 후 비동기 실행
 - 백엔드에서 ragas 라이브러리를 통해 각 케이스별 지표 계산
 - 실시간 진행률 WebSocket 업데이트
 
@@ -566,7 +566,7 @@ RAGAS 프레임워크를 활용하여 프롬프트의 품질을 자동으로 정
 ### 4.7 변경 이력 (감사 로그) 화면
 
 **F-60. 전체 변경 이력 조회**
-- PM_AUDIT_LOG 기반 전체 이력 타임라인
+- PTX_AUDIT_HIS 기반 전체 이력 타임라인
 - 필터: 대상 테이블, 작성자, 기간, 액션(CREATE/UPDATE/ACTIVATE)
 - 이력 항목 클릭 시 변경 전/후 JSON Diff 뷰어 표시
 

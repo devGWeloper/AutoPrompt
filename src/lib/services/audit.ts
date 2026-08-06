@@ -22,7 +22,7 @@ export interface AuditArgs {
  */
 export async function writeAudit(conn: OracleConnection, args: AuditArgs): Promise<void> {
   await conn.execute(
-    `INSERT INTO PM_AUDIT_LOG (TARGET_TABLE, TARGET_ID, ACTION, BEFORE_VALUE, AFTER_VALUE, CREATED_BY)
+    `INSERT INTO PTX_AUDIT_HIS (TARGET_TABLE_NM, TARGET_ID, ACTION_CD, BEFORE_CTN, AFTER_CTN, USER_ID)
      VALUES (:t, :tid, :act, :bef, :af, :cby)`,
     {
       t: args.targetTable,

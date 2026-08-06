@@ -5,7 +5,7 @@ import { logger } from "./logger";
 
 export type AppEnv = "dev" | "prd";
 
-/** Oracle connection settings for the PM-owned DB (PM_* tables). */
+/** Oracle connection settings for the PTX-owned DB (PTX_* tables). */
 export interface DbConfig {
   user: string;
   password: string;

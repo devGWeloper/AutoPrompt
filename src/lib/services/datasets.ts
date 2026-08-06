@@ -25,20 +25,20 @@ import { writeAudit } from "./audit";
 export async function listFlowDatasets(): Promise<Dataset[]> {
   return readConn(async (conn) => {
     const res = await conn.execute(
-      `SELECT ${DATASET_COLS} FROM PM_TEST_DATASET WHERE IS_ACTIVE = 'Y' ORDER BY CREATED_DT DESC`,
+      `SELECT ${DATASET_COLS} FROM PTX_DATASET_MAS WHERE ACTIVE_YN = 'Y' ORDER BY CRT_TM DESC`,
     );
     return ((res.rows ?? []) as Record<string, unknown>[]).map(mapDataset);
   }, []);
 }
 
 async function fetchDataset(conn: OracleConnection, id: number): Promise<Dataset | null> {
-  const res = await conn.execute(`SELECT ${DATASET_COLS} FROM PM_TEST_DATASET WHERE DATASET_ID = :id`, { id });
+  const res = await conn.execute(`SELECT ${DATASET_COLS} FROM PTX_DATASET_MAS WHERE DATASET_ID = :id`, { id });
   const rows = (res.rows ?? []) as Record<string, unknown>[];
   return rows.length ? mapDataset(rows[0]) : null;
 }
 
 async function countCases(conn: OracleConnection, id: number): Promise<number> {
-  const res = await conn.execute(`SELECT COUNT(*) AS N FROM PM_TEST_CASE WHERE DATASET_ID = :id`, { id });
+  const res = await conn.execute(`SELECT COUNT(*) AS N FROM PTX_DATASET_DET WHERE DATASET_ID = :id`, { id });
   const rows = (res.rows ?? []) as Record<string, unknown>[];
   return Number(rows[0]?.N ?? 0);
 }
@@ -58,12 +58,12 @@ export async function createFlowDataset(payload: DatasetCreate, createdBy: strin
     const id = await insertReturningId(
       conn,
       oracle,
-      `INSERT INTO PM_TEST_DATASET (DATASET_NM, DESCRIPTION, IS_ACTIVE, CREATED_BY)
+      `INSERT INTO PTX_DATASET_MAS (DATASET_NM, DESC_CTN, ACTIVE_YN, USER_ID)
        VALUES (:nm, :descr, 'Y', :cby) RETURNING DATASET_ID INTO :out_id`,
       { nm: payload.dataset_nm, descr: payload.description ?? null, cby: createdBy },
     );
     await writeAudit(conn, {
-      targetTable: "PM_TEST_DATASET",
+      targetTable: "PTX_DATASET_MAS",
       targetId: id,
       action: "CREATE",
       before: null,
@@ -89,20 +89,20 @@ export async function updateDataset(id: number, payload: DatasetUpdate, actor: s
       applied.dataset_nm = payload.dataset_nm;
     }
     if (payload.description !== undefined) {
-      sets.push("DESCRIPTION = :descr");
+      sets.push("DESC_CTN = :descr");
       binds.descr = payload.description;
       applied.description = payload.description;
     }
     if (payload.is_active !== undefined) {
-      sets.push("IS_ACTIVE = :act");
+      sets.push("ACTIVE_YN = :act");
       binds.act = payload.is_active;
       applied.is_active = payload.is_active;
     }
     if (sets.length) {
-      await conn.execute(`UPDATE PM_TEST_DATASET SET ${sets.join(", ")} WHERE DATASET_ID = :id`, binds);
+      await conn.execute(`UPDATE PTX_DATASET_MAS SET ${sets.join(", ")} WHERE DATASET_ID = :id`, binds);
     }
     await writeAudit(conn, {
-      targetTable: "PM_TEST_DATASET",
+      targetTable: "PTX_DATASET_MAS",
       targetId: id,
       action: "UPDATE",
       before: { dataset_nm: before.dataset_nm, description: before.description, is_active: before.is_active },
@@ -119,19 +119,13 @@ export async function deleteDataset(id: number, actor: string): Promise<void> {
     const before = await fetchDataset(conn, id);
     if (!before) throw notFound("dataset not found");
 
-    // FK order: results → (runs, cases) → dataset.
-    await conn.execute(
-      `DELETE FROM PM_RAGAS_RESULT
-        WHERE RAGAS_RUN_ID IN (SELECT RAGAS_RUN_ID FROM PM_RAGAS_RUN WHERE DATASET_ID = :id)
-           OR CASE_ID IN (SELECT CASE_ID FROM PM_TEST_CASE WHERE DATASET_ID = :id)`,
-      { id },
-    );
-    await conn.execute(`DELETE FROM PM_RAGAS_RUN WHERE DATASET_ID = :id`, { id });
-    await conn.execute(`DELETE FROM PM_TEST_CASE WHERE DATASET_ID = :id`, { id });
-    await conn.execute(`DELETE FROM PM_TEST_DATASET WHERE DATASET_ID = :id`, { id });
+    // The FKs carry the rules: cases cascade away with the dataset, while past
+    // runs keep their rows (DATASET_ID → NULL) and still show DATASET_NM from
+    // the snapshot taken when the run was created.
+    await conn.execute(`DELETE FROM PTX_DATASET_MAS WHERE DATASET_ID = :id`, { id });
 
     await writeAudit(conn, {
-      targetTable: "PM_TEST_DATASET",
+      targetTable: "PTX_DATASET_MAS",
       targetId: id,
       action: "DELETE",
       before: { dataset_id: id, dataset_nm: before.dataset_nm },
@@ -152,7 +146,7 @@ export async function listCases(datasetId: number): Promise<TestCase[]> {
   await requireDataset(datasetId);
   return readConn(async (conn) => {
     const res = await conn.execute(
-      `SELECT ${CASE_COLS} FROM PM_TEST_CASE WHERE DATASET_ID = :id ORDER BY CASE_ID ASC`,
+      `SELECT ${CASE_COLS} FROM PTX_DATASET_DET WHERE DATASET_ID = :id ORDER BY CASE_ID ASC`,
       { id: datasetId },
     );
     return ((res.rows ?? []) as Record<string, unknown>[]).map(mapCase);
@@ -161,7 +155,7 @@ export async function listCases(datasetId: number): Promise<TestCase[]> {
 
 async function fetchCase(conn: OracleConnection, datasetId: number, caseId: number): Promise<TestCase | null> {
   const res = await conn.execute(
-    `SELECT ${CASE_COLS} FROM PM_TEST_CASE WHERE CASE_ID = :cid AND DATASET_ID = :did`,
+    `SELECT ${CASE_COLS} FROM PTX_DATASET_DET WHERE CASE_ID = :cid AND DATASET_ID = :did`,
     { cid: caseId, did: datasetId },
   );
   const rows = (res.rows ?? []) as Record<string, unknown>[];
@@ -174,7 +168,7 @@ export async function createCase(datasetId: number, payload: CaseCreate, created
     const id = await insertReturningId(
       conn,
       oracle,
-      `INSERT INTO PM_TEST_CASE (DATASET_ID, INPUT_DATA, EXPECTED_OUTPUT, EVAL_CRITERIA, CASE_TYPE, CREATED_BY)
+      `INSERT INTO PTX_DATASET_DET (DATASET_ID, INPUT_CTN, EXPECT_CTN, CRITERIA_CTN, TYPE_CD, USER_ID)
        VALUES (:did, :input, :expected, :crit, :ctype, :cby) RETURNING CASE_ID INTO :out_id`,
       {
         did: datasetId,
@@ -196,23 +190,23 @@ export async function updateCase(datasetId: number, caseId: number, payload: Cas
     const sets: string[] = [];
     const binds: Record<string, unknown> = { cid: caseId };
     if (payload.input_data !== undefined) {
-      sets.push("INPUT_DATA = :input");
+      sets.push("INPUT_CTN = :input");
       binds.input = payload.input_data;
     }
     if (payload.expected_output !== undefined) {
-      sets.push("EXPECTED_OUTPUT = :expected");
+      sets.push("EXPECT_CTN = :expected");
       binds.expected = payload.expected_output;
     }
     if (payload.eval_criteria !== undefined) {
-      sets.push("EVAL_CRITERIA = :crit");
+      sets.push("CRITERIA_CTN = :crit");
       binds.crit = payload.eval_criteria;
     }
     if (payload.case_type !== undefined) {
-      sets.push("CASE_TYPE = :ctype");
+      sets.push("TYPE_CD = :ctype");
       binds.ctype = payload.case_type;
     }
     if (sets.length) {
-      await conn.execute(`UPDATE PM_TEST_CASE SET ${sets.join(", ")} WHERE CASE_ID = :cid`, binds);
+      await conn.execute(`UPDATE PTX_DATASET_DET SET ${sets.join(", ")} WHERE CASE_ID = :cid`, binds);
     }
     return (await fetchCase(conn, datasetId, caseId))!;
   }, { commit: true });
@@ -222,12 +216,9 @@ export async function deleteCase(datasetId: number, caseId: number): Promise<voi
   await withConn(async (conn) => {
     const existing = await fetchCase(conn, datasetId, caseId);
     if (!existing) throw notFound("test case not found");
-    // Past run results reference this case (PM_RAGAS_RESULT.CASE_ID FK), so a
-    // plain DELETE raises ORA-02292 once the case has been evaluated. Detach the
-    // results instead of deleting them — CASE_ID is nullable (direct runs use
-    // NULL) and the rows keep their question/answer, so Records stays intact.
-    await conn.execute(`UPDATE PM_RAGAS_RESULT SET CASE_ID = NULL WHERE CASE_ID = :cid`, { cid: caseId });
-    await conn.execute(`DELETE FROM PM_TEST_CASE WHERE CASE_ID = :cid`, { cid: caseId });
+    // PTX_RUN_DET.CASE_ID is ON DELETE SET NULL, so past results are detached
+    // rather than deleted — they keep their question/answer and Records stays intact.
+    await conn.execute(`DELETE FROM PTX_DATASET_DET WHERE CASE_ID = :cid`, { cid: caseId });
   }, { commit: true });
 }
 
@@ -307,7 +298,7 @@ export async function importCsv(datasetId: number, fileText: string, createdBy: 
         continue;
       }
       await conn.execute(
-        `INSERT INTO PM_TEST_CASE (DATASET_ID, INPUT_DATA, EXPECTED_OUTPUT, EVAL_CRITERIA, CASE_TYPE, CREATED_BY)
+        `INSERT INTO PTX_DATASET_DET (DATASET_ID, INPUT_CTN, EXPECT_CTN, CRITERIA_CTN, TYPE_CD, USER_ID)
          VALUES (:did, :input, :expected, :crit, :ctype, :cby)`,
         {
           did: datasetId,
@@ -321,7 +312,7 @@ export async function importCsv(datasetId: number, fileText: string, createdBy: 
       created++;
     }
     await writeAudit(conn, {
-      targetTable: "PM_TEST_DATASET",
+      targetTable: "PTX_DATASET_MAS",
       targetId: datasetId,
       action: "UPDATE",
       before: null,

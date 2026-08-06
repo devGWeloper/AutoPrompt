@@ -1,4 +1,4 @@
-// Shared SQL fragments + row→domain mappers for the PM_* tables. oracledb returns
+// Shared SQL fragments + row→domain mappers for the PTX_* tables. oracledb returns
 // rows as objects with UPPERCASE column keys (see db.ts outFormat); CLOBs come
 // back as strings and timestamps are TO_CHAR'd to ISO strings in the SELECTs.
 
@@ -59,97 +59,102 @@ export const PROMPT_COLS_SUMMARY = [
   "PROMPT_ID",
   "NODE_NM",
   "VERSION_NO",
-  "IS_ACTIVE",
+  "ACTIVE_YN",
   "MODEL_NM",
-  "CHANGE_SUMMARY",
-  "CREATED_BY",
-  tsCol("CREATED_DT"),
+  "SUMMARY_CTN",
+  "USER_ID",
+  tsCol("CRT_TM"),
 ].join(", ");
 
 export const PROMPT_COLS_DETAIL = [
   "PROMPT_ID",
   "NODE_NM",
   "VERSION_NO",
-  "IS_ACTIVE",
+  "ACTIVE_YN",
   "MODEL_NM",
-  "CHANGE_SUMMARY",
-  "CHANGE_REASON",
+  "SUMMARY_CTN",
+  "REASON_CTN",
   "PREV_PROMPT_ID",
-  "SYSTEM_PROMPT",
-  "USER_PROMPT",
-  "CREATED_BY",
-  tsCol("CREATED_DT"),
-  tsCol("UPDATED_DT"),
+  "SYSTEM_CTN",
+  "USER_CTN",
+  "USER_ID",
+  tsCol("CRT_TM"),
+  tsCol("UPDATE_TM"),
 ].join(", ");
 
 export const DATASET_COLS = [
   "DATASET_ID",
   "DATASET_NM",
-  "DESCRIPTION",
-  "IS_ACTIVE",
-  "CREATED_BY",
-  tsCol("CREATED_DT"),
+  "DESC_CTN",
+  "ACTIVE_YN",
+  "USER_ID",
+  tsCol("CRT_TM"),
 ].join(", ");
 
 export const CASE_COLS = [
   "CASE_ID",
   "DATASET_ID",
-  "INPUT_DATA",
-  "EXPECTED_OUTPUT",
-  "EVAL_CRITERIA",
-  "CASE_TYPE",
-  "CREATED_BY",
-  tsCol("CREATED_DT"),
+  "INPUT_CTN",
+  "EXPECT_CTN",
+  "CRITERIA_CTN",
+  "TYPE_CD",
+  "USER_ID",
+  tsCol("CRT_TM"),
 ].join(", ");
 
-const RUN_SCORE_COLS = [
-  "EXACT_MATCH",
-  "FAITHFULNESS",
-  "ANSWER_RELEVANCY",
-  "CONTEXT_PRECISION",
-  "CONTEXT_RECALL",
-  "ANSWER_CORRECTNESS",
-];
+/** Metric key → its score column. The column names are abbreviated, so this map
+ * is the one place the two are tied together (nothing derives one from the other). */
+export const METRIC_COLS: Record<string, string> = {
+  exact_match: "EXACT_VAL",
+  faithfulness: "FAITH_VAL",
+  answer_relevancy: "ANS_RELEVANCY_VAL",
+  context_precision: "CNTX_PRECISION_VAL",
+  context_recall: "CNTX_RECALL_VAL",
+  answer_correctness: "ANS_CORRECTNESS_VAL",
+};
+
+const RUN_SCORE_COLS = Object.values(METRIC_COLS);
 
 export const RUN_COLS = [
-  "RAGAS_RUN_ID",
+  "RUN_ID",
   "PROMPT_ID",
   "AB_GROUP_ID",
   "DATASET_ID",
-  "STATUS",
-  "ENGINE",
-  "METRICS",
-  "JUDGE_PROVIDER",
-  "JUDGE_MODEL",
+  "DATASET_NM",
+  "STATUS_CD",
+  "ENGINE_CD",
+  "METRIC_CTN",
+  "JUDGE_PROVIDER_CD",
+  "JUDGE_MODEL_NM",
   ...RUN_SCORE_COLS,
-  "ERROR_MSG",
-  tsCol("STARTED_DT"),
-  tsCol("ENDED_DT"),
-  "CREATED_BY",
-  tsCol("CREATED_DT"),
+  "ERROR_CTN",
+  tsCol("START_TM"),
+  tsCol("END_TM"),
+  "USER_ID",
+  tsCol("CRT_TM"),
 ].join(", ");
 
 export const RESULT_COLS = [
-  "RAGAS_RESULT_ID",
-  "RAGAS_RUN_ID",
+  "RESULT_ID",
+  "RUN_ID",
   "CASE_ID",
-  "QUESTION",
-  "ANSWER",
-  "CONTEXTS",
-  "GROUND_TRUTH",
+  "QUESTION_CTN",
+  "ANSWER_CTN",
+  "CONTEXT_CTN",
+  "TRUTH_CTN",
   ...RUN_SCORE_COLS,
-  "ERROR_MSG",
+  "ERROR_CTN",
 ].join(", ");
 
 export const AUDIT_COLS = [
   "LOG_ID",
-  "TARGET_TABLE",
+  "TARGET_TABLE_NM",
   "TARGET_ID",
-  "ACTION",
-  "BEFORE_VALUE",
-  "AFTER_VALUE",
-  "CREATED_BY",
-  tsCol("CREATED_DT"),
+  "ACTION_CD",
+  "BEFORE_CTN",
+  "AFTER_CTN",
+  "USER_ID",
+  tsCol("CRT_TM"),
 ].join(", ");
 
 // ---- mappers ----
@@ -159,22 +164,22 @@ export function mapPromptSummary(r: Row): PromptVersionSummary {
     prompt_id: num(r.PROMPT_ID)!,
     node_nm: String(r.NODE_NM),
     version_no: String(r.VERSION_NO),
-    is_active: r.IS_ACTIVE === "Y" ? "Y" : "N",
+    is_active: r.ACTIVE_YN === "Y" ? "Y" : "N",
     model_nm: str(r.MODEL_NM),
-    change_summary: str(r.CHANGE_SUMMARY),
-    created_by: String(r.CREATED_BY),
-    created_dt: String(r.CREATED_DT),
+    change_summary: str(r.SUMMARY_CTN),
+    created_by: String(r.USER_ID),
+    created_dt: String(r.CRT_TM),
   };
 }
 
 export function mapPromptDetail(r: Row): PromptVersionDetail {
   return {
     ...mapPromptSummary(r),
-    change_reason: str(r.CHANGE_REASON),
+    change_reason: str(r.REASON_CTN),
     prev_prompt_id: num(r.PREV_PROMPT_ID),
-    system_prompt: str(r.SYSTEM_PROMPT),
-    user_prompt: str(r.USER_PROMPT),
-    updated_dt: str(r.UPDATED_DT),
+    system_prompt: str(r.SYSTEM_CTN),
+    user_prompt: str(r.USER_CTN),
+    updated_dt: str(r.UPDATE_TM),
   };
 }
 
@@ -184,8 +189,8 @@ export function mapActivePrompt(r: Row): ActivePrompt {
     prompt_id: num(r.PROMPT_ID)!,
     version_no: String(r.VERSION_NO),
     model_nm: str(r.MODEL_NM),
-    system_prompt: str(r.SYSTEM_PROMPT),
-    user_prompt: str(r.USER_PROMPT),
+    system_prompt: str(r.SYSTEM_CTN),
+    user_prompt: str(r.USER_CTN),
   };
 }
 
@@ -193,10 +198,10 @@ export function mapDataset(r: Row): Dataset {
   return {
     dataset_id: num(r.DATASET_ID)!,
     dataset_nm: String(r.DATASET_NM),
-    description: str(r.DESCRIPTION),
-    is_active: r.IS_ACTIVE === "N" ? "N" : "Y",
-    created_by: String(r.CREATED_BY),
-    created_dt: String(r.CREATED_DT),
+    description: str(r.DESC_CTN),
+    is_active: r.ACTIVE_YN === "N" ? "N" : "Y",
+    created_by: String(r.USER_ID),
+    created_dt: String(r.CRT_TM),
   };
 }
 
@@ -204,39 +209,39 @@ export function mapCase(r: Row): TestCase {
   return {
     case_id: num(r.CASE_ID)!,
     dataset_id: num(r.DATASET_ID)!,
-    input_data: String(r.INPUT_DATA ?? ""),
-    expected_output: str(r.EXPECTED_OUTPUT),
-    eval_criteria: str(r.EVAL_CRITERIA),
-    case_type: String(r.CASE_TYPE ?? "NORMAL"),
-    created_by: String(r.CREATED_BY),
-    created_dt: String(r.CREATED_DT),
+    input_data: String(r.INPUT_CTN ?? ""),
+    expected_output: str(r.EXPECT_CTN),
+    eval_criteria: str(r.CRITERIA_CTN),
+    case_type: String(r.TYPE_CD ?? "NORMAL"),
+    created_by: String(r.USER_ID),
+    created_dt: String(r.CRT_TM),
   };
 }
 
 export function mapRagasRun(r: Row): RagasRunOut {
   return {
-    ragas_run_id: num(r.RAGAS_RUN_ID)!,
+    ragas_run_id: num(r.RUN_ID)!,
     prompt_id: num(r.PROMPT_ID),
     ab_group_id: num(r.AB_GROUP_ID),
     node_nm: null,
     version_no: null,
     dataset_id: num(r.DATASET_ID)!,
-    status: String(r.STATUS),
-    engine: str(r.ENGINE),
-    metrics: str(r.METRICS),
-    judge_provider: str(r.JUDGE_PROVIDER),
-    judge_model: str(r.JUDGE_MODEL),
-    exact_match: num(r.EXACT_MATCH),
-    faithfulness: num(r.FAITHFULNESS),
-    answer_relevancy: num(r.ANSWER_RELEVANCY),
-    context_precision: num(r.CONTEXT_PRECISION),
-    context_recall: num(r.CONTEXT_RECALL),
-    answer_correctness: num(r.ANSWER_CORRECTNESS),
-    error_msg: str(r.ERROR_MSG),
-    started_dt: str(r.STARTED_DT),
-    ended_dt: str(r.ENDED_DT),
-    created_by: String(r.CREATED_BY),
-    created_dt: String(r.CREATED_DT),
+    status: String(r.STATUS_CD),
+    engine: str(r.ENGINE_CD),
+    metrics: str(r.METRIC_CTN),
+    judge_provider: str(r.JUDGE_PROVIDER_CD),
+    judge_model: str(r.JUDGE_MODEL_NM),
+    exact_match: num(r.EXACT_VAL),
+    faithfulness: num(r.FAITH_VAL),
+    answer_relevancy: num(r.ANS_RELEVANCY_VAL),
+    context_precision: num(r.CNTX_PRECISION_VAL),
+    context_recall: num(r.CNTX_RECALL_VAL),
+    answer_correctness: num(r.ANS_CORRECTNESS_VAL),
+    error_msg: str(r.ERROR_CTN),
+    started_dt: str(r.START_TM),
+    ended_dt: str(r.END_TM),
+    created_by: String(r.USER_ID),
+    created_dt: String(r.CRT_TM),
   };
 }
 
@@ -248,7 +253,9 @@ export function mapRagasRunSummary(r: Row): RagasRunSummary {
     ab_group_id: run.ab_group_id,
     node_nm: run.node_nm,
     version_no: run.version_no,
-    dataset_nm: str(r.DATASET_NM), // only listRuns' SELECT provides these two
+    // DATASET_NM is a snapshot on the run itself (survives dataset deletion);
+    // FIRST_QUESTION only comes from listRuns' SELECT.
+    dataset_nm: str(r.DATASET_NM),
     first_question: str(r.FIRST_QUESTION),
     is_manual: str(r.DATASET_NM) === DIRECT_SINK_NM,
     status: run.status,
@@ -266,32 +273,32 @@ export function mapRagasRunSummary(r: Row): RagasRunSummary {
 
 export function mapRagasResult(r: Row): RagasResultRow {
   return {
-    ragas_result_id: num(r.RAGAS_RESULT_ID)!,
-    ragas_run_id: num(r.RAGAS_RUN_ID)!,
+    ragas_result_id: num(r.RESULT_ID)!,
+    ragas_run_id: num(r.RUN_ID)!,
     case_id: num(r.CASE_ID),
-    question: str(r.QUESTION),
-    answer: str(r.ANSWER),
-    contexts: str(r.CONTEXTS),
-    ground_truth: str(r.GROUND_TRUTH),
-    exact_match: num(r.EXACT_MATCH),
-    faithfulness: num(r.FAITHFULNESS),
-    answer_relevancy: num(r.ANSWER_RELEVANCY),
-    context_precision: num(r.CONTEXT_PRECISION),
-    context_recall: num(r.CONTEXT_RECALL),
-    answer_correctness: num(r.ANSWER_CORRECTNESS),
-    error_msg: str(r.ERROR_MSG),
+    question: str(r.QUESTION_CTN),
+    answer: str(r.ANSWER_CTN),
+    contexts: str(r.CONTEXT_CTN),
+    ground_truth: str(r.TRUTH_CTN),
+    exact_match: num(r.EXACT_VAL),
+    faithfulness: num(r.FAITH_VAL),
+    answer_relevancy: num(r.ANS_RELEVANCY_VAL),
+    context_precision: num(r.CNTX_PRECISION_VAL),
+    context_recall: num(r.CNTX_RECALL_VAL),
+    answer_correctness: num(r.ANS_CORRECTNESS_VAL),
+    error_msg: str(r.ERROR_CTN),
   };
 }
 
 export function mapAudit(r: Row): AuditLog {
   return {
     log_id: num(r.LOG_ID)!,
-    target_table: String(r.TARGET_TABLE),
+    target_table: String(r.TARGET_TABLE_NM),
     target_id: num(r.TARGET_ID)!,
-    action: String(r.ACTION),
-    before_value: str(r.BEFORE_VALUE),
-    after_value: str(r.AFTER_VALUE),
-    created_by: String(r.CREATED_BY),
-    created_dt: String(r.CREATED_DT),
+    action: String(r.ACTION_CD),
+    before_value: str(r.BEFORE_CTN),
+    after_value: str(r.AFTER_CTN),
+    created_by: String(r.USER_ID),
+    created_dt: String(r.CRT_TM),
   };
 }

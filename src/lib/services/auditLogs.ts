@@ -23,34 +23,34 @@ export async function listAuditLogs(f: AuditFilter): Promise<AuditLogPage> {
       const where: string[] = [];
       const binds: Record<string, unknown> = {};
       if (f.targetTable) {
-        where.push("TARGET_TABLE = :tt");
+        where.push("TARGET_TABLE_NM = :tt");
         binds.tt = f.targetTable;
       }
       if (f.user) {
-        where.push("CREATED_BY = :usr");
+        where.push("USER_ID = :usr");
         binds.usr = f.user;
       }
       if (f.action) {
-        where.push("ACTION = :act");
+        where.push("ACTION_CD = :act");
         binds.act = f.action;
       }
       if (f.dateFrom) {
-        where.push(`CREATED_DT >= TO_TIMESTAMP(:df, 'YYYY-MM-DD"T"HH24:MI:SS')`);
+        where.push(`CRT_TM >= TO_TIMESTAMP(:df, 'YYYY-MM-DD"T"HH24:MI:SS')`);
         binds.df = isoSeconds(f.dateFrom);
       }
       if (f.dateTo) {
-        where.push(`CREATED_DT <= TO_TIMESTAMP(:dt, 'YYYY-MM-DD"T"HH24:MI:SS')`);
+        where.push(`CRT_TM <= TO_TIMESTAMP(:dt, 'YYYY-MM-DD"T"HH24:MI:SS')`);
         binds.dt = isoSeconds(f.dateTo);
       }
       const whereSql = where.length ? ` WHERE ${where.join(" AND ")}` : "";
 
-      const totalRes = await conn.execute(`SELECT COUNT(*) AS N FROM PM_AUDIT_LOG${whereSql}`, binds);
+      const totalRes = await conn.execute(`SELECT COUNT(*) AS N FROM PTX_AUDIT_HIS${whereSql}`, binds);
       const total = Number(((totalRes.rows ?? []) as Record<string, unknown>[])[0]?.N ?? 0);
 
       const offset = (f.page - 1) * f.size;
       const pageRes = await conn.execute(
-        `SELECT ${AUDIT_COLS} FROM PM_AUDIT_LOG${whereSql}
-          ORDER BY CREATED_DT DESC
+        `SELECT ${AUDIT_COLS} FROM PTX_AUDIT_HIS${whereSql}
+          ORDER BY CRT_TM DESC
           OFFSET :pgoff ROWS FETCH NEXT :pgsz ROWS ONLY`,
         { ...binds, pgoff: offset, pgsz: f.size },
       );
@@ -63,7 +63,7 @@ export async function listAuditLogs(f: AuditFilter): Promise<AuditLogPage> {
 
 export async function nodeAuditLogs(nodeNm: string, limit: number): Promise<AuditLog[]> {
   return readConn(async (conn) => {
-    const idsRes = await conn.execute(`SELECT PROMPT_ID FROM PM_NODE_PROMPT_VER WHERE NODE_NM = :nm`, { nm: nodeNm });
+    const idsRes = await conn.execute(`SELECT PROMPT_ID FROM PTX_PROMPT_HIS WHERE NODE_NM = :nm`, { nm: nodeNm });
     const ids = ((idsRes.rows ?? []) as Record<string, unknown>[]).map((r) => Number(r.PROMPT_ID));
     if (ids.length === 0) return [];
     const binds: Record<string, unknown> = { lim: limit };
@@ -72,9 +72,9 @@ export async function nodeAuditLogs(nodeNm: string, limit: number): Promise<Audi
       return `:i${i}`;
     });
     const res = await conn.execute(
-      `SELECT ${AUDIT_COLS} FROM PM_AUDIT_LOG
-        WHERE TARGET_TABLE = 'PM_NODE_PROMPT_VER' AND TARGET_ID IN (${names.join(", ")})
-        ORDER BY CREATED_DT DESC
+      `SELECT ${AUDIT_COLS} FROM PTX_AUDIT_HIS
+        WHERE TARGET_TABLE_NM = 'PTX_PROMPT_HIS' AND TARGET_ID IN (${names.join(", ")})
+        ORDER BY CRT_TM DESC
         FETCH FIRST :lim ROWS ONLY`,
       binds,
     );

@@ -1,7 +1,7 @@
 import { readConn, withConn } from "@/lib/db";
 import type { OracleConnection, OracleModule } from "@/lib/db";
 import { notFound } from "@/lib/http";
-import { RUN_COLS, insertReturningId, mapRagasRun } from "@/lib/db/rows";
+import { METRIC_COLS, RUN_COLS, insertReturningId, mapRagasRun } from "@/lib/db/rows";
 import { ALL_METRICS, DIRECT_SINK_NM, EXACT_MATCH, SYSTEM_USER } from "@/lib/types";
 import type {
   FlowCurrent,
@@ -24,9 +24,9 @@ export async function getCurrentFlow(): Promise<FlowCurrent> {
   return readConn(async (conn) => {
     // Distinct NODE_NM ordered by first appearance; latest version per node.
     const res = await conn.execute(
-      `SELECT PROMPT_ID, NODE_NM, VERSION_NO, MODEL_NM, CREATED_DT
-         FROM PM_NODE_PROMPT_VER
-        ORDER BY CREATED_DT DESC, PROMPT_ID DESC`,
+      `SELECT PROMPT_ID, NODE_NM, VERSION_NO, MODEL_NM, CRT_TM
+         FROM PTX_PROMPT_HIS
+        ORDER BY CRT_TM DESC, PROMPT_ID DESC`,
     );
     const rows = (res.rows ?? []) as Record<string, unknown>[];
     const latest = new Map<string, { prompt_id: number; version_no: string; model_nm: string | null }>();
@@ -68,13 +68,13 @@ export async function getCurrentFlow(): Promise<FlowCurrent> {
 // ---- run row helper ----
 
 async function fetchRun(conn: OracleConnection, runId: number): Promise<RagasRunOut | null> {
-  const res = await conn.execute(`SELECT ${RUN_COLS} FROM PM_RAGAS_RUN WHERE RAGAS_RUN_ID = :id`, { id: runId });
+  const res = await conn.execute(`SELECT ${RUN_COLS} FROM PTX_RUN_MAS WHERE RUN_ID = :id`, { id: runId });
   const rows = (res.rows ?? []) as Record<string, unknown>[];
   return rows.length ? mapRagasRun(rows[0]) : null;
 }
 
 async function promptNode(conn: OracleConnection, promptId: number): Promise<string | null> {
-  const res = await conn.execute(`SELECT NODE_NM FROM PM_NODE_PROMPT_VER WHERE PROMPT_ID = :id`, { id: promptId });
+  const res = await conn.execute(`SELECT NODE_NM FROM PTX_PROMPT_HIS WHERE PROMPT_ID = :id`, { id: promptId });
   const rows = (res.rows ?? []) as Record<string, unknown>[];
   return rows.length ? String(rows[0].NODE_NM) : null;
 }
@@ -96,14 +96,15 @@ export async function createFlowRagasRun(args: {
         throw notFound(`prompt version ${args.promptId} not found for node ${JSON.stringify(args.nodeNm)}`);
       }
     }
-    // METRICS='[]' marks a no-scoring run (answers only); chosenMetrics never
+    // METRIC_CTN='[]' marks a no-scoring run (answers only); chosenMetrics never
     // returns [] so the marker can't collide with a real selection.
     const chosen = args.score === false ? [] : chosenMetrics(args.metrics);
     const id = await insertReturningId(
       conn,
       oracle,
-      `INSERT INTO PM_RAGAS_RUN (PROMPT_ID, DATASET_ID, STATUS, METRICS, CREATED_BY)
-       VALUES (:pid, :did, 'PENDING', :metrics, :cby) RETURNING RAGAS_RUN_ID INTO :out_id`,
+      `INSERT INTO PTX_RUN_MAS (PROMPT_ID, DATASET_ID, DATASET_NM, STATUS_CD, METRIC_CTN, USER_ID)
+       VALUES (:pid, :did, (SELECT DATASET_NM FROM PTX_DATASET_MAS WHERE DATASET_ID = :did),
+               'PENDING', :metrics, :cby) RETURNING RUN_ID INTO :out_id`,
       { pid: args.promptId ?? null, did: args.datasetId, metrics: JSON.stringify(chosen), cby: SYSTEM_USER },
     );
     return (await fetchRun(conn, id))!;
@@ -136,14 +137,15 @@ export async function createFlowRagasAbRun(args: {
       const id = await insertReturningId(
         conn,
         oracle,
-        `INSERT INTO PM_RAGAS_RUN (PROMPT_ID, DATASET_ID, STATUS, METRICS, CREATED_BY)
-         VALUES (:pid, :did, 'PENDING', :metrics, :cby) RETURNING RAGAS_RUN_ID INTO :out_id`,
+        `INSERT INTO PTX_RUN_MAS (PROMPT_ID, DATASET_ID, DATASET_NM, STATUS_CD, METRIC_CTN, USER_ID)
+         VALUES (:pid, :did, (SELECT DATASET_NM FROM PTX_DATASET_MAS WHERE DATASET_ID = :did),
+                 'PENDING', :metrics, :cby) RETURNING RUN_ID INTO :out_id`,
         { pid, did: args.datasetId, metrics: JSON.stringify(chosen), cby: SYSTEM_USER },
       );
       ids.push(id);
     }
     const group = ids[0];
-    await conn.execute(`UPDATE PM_RAGAS_RUN SET AB_GROUP_ID = :g WHERE RAGAS_RUN_ID IN (:a, :b)`, {
+    await conn.execute(`UPDATE PTX_RUN_MAS SET AB_GROUP_ID = :g WHERE RUN_ID IN (:a, :b)`, {
       g: group,
       a: ids[0],
       b: ids[1],
@@ -152,15 +154,15 @@ export async function createFlowRagasAbRun(args: {
   }, { commit: true });
 }
 
-// ---- direct external-API calls (recorded as ENGINE='direct') ----
+// ---- direct external-API calls (recorded as ENGINE_CD='direct') ----
 
 const DIRECT_ENGINE = "direct";
-/** ENGINE value for a run scored only by 정답 일치 (no judge LLM involved). */
+/** ENGINE_CD value for a run scored only by 정답 일치 (no judge LLM involved). */
 const EXACT_ENGINE = "exact";
 
 async function directSinkDatasetId(conn: OracleConnection, oracle: OracleModule): Promise<number> {
   const res = await conn.execute(
-    `SELECT DATASET_ID FROM PM_TEST_DATASET WHERE DATASET_NM = :nm AND IS_ACTIVE = 'N' FETCH FIRST 1 ROWS ONLY`,
+    `SELECT DATASET_ID FROM PTX_DATASET_MAS WHERE DATASET_NM = :nm AND ACTIVE_YN = 'N' FETCH FIRST 1 ROWS ONLY`,
     { nm: DIRECT_SINK_NM },
   );
   const rows = (res.rows ?? []) as Record<string, unknown>[];
@@ -168,7 +170,7 @@ async function directSinkDatasetId(conn: OracleConnection, oracle: OracleModule)
   return insertReturningId(
     conn,
     oracle,
-    `INSERT INTO PM_TEST_DATASET (DATASET_NM, DESCRIPTION, IS_ACTIVE, CREATED_BY)
+    `INSERT INTO PTX_DATASET_MAS (DATASET_NM, DESC_CTN, ACTIVE_YN, USER_ID)
      VALUES (:nm, :descr, 'N', :cby) RETURNING DATASET_ID INTO :out_id`,
     { nm: DIRECT_SINK_NM, descr: "직접 호출 기록 전용 (자동 생성, 목록 비표시)", cby: SYSTEM_USER },
   );
@@ -214,12 +216,13 @@ export async function recordDirectRun(args: {
     const runId = await insertReturningId(
       conn,
       oracle,
-      `INSERT INTO PM_RAGAS_RUN (DATASET_ID, STATUS, ENGINE, METRICS, CREATED_BY, STARTED_DT, ENDED_DT,
-                                 EXACT_MATCH, FAITHFULNESS, ANSWER_RELEVANCY, CONTEXT_PRECISION, CONTEXT_RECALL, ANSWER_CORRECTNESS)
-       VALUES (:did, 'DONE', :eng, :met, :cby, SYSTIMESTAMP, SYSTIMESTAMP, :em, :f, :ar, :cp, :cr, :ac)
-       RETURNING RAGAS_RUN_ID INTO :out_id`,
+      `INSERT INTO PTX_RUN_MAS (DATASET_ID, DATASET_NM, STATUS_CD, ENGINE_CD, METRIC_CTN, USER_ID, START_TM, END_TM,
+                                 EXACT_VAL, FAITH_VAL, ANS_RELEVANCY_VAL, CNTX_PRECISION_VAL, CNTX_RECALL_VAL, ANS_CORRECTNESS_VAL)
+       VALUES (:did, :dnm, 'DONE', :eng, :met, :cby, SYSTIMESTAMP, SYSTIMESTAMP, :em, :f, :ar, :cp, :cr, :ac)
+       RETURNING RUN_ID INTO :out_id`,
       {
         did: sinkId,
+        dnm: DIRECT_SINK_NM,
         eng: engine ?? (metrics.length ? EXACT_ENGINE : DIRECT_ENGINE),
         met: metrics.length ? JSON.stringify(metrics) : "[]",
         cby: SYSTEM_USER,
@@ -232,8 +235,8 @@ export async function recordDirectRun(args: {
       },
     );
     await conn.execute(
-      `INSERT INTO PM_RAGAS_RESULT (RAGAS_RUN_ID, CASE_ID, QUESTION, ANSWER, CONTEXTS, GROUND_TRUTH, ERROR_MSG,
-                                    EXACT_MATCH, FAITHFULNESS, ANSWER_RELEVANCY, CONTEXT_PRECISION, CONTEXT_RECALL, ANSWER_CORRECTNESS)
+      `INSERT INTO PTX_RUN_DET (RUN_ID, CASE_ID, QUESTION_CTN, ANSWER_CTN, CONTEXT_CTN, TRUTH_CTN, ERROR_CTN,
+                                    EXACT_VAL, FAITH_VAL, ANS_RELEVANCY_VAL, CNTX_PRECISION_VAL, CNTX_RECALL_VAL, ANS_CORRECTNESS_VAL)
        VALUES (:rid, NULL, :q, :a, :ctx, :gt, :err, :em, :f, :ar, :cp, :cr, :ac)`,
       {
         rid: runId,
@@ -281,7 +284,7 @@ export async function requestCancel(runId: number): Promise<{ status: string }> 
     if (["DONE", "FAILED", "CANCELLED"].includes(run.status)) {
       throw new (await import("@/lib/http")).ApiError(409, `run already ${run.status}`);
     }
-    await conn.execute(`UPDATE PM_RAGAS_RUN SET STATUS = 'CANCELLING' WHERE RAGAS_RUN_ID = :id`, { id: runId });
+    await conn.execute(`UPDATE PTX_RUN_MAS SET STATUS_CD = 'CANCELLING' WHERE RUN_ID = :id`, { id: runId });
     return { status: "cancelling" };
   }, { commit: true });
 }
@@ -300,26 +303,26 @@ interface CaseRow {
 
 async function loadCases(conn: OracleConnection, datasetId: number): Promise<CaseRow[]> {
   const res = await conn.execute(
-    `SELECT CASE_ID, INPUT_DATA, EXPECTED_OUTPUT FROM PM_TEST_CASE WHERE DATASET_ID = :id ORDER BY CASE_ID ASC`,
+    `SELECT CASE_ID, INPUT_CTN, EXPECT_CTN FROM PTX_DATASET_DET WHERE DATASET_ID = :id ORDER BY CASE_ID ASC`,
     { id: datasetId },
   );
   return ((res.rows ?? []) as Record<string, unknown>[]).map((r) => ({
     case_id: Number(r.CASE_ID),
-    input_data: String(r.INPUT_DATA ?? ""),
-    expected_output: r.EXPECTED_OUTPUT != null ? String(r.EXPECTED_OUTPUT) : null,
+    input_data: String(r.INPUT_CTN ?? ""),
+    expected_output: r.EXPECT_CTN != null ? String(r.EXPECT_CTN) : null,
   }));
 }
 
 async function isCancelRequested(conn: OracleConnection, runId: number, signal?: AbortSignal): Promise<boolean> {
   if (signal?.aborted) return true;
-  const res = await conn.execute(`SELECT STATUS FROM PM_RAGAS_RUN WHERE RAGAS_RUN_ID = :id`, { id: runId });
+  const res = await conn.execute(`SELECT STATUS_CD FROM PTX_RUN_MAS WHERE RUN_ID = :id`, { id: runId });
   const rows = (res.rows ?? []) as Record<string, unknown>[];
-  return rows.length > 0 && rows[0].STATUS === "CANCELLING";
+  return rows.length > 0 && rows[0].STATUS_CD === "CANCELLING";
 }
 
 async function fetchResultRow(conn: OracleConnection, resultId: number): Promise<RagasResultRow> {
   const { RESULT_COLS, mapRagasResult } = await import("@/lib/db/rows");
-  const res = await conn.execute(`SELECT ${RESULT_COLS} FROM PM_RAGAS_RESULT WHERE RAGAS_RESULT_ID = :id`, {
+  const res = await conn.execute(`SELECT ${RESULT_COLS} FROM PTX_RUN_DET WHERE RESULT_ID = :id`, {
     id: resultId,
   });
   const rows = (res.rows ?? []) as Record<string, unknown>[];
@@ -337,20 +340,20 @@ interface Pending {
 }
 
 async function swapActive(conn: OracleConnection, nodeNm: string, promptId: number): Promise<void> {
-  await conn.execute(`UPDATE PM_NODE_PROMPT_VER SET IS_ACTIVE = 'N' WHERE NODE_NM = :nm`, { nm: nodeNm });
-  await conn.execute(`UPDATE PM_NODE_PROMPT_VER SET IS_ACTIVE = 'Y' WHERE PROMPT_ID = :id`, { id: promptId });
+  await conn.execute(`UPDATE PTX_PROMPT_HIS SET ACTIVE_YN = 'N' WHERE NODE_NM = :nm`, { nm: nodeNm });
+  await conn.execute(`UPDATE PTX_PROMPT_HIS SET ACTIVE_YN = 'Y' WHERE PROMPT_ID = :id`, { id: promptId });
   await conn.commit();
 }
 
 async function deactivateNode(conn: OracleConnection, nodeNm: string): Promise<void> {
-  await conn.execute(`UPDATE PM_NODE_PROMPT_VER SET IS_ACTIVE = 'N' WHERE NODE_NM = :nm`, { nm: nodeNm });
+  await conn.execute(`UPDATE PTX_PROMPT_HIS SET ACTIVE_YN = 'N' WHERE NODE_NM = :nm`, { nm: nodeNm });
   await conn.commit();
 }
 
 interface RunCtx {
   runId: number;
   engine: "RAGAS" | "FALLBACK";
-  /** false = answers-only run (METRICS='[]'): phase2 is skipped entirely. */
+  /** false = answers-only run (METRIC_CTN='[]'): phase2 is skipped entirely. */
   score: boolean;
   metrics: RagasMetric[];
   /** Metrics that need the judge LLM — empty for a 정답 일치 only run. */
@@ -391,7 +394,7 @@ async function setupRun(
     }
     return null;
   }
-  // METRICS='[]' = answers-only run: skip scoring later and leave ENGINE empty.
+  // METRIC_CTN='[]' = answers-only run: skip scoring later and leave ENGINE_CD empty.
   let parsedMetrics: string[] | null = null;
   try {
     parsedMetrics = run.metrics ? (JSON.parse(run.metrics) as string[]) : null;
@@ -404,9 +407,9 @@ async function setupRun(
   const exact = metrics.includes(EXACT_MATCH);
   const engine = resolveRagasEngine();
   // A run scored only by 정답 일치 never touches the judge LLM, so it records
-  // ENGINE='exact' rather than claiming RAGAS/FALLBACK.
+  // ENGINE_CD='exact' rather than claiming RAGAS/FALLBACK.
   await conn.execute(
-    `UPDATE PM_RAGAS_RUN SET STATUS = 'RUNNING', STARTED_DT = SYSTIMESTAMP${score ? ", ENGINE = :eng" : ""} WHERE RAGAS_RUN_ID = :id`,
+    `UPDATE PTX_RUN_MAS SET STATUS_CD = 'RUNNING', START_TM = SYSTIMESTAMP${score ? ", ENGINE_CD = :eng" : ""} WHERE RUN_ID = :id`,
     score ? { eng: llm.length ? engine : EXACT_ENGINE, id: runId } : { id: runId },
   );
   await conn.commit();
@@ -458,8 +461,8 @@ async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx,
     const resultId = await insertReturningId(
       conn,
       oracle,
-      `INSERT INTO PM_RAGAS_RESULT (RAGAS_RUN_ID, CASE_ID, QUESTION, CONTEXTS, GROUND_TRUTH, ANSWER, ERROR_MSG, EXACT_MATCH)
-       VALUES (:rid, :cid, :q, :ctx, :gt, :a, :err, :em) RETURNING RAGAS_RESULT_ID INTO :out_id`,
+      `INSERT INTO PTX_RUN_DET (RUN_ID, CASE_ID, QUESTION_CTN, CONTEXT_CTN, TRUTH_CTN, ANSWER_CTN, ERROR_CTN, EXACT_VAL)
+       VALUES (:rid, :cid, :q, :ctx, :gt, :a, :err, :em) RETURNING RESULT_ID INTO :out_id`,
       {
         rid: ctx.runId,
         cid: c.case_id,
@@ -511,23 +514,23 @@ async function phase2(conn: OracleConnection, ctx: RunCtx, emit: Emit, signal?: 
         for (const m of ctx.llm) {
           const dec = toScore(cs[m] ?? null);
           if (dec !== null) {
-            sets.push(`${m.toUpperCase()} = :${m}`);
+            sets.push(`${METRIC_COLS[m]} = :${m}`);
             binds[m] = dec;
             ctx.sums[m].push(dec);
             stored = true;
           }
         }
         if (stored) {
-          await conn.execute(`UPDATE PM_RAGAS_RESULT SET ${sets.join(", ")} WHERE RAGAS_RESULT_ID = :id`, binds);
+          await conn.execute(`UPDATE PTX_RUN_DET SET ${sets.join(", ")} WHERE RESULT_ID = :id`, binds);
         } else {
-          await conn.execute(`UPDATE PM_RAGAS_RESULT SET ERROR_MSG = :err WHERE RAGAS_RESULT_ID = :id`, {
+          await conn.execute(`UPDATE PTX_RUN_DET SET ERROR_CTN = :err WHERE RESULT_ID = :id`, {
             err: "scorer returned no finite metric scores",
             id: p.resultId,
           });
         }
       } catch (e) {
         // Per-case scoring failure (e.g. LLM/embedding call failed) — record and continue.
-        await conn.execute(`UPDATE PM_RAGAS_RESULT SET ERROR_MSG = :err WHERE RAGAS_RESULT_ID = :id`, {
+        await conn.execute(`UPDATE PTX_RUN_DET SET ERROR_CTN = :err WHERE RESULT_ID = :id`, {
           err: String(e).slice(0, 1000),
           id: p.resultId,
         });
@@ -541,9 +544,9 @@ async function phase2(conn: OracleConnection, ctx: RunCtx, emit: Emit, signal?: 
 async function finalize(conn: OracleConnection, ctx: RunCtx, emit: Emit): Promise<void> {
   if (ctx.cancelled) {
     // Drop partial scores; keep answers.
-    const nulls = ALL_METRICS.map((m) => `${m.toUpperCase()} = NULL`).join(", ");
-    await conn.execute(`UPDATE PM_RAGAS_RESULT SET ${nulls} WHERE RAGAS_RUN_ID = :id`, { id: ctx.runId });
-    await conn.execute(`UPDATE PM_RAGAS_RUN SET STATUS = 'CANCELLED', ENDED_DT = SYSTIMESTAMP WHERE RAGAS_RUN_ID = :id`, {
+    const nulls = ALL_METRICS.map((m) => `${METRIC_COLS[m]} = NULL`).join(", ");
+    await conn.execute(`UPDATE PTX_RUN_DET SET ${nulls} WHERE RUN_ID = :id`, { id: ctx.runId });
+    await conn.execute(`UPDATE PTX_RUN_MAS SET STATUS_CD = 'CANCELLED', END_TM = SYSTIMESTAMP WHERE RUN_ID = :id`, {
       id: ctx.runId,
     });
     await conn.commit();
@@ -555,12 +558,12 @@ async function finalize(conn: OracleConnection, ctx: RunCtx, emit: Emit): Promis
   const summary: Record<string, number | null> = {};
   for (const m of ALL_METRICS) {
     const a = avg(ctx.sums[m]);
-    sets.push(`${m.toUpperCase()} = :${m}`);
+    sets.push(`${METRIC_COLS[m]} = :${m}`);
     binds[m] = a;
     summary[m] = a;
   }
   await conn.execute(
-    `UPDATE PM_RAGAS_RUN SET STATUS = 'DONE', ENDED_DT = SYSTIMESTAMP, ${sets.join(", ")} WHERE RAGAS_RUN_ID = :id`,
+    `UPDATE PTX_RUN_MAS SET STATUS_CD = 'DONE', END_TM = SYSTIMESTAMP, ${sets.join(", ")} WHERE RUN_ID = :id`,
     binds,
   );
   await conn.commit();
@@ -575,10 +578,10 @@ async function finalize(conn: OracleConnection, ctx: RunCtx, emit: Emit): Promis
 async function recordFailure(conn: OracleConnection, runId: number, msg: string, emit: Emit): Promise<void> {
   try {
     await conn.execute(
-      `UPDATE PM_RAGAS_RUN SET STATUS = 'FAILED', ERROR_MSG = :err, ENDED_DT = SYSTIMESTAMP WHERE RAGAS_RUN_ID = :id`,
+      `UPDATE PTX_RUN_MAS SET STATUS_CD = 'FAILED', ERROR_CTN = :err, END_TM = SYSTIMESTAMP WHERE RUN_ID = :id`,
       { err: msg.slice(0, 1000), id: runId },
     );
-    await conn.execute(`INSERT INTO PM_RAGAS_RESULT (RAGAS_RUN_ID, ERROR_MSG) VALUES (:id, :err)`, {
+    await conn.execute(`INSERT INTO PTX_RUN_DET (RUN_ID, ERROR_CTN) VALUES (:id, :err)`, {
       id: runId,
       err: msg.slice(0, 1000),
     });
@@ -620,10 +623,10 @@ export async function executeRun(
 export async function executeAbGroup(groupId: number, emit: Emit, signal?: AbortSignal): Promise<void> {
   const ids = await readConn(async (conn) => {
     const res = await conn.execute(
-      `SELECT RAGAS_RUN_ID FROM PM_RAGAS_RUN WHERE AB_GROUP_ID = :g ORDER BY RAGAS_RUN_ID ASC`,
+      `SELECT RUN_ID FROM PTX_RUN_MAS WHERE AB_GROUP_ID = :g ORDER BY RUN_ID ASC`,
       { g: groupId },
     );
-    return ((res.rows ?? []) as Record<string, unknown>[]).map((r) => Number(r.RAGAS_RUN_ID));
+    return ((res.rows ?? []) as Record<string, unknown>[]).map((r) => Number(r.RUN_ID));
   }, [] as number[]);
   if (ids.length !== 2) {
     emit({ event: "FAILED", run_id: groupId, error: "ab pair not found" });

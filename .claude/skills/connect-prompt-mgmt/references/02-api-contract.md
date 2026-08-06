@@ -1,8 +1,8 @@
 # 02 — API contract & backend wiring
 
-> Single-flow **CHAT_VER_MAS / NODE_MAS** (agent-owned) + **PM_NODE_PROMPT_VER**
-> (PM-owned, **agent-read**). Join key **`NODE_NM`**. The agent reads its per-node
-> `SYSTEM_PROMPT` + `USER_PROMPT` from the active `PM_NODE_PROMPT_VER` row (loader in
+> Single-flow **CHAT_VER_MAS / NODE_MAS** (agent-owned) + **PTX_PROMPT_HIS**
+> (PTX-owned, **agent-read**). Join key **`NODE_NM`**. The agent reads its per-node
+> `SYSTEM_PROMPT` + `USER_PROMPT` from the active `PTX_PROMPT_HIS` row (loader in
 > `03-mapping.md`); the HTTP "active-prompts" read below mirrors that data for
 > inspection / verification only.
 
@@ -28,7 +28,7 @@ Nodes without an active version are omitted. Single node:
 `user_prompt` is a free-text template whose `{{var}}` the agent fills at runtime
 (and the flow test fills from the dataset case JSON).
 
-**Primary runtime path:** the agent reads the active `PM_NODE_PROMPT_VER` row
+**Primary runtime path:** the agent reads the active `PTX_PROMPT_HIS` row
 (`SYSTEM_PROMPT` + `USER_PROMPT`) directly from the shared Oracle DB. This API
 returns the same data — use it to verify the agent's loader, not as its runtime path.
 
@@ -56,11 +56,11 @@ retrieved contexts when the dataset case doesn't pin its own). All other fields
 are accepted and ignored.
 
 The external model resolves its per-node `SYSTEM_PROMPT` + `USER_PROMPT` itself
-by reading the active `PM_NODE_PROMPT_VER` row directly from the shared Oracle DB
+by reading the active `PTX_PROMPT_HIS` row directly from the shared Oracle DB
 (see `03-mapping.md`). The chat request does NOT carry a system prompt.
 
-**A/B comparison:** when an A/B RAGAS run is executing, PM temporarily flips
-`PM_NODE_PROMPT_VER.IS_ACTIVE` so the version under test becomes the active row
+**A/B comparison:** when an A/B RAGAS run is executing, PTX temporarily flips
+`PTX_PROMPT_HIS.IS_ACTIVE` so the version under test becomes the active row
 for the duration of that run, then restores the original active row in a
 `finally` — see `flow_service._swap_active_prompt` / `_restore_active_prompt`.
 
@@ -81,7 +81,7 @@ EXTERNAL_USER_ID=pm-test
 ```
 `flow_service.execute_flow_ragas_run()` branches on
 `external_agent.external_enabled()` and posts the chat payload, storing the
-answer as `PM_RAGAS_RESULT` rows and streaming over `/ws/ragas-runs/{id}`.
+answer as `PTX_RUN_DET` rows and streaming over `/ws/ragas-runs/{id}`.
 
 After editing env: `cd backend; $env:APP_ENV='test'; .venv\Scripts\python.exe -m pytest`
 must stay green (stub mode), then restart uvicorn with the new env.
