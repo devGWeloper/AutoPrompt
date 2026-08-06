@@ -12,7 +12,10 @@ import {
   type RagasResultRow,
   type RagasRunDetail,
 } from '@/lib/types';
-import { AnswerBox, caseMean, Chevron, CollapseAllStrip, exactOnly, fmt3, OxBadge, sideLabel } from './shared';
+import {
+  AnswerBox, caseMean, Chevron, CollapseAllStrip, exactOnly, fmt3, OxBadge,
+  ScoredPreview, sideLabel, TraceValueBox,
+} from './shared';
 
 // One side's absolute-score bar (fills 0→value on a 0..1 scale). B is the accent
 // colour, A is neutral grey; the winning side's number is inked + bold.
@@ -197,10 +200,16 @@ export function CaseCompareTable({
               <span className={cn('min-w-0 flex-1 text-sm text-ink', isClosed ? 'truncate' : 'whitespace-pre-wrap break-words font-medium')}>
                 {q}
               </span>
-              {isClosed && (a?.answer != null || b?.answer != null) && (
+              {isClosed && (a?.answer != null || b?.answer != null || a?.trace_value || b?.trace_value) && (
                 <span className="mt-0.5 flex min-w-0 flex-[2] items-baseline gap-2.5 text-xs text-muted">
-                  <span className="min-w-0 flex-1 truncate"><span className="font-semibold">A</span> {a?.answer ?? '—'}</span>
-                  <span className="min-w-0 flex-1 truncate"><span className="font-semibold">B</span> {b?.answer ?? '—'}</span>
+                  <span className="flex min-w-0 flex-1 items-baseline gap-1">
+                    <span className="shrink-0 font-semibold">A</span>
+                    {a ? <ScoredPreview row={a} className="min-w-0 flex-1" /> : '—'}
+                  </span>
+                  <span className="flex min-w-0 flex-1 items-baseline gap-1">
+                    <span className="shrink-0 font-semibold">B</span>
+                    {b ? <ScoredPreview row={b} className="min-w-0 flex-1" /> : '—'}
+                  </span>
                 </span>
               )}
               {isClosed && showScores && (exactOnly(a ?? {}) || exactOnly(b ?? {})) ? (
@@ -240,10 +249,12 @@ export function CaseCompareTable({
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="rounded-sm border border-line bg-bg/40 p-3">
                     <Badge tone="neutral">A · {sideLabel(labelA)}</Badge>
+                    {a?.trace_value && <div className="mt-2"><TraceValueBox row={a} /></div>}
                     <div className="mt-2"><AnswerBox text={a?.answer} error={a?.error_msg} /></div>
                   </div>
                   <div className="rounded-sm border border-line bg-bg/40 p-3">
                     <Badge tone="accent">B · {sideLabel(labelB)}</Badge>
+                    {b?.trace_value && <div className="mt-2"><TraceValueBox row={b} /></div>}
                     <div className="mt-2"><AnswerBox text={b?.answer} error={b?.error_msg} /></div>
                   </div>
                 </div>

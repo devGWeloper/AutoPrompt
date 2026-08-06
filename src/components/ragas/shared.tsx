@@ -275,6 +275,36 @@ function prettyJson(text: string): string {
   }
 }
 
+/** Collapse whitespace so a captured value fits a one-line preview. */
+export function oneLine(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+/** Marks a preview as showing a captured variable rather than the answer. */
+export function TraceTag({ name }: { name?: string | null }) {
+  return (
+    <span className="shrink-0 rounded-sm border border-line px-1 py-px font-mono text-[10px] text-muted">
+      {name || 'trace'}
+    </span>
+  );
+}
+
+/** One-line preview of what the case was actually judged on: the captured
+ * variable when there is one, else the final answer. Previewing the answer next
+ * to an O/X decided from something else reads as a bug. */
+export function ScoredPreview({ row, className }: { row: RagasResultRow; className?: string }) {
+  if (row.trace_value) {
+    return (
+      <span className={cn('flex min-w-0 items-baseline gap-1.5 text-xs text-muted', className)}>
+        <TraceTag name={row.trace_var_nm} />
+        <span className="min-w-0 flex-1 truncate">{oneLine(row.trace_value)}</span>
+      </span>
+    );
+  }
+  if (row.answer == null) return null;
+  return <span className={cn('truncate text-xs text-muted', className)}>{row.answer}</span>;
+}
+
 export function CopyButton({ text }: { text: string }) {
   const [done, setDone] = useState(false);
   return (
@@ -423,9 +453,7 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
               <span className={cn('min-w-0 flex-1 text-sm text-ink', isClosed ? 'truncate' : 'whitespace-pre-wrap break-words font-medium')}>
                 {r.question ?? '—'}
               </span>
-              {isClosed && r.answer && (
-                <span className="mt-0.5 min-w-0 flex-1 truncate text-xs text-muted">{r.answer}</span>
-              )}
+              {isClosed && <ScoredPreview row={r} className="mt-0.5 min-w-0 flex-1" />}
               {isClosed && showScores && (
                 exactOnly(r)
                   ? <span className="shrink-0"><OxBadge value={r.exact_match} /></span>
@@ -446,7 +474,9 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
                 )}
                 <TraceValueBox row={r} />
                 <div className={cn('min-w-0', r.trace_value && r.ground_truth && 'sm:col-span-2')}>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">답변</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">
+                    답변{r.trace_value && <span className="ml-1.5 font-normal normal-case tracking-normal">· 채점 대상 아님</span>}
+                  </p>
                   <div className="mt-0.5"><AnswerBox text={r.answer} error={r.error_msg} /></div>
                   {showScores && <div className="mt-3"><ScoreBars row={r} /></div>}
                 </div>
