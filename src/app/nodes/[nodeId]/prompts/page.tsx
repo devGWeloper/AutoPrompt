@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/Button';
 import { Input, Textarea } from '@/components/ui/Field';
 import { Tabs } from '@/components/ui/Tabs';
 import { api, ApiError } from '@/lib/api';
+import { cn } from '@/lib/cn';
+import { SHELL } from '@/lib/layout';
 import type { AuditLog, PromptVersionDetail, PromptVersionSummary } from '@/lib/types';
 
 type Tab = 'editor' | 'history';
@@ -84,7 +86,7 @@ export default function NodePromptsPage() {
         </div>
       )}
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className={cn(SHELL, 'flex flex-1 overflow-hidden')}>
         {/* version list */}
         <aside className="w-72 overflow-auto border-r border-line bg-surface p-4">
           <div className="mb-3 flex items-center justify-between">

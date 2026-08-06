@@ -116,8 +116,10 @@ function FieldsEditor({
           className="w-full text-sm"
         />
       </div>
-      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-        <div>
+      {/* minmax(0,…): a textarea's intrinsic width (its `cols` default) otherwise
+          sets the column's minimum and pushes the whole page wider than the viewport. */}
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="min-w-0">
           <label className={LABEL}>Contexts <span className={HINT}>(선택 · 한 줄에 하나)</span></label>
           <Textarea
             value={value.contexts}
@@ -127,7 +129,7 @@ function FieldsEditor({
             className="w-full text-sm"
           />
         </div>
-        <div>
+        <div className="min-w-0">
           <label className={LABEL}>정답 <span className={HINT}>(선택 · 정답 일치/정확도 지표에 사용)</span></label>
           <Textarea
             value={value.groundTruth}
@@ -310,8 +312,10 @@ export default function DatasetsPanel() {
 
       {error && <ErrBox msg={error} />}
 
-      <div className="grid grid-cols-[19rem_1fr] gap-5">
-        <Card>
+      {/* minmax(0,…) again: with a plain `1fr` the cases column is at least as wide
+          as its widest min-content child, which is what made the page scroll sideways. */}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[17rem_minmax(0,1fr)]">
+        <Card className="min-w-0">
           <div className="border-b border-line px-4 py-3">
             <h3 className="text-sm font-semibold text-ink">
               데이터셋 <span className="font-normal text-muted">({datasets.length})</span>
@@ -372,12 +376,12 @@ export default function DatasetsPanel() {
           </ul>
         </Card>
 
-        <Card>
+        <Card className="min-w-0">
           {selected == null ? (
             <div className="py-16 text-center text-sm text-muted">왼쪽에서 데이터셋을 선택하세요.</div>
           ) : (
             <>
-              <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-2 border-b border-line px-4 py-3">
                 <h3 className="mr-1 min-w-0 truncate text-sm font-semibold text-ink">{selected.dataset_nm}</h3>
                 <span className="shrink-0 text-xs text-muted">케이스 {cases.length}</span>
                 {noGt > 0 && (
@@ -388,12 +392,14 @@ export default function DatasetsPanel() {
                     정답 없음 {noGt}
                   </span>
                 )}
-                <div className="ml-auto flex shrink-0 items-center gap-2">
+                {/* Wraps to its own line when the panel is narrow instead of forcing
+                    the column wider — these controls were the widest thing in here. */}
+                <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
                   <Input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="질문 · 정답 검색"
-                    className="h-8 w-48 text-xs"
+                    className="h-8 w-40 text-xs"
                   />
                   <input
                     ref={fileRef}
@@ -406,16 +412,23 @@ export default function DatasetsPanel() {
                       if (f) importCsv(f);
                     }}
                   />
-                  <Button variant="ghost" size="sm" disabled={busy} onClick={() => fileRef.current?.click()}>
-                    CSV 가져오기
-                  </Button>
-                  <Button
-                    variant="ghost" size="sm"
-                    disabled={cases.length === 0}
-                    onClick={() => download(`${selected.dataset_nm}.csv`, toCsv(cases))}
-                  >
-                    CSV 내려받기
-                  </Button>
+                  <span className="inline-flex items-center overflow-hidden rounded-sm border border-line-strong bg-surface shadow-sm">
+                    <span className="px-2 text-[11px] font-medium text-muted">CSV</span>
+                    <button
+                      type="button" disabled={busy}
+                      onClick={() => fileRef.current?.click()}
+                      className="h-8 border-l border-line px-2.5 text-xs text-ink transition-colors hover:bg-surface-3 disabled:opacity-50"
+                    >
+                      가져오기
+                    </button>
+                    <button
+                      type="button" disabled={cases.length === 0}
+                      onClick={() => download(`${selected.dataset_nm}.csv`, toCsv(cases))}
+                      className="h-8 border-l border-line px-2.5 text-xs text-ink transition-colors hover:bg-surface-3 disabled:opacity-50"
+                    >
+                      내려받기
+                    </button>
+                  </span>
                   <Button
                     variant={adding ? 'secondary' : 'primary'}
                     size="sm"
@@ -428,7 +441,7 @@ export default function DatasetsPanel() {
 
               {notice && (
                 <div className="flex items-start gap-2 border-b border-line bg-surface-2/50 px-4 py-2.5 text-xs text-muted">
-                  <span className="min-w-0 flex-1">{notice}</span>
+                  <span className="min-w-0 flex-1 break-words">{notice}</span>
                   <button type="button" className="shrink-0 hover:text-ink" onClick={() => setNotice(null)}>닫기</button>
                 </div>
               )}
@@ -466,7 +479,7 @@ export default function DatasetsPanel() {
                         >
                           <Chevron open={open} className="mt-0.5" />
                           <span className="mt-px w-6 shrink-0 font-mono text-[11px] tabular-nums text-muted">{i + 1}</span>
-                          <span className={cn('min-w-0 flex-1 text-sm text-ink', open ? 'font-medium' : 'truncate')}>
+                          <span className={cn('min-w-0 flex-1 text-sm text-ink', open ? 'break-words font-medium' : 'truncate')}>
                             {p.question || <span className="text-muted">(질문 없음)</span>}
                           </span>
                           {!open && (

@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
+import { SHELL } from '@/lib/layout';
 
 interface HealthData {
   env?: string;
@@ -92,7 +93,8 @@ export default function TopBar({ title, right }: { title?: string; right?: React
 
   return (
     <header className="border-b border-line bg-gradient-to-b from-surface to-[#fbfcfe] shadow-[0_1px_0_rgba(17,24,39,0.02),0_10px_22px_-20px_rgba(17,24,39,0.25)]">
-      <div className="flex h-16 items-center justify-between px-6">
+      {/* Bar spans the window; its contents line up with the page below. */}
+      <div className={cn(SHELL, 'flex h-16 items-center justify-between px-6')}>
         <div className="flex items-center gap-7">
           <button onClick={() => router.push('/')} className="flex items-center gap-2.5">
             <span

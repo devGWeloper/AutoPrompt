@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/cn';
+import { SHELL } from '@/lib/layout';
 import { readActiveRun } from '@/lib/activeRun';
 import TopBar from '@/components/ui/TopBar';
 import { Tabs } from '@/components/ui/Tabs';
@@ -41,22 +42,24 @@ export default function RagasHomePage() {
   return (
     <div className="flex h-full flex-col">
       <TopBar />
-      <div className="px-6 pt-5">
+      <div className={cn(SHELL, 'px-6 pt-5')}>
         <Tabs items={TABS} value={tab} onChange={openTab} />
       </div>
-      <div className="flex-1 overflow-auto px-6 py-6">
-        <header className="mb-5">
-          <h1 className="text-lg font-semibold tracking-tight text-ink">{current.label}</h1>
-          <p className="mt-1 text-sm text-muted">{current.desc}</p>
-        </header>
-        {opened.has('single') && (
-          <div className={cn(tab !== 'single' && 'hidden')}><SingleRunPanel /></div>
-        )}
-        {opened.has('compare') && (
-          <div className={cn(tab !== 'compare' && 'hidden')}><ComparePanel /></div>
-        )}
-        {tab === 'datasets' && <DatasetsPanel />}
-        {tab === 'records' && <RecordsPanel />}
+      <div className="flex-1 overflow-auto">
+        <div className={cn(SHELL, 'px-6 py-6')}>
+          <header className="mb-5">
+            <h1 className="text-lg font-semibold tracking-tight text-ink">{current.label}</h1>
+            <p className="mt-1 text-sm text-muted">{current.desc}</p>
+          </header>
+          {opened.has('single') && (
+            <div className={cn(tab !== 'single' && 'hidden')}><SingleRunPanel /></div>
+          )}
+          {opened.has('compare') && (
+            <div className={cn(tab !== 'compare' && 'hidden')}><ComparePanel /></div>
+          )}
+          {tab === 'datasets' && <DatasetsPanel />}
+          {tab === 'records' && <RecordsPanel />}
+        </div>
       </div>
     </div>
   );
