@@ -235,7 +235,7 @@ export async function recordDirectRun(args: {
       },
     );
     await conn.execute(
-      `INSERT INTO PTX_RUN_DET (RUN_ID, CASE_ID, QUESTION_CTN, ANSWER_CTN, CONTEXT_CTN, TRUTH_CTN, ERROR_CTN,
+      `INSERT INTO PTX_RUN_DET (RUN_ID, CASE_ID, QUESTION_CTN, ANSWER_CTN, CNTX_CTN, TRUTH_CTN, ERROR_CTN,
                                     EXACT_VAL, FAITH_VAL, ANS_RELEVANCY_VAL, CNTX_PRECISION_VAL, CNTX_RECALL_VAL, ANS_CORRECTNESS_VAL)
        VALUES (:rid, NULL, :q, :a, :ctx, :gt, :err, :em, :f, :ar, :cp, :cr, :ac)`,
       {
@@ -461,7 +461,7 @@ async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx,
     const resultId = await insertReturningId(
       conn,
       oracle,
-      `INSERT INTO PTX_RUN_DET (RUN_ID, CASE_ID, QUESTION_CTN, CONTEXT_CTN, TRUTH_CTN, ANSWER_CTN, ERROR_CTN, EXACT_VAL)
+      `INSERT INTO PTX_RUN_DET (RUN_ID, CASE_ID, QUESTION_CTN, CNTX_CTN, TRUTH_CTN, ANSWER_CTN, ERROR_CTN, EXACT_VAL)
        VALUES (:rid, :cid, :q, :ctx, :gt, :a, :err, :em) RETURNING RESULT_ID INTO :out_id`,
       {
         rid: ctx.runId,

@@ -99,7 +99,7 @@ Prompt Trace eXplorer(PTX) 소유 테이블 6개. 외부 테이블(`CHAT_VER_MAS
 | `CASE_ID` | NUMBER | Y | — | FK → `PTX_DATASET_DET` |
 | `QUESTION_CTN` | CLOB | Y | — | |
 | `ANSWER_CTN` | CLOB | Y | — | 외부 API 응답 |
-| `CONTEXT_CTN` | CLOB | Y | — | JSON 배열 |
+| `CNTX_CTN` | CLOB | Y | — | JSON 배열 |
 | `TRUTH_CTN` | CLOB | Y | — | ground truth |
 | `EXACT_VAL` | NUMBER(5,4) | Y | — | 1(O) / 0(X) / NULL(정답 없음) |
 | `FAITH_VAL` | NUMBER(5,4) | Y | — | 이하 케이스별 점수 |

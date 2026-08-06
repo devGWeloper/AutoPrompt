@@ -99,7 +99,7 @@ CREATE TABLE PTX_RUN_DET (
     CASE_ID              NUMBER,
     QUESTION_CTN         CLOB,
     ANSWER_CTN           CLOB,
-    CONTEXT_CTN          CLOB,
+    CNTX_CTN             CLOB,
     TRUTH_CTN            CLOB,
     EXACT_VAL            NUMBER(5,4),
     FAITH_VAL            NUMBER(5,4),
