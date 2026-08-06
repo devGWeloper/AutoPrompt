@@ -150,16 +150,25 @@ export async function scoreWithLlm(args: {
     contexts: args.contexts,
     groundTruth: args.groundTruth,
   };
+  const errors: string[] = [];
   const results = await Promise.all(
     args.metrics.map(async (m) => {
       try {
         const val = await COMPUTE[m](f);
         return [m, val] as const;
-      } catch {
+      } catch (e) {
+        errors.push(`${m}: ${e instanceof Error ? e.message : String(e)}`);
         return [m, null] as const;
       }
     })
   );
+  // A metric may legitimately return null (no contexts, no ground truth, no
+  // embedding endpoint) — that is a skip, not a failure, so partial results are
+  // kept as-is. But when nothing scored *and* something threw, the caller would
+  // otherwise see an empty result with no reason; surface the real cause instead.
+  if (errors.length > 0 && results.every(([, v]) => v === null)) {
+    throw new Error(errors.join(" | "));
+  }
   const out: CaseScore = {};
   for (const [m, score] of results) {
     out[m] = score;

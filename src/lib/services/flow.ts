@@ -523,6 +523,20 @@ async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx,
   }
 }
 
+/** Why a case ended up with no RAGAS score even though nothing errored.
+ * faithfulness needs contexts; context_precision/recall need both contexts and a
+ * ground truth; answer_correctness needs a ground truth; answer_relevancy needs
+ * the embedding endpoint. */
+function skipReason(contexts: string[], groundTruth: string | null): string {
+  const missing: string[] = [];
+  if (contexts.join("").trim() === "") missing.push("contexts");
+  if (!(groundTruth ?? "").trim()) missing.push("정답(ground truth)");
+  const why = missing.length
+    ? `케이스에 ${missing.join(" · ")}이(가) 없어 해당 지표를 건너뛰었습니다.`
+    : "심판이 유효한 점수를 반환하지 않았습니다.";
+  return `채점된 지표가 없습니다 — ${why}`;
+}
+
 async function phase2(conn: OracleConnection, ctx: RunCtx, emit: Emit, signal?: AbortSignal): Promise<void> {
   const total = ctx.cases.length;
   let done = 0;
@@ -557,8 +571,11 @@ async function phase2(conn: OracleConnection, ctx: RunCtx, emit: Emit, signal?: 
         if (stored) {
           await conn.execute(`UPDATE PTX_RUN_DET SET ${sets.join(", ")} WHERE RESULT_ID = :id`, binds);
         } else {
+          // Nothing threw, so every selected metric simply had nothing to work
+          // with. Say which input was missing — a blank score column with no
+          // explanation reads as "RAGAS is broken".
           await conn.execute(`UPDATE PTX_RUN_DET SET ERROR_CTN = :err WHERE RESULT_ID = :id`, {
-            err: "scorer returned no finite metric scores",
+            err: skipReason(p.contexts, p.groundTruth),
             id: p.resultId,
           });
         }
