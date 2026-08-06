@@ -430,9 +430,9 @@ function RecordDetailDrawer({
           <div className="flex items-center gap-3">
             <h2 className="text-base font-semibold text-ink">
               {isSingle ? (
-                <>Single Run <span className="font-mono text-xs font-normal text-muted">#{group.run.ragas_run_id}</span></>
+                <>Single <span className="font-mono text-xs font-normal text-muted">#{group.run.ragas_run_id}</span></>
               ) : (
-                <>Compare Run <span className="font-mono text-xs font-normal text-muted">#{group.a.ragas_run_id}/#{group.b.ragas_run_id}</span></>
+                <>Compare <span className="font-mono text-xs font-normal text-muted">#{group.a.ragas_run_id}/#{group.b.ragas_run_id}</span></>
               )}
             </h2>
             <TypeText t={isSingle ? 'single' : 'compare'} />
@@ -586,7 +586,7 @@ function RagasRunDetailView({ ragasId }: { ragasId: number }) {
       {runMean(detail) != null && <SingleRunSummaryDashboard detail={detail} />}
       <div className="overflow-hidden rounded-sm border border-line bg-surface">
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
-          <h3 className="mr-1 text-sm font-semibold text-ink">Single Run Detail</h3>
+          <h3 className="mr-1 text-sm font-semibold text-ink">Single Detail</h3>
           <Badge tone={detail.status === 'FAILED' ? 'bad' : 'neutral'} dot>{detail.status}</Badge>
           {detail.node_nm && <span className="font-medium text-ink">{detail.node_nm}</span>}
           <Badge tone="neutral">{verLabel}</Badge>

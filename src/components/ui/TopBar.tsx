@@ -59,16 +59,16 @@ function StatusBadges() {
 
 /** Top-level section nav (inview .tabnav-group): segmented control next to the
  * brand — both sections always visible, active one raised on a white surface. */
-function SectionNav() {
+function SectionNav({ className }: { className?: string }) {
   const router = useRouter();
   const pathname = usePathname() || '/';
   const onPrompts = pathname.startsWith('/nodes');
   const items = [
-    { href: '/', label: 'RAGAS Eval', active: !onPrompts },
+    { href: '/', label: 'Test', active: !onPrompts },
     { href: '/nodes', label: 'Prompts', active: onPrompts },
   ];
   return (
-    <nav className="inline-flex h-9 items-center gap-0.5 rounded-lg border border-line bg-surface-2 p-1">
+    <nav className={cn('inline-flex h-9 items-center gap-0.5 rounded-lg border border-line bg-surface-2 p-1', className)}>
       {items.map((it) => (
         <button
           key={it.href}
@@ -94,34 +94,37 @@ export default function TopBar({ title, right }: { title?: string; right?: React
   return (
     <header className="border-b border-line bg-gradient-to-b from-surface to-[#fbfcfe] shadow-[0_1px_0_rgba(17,24,39,0.02),0_10px_22px_-20px_rgba(17,24,39,0.25)]">
       {/* Bar spans the window; its contents line up with the page below. */}
-      <div className={cn(SHELL, 'flex h-16 items-center justify-between px-6')}>
-        <div className="flex items-center gap-7">
-          <button onClick={() => router.push('/')} className="flex items-center gap-2.5">
-            <span
-              aria-hidden
-              className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-[#2563eb] to-[#7c3aed] shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_2px_8px_rgba(37,99,235,0.35)]"
-            >
-              <svg viewBox="0 0 24 24" fill="none" width="16" height="16">
-                <path
-                  d="M4 17 L10 11 L14 14 L20 6"
-                  stroke="#fff"
-                  strokeWidth="2.2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <circle cx="4" cy="17" r="1.7" fill="#fff" />
-                <circle cx="20" cy="6" r="1.7" fill="#fff" />
-              </svg>
-            </span>
-            <span className="flex items-baseline gap-1.5">
-              <span className="whitespace-nowrap text-base font-bold tracking-tight text-ink">Prompt Trace Explorer</span>
-              {/* Longer brand name than before — the subtitle only appears once
-                  there is room for it beside the section nav. */}
-              <span className="hidden whitespace-nowrap text-xs font-medium text-muted lg:inline">· Prompt Management</span>
-            </span>
-          </button>
-          <SectionNav />
-        </div>
+      <div className={cn(SHELL, 'relative flex h-16 items-center justify-between gap-4 px-6')}>
+        <button onClick={() => router.push('/')} className="flex items-center gap-2.5">
+          <span
+            aria-hidden
+            className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-[#2563eb] to-[#7c3aed] shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_2px_8px_rgba(37,99,235,0.35)]"
+          >
+            <svg viewBox="0 0 24 24" fill="none" width="16" height="16">
+              <path
+                d="M4 17 L10 11 L14 14 L20 6"
+                stroke="#fff"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <circle cx="4" cy="17" r="1.7" fill="#fff" />
+              <circle cx="20" cy="6" r="1.7" fill="#fff" />
+            </svg>
+          </span>
+          <span className="flex items-baseline gap-1.5">
+            <span className="whitespace-nowrap text-base font-bold tracking-tight text-ink">Prompt TraceX</span>
+            {/* Full name as a subtitle — it only appears once there is room for it
+                beside the centred section nav. */}
+            <span className="hidden whitespace-nowrap text-xs font-medium text-muted lg:inline">· Prompt Trace Explorer</span>
+          </span>
+        </button>
+
+        {/* Centred on the bar itself rather than on the gap between the brand and
+            the badges, so the tabs hold their place however wide those two grow.
+            Below `md` there is nothing to centre into — it just trails the brand. */}
+        <SectionNav className="md:absolute md:left-1/2 md:-translate-x-1/2" />
+
         <div className="flex items-center gap-3">
           {title && <span className="text-sm text-muted">{title}</span>}
           {right}
