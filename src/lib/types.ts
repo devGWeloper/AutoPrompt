@@ -340,7 +340,9 @@ export interface DirectTestOut {
 // ---- run progress events (SSE; same shape the old WebSocket used) ----
 
 export type RunEvent =
-  | { event: "RUNNING"; run_id: number; total?: number }
+  // `metrics` is what the run will actually score, so a client that attached
+  // late (after a refresh) knows whether to expect a RAGAS phase at all.
+  | { event: "RUNNING"; run_id: number; total?: number; metrics?: RagasMetric[] }
   | { event: "ANSWER"; run_id: number; done: number; total: number; case_id: number | null; result: RagasResultRow }
   | { event: "SCORE"; run_id: number; done: number; total: number; case_id: number | null; result: RagasResultRow }
   | { event: "DONE"; run_id: number; engine?: string | null; summary?: Record<string, number | null> }

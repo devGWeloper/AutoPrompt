@@ -203,6 +203,74 @@ export function EvalOptions({ metrics, setMetrics }: { metrics: string[]; setMet
  * identified by its own endpoint (A/B across two endpoints). */
 export const sideLabel = (label: string) => (label ? `v${label}` : '엔드포인트');
 
+// ---- run progress ----------------------------------------------------------
+
+/** How far a live run has got, counted from the rows themselves. Answers land in
+ * phase 1 and RAGAS scores in phase 2, so they advance one after the other. */
+export function runProgress(rows: RagasResultRow[], total: number, metrics?: RagasMetric[] | null) {
+  const answered = rows.filter((r) => r.answer != null || r.error_msg != null).length;
+  // 정답 일치 is decided during phase 1, so counting it here would show scoring
+  // as finished before the judge LLM has been called even once.
+  const ragasDone = rows.filter((r) => RAGAS_METRICS.some((m) => r[m] != null) || (r.answer != null && r.error_msg != null)).length;
+  const hasRagas = metrics ? metrics.some((m) => m !== EXACT_MATCH) : false;
+  return { answered, ragasDone, hasRagas, total };
+}
+
+function Bar({ done, total, tone }: { done: number; total: number; tone: 'accent' | 'muted' }) {
+  const pct = total > 0 ? Math.min(100, (done / total) * 100) : 0;
+  return (
+    <span className="relative block h-1 w-full overflow-hidden rounded-full bg-bg">
+      <span
+        className={cn('absolute inset-y-0 left-0 rounded-full transition-[width] duration-300', tone === 'accent' ? 'bg-accent' : 'bg-muted/50')}
+        style={{ width: `${pct}%` }}
+      />
+    </span>
+  );
+}
+
+/**
+ * Two-phase progress for a running evaluation. RAGAS scoring can take minutes
+ * with no visible change — every row already shows its answer by then — so the
+ * scoring phase gets its own labelled bar rather than sharing one with answers.
+ */
+export function RunProgress({
+  rows, total, scoreOn, metrics, className,
+}: {
+  rows: RagasResultRow[];
+  total: number;
+  scoreOn: boolean;
+  metrics?: RagasMetric[] | null;
+  className?: string;
+}) {
+  const { answered, ragasDone, hasRagas } = runProgress(rows, total, metrics);
+  const answering = total === 0 || answered < total;
+  const scoring = !answering && scoreOn && hasRagas && ragasDone < total;
+  const n = total || '…';
+  return (
+    <div className={cn('flex flex-col gap-1.5', className)}>
+      <div className="flex items-center gap-2 text-xs">
+        {(answering || scoring) && <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-accent" />}
+        <span className={cn('font-medium', answering ? 'text-ink' : 'text-muted')}>
+          답변 {answered}/{n}
+        </span>
+        {scoreOn && hasRagas && (
+          <>
+            <span className="text-muted/50">·</span>
+            <span className={cn('font-medium', scoring ? 'text-ink' : 'text-muted')}>
+              RAGAS 채점 {ragasDone}/{n}
+            </span>
+          </>
+        )}
+        {scoring && <span className="text-muted">— 심판 LLM 호출 중이라 시간이 걸릴 수 있습니다</span>}
+      </div>
+      <div className={cn('grid gap-1', scoreOn && hasRagas ? 'grid-cols-2' : 'grid-cols-1')}>
+        <Bar done={answered} total={total} tone={answering ? 'accent' : 'muted'} />
+        {scoreOn && hasRagas && <Bar done={ragasDone} total={total} tone={scoring ? 'accent' : 'muted'} />}
+      </div>
+    </div>
+  );
+}
+
 export function DatasetSelect({ datasets, value, onChange }: { datasets: Dataset[]; value: number | null; onChange: (id: number) => void }) {
   return (
     <Select value={value ?? ''} onChange={(e) => onChange(Number(e.target.value))} className="w-48">

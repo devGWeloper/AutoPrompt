@@ -12,6 +12,7 @@ import { CompareSummaryDashboard } from './RunSummaryDashboard';
 import {
   EXACT_MATCH,
   type PromptVersionSummary,
+  type RagasMetric,
   type RagasResultRow,
   type RagasRunDetail,
   type RunWsMessage,
@@ -23,6 +24,7 @@ import {
   EvalOptions,
   ScoreToggle,
   PendingHint,
+  RunProgress,
   SegToggle,
   StatusPill,
   VersionSelect,
@@ -59,6 +61,8 @@ export default function ComparePanel() {
   const [liveA, setLiveA] = useState<RagasResultRow[]>([]);
   const [liveB, setLiveB] = useState<RagasResultRow[]>([]);
   const [total, setTotal] = useState(0);
+  // Server-declared metric list for this run — survives a refresh, unlike the form.
+  const [runMetrics, setRunMetrics] = useState<RagasMetric[] | null>(null);
   const [cancelling, setCancelling] = useState(false);
   // Side labels captured when the run started. The form resets on a refresh, but
   // the results on screen still belong to the run that produced them.
@@ -97,6 +101,7 @@ export default function ComparePanel() {
         onMessage: async (m: RunWsMessage) => {
           if (m.event === 'RUNNING') {
             setTotal((t) => Math.max(t, m.total ?? 0));
+            if (m.metrics) setRunMetrics(m.metrics);
           } else if (m.event === 'ANSWER' || m.event === 'SCORE') {
             setTotal((t) => Math.max(t, m.total));
             setLive((cur) => upsertResult(cur, m.result));
@@ -139,7 +144,7 @@ export default function ComparePanel() {
   async function run() {
     if (!canRun) return;
     setError(null); setDetailA(null); setDetailB(null); setStatus('running');
-    setLiveA([]); setLiveB([]); setTotal(0); setCancelling(false); runIdsRef.current = [];
+    setLiveA([]); setLiveB([]); setTotal(0); setRunMetrics(null); setCancelling(false); runIdsRef.current = [];
     // Version mode compares two prompt versions on the same endpoint, so the
     // A/B side (and its own URL) only applies in endpoint mode.
     const ep = mode === 'endpoint';
@@ -174,9 +179,6 @@ export default function ComparePanel() {
     // Cancel both runs; ignore per-id errors (e.g. one already finished → 409).
     await Promise.all(ids.map((id) => api.post(`/ragas-runs/${id}/cancel`, {}).catch(() => {})));
   }
-
-  const answeredA = liveA.filter((r) => r.answer !== null || r.error_msg).length;
-  const answeredB = liveB.filter((r) => r.answer !== null || r.error_msg).length;
 
   return (
     <div className="space-y-5">
@@ -275,7 +277,18 @@ export default function ComparePanel() {
             <Badge tone="neutral">A · {sideLabel(labA)}</Badge>
             <span>vs</span>
             <Badge tone="accent">B · {sideLabel(labB)}</Badge>
-            <span className="ml-auto">Answered A {answeredA}/{total || '…'} · B {answeredB}/{total || '…'}</span>
+          </div>
+          {/* One progress block per side — A and B run as two independent streams
+              and routinely sit in different phases. */}
+          <div className="grid gap-4 border-b border-line px-4 py-3 sm:grid-cols-2">
+            <div>
+              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">A</p>
+              <RunProgress rows={liveA} total={total} scoreOn={scoreOn} metrics={runMetrics} />
+            </div>
+            <div>
+              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">B</p>
+              <RunProgress rows={liveB} total={total} scoreOn={scoreOn} metrics={runMetrics} />
+            </div>
           </div>
           <div className="p-4">
             {liveA.length > 0 || liveB.length > 0

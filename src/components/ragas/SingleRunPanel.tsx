@@ -32,6 +32,7 @@ import {
   PendingHint,
   errText,
   fmt3,
+  RunProgress,
   scoredMetrics,
   upsertResult,
   useFlowDatasets,
@@ -111,6 +112,9 @@ export default function SingleRunPanel() {
   // Live streaming state: results trickle in (answers first, then scores).
   const [live, setLive] = useState<RagasResultRow[]>([]);
   const [total, setTotal] = useState(0);
+  // What the *server* said this run scores. Survives a refresh (the RUNNING event
+  // is replayed on reattach), unlike the `metrics` form state above.
+  const [runMetrics, setRunMetrics] = useState<RagasMetric[] | null>(null);
   const [cancelling, setCancelling] = useState(false);
   // Node/version the running run was started with. Kept separately from the form
   // so the live header stays right after a refresh, when the form is back to
@@ -131,8 +135,6 @@ export default function SingleRunPanel() {
   const [callResult, setCallResult] = useState<DirectResult | null>(null);
   const [callError, setCallError] = useState<string | null>(null);
   const manualScores = callResult ? directScoresRow(callResult) : null;
-  const answered = live.filter((r) => r.answer != null || r.error_msg != null).length;
-  const scored = live.filter((r) => ALL_METRICS.some((m) => r[m] != null)).length;
   const exactOn = scoreOn && metrics.includes(EXACT_MATCH);
 
   useEffect(() => {
@@ -154,6 +156,7 @@ export default function SingleRunPanel() {
       onMessage: async (m: RunWsMessage) => {
         if (m.event === 'RUNNING') {
           setTotal(m.total ?? 0);
+          if (m.metrics) setRunMetrics(m.metrics);
         } else if (m.event === 'ANSWER' || m.event === 'SCORE') {
           setTotal(m.total);
           setLive((cur) => upsertResult(cur, m.result));
@@ -187,7 +190,7 @@ export default function SingleRunPanel() {
   async function run() {
     if (!canRun) return;
     setError(null); setDetail(null); setStatus('running');
-    setLive([]); setTotal(0); setCancelling(false); runIdRef.current = null;
+    setLive([]); setTotal(0); setRunMetrics(null); setCancelling(false); runIdRef.current = null;
     const url = baseUrl.trim() || null;
     const meta = { nodeNm, verLabel: verLabel(nodeNm ? ver : null) };
     setRunMeta(meta);
@@ -420,7 +423,9 @@ export default function SingleRunPanel() {
                 <Badge tone="neutral" dot>{cancelling ? 'CANCELLING' : 'RUNNING'}</Badge>
                 {(runMeta?.nodeNm ?? nodeNm) && <span className="font-medium text-ink">{runMeta?.nodeNm ?? nodeNm}</span>}
                 <Badge tone="neutral">{runMeta?.verLabel ?? verLabel(ver)}</Badge>
-                <span className="ml-auto">Answered {answered}/{total || '…'}{scoreOn ? ` · Scored ${scored}/${total || '…'}` : ''}</span>
+              </div>
+              <div className="border-b border-line px-4 py-3">
+                <RunProgress rows={live} total={total} scoreOn={scoreOn} metrics={runMetrics} />
               </div>
               <div className="p-4">
                 {live.length > 0 ? (

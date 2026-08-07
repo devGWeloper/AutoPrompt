@@ -425,7 +425,7 @@ async function setupRun(
   );
   await conn.commit();
   const cases = await loadCases(conn, run.dataset_id);
-  emit({ event: "RUNNING", run_id: runId, total: cases.length });
+  emit({ event: "RUNNING", run_id: runId, total: cases.length, metrics });
 
   // No prompt version on the run (A/B pinned to two endpoints) → nothing to swap:
   // the endpoint itself is the version under test.
