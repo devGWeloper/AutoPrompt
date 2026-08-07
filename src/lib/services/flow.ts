@@ -1,6 +1,6 @@
 import { readConn, withConn } from "@/lib/db";
 import type { OracleConnection, OracleModule } from "@/lib/db";
-import { notFound } from "@/lib/http";
+import { errorText, notFound } from "@/lib/http";
 import { METRIC_COLS, RUN_COLS, insertReturningId, mapRagasRun } from "@/lib/db/rows";
 import { ALL_METRICS, DIRECT_SINK_NM, EXACT_MATCH, SYSTEM_USER } from "@/lib/types";
 import type {
@@ -208,7 +208,7 @@ export async function recordDirectRun(args: {
         engine,
       });
     } catch (e) {
-      scoreErr = String(e).slice(0, 1000);
+      scoreErr = errorText(e).slice(0, 1000);
     }
   }
   const em = metrics.includes(EXACT_MATCH) ? exactMatchScore(data.response, groundTruth) : null;
@@ -462,7 +462,7 @@ async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx,
     } catch (e) {
       error = true;
       answer = null;
-      errMsg = String(e).slice(0, 1000);
+      errMsg = errorText(e).slice(0, 1000);
       traceId = agent.errorTraceId(e);
     }
     // Some nodes are judged on a variable the response never carries — the agent
@@ -582,7 +582,7 @@ async function phase2(conn: OracleConnection, ctx: RunCtx, emit: Emit, signal?: 
       } catch (e) {
         // Per-case scoring failure (e.g. LLM/embedding call failed) — record and continue.
         await conn.execute(`UPDATE PTX_RUN_DET SET ERROR_CTN = :err WHERE RESULT_ID = :id`, {
-          err: String(e).slice(0, 1000),
+          err: errorText(e).slice(0, 1000),
           id: p.resultId,
         });
       }
@@ -665,7 +665,7 @@ export async function executeRun(
       }
       await finalize(conn, ctx, emit);
     } catch (e) {
-      await recordFailure(conn, runId, String(e), emit);
+      await recordFailure(conn, runId, errorText(e), emit);
     }
   });
 }
@@ -796,7 +796,7 @@ export async function executeAbRun(aId: number, bId: number, emit: Emit, signal?
         await finalize(conn, ctx, emit);
       }
     } catch (e) {
-      for (const id of [aId, bId]) await recordFailure(conn, id, String(e), emit);
+      for (const id of [aId, bId]) await recordFailure(conn, id, errorText(e), emit);
     }
   });
 }

@@ -21,7 +21,13 @@ import {
 
 // ---- formatting ------------------------------------------------------------
 
-export const errText = (e: unknown) => (e instanceof ApiError ? JSON.stringify(e.detail) : String(e));
+/** The server's `{detail}` is already a sentence written for this screen — show
+ * it as-is. JSON.stringify would wrap it in quotes and escape it into a log line;
+ * String(e) would prefix the class name. Only a non-string detail gets encoded. */
+export const errText = (e: unknown) => {
+  if (e instanceof ApiError) return typeof e.detail === 'string' ? e.detail : JSON.stringify(e.detail);
+  return e instanceof Error ? e.message || String(e) : String(e);
+};
 export const fmt2 = (v: number | null | undefined) => (v != null ? Number(v).toFixed(2) : '—');
 export const fmt3 = (v: number | null | undefined) => (v != null ? Number(v).toFixed(3) : '—');
 

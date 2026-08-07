@@ -5,7 +5,7 @@ import {
   getFlowProtocol,
   type AgentProtocol,
 } from "@/lib/config";
-import { badGateway, type ApiError } from "@/lib/http";
+import { ApiError, badGateway, errorText } from "@/lib/http";
 import { logger } from "@/lib/logger";
 
 // Session context sent as ``session_system_prompt`` (a STRING that is a stringified
@@ -283,7 +283,14 @@ function buildPayload(
   return { body, traceId };
 }
 
-async function post(url: string, body: unknown, headers: Record<string, string>, timeoutMs = 60000): Promise<Response> {
+const CALL_TIMEOUT_MS = 60000;
+
+async function post(
+  url: string,
+  body: unknown,
+  headers: Record<string, string>,
+  timeoutMs = CALL_TIMEOUT_MS,
+): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -296,6 +303,52 @@ async function post(url: string, body: unknown, headers: Record<string, string>,
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** Node hides the real reason a fetch died inside `error.cause.code`; the surface
+ * message is just "fetch failed". These are the codes worth naming. */
+const NET_CODES: Record<string, string> = {
+  ECONNREFUSED: "연결이 거부되었습니다 — 주소·포트가 맞는지, 서버가 떠 있는지 확인하세요",
+  ENOTFOUND: "호스트를 찾을 수 없습니다 — URL의 호스트명을 확인하세요",
+  EAI_AGAIN: "DNS 조회에 실패했습니다",
+  ECONNRESET: "연결이 상대 쪽에서 끊겼습니다",
+  ETIMEDOUT: "연결 시간이 초과되었습니다",
+  EHOSTUNREACH: "호스트에 도달할 수 없습니다 — 네트워크·방화벽을 확인하세요",
+  EPROTO: "프로토콜이 맞지 않습니다 — http/https를 확인하세요",
+  CERT_HAS_EXPIRED: "서버 인증서가 만료되었습니다",
+  DEPTH_ZERO_SELF_SIGNED_CERT: "자체 서명 인증서라 TLS 검증에 실패했습니다",
+  UNABLE_TO_VERIFY_LEAF_SIGNATURE: "인증서 체인을 검증할 수 없습니다",
+};
+
+/** One actionable sentence for whatever went wrong on the wire. */
+function describeCallError(e: unknown): string {
+  if (e instanceof ApiError) return errorText(e);
+  if (e instanceof Error) {
+    // The abort is ours: `post` fires it when the timeout elapses.
+    if (e.name === "AbortError" || e.name === "TimeoutError") {
+      return `응답 시간 초과 (${Math.round(CALL_TIMEOUT_MS / 1000)}초) — 엔드포인트가 제때 응답하지 않았습니다`;
+    }
+    const code = (e as { cause?: { code?: unknown } }).cause?.code;
+    if (typeof code === "string") return `${NET_CODES[code] ?? "네트워크 오류"} (${code})`;
+    return e.message || String(e);
+  }
+  return String(e);
+}
+
+function oneLine(s: string): string {
+  return s.replace(/\s+/g, " ").trim();
+}
+
+/** A non-2xx reply, with the body — the endpoint's own explanation of the
+ * refusal ("field required", a stack trace, a gateway notice) is the whole
+ * point; `HTTP 500` on its own tells nobody anything. */
+async function httpError(resp: Response, protocol: AgentProtocol, body: unknown): Promise<Error> {
+  const text = oneLine(await resp.text().catch(() => ""));
+  const status = `HTTP ${resp.status}${resp.statusText ? ` ${resp.statusText}` : ""}`;
+  // A rejected request shape is the usual cause of 400/422, so those — and only
+  // those — are worth telling the user what we actually sent.
+  const sent = resp.status === 400 || resp.status === 422 ? sentTag(protocol, body) : "";
+  return new Error(`${status}${text ? ` — ${text.slice(0, 500)}` : ""}${sent}`);
 }
 
 /** Short "what we actually sent" tag appended to failures — the terminal log is
@@ -345,7 +398,7 @@ export async function runFlow(message: string, urlOverride?: string | null, side
     url = urlOverride ? ensureDirectUrl(urlOverride) : baseUrl(side);
     ({ body, traceId } = buildPayload(protocol, message, url));
     const resp = await post(url, body, requestHeaders(side));
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    if (!resp.ok) throw await httpError(resp, protocol, body);
     const parsed = await parseChatResponse(resp);
     return { response: parsed.response, docs: parsed.docs, traceId };
   } catch (e) {
@@ -355,8 +408,9 @@ export async function runFlow(message: string, urlOverride?: string | null, side
       url,
       body: body === null ? null : JSON.stringify(body),
       err: String(e),
+      sent: sentTag(protocol, body),
     });
-    const err = badGateway(`chat run failed: ${String(e)}${sentTag(protocol, body)}`);
+    const err = badGateway(`답변 호출 실패 — ${describeCallError(e)}${url ? ` (${url})` : ""}`);
     // Carried so a run whose call died can still score a variable the agent
     // committed before it failed.
     (err as ApiError & { traceId?: string }).traceId = traceId;
@@ -376,11 +430,17 @@ export async function runDirect(args: {
   const { body, traceId } = buildPayload(protocol, args.message, url, args.userId);
   try {
     const resp = await post(url, body, requestHeaders("a", args.authKey, args.userId));
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    if (!resp.ok) throw await httpError(resp, protocol, body);
     return { ...(await parseChatResponse(resp)), traceId };
   } catch (e) {
-    logger.error("direct call failed", { protocol, url, body: JSON.stringify(body), err: String(e) });
-    throw badGateway(`direct call failed: ${String(e)}${sentTag(protocol, body)}`);
+    logger.error("direct call failed", {
+      protocol,
+      url,
+      body: JSON.stringify(body),
+      err: String(e),
+      sent: sentTag(protocol, body),
+    });
+    throw badGateway(`답변 호출 실패 — ${describeCallError(e)} (${url})`);
   }
 }
 

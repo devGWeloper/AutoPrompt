@@ -14,6 +14,15 @@ export class ApiError extends Error {
   }
 }
 
+/** The message to put in front of a user. `String(e)` prefixes the class name
+ * ("ApiError: …", "Error: …"), which reads like a stack trace leaked into the UI;
+ * an `ApiError` already carries the human sentence in `detail`. */
+export function errorText(e: unknown): string {
+  if (e instanceof ApiError && typeof e.detail === "string") return e.detail;
+  if (e instanceof Error) return e.message || String(e);
+  return String(e);
+}
+
 export const notFound = (detail = "not found") => new ApiError(404, detail);
 export const conflict = (detail: string) => new ApiError(409, detail);
 export const badRequest = (detail: string) => new ApiError(400, detail);
