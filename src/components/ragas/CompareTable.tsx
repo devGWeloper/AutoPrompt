@@ -13,7 +13,7 @@ import {
   type RagasRunDetail,
 } from '@/lib/types';
 import {
-  AnswerBox, caseMean, Chevron, CollapseAllStrip, exactOnly, fmt3, OxBadge,
+  AnswerBox, caseMean, Chevron, CollapseAllStrip, fmt3, OxBadge,
   PendingHint, ScoredPreview, sideLabel, TraceValueBox,
 } from './shared';
 
@@ -141,6 +141,13 @@ function CaseScoreBars({ a, b }: { a?: RagasResultRow; b?: RagasResultRow }) {
         <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">지표 비교</span>
       </div>
       <PairedMetricList rows={rows} />
+      {/* Partly scored (e.g. 정답 일치 landed, the RAGAS metrics did not) — the
+          bars alone would read as a clean result. */}
+      {[a, b].some((r) => r?.answer != null && r?.error_msg) && (
+        <p className="border-t border-line px-3.5 py-2 text-[11px] text-bad">
+          채점 실패 — {[a, b].filter((r) => r?.answer != null && r?.error_msg).map((r) => r!.error_msg!)[0]}
+        </p>
+      )}
     </div>
   );
 }
@@ -220,14 +227,20 @@ export function CaseCompareTable({
                   </span>
                 </span>
               )}
-              {isClosed && showScores && (exactOnly(a ?? {}) || exactOnly(b ?? {})) ? (
-                <div className="flex shrink-0 items-center gap-1.5 text-[10px] font-semibold text-muted">
-                  A <OxBadge value={a?.exact_match ?? null} />
-                  B <OxBadge value={b?.exact_match ?? null} />
-                </div>
-              ) : isClosed && showScores && (
-                aMean != null || bMean != null
-                  ? <div className="flex items-center gap-1.5 shrink-0 font-mono text-xs tabular-nums text-muted">
+              {/* Two independent verdicts per side: the O/X pair and the RAGAS
+                  pair. They are stacked rather than merged — a run with both
+                  selected has two answers to give, not one blended number. */}
+              {isClosed && showScores && (
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  {(a?.exact_match != null || b?.exact_match != null) && (
+                    <div className="flex items-center gap-1.5 text-[10px] font-semibold text-muted">
+                      A <OxBadge value={a?.exact_match ?? null} />
+                      B <OxBadge value={b?.exact_match ?? null} />
+                    </div>
+                  )}
+                  {(aMean != null || bMean != null) && (
+                    <div className="flex items-center gap-1.5 font-mono text-xs tabular-nums text-muted">
+                      <span className="font-sans text-[10px] font-semibold uppercase tracking-wide">RAGAS</span>
                       <span>
                         <span className={cn(aMean != null && bMean != null && aMean > bMean && 'font-semibold text-ink')}>A {fmt3(aMean)}</span>
                         {' · '}
@@ -248,9 +261,13 @@ export function CaseCompareTable({
                         </span>
                       )}
                     </div>
-                  : (a?.error_msg || b?.error_msg)
-                    ? <span className="shrink-0 text-[11px] text-bad" title={a?.error_msg ?? b?.error_msg ?? undefined}>오류</span>
-                    : <span className="shrink-0 text-[11px] text-muted">채점 중…</span>
+                  )}
+                  {a?.exact_match == null && b?.exact_match == null && aMean == null && bMean == null && (
+                    (a?.error_msg || b?.error_msg)
+                      ? <span className="text-[11px] text-bad" title={a?.error_msg ?? b?.error_msg ?? undefined}>오류</span>
+                      : <span className="text-[11px] text-muted">채점 중…</span>
+                  )}
+                </div>
               )}
             </button>
             {!isClosed && (

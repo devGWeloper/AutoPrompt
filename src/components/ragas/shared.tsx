@@ -47,29 +47,25 @@ export function fmtDt(iso: string): string {
 
 type Scored = { [K in RagasMetric]?: number | null };
 
-// Overall run score = mean of the available metric averages (null if none
-// scored). Accepts anything carrying the metric fields (details and summaries).
-export function runMean(d: Scored): number | null {
-  const vs = ALL_METRICS.map((m) => d[m]).filter((v): v is number => v != null);
+/**
+ * Mean of the available RAGAS metric scores — 정답 일치 is deliberately excluded.
+ * It is a 0/1 verdict, not a graded score: averaging it in makes O + faithfulness
+ * 0.6 read as 0.800, which is neither the match result nor the RAGAS quality.
+ * The two are shown side by side instead (`OxBadge` + this mean).
+ * Accepts anything carrying the metric fields — run details, summaries, or one case.
+ */
+export function ragasMean(d: Scored | undefined): number | null {
+  if (!d) return null;
+  const vs = RAGAS_METRICS.map((m) => d[m]).filter((v): v is number => v != null);
   return vs.length ? vs.reduce((s, v) => s + Number(v), 0) / vs.length : null;
 }
 
-// Mean of one case's available metric scores (null until something is scored).
-export function caseMean(r: RagasResultRow | undefined): number | null {
-  if (!r) return null;
-  const vs = ALL_METRICS.map((m) => r[m]).filter((v): v is number => v != null);
-  return vs.length ? vs.reduce((s, v) => s + Number(v), 0) / vs.length : null;
-}
+export const runMean = ragasMean;
+export const caseMean = ragasMean;
 
 /** Metrics that actually carry a score — the only ones worth rendering. */
 export function scoredMetrics(d: Scored): RagasMetric[] {
   return ALL_METRICS.filter((m) => d[m] != null);
-}
-
-/** True when 정답 일치 is the only thing scored → show O/X instead of an average. */
-export function exactOnly(d: Scored): boolean {
-  const s = scoredMetrics(d);
-  return s.length === 1 && s[0] === EXACT_MATCH;
 }
 
 /** Insert or replace a streamed result row, keeping case order (by result id). */
@@ -449,6 +445,12 @@ export function ScoreBars({ row }: { row: RagasResultRow }) {
           );
         })}
       </ul>
+      {/* Selecting 정답 일치 + RAGAS together and having only the first succeed
+          leaves a scored row that is quietly missing every LLM metric. The bars
+          above can't show that, so the reason goes underneath them. */}
+      {row.answer != null && row.error_msg && (
+        <p className="mt-2.5 border-t border-line pt-2.5 text-[11px] text-bad">채점 실패 — {row.error_msg}</p>
+      )}
     </div>
   );
 }
@@ -487,13 +489,27 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
               </span>
               {isClosed && <ScoredPreview row={r} className="mt-0.5 min-w-0 flex-1" />}
               {isClosed && showScores && (
-                exactOnly(r)
-                  ? <span className="shrink-0"><OxBadge value={r.exact_match} /></span>
-                  : mean != null
-                    ? <span className="shrink-0 font-mono text-xs tabular-nums text-muted">평균 <span className="font-semibold text-ink">{fmt3(mean)}</span></span>
-                    : r.error_msg
-                      ? <span className="shrink-0 text-[11px] text-bad" title={r.error_msg}>오류</span>
-                      : <span className="shrink-0 text-[11px] text-muted">채점 중…</span>
+                <span className="flex shrink-0 items-center gap-2">
+                  {/* O/X and the RAGAS mean stand on their own — a verdict and a
+                      graded score answer different questions, so neither is
+                      folded into the other. Both can be present at once. */}
+                  {r.exact_match != null && <OxBadge value={r.exact_match} />}
+                  {mean != null && (
+                    <span className="font-mono text-xs tabular-nums text-muted">
+                      RAGAS <span className="font-semibold text-ink">{fmt3(mean)}</span>
+                    </span>
+                  )}
+                  {r.exact_match == null && mean == null && (
+                    r.error_msg
+                      ? <span className="text-[11px] text-bad" title={r.error_msg}>오류</span>
+                      : <span className="text-[11px] text-muted">채점 중…</span>
+                  )}
+                  {/* A row that scored *something* can still have a failed metric
+                      behind it — the badge above would otherwise read as success. */}
+                  {(r.exact_match != null || mean != null) && r.answer != null && r.error_msg && (
+                    <span className="text-[11px] text-bad" title={r.error_msg}>일부 실패</span>
+                  )}
+                </span>
               )}
             </button>
             {!isClosed && (

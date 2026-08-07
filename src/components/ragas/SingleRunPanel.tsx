@@ -32,7 +32,7 @@ import {
   PendingHint,
   errText,
   fmt3,
-  runMean,
+  scoredMetrics,
   upsertResult,
   useFlowDatasets,
   usePromptNodes,
@@ -436,7 +436,9 @@ export default function SingleRunPanel() {
 
           {detail && status !== 'running' && (
             <div className="space-y-4">
-              {runMean(detail) != null && <SingleRunSummaryDashboard detail={detail} />}
+              {/* Anything scored at all — runMean is RAGAS-only, so gating on it
+                  would drop the dashboard for a 정답 일치 only run. */}
+              {scoredMetrics(detail).length > 0 && <SingleRunSummaryDashboard detail={detail} />}
               <Card>
                 <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
                   <h3 className="mr-1 text-sm font-semibold text-ink">Results Detail</h3>

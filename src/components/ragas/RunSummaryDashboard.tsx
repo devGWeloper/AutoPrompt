@@ -52,7 +52,10 @@ export function SingleRunSummaryDashboard({ detail }: { detail: RagasRunDetail }
   const shown = scoredMetrics(detail);
   const emTotal = detail.results.filter((r) => r.exact_match != null).length;
   const emHit = detail.results.filter((r) => r.exact_match != null && Number(r.exact_match) >= 0.5).length;
-  const withOverall = shown.length > 1;
+  // The summary card averages the RAGAS metrics only (정답 일치 has its own card,
+  // and a 0/1 verdict does not belong in a mean), so it earns its place only when
+  // there are at least two of them to average.
+  const withOverall = shown.filter((m) => m !== EXACT_MATCH).length > 1;
 
   return (
     <div className="mb-4">
@@ -62,7 +65,7 @@ export function SingleRunSummaryDashboard({ detail }: { detail: RagasRunDetail }
           <div className="flex flex-col justify-between rounded-lg border border-line bg-gradient-to-br from-surface to-surface-2 p-3.5 shadow-card">
             <div>
               <span className="block truncate text-xs font-semibold uppercase tracking-wider text-muted">
-                Overall Mean
+                RAGAS Mean
               </span>
               <div className="mt-1.5 flex items-baseline justify-between">
                 <span className="font-mono text-xl font-bold tabular-nums text-ink">
@@ -140,7 +143,13 @@ export function CompareSummaryDashboard({
   const meanB = runMean(detailB);
   const shownPair = Array.from(new Set([...scoredMetrics(detailA), ...scoredMetrics(detailB)]));
   const delta = meanA != null && meanB != null ? meanB - meanA : null;
-  const winner = meanA != null && meanB != null ? (meanB > meanA ? 'B' : meanA > meanB ? 'A' : 'TIE') : null;
+  // Run-level EXACT_VAL is already the match rate (mean of the per-case 0/1).
+  const exA = detailA.exact_match != null ? Number(detailA.exact_match) : null;
+  const exB = detailB.exact_match != null ? Number(detailB.exact_match) : null;
+  // RAGAS decides the winner when it ran; a 정답 일치 only pair falls back to the
+  // match rate rather than showing no verdict at all.
+  const [cmpA, cmpB] = meanA != null || meanB != null ? [meanA, meanB] : [exA, exB];
+  const winner = cmpA != null && cmpB != null ? (cmpB > cmpA ? 'B' : cmpA > cmpB ? 'A' : 'TIE') : null;
 
   return (
     <div className="mb-6 space-y-4">
@@ -164,7 +173,12 @@ export function CompareSummaryDashboard({
             <span className="font-mono text-3xl font-bold tabular-nums text-ink">
               {fmt3(meanA)}
             </span>
-            <span className="text-xs text-muted">Mean Score</span>
+            <span className="text-xs text-muted">RAGAS Mean</span>
+            {exA != null && (
+              <span className="ml-auto flex items-baseline gap-1.5 text-xs text-muted">
+                정답 일치 <OxBadge value={exA} rate />
+              </span>
+            )}
           </div>
           <div className="relative h-2 w-full overflow-hidden rounded-full bg-bg">
             <div
@@ -208,7 +222,12 @@ export function CompareSummaryDashboard({
             <span className="font-mono text-3xl font-bold tabular-nums text-ink">
               {fmt3(meanB)}
             </span>
-            <span className="text-xs text-muted">Mean Score</span>
+            <span className="text-xs text-muted">RAGAS Mean</span>
+            {exB != null && (
+              <span className="ml-auto flex items-baseline gap-1.5 text-xs text-muted">
+                정답 일치 <OxBadge value={exB} rate />
+              </span>
+            )}
           </div>
           <div className="relative h-2 w-full overflow-hidden rounded-full bg-bg">
             <div

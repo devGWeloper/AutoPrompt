@@ -11,7 +11,7 @@ import { cn } from '@/lib/cn';
 import type { RagasRunDetail, RagasRunSummary } from '@/lib/types';
 import { CaseCompareTable } from './CompareTable';
 import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummaryDashboard';
-import { CaseTable, fmt2, fmt3, fmtDt, runMean, SegToggle, sideLabel } from './shared';
+import { CaseTable, fmt2, fmt3, fmtDt, runMean, scoredMetrics, SegToggle, sideLabel } from './shared';
 
 const API_BASE = '/api';
 
@@ -134,40 +134,77 @@ function SortTH({
   );
 }
 
-/** Score cell: Single run shows 1 mean score; Compare run displays BOTH Version A and Version B mean scores + delta badge. */
-function AvgCell({ mean, meanA, meanB }: { mean?: number | null; meanA?: number | null; meanB?: number | null }) {
+const pct = (v: number | null | undefined) => (v != null ? `${Math.round(Number(v) * 100)}%` : '—');
+
+/** Score cell — the RAGAS mean and the 정답 일치 rate on separate lines, because
+ * a graded mean and a pass rate are different claims about the run. Compare runs
+ * show A/B on each line. Either line is omitted when that scorer never ran. */
+function AvgCell({
+  mean, meanA, meanB, ex, exA, exB,
+}: {
+  mean?: number | null; meanA?: number | null; meanB?: number | null;
+  ex?: number | null; exA?: number | null; exB?: number | null;
+}) {
   if (meanA !== undefined || meanB !== undefined) {
     const delta = meanA != null && meanB != null ? meanB - meanA : null;
     return (
       <TD className="font-mono text-xs tabular-nums text-ink whitespace-nowrap">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 text-xs">
-            <span className="text-muted font-normal">A <span className="font-semibold text-ink">{fmt2(meanA)}</span></span>
-            <span className="text-muted/60">·</span>
-            <span className="text-muted font-normal">B <span className="font-semibold text-ink">{fmt2(meanB)}</span></span>
-          </div>
-          {delta != null && (
-            <span
-              className={cn(
-                'inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold border',
-                delta > 0
-                  ? 'border-[#bbf7d0] bg-[#f0fdf4] text-[#15803d]'
-                  : delta < 0
-                  ? 'border-[#fecdd3] bg-[#fff1f2] text-[#be123c]'
-                  : 'border-[#e2e8f0] bg-[#f8fafc] text-muted'
+        <div className="flex flex-col gap-1">
+          {(meanA != null || meanB != null) && (
+            <div className="flex items-center gap-2">
+              <span className="font-sans text-[10px] font-semibold uppercase tracking-wide text-muted">RAGAS</span>
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-muted font-normal">A <span className="font-semibold text-ink">{fmt2(meanA)}</span></span>
+                <span className="text-muted/60">·</span>
+                <span className="text-muted font-normal">B <span className="font-semibold text-ink">{fmt2(meanB)}</span></span>
+              </div>
+              {delta != null && (
+                <span
+                  className={cn(
+                    'inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold border',
+                    delta > 0
+                      ? 'border-[#bbf7d0] bg-[#f0fdf4] text-[#15803d]'
+                      : delta < 0
+                      ? 'border-[#fecdd3] bg-[#fff1f2] text-[#be123c]'
+                      : 'border-[#e2e8f0] bg-[#f8fafc] text-muted'
+                  )}
+                >
+                  {(delta > 0 ? '+' : '') + delta.toFixed(2)}
+                </span>
               )}
-            >
-              {(delta > 0 ? '+' : '') + delta.toFixed(2)}
-            </span>
+            </div>
           )}
+          {(exA != null || exB != null) && (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="font-sans text-[10px] font-semibold uppercase tracking-wide text-muted">일치</span>
+              <span className="text-muted font-normal">A <span className="font-semibold text-ink">{pct(exA)}</span></span>
+              <span className="text-muted/60">·</span>
+              <span className="text-muted font-normal">B <span className="font-semibold text-ink">{pct(exB)}</span></span>
+            </div>
+          )}
+          {meanA == null && meanB == null && exA == null && exB == null && <span className="text-muted">—</span>}
         </div>
       </TD>
     );
   }
 
   return (
-    <TD className="font-mono text-xs font-semibold tabular-nums text-ink whitespace-nowrap">
-      {fmt2(mean)}
+    <TD className="font-mono text-xs tabular-nums text-ink whitespace-nowrap">
+      <div className="flex flex-col gap-0.5">
+        {mean != null && (
+          <span>
+            <span className="font-sans text-[10px] font-semibold uppercase tracking-wide text-muted">RAGAS </span>
+            <span className="font-semibold">{fmt2(mean)}</span>
+          </span>
+        )}
+        {ex != null && (
+          <span>
+            <span className="font-sans text-[10px] font-semibold uppercase tracking-wide text-muted">일치 </span>
+            <span className="font-semibold">{pct(ex)}</span>
+          </span>
+        )}
+        {mean == null && ex == null && <span className="text-muted">—</span>}
+      </div>
     </TD>
   );
 }
@@ -274,7 +311,7 @@ export default function RecordsPanel() {
             <TR>
               <TH className="w-6 px-2" />
               <TH>실행</TH><TH>유형</TH><TH>상태</TH><TH>데이터셋</TH><TH>엔진</TH>
-              <SortTH k="avg" label="평균" sort={sort} onSort={toggleSort} title="채점된 지표들의 평균" />
+              <SortTH k="avg" label="점수" sort={sort} onSort={toggleSort} title="RAGAS 지표 평균 / 정답 일치율 (정렬은 RAGAS 평균 기준)" />
               <SortTH k="created" label="생성일시" sort={sort} onSort={toggleSort} />
               <TH className="w-16" />
             </TR>
@@ -318,7 +355,7 @@ export default function RecordsPanel() {
                       <div className="max-w-[11rem] truncate">{r.is_manual ? '—' : (r.dataset_nm ?? '—')}</div>
                     </TD>
                     <TD className="text-xs text-muted">{r.engine === 'direct' ? '—' : (r.engine ?? '—')}</TD>
-                    <AvgCell mean={mean} />
+                    <AvgCell mean={mean} ex={r.exact_match != null ? Number(r.exact_match) : null} />
                     <TD className="whitespace-nowrap text-xs text-muted" title={r.created_dt}>{fmtDt(r.created_dt)}</TD>
                     <RowActionsCell
                       csvHref={`${API_BASE}/ragas-runs/${r.ragas_run_id}/export?fmt=csv`}
@@ -352,7 +389,12 @@ export default function RecordsPanel() {
                     <div className="max-w-[11rem] truncate">{g.a.dataset_nm ?? '—'}</div>
                   </TD>
                   <TD className="text-xs text-muted">{g.b.engine ?? '—'}</TD>
-                  <AvgCell meanA={runMean(g.a)} meanB={runMean(g.b)} />
+                  <AvgCell
+                    meanA={runMean(g.a)}
+                    meanB={runMean(g.b)}
+                    exA={g.a.exact_match != null ? Number(g.a.exact_match) : null}
+                    exB={g.b.exact_match != null ? Number(g.b.exact_match) : null}
+                  />
                   <TD className="whitespace-nowrap text-xs text-muted" title={g.a.created_dt}>{fmtDt(g.a.created_dt)}</TD>
                   <RowActionsCell
                     csvHref={`${API_BASE}/ragas-runs/ab/${g.groupId}/export?fmt=csv`}
@@ -583,7 +625,7 @@ function RagasRunDetailView({ ragasId }: { ragasId: number }) {
 
   return (
     <div className="space-y-4">
-      {runMean(detail) != null && <SingleRunSummaryDashboard detail={detail} />}
+      {scoredMetrics(detail).length > 0 && <SingleRunSummaryDashboard detail={detail} />}
       <div className="overflow-hidden rounded-sm border border-line bg-surface">
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
           <h3 className="mr-1 text-sm font-semibold text-ink">Single Detail</h3>
