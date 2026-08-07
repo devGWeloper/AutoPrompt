@@ -27,6 +27,18 @@ async function postJson(url: string, apiKey: string, body: unknown, timeoutMs = 
   }
 }
 
+/** Join a configured base URL with an OpenAI path. `fetch` needs an absolute URL:
+ * a host written without a scheme ("10.0.0.5:8000/v1") fails deep inside undici
+ * as "Failed to parse URL from …/chat/completions", which names the path we
+ * appended and never the setting at fault. Say which setting, and what's wrong. */
+function apiUrl(base: string, path: string, setting: string): string {
+  const b = base.trim().replace(/\/+$/, "");
+  if (!/^https?:\/\//i.test(b)) {
+    throw new Error(`${setting} 에 http:// 또는 https:// 가 없습니다 (현재: "${base}") — config.yml 을 확인하세요`);
+  }
+  return `${b}${path}`;
+}
+
 export function llmConfigured(): boolean {
   return getLlmConfig().endpoint !== "";
 }
@@ -39,7 +51,7 @@ async function chatComplete(messages: ChatMessage[]): Promise<string> {
   const c = getLlmConfig();
   if (!c.endpoint) throw new Error("LLM endpoint is not configured (config.yml llm.endpoint)");
   if (!c.model) throw new Error("LLM model is not configured (config.yml llm.model)");
-  const data = (await postJson(`${c.endpoint}/chat/completions`, c.apiKey, {
+  const data = (await postJson(apiUrl(c.endpoint, "/chat/completions", "llm.endpoint"), c.apiKey, {
     model: c.model,
     messages,
     temperature: 0,
@@ -77,7 +89,10 @@ export async function embed(texts: string[]): Promise<number[][]> {
   const c = getEmbeddingConfig();
   if (!c.endpoint) throw new Error("embedding endpoint is not configured (config.yml embedding.endpoint)");
   if (!c.model) throw new Error("embedding model is not configured (config.yml embedding.model)");
-  const data = (await postJson(`${c.endpoint}/embeddings`, c.apiKey, { model: c.model, input: texts })) as {
+  const data = (await postJson(apiUrl(c.endpoint, "/embeddings", "embedding.endpoint"), c.apiKey, {
+    model: c.model,
+    input: texts,
+  })) as {
     data?: { embedding: number[] }[];
   };
   return (data.data ?? []).map((d) => d.embedding);

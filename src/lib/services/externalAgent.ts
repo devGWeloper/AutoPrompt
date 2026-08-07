@@ -369,10 +369,20 @@ function sentTag(protocol: AgentProtocol, body: unknown): string {
   return ` | sent: protocol=${protocol}${method} keys=[${keys}]${params}`;
 }
 
-function baseUrl(side?: FlowSide | null): string {
-  const url = getFlowBaseUrl(side).trim().replace(/\/+$/, "");
-  if (!url) throw badGateway(`agent.baseUrl${side ? side.toUpperCase() : ""} is not set (config.yml)`);
+/** `fetch` only takes absolute URLs; a host written without a scheme fails as
+ * "Failed to parse URL from …", naming the path rather than the setting. */
+function requireScheme(url: string, where: string): string {
+  if (!/^https?:\/\//i.test(url)) {
+    throw badGateway(`${where} 에 http:// 또는 https:// 가 없습니다 (현재: "${url}")`);
+  }
   return url;
+}
+
+function baseUrl(side?: FlowSide | null): string {
+  const setting = `agent.baseUrl${side ? side.toUpperCase() : ""}`;
+  const url = getFlowBaseUrl(side).trim().replace(/\/+$/, "");
+  if (!url) throw badGateway(`${setting} 이 설정되어 있지 않습니다 (config.yml)`);
+  return requireScheme(url, setting);
 }
 
 export function ensureDirectUrl(override?: string | null): string {
@@ -382,7 +392,7 @@ export function ensureDirectUrl(override?: string | null): string {
       "호출할 외부 API URL이 없습니다 — 요청에 base_url을 넣거나 config.yml 의 agent.baseUrl 을 설정하세요",
     );
   }
-  return url;
+  return requireScheme(url, override ? "입력한 Base URL" : "agent.baseUrl");
 }
 
 /** POST one turn to the external chat endpoint (RUN_MODE=external).

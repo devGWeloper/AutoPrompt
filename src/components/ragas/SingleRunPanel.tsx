@@ -45,6 +45,8 @@ type DirectResult = {
   docs: string[];
   raw: Record<string, unknown>;
   scores: Partial<Record<RagasMetric, number | null>> | null;
+  /** The call succeeded but the scorer did not — a separate failure. */
+  score_error: string | null;
 };
 
 /** Adapt a manual call's inline scores to the RagasResultRow shape ScoreBars renders. */
@@ -370,6 +372,11 @@ export default function SingleRunPanel() {
               </div>
               <div className="p-4">
                 <AnswerBox text={callResult.response} />
+                {callResult.score_error && (
+                  <p className="mt-4 rounded-sm border border-bad/20 bg-bad/5 px-3 py-2 text-xs text-bad">
+                    채점 실패 — {callResult.score_error}
+                  </p>
+                )}
                 {manualScores && <div className="mt-4"><ScoreBars row={manualScores} /></div>}
                 {callResult.docs.length > 0 && (
                   <div className="mt-4 border-t border-line pt-3">

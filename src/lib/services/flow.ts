@@ -186,7 +186,7 @@ export async function recordDirectRun(args: {
   score?: boolean;
   metrics?: string[];
   expectedOutput?: string | null;
-}): Promise<agent.AgentAnswer & { scores: CaseScore | null }> {
+}): Promise<agent.AgentAnswer & { scores: CaseScore | null; score_error: string | null }> {
   const data = await agent.runDirect(args);
   // Optional inline scoring — a single case whose ground truth is whatever the
   // caller typed as the expected answer (blank → gt-based metrics stay null).
@@ -256,8 +256,14 @@ export async function recordDirectRun(args: {
       },
     );
   }, { commit: true });
-  if (!metrics.length) return { ...data, scores: null };
-  return { ...data, scores: { ...(scores ?? {}), ...(metrics.includes(EXACT_MATCH) ? { exact_match: em } : {}) } };
+  // score_error rides back with the answer: the call succeeded, so failing
+  // silently here would show a blank score block with no reason.
+  if (!metrics.length) return { ...data, scores: null, score_error: null };
+  return {
+    ...data,
+    scores: { ...(scores ?? {}), ...(metrics.includes(EXACT_MATCH) ? { exact_match: em } : {}) },
+    score_error: scoreErr,
+  };
 }
 
 function messageFromInputs(inputData: string): string {

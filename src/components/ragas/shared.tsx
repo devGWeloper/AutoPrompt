@@ -412,8 +412,15 @@ export function OxBadge({ value, rate }: { value: number | null; rate?: boolean 
 export function ScoreBars({ row }: { row: RagasResultRow }) {
   const shown = scoredMetrics(row);
   if (!shown.length) {
-    return row.answer == null && row.error_msg
-      ? <span className="text-[11px] text-bad">{row.error_msg}</span>
+    // ERROR_CTN carries both kinds of failure, told apart by whether the answer
+    // arrived: without one the call itself died (and AnswerBox already says so);
+    // with one, the message is the scorer's. Anything else is still in flight —
+    // but a failed scorer is NOT, so it must never sit on '채점 중…' forever.
+    if (row.answer == null) {
+      return <span className="text-[11px] text-muted">{row.error_msg ? '답변 실패 — 채점하지 않음' : '채점 중…'}</span>;
+    }
+    return row.error_msg
+      ? <span className="text-[11px] text-bad">채점 실패 — {row.error_msg}</span>
       : <span className="text-[11px] text-muted">채점 중…</span>;
   }
   return (
@@ -484,8 +491,8 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
                   ? <span className="shrink-0"><OxBadge value={r.exact_match} /></span>
                   : mean != null
                     ? <span className="shrink-0 font-mono text-xs tabular-nums text-muted">평균 <span className="font-semibold text-ink">{fmt3(mean)}</span></span>
-                    : r.answer == null && r.error_msg
-                      ? <span className="shrink-0 text-[11px] text-bad">오류</span>
+                    : r.error_msg
+                      ? <span className="shrink-0 text-[11px] text-bad" title={r.error_msg}>오류</span>
                       : <span className="shrink-0 text-[11px] text-muted">채점 중…</span>
               )}
             </button>

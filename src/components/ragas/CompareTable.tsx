@@ -121,9 +121,17 @@ function CaseScoreBars({ a, b }: { a?: RagasResultRow; b?: RagasResultRow }) {
   const scored = rows.some((r) => r.av != null || r.bv != null);
 
   if (!scored) {
+    // An answer that arrived but has an error carries the scorer's failure — say
+    // so rather than leaving the panel on '채점 중…' for the rest of the session.
+    const failed = [a, b].filter((r) => r?.answer != null && r?.error_msg).map((r) => r!.error_msg!);
     return (
-      <div className="mt-3 overflow-hidden rounded-sm border border-line bg-surface p-3 text-center text-[11px] text-muted">
-        채점 중…
+      <div
+        className={cn(
+          'mt-3 overflow-hidden rounded-sm border border-line bg-surface p-3 text-center text-[11px]',
+          failed.length ? 'text-bad' : 'text-muted',
+        )}
+      >
+        {failed.length ? `채점 실패 — ${failed[0]}` : '채점 중…'}
       </div>
     );
   }
@@ -240,7 +248,9 @@ export function CaseCompareTable({
                         </span>
                       )}
                     </div>
-                  : <span className="shrink-0 text-[11px] text-muted">채점 중…</span>
+                  : (a?.error_msg || b?.error_msg)
+                    ? <span className="shrink-0 text-[11px] text-bad" title={a?.error_msg ?? b?.error_msg ?? undefined}>오류</span>
+                    : <span className="shrink-0 text-[11px] text-muted">채점 중…</span>
               )}
             </button>
             {!isClosed && (
