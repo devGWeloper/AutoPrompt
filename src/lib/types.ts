@@ -343,6 +343,29 @@ export interface DirectTestOut {
   score_error?: string | null;
 }
 
+/** One side of a manual A/B: a prompt version to swap in, or an endpoint to
+ * call. Both blank = that side's configured endpoint (agent.baseUrlA / B). */
+export interface DirectAbSide {
+  prompt_id?: number | null;
+  base_url?: string | null;
+  auth_key?: string | null;
+  user_id?: string | null;
+}
+
+export interface DirectAbRequest {
+  message: string;
+  score?: boolean;
+  metrics?: string[];
+  expected_output?: string | null;
+  a: DirectAbSide;
+  b: DirectAbSide;
+}
+
+export interface DirectAbOut {
+  a: DirectTestOut;
+  b: DirectTestOut;
+}
+
 // ---- run progress events (SSE; same shape the old WebSocket used) ----
 
 export type RunEvent =

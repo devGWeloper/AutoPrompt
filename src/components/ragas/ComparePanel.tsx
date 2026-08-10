@@ -4,12 +4,13 @@ import { useEffect, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { Input, Select } from '@/components/ui/Field';
+import { Input, Select, Textarea } from '@/components/ui/Field';
 import { api } from '@/lib/api';
 import { clearActiveRun, readActiveRun, saveActiveRun, type ActiveCompareRun } from '@/lib/activeRun';
 import { connectRagasRunStream as connectRagasRunWs } from '@/lib/sse-client';
 import { CompareSummaryDashboard } from './RunSummaryDashboard';
 import {
+  ALL_METRICS,
   EXACT_MATCH,
   type PromptVersionSummary,
   type RagasMetric,
@@ -36,6 +37,38 @@ import {
   usePromptNodes,
 } from './shared';
 
+/** One side's answer to a manual A/B call. */
+type ManualSide = {
+  response: string;
+  docs: string[];
+  scores: Partial<Record<RagasMetric, number | null>> | null;
+  score_error: string | null;
+};
+
+/** Wrap one manual answer as the single-case run detail `CaseCompareTable`
+ * renders, so a one-message A/B reads exactly like a dataset comparison —
+ * paired answers, paired metric bars, the same Δ badges. Both sides use the
+ * same case_id so the table pairs them onto one row. */
+function manualDetail(side: ManualSide, question: string, groundTruth: string | null): RagasRunDetail {
+  const metricVals = Object.fromEntries(ALL_METRICS.map((m) => [m, side.scores?.[m] ?? null]));
+  const row = {
+    ragas_result_id: 0,
+    ragas_run_id: 0,
+    case_id: 0,
+    question,
+    answer: side.response,
+    contexts: JSON.stringify(side.docs),
+    ground_truth: groundTruth,
+    // The call itself succeeded (a failed call throws), so an error here is the
+    // scorer's — which is the rule the compare table already reads by.
+    error_msg: side.score_error,
+    trace_var_nm: null,
+    trace_value: null,
+    ...metricVals,
+  } as RagasResultRow;
+  return { status: 'DONE', results: [row] } as RagasRunDetail;
+}
+
 export default function ComparePanel() {
   const { datasets } = useFlowDatasets();
   const nodes = usePromptNodes();
@@ -53,6 +86,15 @@ export default function ComparePanel() {
   const [mode, setMode] = useState<'version' | 'endpoint'>('version');
   const [urlA, setUrlA] = useState('');
   const [urlB, setUrlB] = useState('');
+  // Dataset vs one typed message — the same input axis the Single tab offers.
+  const [source, setSource] = useState<'dataset' | 'manual'>('dataset');
+  const [message, setMessage] = useState('');
+  const [expected, setExpected] = useState('');
+  const [callStatus, setCallStatus] = useState<'idle' | 'running' | 'done' | 'failed'>('idle');
+  // The question/ground truth are snapshotted with the answers: editing the
+  // textarea afterwards must not relabel a result that was already produced.
+  const [ab, setAb] = useState<{ a: ManualSide; b: ManualSide; question: string; gt: string | null } | null>(null);
+  const [callError, setCallError] = useState<string | null>(null);
   const [status, setStatus] = useState('idle');
   const [detailA, setDetailA] = useState<RagasRunDetail | null>(null);
   const [detailB, setDetailB] = useState<RagasRunDetail | null>(null);
@@ -83,8 +125,11 @@ export default function ComparePanel() {
 
   // Endpoint mode identifies the two sides by URL, so no version is needed.
   const byVersion = mode === 'version' && !!(nodeNm && verA && verB && verA !== verB);
-  const canRun =
-    !!datasetId && (mode === 'endpoint' || byVersion) && (!scoreOn || metrics.length > 0) && status !== 'running';
+  const targetReady = mode === 'endpoint' || byVersion;
+  const scoreReady = !scoreOn || metrics.length > 0;
+  const canRun = targetReady && scoreReady && !!datasetId && status !== 'running';
+  const canCall = targetReady && scoreReady && !!message.trim() && callStatus !== 'running';
+  const exactOn = scoreOn && metrics.includes(EXACT_MATCH);
   const verLabel = (id: number | null) => (mode === 'version' ? versions.find((v) => v.prompt_id === id)?.version_no ?? '' : '');
   const labA = runLabels?.[0] ?? verLabel(verA);
   const labB = runLabels?.[1] ?? verLabel(verB);
@@ -172,6 +217,28 @@ export default function ComparePanel() {
     } catch (e) { setError(errText(e)); setStatus('failed'); }
   }
 
+  /** One message, both sides. The server calls A then B in sequence — a
+   * prompt-version side swaps ACTIVE_YN globally, so the two cannot overlap. */
+  async function callAb() {
+    if (!canCall) return;
+    setCallError(null); setAb(null); setCallStatus('running');
+    setRunLabels([verLabel(verA), verLabel(verB)]);
+    const ep = mode === 'endpoint';
+    const gt = exactOn ? expected.trim() || null : null;
+    try {
+      const r = await api.post<{ a: ManualSide; b: ManualSide }>('/flow/test/direct/ab', {
+        message,
+        score: scoreOn,
+        metrics: scoreOn ? metrics : undefined,
+        expected_output: gt,
+        a: ep ? { base_url: urlA.trim() || null } : { prompt_id: verA },
+        b: ep ? { base_url: urlB.trim() || null } : { prompt_id: verB },
+      });
+      setAb({ ...r, question: message, gt });
+      setCallStatus('done');
+    } catch (e) { setCallError(errText(e)); setCallStatus('failed'); }
+  }
+
   async function cancel() {
     const ids = runIdsRef.current;
     if (!ids.length) return;
@@ -217,9 +284,42 @@ export default function ComparePanel() {
         </FormRow>
 
         <FormRow label="입력">
-          <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />
-          <span className="text-xs text-muted">두 대상 모두 같은 데이터셋으로 실행합니다.</span>
+          <SegToggle
+            value={source}
+            onChange={setSource}
+            options={[{ id: 'dataset', label: '데이터셋' }, { id: 'manual', label: '직접 입력' }]}
+          />
+          {source === 'dataset'
+            ? <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />
+            : <span className="text-xs text-muted">메시지 하나를 A · B 양쪽에 보냅니다.</span>}
         </FormRow>
+
+        {source === 'manual' && (
+          <div className="space-y-3 py-3">
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Message <span className="text-bad">*</span></label>
+              <Textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                rows={4}
+                placeholder="A · B 양쪽에 그대로 전달되는 메시지"
+                className="w-full text-sm"
+              />
+            </div>
+            {exactOn && (
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">기대 정답</label>
+                <Textarea
+                  value={expected}
+                  onChange={(e) => setExpected(e.target.value)}
+                  rows={3}
+                  placeholder="응답 JSON 의 body 와 비교할 정답 (비우면 정답 일치는 채점하지 않습니다)"
+                  className="w-full text-sm"
+                />
+              </div>
+            )}
+          </div>
+        )}
 
         <FormRow label="채점" alignTop>
           <ScoreToggle on={scoreOn} onChange={setScoreOn} />
@@ -233,21 +333,63 @@ export default function ComparePanel() {
         </FormRow>
 
         <div className="flex flex-wrap items-center gap-3 py-3">
-          <Button
-            variant={status === 'running' ? 'secondary' : 'primary'}
-            className="whitespace-nowrap"
-            disabled={status === 'running' ? cancelling : !canRun}
-            onClick={status === 'running' ? cancel : run}
-          >
-            {status === 'running' ? (cancelling ? 'Cancelling…' : 'Cancel run') : 'Run comparison'}
-          </Button>
-          <StatusPill status={status} />
+          {source === 'dataset' ? (
+            <Button
+              variant={status === 'running' ? 'secondary' : 'primary'}
+              className="whitespace-nowrap"
+              disabled={status === 'running' ? cancelling : !canRun}
+              onClick={status === 'running' ? cancel : run}
+            >
+              {status === 'running' ? (cancelling ? 'Cancelling…' : 'Cancel run') : 'Run comparison'}
+            </Button>
+          ) : (
+            <Button variant="primary" className="whitespace-nowrap" disabled={!canCall} onClick={callAb}>
+              {callStatus === 'running' ? 'Calling…' : 'Call A · B'}
+            </Button>
+          )}
+          <StatusPill status={source === 'dataset' ? status : callStatus} />
           {mode === 'version' && !byVersion && (
             <span className="text-[11px] text-muted">노드와 서로 다른 두 버전을 선택하세요</span>
           )}
         </div>
       </Card>
 
+      {source === 'manual' ? (
+        <>
+          {callError && <ErrBox msg={callError} />}
+          {callStatus === 'idle' && !callError && (
+            <Card className="flex flex-col items-center justify-center gap-1 px-6 py-16 text-center">
+              <div className="text-sm text-ink">비교할 <span className="font-medium">두 대상</span>을 고르고 메시지를 입력한 뒤 <span className="font-medium">Call A · B</span>를 누르세요.</div>
+              <div className="text-xs text-muted">같은 메시지를 양쪽에 보내 답변을 나란히 보여줍니다. 채점을 켜면 지표도 A/B로 비교합니다.</div>
+            </Card>
+          )}
+          {callStatus === 'running' && (
+            <Card className="px-6 py-12 text-center"><PendingHint label="A · B 순차 호출 중…" /></Card>
+          )}
+          {ab && callStatus !== 'running' && (
+            <Card>
+              <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
+                <h3 className="mr-1 text-sm font-semibold text-ink">Manual Comparison</h3>
+                <Badge tone="neutral">A · {sideLabel(labA)}</Badge>
+                <span>vs</span>
+                <Badge tone="accent">B · {sideLabel(labB)}</Badge>
+              </div>
+              <div className="p-4">
+                <div className="overflow-hidden rounded-sm border border-line bg-surface">
+                  <CaseCompareTable
+                    detailA={manualDetail(ab.a, ab.question, ab.gt)}
+                    detailB={manualDetail(ab.b, ab.question, ab.gt)}
+                    labelA={labA} labelB={labB}
+                    scored={scoreOn}
+                    defaultAllOpen
+                  />
+                </div>
+              </div>
+            </Card>
+          )}
+        </>
+      ) : (
+        <>
       {error && <ErrBox msg={error} />}
 
       {status === 'idle' && !error && (
@@ -324,6 +466,8 @@ export default function ComparePanel() {
             </div>
           </Card>
         </div>
+      )}
+        </>
       )}
     </div>
   );

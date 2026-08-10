@@ -378,15 +378,23 @@ export default function RecordsPanel() {
                     </span>
                   </TD>
                   <TD>
-                    <div className="whitespace-nowrap text-sm font-medium text-ink">
-                      {g.a.node_nm ?? '—'} <span className="text-muted font-normal">· v{g.a.version_no ?? '—'} vs v{g.b.version_no ?? '—'}</span>
-                    </div>
+                    {/* A manual pair has no dataset to name it by — the message is
+                        its identity, same as a manual single run. */}
+                    {g.a.is_manual ? (
+                      <div className="max-w-[18rem] truncate text-sm font-medium text-ink" title={g.a.first_question ?? undefined}>
+                        {g.a.first_question ?? '—'}
+                      </div>
+                    ) : (
+                      <div className="whitespace-nowrap text-sm font-medium text-ink">
+                        {g.a.node_nm ?? '—'} <span className="text-muted font-normal">· v{g.a.version_no ?? '—'} vs v{g.b.version_no ?? '—'}</span>
+                      </div>
+                    )}
                     <div className="font-mono text-[11px] text-muted">#{g.a.ragas_run_id}/#{g.b.ragas_run_id}</div>
                   </TD>
                   <TD><TypeText t="compare" /></TD>
                   <TD><StatusText s={stat} /></TD>
-                  <TD className="text-xs text-muted" title={g.a.dataset_nm ?? undefined}>
-                    <div className="max-w-[11rem] truncate">{g.a.dataset_nm ?? '—'}</div>
+                  <TD className="text-xs text-muted" title={g.a.is_manual ? undefined : g.a.dataset_nm ?? undefined}>
+                    <div className="max-w-[11rem] truncate">{g.a.is_manual ? '—' : (g.a.dataset_nm ?? '—')}</div>
                   </TD>
                   <TD className="text-xs text-muted">{g.b.engine ?? '—'}</TD>
                   <AvgCell

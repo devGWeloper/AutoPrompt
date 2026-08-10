@@ -385,14 +385,17 @@ function baseUrl(side?: FlowSide | null): string {
   return requireScheme(url, setting);
 }
 
-export function ensureDirectUrl(override?: string | null): string {
-  const url = (override || getFlowBaseUrl("a")).trim().replace(/\/+$/, "");
+/** ``side`` picks which configured endpoint answers when nothing was typed —
+ * a manual A/B compares agent.baseUrlA against agent.baseUrlB. */
+export function ensureDirectUrl(override?: string | null, side: FlowSide = "a"): string {
+  const url = (override || getFlowBaseUrl(side)).trim().replace(/\/+$/, "");
+  const setting = `agent.baseUrl${side === "b" ? "B" : ""}`;
   if (!url) {
     throw badGateway(
-      "호출할 외부 API URL이 없습니다 — 요청에 base_url을 넣거나 config.yml 의 agent.baseUrl 을 설정하세요",
+      `호출할 외부 API URL이 없습니다 — 요청에 base_url을 넣거나 config.yml 의 ${setting} 을 설정하세요`,
     );
   }
-  return requireScheme(url, override ? "입력한 Base URL" : "agent.baseUrl");
+  return requireScheme(url, override ? "입력한 Base URL" : setting);
 }
 
 /** POST one turn to the external chat endpoint (RUN_MODE=external).
@@ -434,16 +437,21 @@ export async function runDirect(args: {
   baseUrl?: string | null;
   authKey?: string | null;
   userId?: string | null;
+  /** Which configured endpoint answers when no URL is typed. Only a manual A/B
+   * passes 'b'; every other direct call is side A. */
+  side?: FlowSide | null;
 }): Promise<AgentAnswer> {
-  const url = ensureDirectUrl(args.baseUrl);
-  const protocol = getFlowProtocol("a");
+  const side = args.side ?? "a";
+  const url = ensureDirectUrl(args.baseUrl, side);
+  const protocol = getFlowProtocol(side);
   const { body, traceId } = buildPayload(protocol, args.message, url, args.userId);
   try {
-    const resp = await post(url, body, requestHeaders("a", args.authKey, args.userId));
+    const resp = await post(url, body, requestHeaders(side, args.authKey, args.userId));
     if (!resp.ok) throw await httpError(resp, protocol, body);
     return { ...(await parseChatResponse(resp)), traceId };
   } catch (e) {
     logger.error("direct call failed", {
+      side,
       protocol,
       url,
       body: JSON.stringify(body),

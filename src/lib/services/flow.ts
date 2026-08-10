@@ -1,6 +1,6 @@
 import { readConn, withConn } from "@/lib/db";
 import type { OracleConnection, OracleModule } from "@/lib/db";
-import { errorText, notFound } from "@/lib/http";
+import { ApiError, errorText, notFound } from "@/lib/http";
 import { METRIC_COLS, RUN_COLS, insertReturningId, mapRagasRun } from "@/lib/db/rows";
 import { ALL_METRICS, DIRECT_SINK_NM, EXACT_MATCH, SYSTEM_USER } from "@/lib/types";
 import type {
@@ -198,16 +198,25 @@ async function callForPrompt(
   });
 }
 
-export async function recordDirectRun(args: {
+export interface DirectRunResult extends agent.AgentAnswer {
+  run_id: number;
+  scores: CaseScore | null;
+  score_error: string | null;
+}
+
+export interface DirectRunArgs {
   message: string;
   promptId?: number | null;
   baseUrl?: string | null;
   authKey?: string | null;
   userId?: string | null;
+  side?: agent.FlowSide | null;
   score?: boolean;
   metrics?: string[];
   expectedOutput?: string | null;
-}): Promise<agent.AgentAnswer & { scores: CaseScore | null; score_error: string | null }> {
+}
+
+export async function recordDirectRun(args: DirectRunArgs): Promise<DirectRunResult> {
   const data = await callForPrompt(args);
   // Optional inline scoring — a single case whose ground truth is whatever the
   // caller typed as the expected answer (blank → gt-based metrics stay null).
@@ -234,7 +243,7 @@ export async function recordDirectRun(args: {
   }
   const em = metrics.includes(EXACT_MATCH) ? exactMatchScore(data.response, groundTruth) : null;
   const dec = (m: LlmMetric) => (scores ? toScore(scores[m] ?? null) : null);
-  await withConn(async (conn, oracle) => {
+  const runId = await withConn(async (conn, oracle) => {
     const sinkId = await directSinkDatasetId(conn, oracle);
     const runId = await insertReturningId(
       conn,
@@ -279,15 +288,56 @@ export async function recordDirectRun(args: {
         ac: dec("answer_correctness"),
       },
     );
+    return runId;
   }, { commit: true });
   // score_error rides back with the answer: the call succeeded, so failing
   // silently here would show a blank score block with no reason.
-  if (!metrics.length) return { ...data, scores: null, score_error: null };
+  if (!metrics.length) return { ...data, run_id: runId, scores: null, score_error: null };
   return {
     ...data,
+    run_id: runId,
     scores: { ...(scores ?? {}), ...(metrics.includes(EXACT_MATCH) ? { exact_match: em } : {}) },
     score_error: scoreErr,
   };
+}
+
+/** One typed message, answered by two targets and recorded as an A/B pair.
+ * Sequential on purpose: a prompt-version side swaps ACTIVE_YN globally, so
+ * overlapping the calls would let B answer under A's prompt. The two runs are
+ * linked by AB_GROUP_ID so Records reads them as one comparison. */
+export async function recordDirectAbRun(args: {
+  message: string;
+  score?: boolean;
+  metrics?: string[];
+  expectedOutput?: string | null;
+  a: Pick<DirectRunArgs, "promptId" | "baseUrl" | "authKey" | "userId">;
+  b: Pick<DirectRunArgs, "promptId" | "baseUrl" | "authKey" | "userId">;
+}): Promise<{ a: DirectRunResult; b: DirectRunResult }> {
+  const common = {
+    message: args.message,
+    score: args.score,
+    metrics: args.metrics,
+    expectedOutput: args.expectedOutput,
+  };
+  // Say which side broke. Both sides run the same message, so an unlabelled
+  // "답변 호출 실패" leaves the user guessing which endpoint or version is at fault.
+  const sideRun = async (tag: string, a: DirectRunArgs) => {
+    try {
+      return await recordDirectRun(a);
+    } catch (e) {
+      throw new ApiError(502, `${tag} — ${errorText(e)}`);
+    }
+  };
+  const a = await sideRun("A", { ...common, ...args.a, side: "a" });
+  const b = await sideRun("B", { ...common, ...args.b, side: "b" });
+  await withConn(async (conn) => {
+    await conn.execute(`UPDATE PTX_RUN_MAS SET AB_GROUP_ID = :g WHERE RUN_ID IN (:a, :b)`, {
+      g: a.run_id,
+      a: a.run_id,
+      b: b.run_id,
+    });
+  }, { commit: true });
+  return { a, b };
 }
 
 function messageFromInputs(inputData: string): string {
