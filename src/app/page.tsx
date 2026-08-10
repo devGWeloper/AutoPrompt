@@ -45,7 +45,10 @@ export default function RagasHomePage() {
       <div className={cn(SHELL, 'px-6 pt-5')}>
         <Tabs items={TABS} value={tab} onChange={openTab} />
       </div>
-      <div className="flex-1 overflow-auto">
+      {/* Reserve the scrollbar's width whether or not it is showing. Without it,
+          expanding a row makes the bar appear, narrows this box, and shifts the
+          mx-auto content sideways — while the header above stays put. */}
+      <div className="flex-1 overflow-auto [scrollbar-gutter:stable]">
         <div className={cn(SHELL, 'px-6 py-6')}>
           <header className="mb-5">
             <h1 className="text-lg font-semibold tracking-tight text-ink">{current.label}</h1>

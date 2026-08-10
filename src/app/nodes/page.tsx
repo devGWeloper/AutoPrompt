@@ -55,7 +55,9 @@ export default function NodesPage() {
   return (
     <div className="flex h-full flex-col">
       <TopBar />
-      <main className="flex-1 overflow-auto">
+      {/* Scrollbar width stays reserved so the centred content never shifts
+          sideways when the page grows past one screen (see Test page). */}
+      <main className="flex-1 overflow-auto [scrollbar-gutter:stable]">
         <div className={cn(SHELL, 'px-6 py-5')}>
           {error && (
             <div className="mb-4 rounded-sm border border-bad/20 bg-bad/5 px-4 py-3 text-sm text-bad">{error}</div>
