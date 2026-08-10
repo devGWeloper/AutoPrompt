@@ -178,8 +178,29 @@ async function directSinkDatasetId(conn: OracleConnection, oracle: OracleModule)
   );
 }
 
+/** Make the one call, with the requested prompt version swapped active for its
+ * duration. Same swap a dataset run performs — a manual message aimed at a
+ * version has to hit the same agent state a dataset run would. Without a
+ * version there is nothing to swap: the endpoint answers as it stands. */
+async function callForPrompt(
+  args: Parameters<typeof agent.runDirect>[0] & { promptId?: number | null },
+): Promise<agent.AgentAnswer> {
+  if (args.promptId == null) return agent.runDirect(args);
+  return withConn(async (conn) => {
+    const nm = await promptNode(conn, args.promptId!);
+    if (nm === null) throw notFound(`prompt version ${args.promptId} not found`);
+    await swapActive(conn, nm, args.promptId!);
+    try {
+      return await agent.runDirect(args);
+    } finally {
+      await deactivateNode(conn, nm);
+    }
+  });
+}
+
 export async function recordDirectRun(args: {
   message: string;
+  promptId?: number | null;
   baseUrl?: string | null;
   authKey?: string | null;
   userId?: string | null;
@@ -187,7 +208,7 @@ export async function recordDirectRun(args: {
   metrics?: string[];
   expectedOutput?: string | null;
 }): Promise<agent.AgentAnswer & { scores: CaseScore | null; score_error: string | null }> {
-  const data = await agent.runDirect(args);
+  const data = await callForPrompt(args);
   // Optional inline scoring — a single case whose ground truth is whatever the
   // caller typed as the expected answer (blank → gt-based metrics stay null).
   const groundTruth = args.expectedOutput?.trim() ? args.expectedOutput : null;
@@ -218,11 +239,14 @@ export async function recordDirectRun(args: {
     const runId = await insertReturningId(
       conn,
       oracle,
-      `INSERT INTO PTX_RUN_MAS (DATASET_ID, DATASET_NM, STATUS_CD, ENGINE_CD, METRIC_CTN, USER_ID, START_TM, END_TM,
+      `INSERT INTO PTX_RUN_MAS (PROMPT_ID, DATASET_ID, DATASET_NM, STATUS_CD, ENGINE_CD, METRIC_CTN, USER_ID, START_TM, END_TM,
                                  EXACT_VAL, FAITH_VAL, ANS_RELEVANCY_VAL, CNTX_PRECISION_VAL, CNTX_RECALL_VAL, ANS_CORRECTNESS_VAL)
-       VALUES (:did, :dnm, 'DONE', :eng, :met, :cby, SYSTIMESTAMP, SYSTIMESTAMP, :em, :f, :ar, :cp, :cr, :ac)
+       VALUES (:pid, :did, :dnm, 'DONE', :eng, :met, :cby, SYSTIMESTAMP, SYSTIMESTAMP, :em, :f, :ar, :cp, :cr, :ac)
        RETURNING RUN_ID INTO :out_id`,
       {
+        // Which version answered — a manual call aimed at a version is otherwise
+        // indistinguishable in Records from one aimed at the endpoint.
+        pid: args.promptId ?? null,
         did: sinkId,
         dnm: DIRECT_SINK_NM,
         eng: engine ?? (metrics.length ? EXACT_ENGINE : DIRECT_ENGINE),

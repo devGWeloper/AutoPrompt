@@ -320,6 +320,9 @@ export interface FlowRagasAbOut {
 
 export interface DirectTestRequest {
   message: string;
+  /** Prompt version to swap active for the duration of the call. null = call the
+   * endpoint as it currently stands (As-is). */
+  prompt_id?: number | null;
   base_url?: string | null;
   auth_key?: string | null;
   user_id?: string | null;
@@ -335,6 +338,9 @@ export interface DirectTestOut {
   docs: string[];
   raw: Record<string, unknown> | unknown[] | string;
   scores?: Partial<Record<RagasMetric, number | null>> | null;
+  /** The call succeeded but the scorer did not — a separate failure from an
+   * error on the call itself, so it rides back alongside a valid answer. */
+  score_error?: string | null;
 }
 
 // ---- run progress events (SSE; same shape the old WebSocket used) ----

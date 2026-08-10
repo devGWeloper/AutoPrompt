@@ -22,6 +22,7 @@ import {
   DatasetSelect,
   ErrBox,
   EvalOptions,
+  FormRow,
   ScoreToggle,
   SegToggle,
   StatusPill,
@@ -63,42 +64,39 @@ function directScoresRow(res: DirectResult): RagasResultRow | null {
   } as RagasResultRow;
 }
 
-/** Optional endpoint overrides shared by both direct modes. Left blank, the
- * server's EXTERNAL_* settings are used. */
-function EndpointOverrides({
-  baseUrl, setBaseUrl, authKey, setAuthKey, userId, setUserId,
+/** Credentials that only apply to a manual call — a dataset run reaches the
+ * agent through the run's SSE stream, which carries the base URL and nothing
+ * else. Left blank, the server's configured values are used. */
+function AuthOverrides({
+  authKey, setAuthKey, userId, setUserId,
 }: {
-  baseUrl: string; setBaseUrl: (v: string) => void;
   authKey: string; setAuthKey: (v: string) => void;
   userId: string; setUserId: (v: string) => void;
 }) {
   return (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-      <div>
-        <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Base URL</label>
-        <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="Default: EXTERNAL_AGENT_BASE_URL" className="w-full text-sm" />
-      </div>
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
       <div>
         <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Auth Key</label>
-        <Input value={authKey} onChange={(e) => setAuthKey(e.target.value)} placeholder="Default: EXTERNAL_AUTH_KEY" className="w-full text-sm" />
+        <Input value={authKey} onChange={(e) => setAuthKey(e.target.value)} placeholder="비우면 config.yml 의 agent.authKey" className="w-full text-sm" />
       </div>
       <div>
         <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">User ID</label>
-        <Input value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="Default: EXTERNAL_USER_ID" className="w-full text-sm" />
+        <Input value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="비우면 config.yml 의 agent.userId" className="w-full text-sm" />
       </div>
     </div>
   );
 }
 
-/** Evaluate tab: dataset runs are always RAGAS-scored — either with a prompt
- * version swapped in, or 'As-is' against the agent's current prompts (the old
- * Direct dataset mode, now scored). Manual mode sends one raw message with no
- * scoring (smoke test), keeping the endpoint overrides. */
+/** Single tab. Three questions, asked in the same order as the Compare tab:
+ * 대상 (which prompt version, or which endpoint as-is) × 입력 (a dataset or one
+ * typed message) × 채점. The two axes are independent — every combination runs. */
 export default function SingleRunPanel() {
   const { datasets } = useFlowDatasets();
   const nodes = usePromptNodes();
+  // What is under test. 'endpoint' swaps no prompt version: the endpoint answers
+  // exactly as it currently stands (As-is).
+  const [target, setTarget] = useState<'prompt' | 'endpoint'>('prompt');
   const [source, setSource] = useState<'dataset' | 'manual'>('dataset');
-  // '' = As-is: call the external agent without swapping any prompt version.
   const [nodeNm, setNodeNm] = useState<string>('');
   const [versions, setVersions] = useState<PromptVersionSummary[]>([]);
   const [ver, setVer] = useState<number | null>(null);
@@ -144,8 +142,12 @@ export default function SingleRunPanel() {
   // Default to the latest version of the selected node (list is newest-first).
   useEffect(() => { setVer(versions[0]?.prompt_id ?? null); }, [versions]);
 
-  const canRun = !!datasetId && (!scoreOn || metrics.length > 0) && (!nodeNm || ver != null);
-  const canCall = callStatus !== 'running' && !!message.trim() && (!scoreOn || metrics.length > 0);
+  // A prompt-version target needs both halves of the identity; an endpoint target
+  // needs nothing typed at all — a blank URL means the configured default.
+  const targetReady = target === 'endpoint' || (!!nodeNm && ver != null);
+  const scoreReady = !scoreOn || metrics.length > 0;
+  const canRun = targetReady && scoreReady && !!datasetId;
+  const canCall = targetReady && scoreReady && callStatus !== 'running' && !!message.trim();
 
   /** Open the run's event stream. Used both when starting a run and when
    * reattaching to one a previous page load left in flight — the server replays
@@ -179,6 +181,8 @@ export default function SingleRunPanel() {
     const saved = readActiveRun<ActiveSingleRun>('single');
     if (!saved) return;
     setSource('dataset');
+    // A run recorded without a node was aimed at an endpoint, not a version.
+    setTarget(saved.nodeNm ? 'prompt' : 'endpoint');
     setScoreOn(saved.scoreOn);
     setRunMeta({ nodeNm: saved.nodeNm, verLabel: saved.verLabel });
     setStatus('running');
@@ -191,13 +195,14 @@ export default function SingleRunPanel() {
     if (!canRun) return;
     setError(null); setDetail(null); setStatus('running');
     setLive([]); setTotal(0); setRunMetrics(null); setCancelling(false); runIdRef.current = null;
-    const url = baseUrl.trim() || null;
-    const meta = { nodeNm, verLabel: verLabel(nodeNm ? ver : null) };
+    const byPrompt = target === 'prompt';
+    const url = byPrompt ? null : baseUrl.trim() || null;
+    const meta = { nodeNm: byPrompt ? nodeNm : '', verLabel: verLabel(byPrompt ? ver : null) };
     setRunMeta(meta);
     try {
       const r = await api.post<{ ragas_run_id: number }>('/flow/test/ragas', {
         dataset_id: datasetId, metrics: scoreOn ? metrics : [], score: scoreOn,
-        node_nm: nodeNm || null, prompt_id: nodeNm ? ver : null,
+        node_nm: byPrompt ? nodeNm : null, prompt_id: byPrompt ? ver : null,
       });
       saveActiveRun('single', { runId: r.ragas_run_id, baseUrl: url, scoreOn, ...meta });
       attach(r.ragas_run_id, url);
@@ -216,12 +221,16 @@ export default function SingleRunPanel() {
   async function call() {
     if (!canCall) return;
     setCallError(null); setCallResult(null); setCallStatus('running');
+    const byPrompt = target === 'prompt';
     try {
       setCallResult(await api.post<DirectResult>('/flow/test/direct', {
         message,
-        base_url: baseUrl.trim() || null,
-        auth_key: authKey.trim() || null,
-        user_id: userId.trim() || null,
+        // The two targets are exclusive: a version is swapped active for the call,
+        // or the endpoint answers as it stands. Never both.
+        prompt_id: byPrompt ? ver : null,
+        base_url: byPrompt ? null : baseUrl.trim() || null,
+        auth_key: byPrompt ? null : authKey.trim() || null,
+        user_id: byPrompt ? null : userId.trim() || null,
         score: scoreOn,
         metrics: scoreOn ? metrics : undefined,
         expected_output: exactOn ? expected.trim() || null : null,
@@ -238,88 +247,61 @@ export default function SingleRunPanel() {
 
   return (
     <div className="space-y-5">
-      <Card tone="muted" className="p-4">
-        <div className="flex items-center gap-3 overflow-x-auto [&>*]:shrink-0">
+      <Card tone="muted" className="divide-y divide-line px-4 py-1.5">
+        <FormRow label="대상">
           <SegToggle
-            value={source}
-            onChange={setSource}
-            options={[{ id: 'dataset', label: 'Dataset' }, { id: 'manual', label: 'Manual' }]}
+            value={target}
+            onChange={setTarget}
+            options={[{ id: 'prompt', label: '프롬프트 버전' }, { id: 'endpoint', label: '엔드포인트' }]}
           />
-          {source === 'dataset' ? (
+          {target === 'prompt' ? (
             <>
-              <Select value={nodeNm ?? ''} onChange={(e) => setNodeNm(e.target.value)} className="w-44">
-                <option value="">As-is (Current prompt)</option>
+              <Select value={nodeNm} onChange={(e) => setNodeNm(e.target.value)} className="w-44">
+                <option value="" disabled>노드 선택</option>
                 {nodes.map((n) => (
                   <option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>
                 ))}
               </Select>
-              {nodeNm && (
-                <VersionSelect versions={versions} value={ver} onChange={setVer} className="w-44" placeholder="Select version" />
-              )}
-              <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />
+              <VersionSelect versions={versions} value={ver} onChange={setVer} className="w-36" placeholder="버전 선택" />
             </>
           ) : (
-            <span className="text-xs text-muted">외부 에이전트에 메시지 하나를 그대로 보냅니다.</span>
-          )}
-          <Button
-            variant={status === 'running' ? 'secondary' : 'primary'}
-            className="whitespace-nowrap"
-            disabled={status === 'running' ? cancelling : !canRun}
-            onClick={status === 'running' ? cancel : run}
-          >
-            {status === 'running' ? (cancelling ? 'Cancelling…' : 'Cancel run') : 'Run evaluation'}
-          </Button>
-          <StatusPill status={status} />
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-start gap-x-1.5 gap-y-2 border-t border-line pt-3">
-          <ScoreToggle on={scoreOn} onChange={setScoreOn} />
-          {scoreOn && (
             <>
-              <span aria-hidden className="mx-1.5 mt-1 h-4 w-px shrink-0 bg-line" />
-              <EvalOptions metrics={metrics} setMetrics={setMetrics} />
-              {metrics.length === 0 && <span className="ml-1 mt-1 text-[11px] text-bad">평가 옵션을 하나 이상 선택하세요</span>}
+              <Input
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder="비우면 config.yml 의 agent.baseUrl"
+                className="w-80 text-sm"
+              />
+              <span className="text-xs text-muted">프롬프트를 교체하지 않고 현재 상태(As-is) 그대로 호출합니다.</span>
             </>
           )}
-        </div>
+        </FormRow>
 
-        {source === 'dataset' && (
-          <div className="mt-3 border-t border-line pt-3">
-            <button
-              type="button"
-              onClick={() => setShowAdvanced((v) => !v)}
-              className="text-xs font-medium text-muted hover:text-ink"
-            >
-              {showAdvanced ? '엔드포인트 설정 숨기기' : '엔드포인트 설정 (선택)'}
-            </button>
-            {showAdvanced && (
-              <div className="mt-2">
-                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Base URL</label>
-                <Input
-                  value={baseUrl}
-                  onChange={(e) => setBaseUrl(e.target.value)}
-                  placeholder="비우면 config.yml 의 agent.baseUrl 을 사용합니다"
-                  className="w-full text-sm"
-                />
-              </div>
-            )}
-          </div>
-        )}
+        <FormRow label="입력">
+          <SegToggle
+            value={source}
+            onChange={setSource}
+            options={[{ id: 'dataset', label: '데이터셋' }, { id: 'manual', label: '직접 입력' }]}
+          />
+          {source === 'dataset'
+            ? <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />
+            : <span className="text-xs text-muted">메시지 하나를 그대로 보냅니다.</span>}
+        </FormRow>
 
         {source === 'manual' && (
-          <>
-            <div className="mt-3 border-t border-line pt-3">
+          <div className="space-y-3 py-3">
+            <div>
               <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Message <span className="text-bad">*</span></label>
               <Textarea
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 rows={4}
-                placeholder="Message sent as-is to the external API"
+                placeholder="외부 API 에 그대로 전달되는 메시지"
                 className="w-full text-sm"
               />
             </div>
             {exactOn && (
-              <div className="mt-3">
+              <div>
                 <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">기대 정답</label>
                 <Textarea
                   value={expected}
@@ -330,29 +312,53 @@ export default function SingleRunPanel() {
                 />
               </div>
             )}
-            <div className="mt-3 flex items-center gap-3">
-              <Button variant="primary" disabled={!canCall} onClick={call}>
-                {callStatus === 'running' ? 'Calling…' : 'Call'}
-              </Button>
-              <button
-                type="button"
-                onClick={() => setShowAdvanced((v) => !v)}
-                className="text-xs font-medium text-muted hover:text-ink"
-              >
-                {showAdvanced ? 'Hide endpoint settings' : 'Endpoint settings (optional)'}
-              </button>
-              <StatusPill status={callStatus} />
-            </div>
-            {showAdvanced && (
-              <div className="mt-3 border-t border-line pt-3">
-                <EndpointOverrides
-                  baseUrl={baseUrl} setBaseUrl={setBaseUrl}
-                  authKey={authKey} setAuthKey={setAuthKey}
-                  userId={userId} setUserId={setUserId}
-                />
-              </div>
-            )}
-          </>
+          </div>
+        )}
+
+        <FormRow label="채점" alignTop>
+          <ScoreToggle on={scoreOn} onChange={setScoreOn} />
+          {scoreOn && (
+            <>
+              <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-line" />
+              <EvalOptions metrics={metrics} setMetrics={setMetrics} />
+              {metrics.length === 0 && <span className="text-[11px] text-bad">평가 옵션을 하나 이상 선택하세요</span>}
+            </>
+          )}
+        </FormRow>
+
+        <div className="flex flex-wrap items-center gap-3 py-3">
+          {source === 'dataset' ? (
+            <Button
+              variant={status === 'running' ? 'secondary' : 'primary'}
+              className="whitespace-nowrap"
+              disabled={status === 'running' ? cancelling : !canRun}
+              onClick={status === 'running' ? cancel : run}
+            >
+              {status === 'running' ? (cancelling ? 'Cancelling…' : 'Cancel run') : 'Run evaluation'}
+            </Button>
+          ) : (
+            <Button variant="primary" disabled={!canCall} onClick={call}>
+              {callStatus === 'running' ? 'Calling…' : 'Call'}
+            </Button>
+          )}
+          <StatusPill status={source === 'dataset' ? status : callStatus} />
+          {!targetReady && <span className="text-[11px] text-muted">노드와 버전을 선택하세요</span>}
+          {/* Auth overrides ride on the direct call only — a dataset run's stream
+              carries the base URL and nothing else. */}
+          {target === 'endpoint' && source === 'manual' && (
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((v) => !v)}
+              className="ml-auto text-xs font-medium text-muted hover:text-ink"
+            >
+              {showAdvanced ? '인증 설정 숨기기' : '인증 설정 (선택)'}
+            </button>
+          )}
+        </div>
+        {target === 'endpoint' && source === 'manual' && showAdvanced && (
+          <div className="py-3">
+            <AuthOverrides authKey={authKey} setAuthKey={setAuthKey} userId={userId} setUserId={setUserId} />
+          </div>
         )}
       </Card>
 
@@ -410,8 +416,8 @@ export default function SingleRunPanel() {
 
           {status === 'idle' && !error && (
             <Card className="flex flex-col items-center justify-center gap-1 px-6 py-16 text-center">
-              <div className="text-sm text-ink">데이터셋을 선택한 뒤 <span className="font-medium">Run evaluation</span>을 누르세요.</div>
-              <div className="text-xs text-muted">프롬프트 버전을 고르면 그 버전으로 교체해 평가하고, As-is면 현재 상태 그대로 평가합니다. 지난 결과는 Records 탭에서 확인할 수 있습니다.</div>
+              <div className="text-sm text-ink">대상과 데이터셋을 선택한 뒤 <span className="font-medium">Run evaluation</span>을 누르세요.</div>
+              <div className="text-xs text-muted"><span className="font-medium">프롬프트 버전</span>은 그 버전으로 교체해 평가하고, <span className="font-medium">엔드포인트</span>는 교체 없이 현재 상태(As-is) 그대로 평가합니다. 지난 결과는 Records 탭에서 확인할 수 있습니다.</div>
             </Card>
           )}
 

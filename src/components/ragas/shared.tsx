@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Select } from '@/components/ui/Field';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -307,6 +307,25 @@ export function SegToggle<T extends string>({ value, onChange, options }: { valu
           {o.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+/** One labelled line of a run's configuration. Single and Compare ask the same
+ * three questions in the same order — 대상 · 입력 · 채점 — so the label column is
+ * fixed-width and the controls line up across rows and across the two tabs. */
+export function FormRow({
+  label, alignTop, children,
+}: { label: string; alignTop?: boolean; children: ReactNode }) {
+  return (
+    <div className={cn('flex gap-3 py-2.5', alignTop ? 'items-start' : 'items-center')}>
+      <span className={cn(
+        'w-11 shrink-0 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted',
+        alignTop && 'mt-1.5',
+      )}>
+        {label}
+      </span>
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">{children}</div>
     </div>
   );
 }

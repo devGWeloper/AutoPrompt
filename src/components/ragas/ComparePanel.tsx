@@ -22,6 +22,7 @@ import {
   DatasetSelect,
   ErrBox,
   EvalOptions,
+  FormRow,
   ScoreToggle,
   PendingHint,
   RunProgress,
@@ -52,7 +53,6 @@ export default function ComparePanel() {
   const [mode, setMode] = useState<'version' | 'endpoint'>('version');
   const [urlA, setUrlA] = useState('');
   const [urlB, setUrlB] = useState('');
-  const [showEndpoints, setShowEndpoints] = useState(false);
   const [status, setStatus] = useState('idle');
   const [detailA, setDetailA] = useState<RagasRunDetail | null>(null);
   const [detailB, setDetailB] = useState<RagasRunDetail | null>(null);
@@ -182,8 +182,10 @@ export default function ComparePanel() {
 
   return (
     <div className="space-y-5">
-      <Card tone="muted" className="p-4">
-        <div className="flex items-center gap-3 overflow-x-auto [&>*]:shrink-0">
+      {/* 대상 · 입력 · 채점 — the same three questions in the same order as the
+          Single tab, so the two panels read alike. */}
+      <Card tone="muted" className="divide-y divide-line px-4 py-1.5">
+        <FormRow label="대상">
           <SegToggle
             value={mode}
             onChange={setMode}
@@ -192,17 +194,45 @@ export default function ComparePanel() {
           {mode === 'version' ? (
             <>
               <Select value={nodeNm ?? ''} onChange={(e) => setNodeNm(e.target.value)} className="w-44">
-                <option value="" disabled>Select node</option>
+                <option value="" disabled>노드 선택</option>
                 {nodes.map((n) => (<option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>))}
               </Select>
-              <VersionSelect versions={versions} value={verA} onChange={setVerA} placeholder="Version A" />
+              <VersionSelect versions={versions} value={verA} onChange={setVerA} placeholder="버전 A" />
               <span className="text-xs text-muted">vs</span>
-              <VersionSelect versions={versions} value={verB} onChange={setVerB} placeholder="Version B" />
+              <VersionSelect versions={versions} value={verB} onChange={setVerB} placeholder="버전 B" />
+              {verA && verB && verA === verB && (
+                <span className="w-full text-xs text-bad">버전 A와 B는 서로 달라야 합니다.</span>
+              )}
             </>
           ) : (
-            <span className="text-xs text-muted">A · B 각각의 엔드포인트로 비교합니다 (아래 설정, 비우면 config 기본값).</span>
+            /* 임시: 두 버전이 서로 다른 엔드포인트에 떠 있어 각 쪽 URL로 비교한다.
+               프롬프트 교체 없이 각 URL을 그대로 호출한다. */
+            <>
+              <span className="text-[11px] font-semibold text-muted">A</span>
+              <Input value={urlA} onChange={(e) => setUrlA(e.target.value)} placeholder="비우면 config 의 agent.baseUrlA" className="w-64 text-sm" />
+              <span className="text-[11px] font-semibold text-muted">B</span>
+              <Input value={urlB} onChange={(e) => setUrlB(e.target.value)} placeholder="비우면 config 의 agent.baseUrlB" className="w-64 text-sm" />
+            </>
           )}
+        </FormRow>
+
+        <FormRow label="입력">
           <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />
+          <span className="text-xs text-muted">두 대상 모두 같은 데이터셋으로 실행합니다.</span>
+        </FormRow>
+
+        <FormRow label="채점" alignTop>
+          <ScoreToggle on={scoreOn} onChange={setScoreOn} />
+          {scoreOn && (
+            <>
+              <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-line" />
+              <EvalOptions metrics={metrics} setMetrics={setMetrics} />
+              {metrics.length === 0 && <span className="text-[11px] text-bad">평가 옵션을 하나 이상 선택하세요</span>}
+            </>
+          )}
+        </FormRow>
+
+        <div className="flex flex-wrap items-center gap-3 py-3">
           <Button
             variant={status === 'running' ? 'secondary' : 'primary'}
             className="whitespace-nowrap"
@@ -212,59 +242,18 @@ export default function ComparePanel() {
             {status === 'running' ? (cancelling ? 'Cancelling…' : 'Cancel run') : 'Run comparison'}
           </Button>
           <StatusPill status={status} />
-        </div>
-        {mode === 'version' && verA && verB && verA === verB && (
-          <p className="mt-2 text-xs text-bad">Version A and B must be different.</p>
-        )}
-        <div className="mt-3 flex flex-wrap items-start gap-x-1.5 gap-y-2 border-t border-line pt-3">
-          <ScoreToggle on={scoreOn} onChange={setScoreOn} />
-          {scoreOn && (
-            <>
-              <span aria-hidden className="mx-1.5 mt-1 h-4 w-px shrink-0 bg-line" />
-              <EvalOptions metrics={metrics} setMetrics={setMetrics} />
-              {metrics.length === 0 && <span className="ml-1 mt-1 text-[11px] text-bad">평가 옵션을 하나 이상 선택하세요</span>}
-            </>
+          {mode === 'version' && !byVersion && (
+            <span className="text-[11px] text-muted">노드와 서로 다른 두 버전을 선택하세요</span>
           )}
         </div>
-
-        {/* 임시: 두 버전이 서로 다른 엔드포인트에 떠 있는 경우 각 쪽 URL을 직접 지정한다. */}
-        {mode === 'endpoint' && (
-          <div className="mt-3 border-t border-line pt-3">
-            <button
-              type="button"
-              onClick={() => setShowEndpoints((v) => !v)}
-              className="text-xs font-medium text-muted hover:text-ink"
-            >
-              {showEndpoints ? 'URL 직접 입력 숨기기' : 'URL 직접 입력 (선택)'}
-              {(urlA.trim() || urlB.trim()) && !showEndpoints && <span className="ml-1.5 text-[11px] text-accent">직접 입력됨</span>}
-            </button>
-            {showEndpoints && (
-              <>
-                <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">A Base URL</label>
-                    <Input value={urlA} onChange={(e) => setUrlA(e.target.value)} placeholder="비우면 config.yml 의 agent.baseUrlA" className="w-full text-sm" />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">B Base URL</label>
-                    <Input value={urlB} onChange={(e) => setUrlB(e.target.value)} placeholder="비우면 config.yml 의 agent.baseUrlB" className="w-full text-sm" />
-                  </div>
-                </div>
-                <p className="mt-2 text-[11px] text-muted">
-                  엔드포인트 비교는 프롬프트 버전을 교체하지 않고 각 URL을 그대로 호출합니다.
-                </p>
-              </>
-            )}
-          </div>
-        )}
       </Card>
 
       {error && <ErrBox msg={error} />}
 
       {status === 'idle' && !error && (
         <Card className="flex flex-col items-center justify-center gap-1 px-6 py-16 text-center">
-          <div className="text-sm text-ink">노드와 비교할 <span className="font-medium">두 버전</span>을 선택한 뒤 실행하세요.</div>
-          <div className="text-xs text-muted">A/B 간에는 해당 노드의 시스템 프롬프트만 교체되며, 두 실행 모두 같은 데이터셋으로 채점됩니다. 두 버전이 서로 다른 API에 떠 있다면 <span className="font-medium">엔드포인트</span> 모드로 바꿔 A/B 각각의 엔드포인트(config <span className="font-mono">agent.baseUrlA</span> / <span className="font-mono">baseUrlB</span>)로 비교하세요.</div>
+          <div className="text-sm text-ink">비교할 <span className="font-medium">두 대상</span>과 데이터셋을 선택한 뒤 실행하세요.</div>
+          <div className="text-xs text-muted"><span className="font-medium">프롬프트 버전</span>은 해당 노드의 프롬프트만 교체해 A/B로 실행합니다. 두 버전이 서로 다른 API에 떠 있다면 <span className="font-medium">엔드포인트</span>로 바꿔 각 URL을 그대로 호출하세요. 어느 쪽이든 두 실행 모두 같은 데이터셋으로 채점됩니다.</div>
         </Card>
       )}
 

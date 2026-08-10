@@ -13,8 +13,8 @@ import RecordsPanel from '@/components/ragas/RecordsPanel';
 
 type Tab = 'single' | 'compare' | 'datasets' | 'records';
 const TABS: { id: Tab; label: string; desc: string; group?: string }[] = [
-  { id: 'single', label: 'Single', desc: '데이터셋 또는 단일 메시지(Manual)를 실행합니다 — 프롬프트 버전을 교체하거나 As-is(현재 상태 그대로)로 실행할 수 있고, RAGAS 채점은 켜고 끌 수 있습니다.' },
-  { id: 'compare', label: 'Compare', desc: '같은 노드의 두 프롬프트 버전을 하나의 데이터셋으로 평가해 지표를 비교합니다.' },
+  { id: 'single', label: 'Single', desc: '대상(프롬프트 버전 또는 엔드포인트)을 하나 정해 데이터셋이나 직접 입력한 메시지로 실행합니다. 채점은 켜고 끌 수 있습니다.' },
+  { id: 'compare', label: 'Compare', desc: '같은 데이터셋을 두 대상(프롬프트 버전 A·B 또는 엔드포인트 A·B)에 각각 실행해 지표를 비교합니다.' },
   { id: 'datasets', label: 'Datasets', desc: '평가에 사용할 질문 · 컨텍스트 · 정답(ground truth) 케이스를 관리합니다.', group: 'secondary' },
   { id: 'records', label: 'Records', desc: '지난 평가 실행 기록을 조회하고 CSV로 내보냅니다.', group: 'secondary' },
 ];
