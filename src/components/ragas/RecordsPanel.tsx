@@ -70,6 +70,20 @@ function TypeText({ t }: { t: Exclude<RunTypeFilter, 'all'> }) {
   );
 }
 
+/** Second line of the 실행 cell: the run id(s), then a glimpse of what went in.
+ * The first case's question is the cheapest thing that tells two runs of the same
+ * version apart at a glance, and it already rides along in the list payload.
+ * Omitted for manual runs — there the question *is* the first line. */
+function RunSubline({ ids, question }: { ids: string; question?: string | null }) {
+  const q = question?.trim();
+  return (
+    <div className="flex min-w-0 items-baseline gap-1.5 font-mono text-[11px] text-muted">
+      <span className="shrink-0">{ids}</span>
+      {q && <span className="truncate font-sans text-muted/75" title={q}>· {q}</span>}
+    </div>
+  );
+}
+
 function DownloadIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -335,19 +349,21 @@ export default function RecordsPanel() {
                         ›
                       </span>
                     </TD>
-                    <TD>
+                    <TD className="max-w-[20rem]">
                       {r.is_manual ? (
-                        <div className="max-w-[18rem] truncate text-sm font-medium text-ink" title={r.first_question ?? undefined}>
+                        <div className="truncate text-sm font-medium text-ink" title={r.first_question ?? undefined}>
                           {r.first_question ?? '—'}
                         </div>
                       ) : (
-                        <div className="whitespace-nowrap text-sm font-medium text-ink">
+                        <div className="truncate text-sm font-medium text-ink">
+                          {/* No node means no version was swapped — the endpoint
+                              answered as it stood. That is a target, not a blank. */}
                           {r.node_nm
                             ? <>{r.node_nm} <span className="text-muted font-normal">· v{r.version_no ?? '—'}</span></>
-                            : 'As-is'}
+                            : '엔드포인트'}
                         </div>
                       )}
-                      <div className="font-mono text-[11px] text-muted">#{r.ragas_run_id}</div>
+                      <RunSubline ids={`#${r.ragas_run_id}`} question={r.is_manual ? null : r.first_question} />
                     </TD>
                     <TD><TypeText t="single" /></TD>
                     <TD><StatusText s={r.status} /></TD>
@@ -377,19 +393,24 @@ export default function RecordsPanel() {
                       ›
                     </span>
                   </TD>
-                  <TD>
+                  <TD className="max-w-[20rem]">
                     {/* A manual pair has no dataset to name it by — the message is
                         its identity, same as a manual single run. */}
                     {g.a.is_manual ? (
-                      <div className="max-w-[18rem] truncate text-sm font-medium text-ink" title={g.a.first_question ?? undefined}>
+                      <div className="truncate text-sm font-medium text-ink" title={g.a.first_question ?? undefined}>
                         {g.a.first_question ?? '—'}
                       </div>
                     ) : (
-                      <div className="whitespace-nowrap text-sm font-medium text-ink">
-                        {g.a.node_nm ?? '—'} <span className="text-muted font-normal">· v{g.a.version_no ?? '—'} vs v{g.b.version_no ?? '—'}</span>
+                      <div className="truncate text-sm font-medium text-ink">
+                        {g.a.node_nm
+                          ? <>{g.a.node_nm} <span className="text-muted font-normal">· v{g.a.version_no ?? '—'} vs v{g.b.version_no ?? '—'}</span></>
+                          : <>엔드포인트 <span className="text-muted font-normal">· A vs B</span></>}
                       </div>
                     )}
-                    <div className="font-mono text-[11px] text-muted">#{g.a.ragas_run_id}/#{g.b.ragas_run_id}</div>
+                    <RunSubline
+                      ids={`#${g.a.ragas_run_id}/#${g.b.ragas_run_id}`}
+                      question={g.a.is_manual ? null : g.a.first_question}
+                    />
                   </TD>
                   <TD><TypeText t="compare" /></TD>
                   <TD><StatusText s={stat} /></TD>
@@ -629,7 +650,7 @@ function RagasRunDetailView({ ragasId }: { ragasId: number }) {
   useEffect(() => { api.get<RagasRunDetail>(`/ragas-runs/${ragasId}`).then(setDetail).catch(() => setDetail(null)); }, [ragasId]);
   if (!detail) return <div className="p-4 text-xs text-muted">불러오는 중…</div>;
 
-  const verLabel = detail.version_no != null ? `v${detail.version_no}` : (detail.prompt_id ? `ID ${detail.prompt_id}` : 'As-is');
+  const verLabel = detail.version_no != null ? `v${detail.version_no}` : (detail.prompt_id ? `ID ${detail.prompt_id}` : '엔드포인트');
 
   return (
     <div className="space-y-4">

@@ -240,7 +240,8 @@ export default function SingleRunPanel() {
   }
 
   const verLabel = (id: number | null) => {
-    if (!id) return 'As-is';
+    // No version = nothing was swapped; the endpoint itself is what ran.
+    if (!id) return '엔드포인트';
     const found = versions.find((v) => v.prompt_id === id);
     return found ? `v${found.version_no}` : `ID ${id}`;
   };
