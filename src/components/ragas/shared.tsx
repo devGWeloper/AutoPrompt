@@ -345,6 +345,45 @@ export function StatusPill({ status }: { status: string }) {
   );
 }
 
+// ---- icons -----------------------------------------------------------------
+
+export function DownloadIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path d="M8 2.5v7m0 0L5.25 6.75M8 9.5l2.75-2.75M3 12.5h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function TrashIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path d="M2.75 4.25h10.5M6.5 2.5h3M5.5 4.5l.4 8a1 1 0 0 0 1 .95h2.2a1 1 0 0 0 1-.95l.4-8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function PencilIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path d="M11.1 2.9a1.35 1.35 0 0 1 1.9 1.9l-6.6 6.6-2.5.6.6-2.5 6.6-6.6ZM10 4l2 2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** Arm-then-confirm state for a destructive action: the first click arms it, a
+ * second within `ms` commits, and walking away disarms. Cheaper than a modal and
+ * still hard to trigger by accident. */
+export function useArmed(ms = 4000) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), ms);
+    return () => clearTimeout(t);
+  }, [armed, ms]);
+  return [armed, setArmed] as const;
+}
+
 export function ErrBox({ msg }: { msg: string }) {
   return <div className="rounded-md border border-bad/20 bg-bad/5 px-4 py-3 text-sm text-bad">{msg}</div>;
 }

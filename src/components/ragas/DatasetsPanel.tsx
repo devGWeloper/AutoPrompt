@@ -1,13 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input, Textarea } from '@/components/ui/Field';
 import { cn } from '@/lib/cn';
 import { api } from '@/lib/api';
 import type { CsvUploadResult, TestCase } from '@/lib/types';
-import { Chevron, ErrBox, errText, oneLine, useFlowDatasets } from './shared';
+import { Chevron, ErrBox, errText, oneLine, PencilIcon, TrashIcon, useArmed, useFlowDatasets } from './shared';
 
 // A case's payload is the JSON in INPUT_CTN. The editor exposes the three fields
 // the evaluation actually reads (see services/ragas.ts parseCase) and carries any
@@ -146,12 +146,7 @@ function FieldsEditor({
 
 /** Delete button that asks once, in place — no modal, no accidental cascade. */
 function DeleteButton({ label, onConfirm, className }: { label: string; onConfirm: () => void; className?: string }) {
-  const [armed, setArmed] = useState(false);
-  useEffect(() => {
-    if (!armed) return;
-    const t = setTimeout(() => setArmed(false), 4000);
-    return () => clearTimeout(t);
-  }, [armed]);
+  const [armed, setArmed] = useArmed();
   if (!armed) {
     return (
       <Button variant="ghost" size="sm" className={className} onClick={() => setArmed(true)}>{label}</Button>
@@ -165,6 +160,42 @@ function DeleteButton({ label, onConfirm, className }: { label: string; onConfir
   );
 }
 
+/** Quiet icon button for the row actions in the narrow dataset list, where the
+ * text buttons had to cover the name to fit. */
+function IconBtn({
+  title, onClick, danger, children,
+}: { title: string; onClick: () => void; danger?: boolean; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      className={cn(
+        'inline-flex h-6 w-6 items-center justify-center rounded-sm transition-colors',
+        danger ? 'bg-bad/10 text-bad hover:bg-bad/15' : 'text-muted hover:bg-surface-3 hover:text-ink',
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** Same arm-then-confirm contract as DeleteButton, as a single icon: armed turns
+ * red and the second click commits. */
+function IconDelete({ title, onConfirm }: { title: string; onConfirm: () => void }) {
+  const [armed, setArmed] = useArmed();
+  return (
+    <IconBtn
+      title={armed ? '한 번 더 누르면 삭제됩니다' : title}
+      danger={armed}
+      onClick={() => { if (armed) { setArmed(false); onConfirm(); } else setArmed(true); }}
+    >
+      <TrashIcon />
+    </IconBtn>
+  );
+}
+
 // ---- panel -----------------------------------------------------------------
 
 export default function DatasetsPanel() {
@@ -173,6 +204,7 @@ export default function DatasetsPanel() {
   const [cases, setCases] = useState<TestCase[]>([]);
   const [loading, setLoading] = useState(false);
   const [newName, setNewName] = useState('');
+  const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -225,6 +257,7 @@ export default function DatasetsPanel() {
     if (!newName.trim()) return;
     const d = await api.post<{ dataset_id: number }>('/flow/datasets', { dataset_nm: newName.trim() });
     setNewName('');
+    setCreating(false);
     reload();
     setSelDataset(d.dataset_id);
   });
@@ -297,31 +330,42 @@ export default function DatasetsPanel() {
 
   return (
     <div className="space-y-5">
-      <Card tone="muted" className="p-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <Input
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') createDataset(); }}
-            placeholder="새 데이터셋 이름"
-            className="w-64"
-          />
-          <Button variant="secondary" disabled={!newName.trim() || busy} onClick={createDataset}>데이터셋 만들기</Button>
-        </div>
-      </Card>
-
       {error && <ErrBox msg={error} />}
 
       {/* minmax(0,…) again: with a plain `1fr` the cases column is at least as wide
           as its widest min-content child, which is what made the page scroll sideways. */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[17rem_minmax(0,1fr)]">
         <Card className="min-w-0">
-          <div className="border-b border-line px-4 py-3">
-            <h3 className="text-sm font-semibold text-ink">
+          {/* Creating a dataset belongs to this list, not to a permanent strip
+              across the top of the page — it is a rare action on a rare object. */}
+          <div className="flex items-center gap-2 border-b border-line px-4 py-2.5">
+            <h3 className="min-w-0 flex-1 text-sm font-semibold text-ink">
               데이터셋 <span className="font-normal text-muted">({datasets.length})</span>
             </h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { setCreating((v) => !v); setNewName(''); }}
+            >
+              {creating ? '취소' : '+ 새로 만들기'}
+            </Button>
           </div>
-          <ul className="max-h-[70vh] space-y-1 overflow-y-auto p-2.5">
+          <ul className="max-h-[70vh] space-y-0.5 overflow-y-auto p-1.5">
+            {creating && (
+              <li className="px-0.5 pb-1 pt-0.5">
+                <Input
+                  autoFocus
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') createDataset();
+                    if (e.key === 'Escape') { setCreating(false); setNewName(''); }
+                  }}
+                  placeholder="이름 입력 후 Enter"
+                  className="h-9 w-full text-sm"
+                />
+              </li>
+            )}
             {datasets.map((d) => {
               const on = selDataset === d.dataset_id;
               if (renameId === d.dataset_id) {
@@ -350,56 +394,67 @@ export default function DatasetsPanel() {
                   <button
                     onClick={() => setSelDataset(d.dataset_id)}
                     className={cn(
-                      'flex w-full items-center gap-2 rounded-sm border px-3 py-2 text-left text-sm transition-colors',
-                      on ? 'border-accent/40 bg-accent-soft/60 font-medium text-ink' : 'border-line text-ink hover:bg-surface-2',
+                      'flex w-full items-center gap-2 rounded-sm py-2 pl-2 pr-2.5 text-left text-sm transition-colors',
+                      on ? 'bg-accent-soft/70 font-medium text-ink' : 'text-ink hover:bg-surface-2',
                     )}
                   >
+                    {/* A hairline marker instead of a box per row — the list reads
+                        as one list, and only the selected row draws a line. */}
+                    <span aria-hidden className={cn('h-4 w-0.5 shrink-0 rounded-full', on ? 'bg-accent' : 'bg-transparent')} />
                     <span className="min-w-0 flex-1 truncate">{d.dataset_nm}</span>
-                    <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted">{d.case_count ?? '—'}</span>
+                    <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted group-hover:invisible">
+                      {d.case_count ?? '—'}
+                    </span>
                   </button>
-                  {/* Row actions stay out of the way until the row is touched. */}
-                  <span className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded-sm bg-surface/95 pl-1 group-hover:flex group-focus-within:flex">
-                    <Button
-                      variant="ghost" size="sm"
-                      onClick={() => { setRenameId(d.dataset_id); setRenameVal(d.dataset_nm); }}
-                    >
-                      이름
-                    </Button>
-                    <DeleteButton label="삭제" onConfirm={() => delDataset(d.dataset_id)} />
+                  {/* Row actions take the count's place on hover rather than
+                      covering the name with an opaque strip. */}
+                  <span className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 group-hover:flex group-focus-within:flex">
+                    <IconBtn title="이름 변경" onClick={() => { setRenameId(d.dataset_id); setRenameVal(d.dataset_nm); }}>
+                      <PencilIcon />
+                    </IconBtn>
+                    <IconDelete title="데이터셋 삭제" onConfirm={() => delDataset(d.dataset_id)} />
                   </span>
                 </li>
               );
             })}
-            {datasets.length === 0 && (
-              <li className="px-1 py-6 text-center text-sm text-muted">데이터셋이 없습니다</li>
+            {datasets.length === 0 && !creating && (
+              <li className="px-1 py-8 text-center text-sm text-muted">
+                데이터셋이 없습니다
+                <span className="mt-0.5 block text-xs">위 <span className="font-medium">+ 새로 만들기</span>로 시작하세요.</span>
+              </li>
             )}
           </ul>
         </Card>
 
         <Card className="min-w-0">
           {selected == null ? (
-            <div className="py-16 text-center text-sm text-muted">왼쪽에서 데이터셋을 선택하세요.</div>
+            <div className="flex flex-col items-center justify-center gap-1 px-6 py-20 text-center">
+              <div className="text-sm text-ink">왼쪽에서 데이터셋을 선택하세요.</div>
+              <div className="text-xs text-muted">평가에 쓸 질문 · Contexts · 정답(ground truth)을 케이스 단위로 관리합니다.</div>
+            </div>
           ) : (
             <>
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-2 border-b border-line px-4 py-3">
-                <h3 className="mr-1 min-w-0 truncate text-sm font-semibold text-ink">{selected.dataset_nm}</h3>
-                <span className="shrink-0 text-xs text-muted">케이스 {cases.length}</span>
-                {noGt > 0 && (
-                  <span
-                    className="shrink-0 rounded-sm border border-line px-1.5 py-px text-[11px] text-muted"
-                    title="정답이 없는 케이스는 정답 일치로 채점되지 않습니다"
-                  >
-                    정답 없음 {noGt}
-                  </span>
-                )}
-                {/* Wraps to its own line when the panel is narrow instead of forcing
-                    the column wider — these controls were the widest thing in here. */}
-                <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+              {/* Title and toolbar on separate lines: six controls on one row wrapped
+                  unpredictably and read as a pile rather than as a heading. */}
+              <div className="border-b border-line px-4 py-3">
+                <div className="flex items-baseline gap-2">
+                  <h3 className="min-w-0 truncate text-sm font-semibold text-ink">{selected.dataset_nm}</h3>
+                  <span className="shrink-0 text-xs text-muted">케이스 {cases.length}</span>
+                  {noGt > 0 && (
+                    <span
+                      className="shrink-0 rounded-sm bg-surface-2 px-1.5 py-px text-[11px] text-muted"
+                      title="정답이 없는 케이스는 정답 일치로 채점되지 않습니다"
+                    >
+                      정답 없음 {noGt}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-2.5 flex flex-wrap items-center gap-2">
                   <Input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="질문 · 정답 검색"
-                    className="h-8 w-40 text-xs"
+                    className="h-8 w-44 text-xs"
                   />
                   <input
                     ref={fileRef}
@@ -412,7 +467,7 @@ export default function DatasetsPanel() {
                       if (f) importCsv(f);
                     }}
                   />
-                  <span className="inline-flex items-center overflow-hidden rounded-sm border border-line-strong bg-surface shadow-sm">
+                  <span className="ml-auto inline-flex items-center overflow-hidden rounded-sm border border-line bg-surface">
                     <span className="px-2 text-[11px] font-medium text-muted">CSV</span>
                     <button
                       type="button" disabled={busy}
