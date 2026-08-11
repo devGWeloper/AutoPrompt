@@ -16,10 +16,14 @@ import type { AuditLog, PromptVersionDetail, PromptVersionSummary } from '@/lib/
 type Tab = 'editor' | 'history';
 
 export default function NodePromptsPage() {
-  // The dynamic segment is the NODE_NM string (folder name is a Next.js artifact;
-  // see `[nodeId]` — kept until a clean dev-server-down rename).
-  const params = useParams<{ nodeId: string }>();
-  const nodeNm = decodeURIComponent(params.nodeId);
+  // The dynamic segment is the NODE_NM string. `useParams()` keys the value by
+  // the *folder* name, so reading `params.nodeId` breaks the moment that folder
+  // is renamed (e.g. to `[node_nm]`, matching the API routes) — and it breaks
+  // silently, because `decodeURIComponent(undefined)` is the string "undefined",
+  // not an error. Read the one segment this route has, whatever it is called.
+  const params = useParams();
+  const segment = params.nodeId ?? Object.values(params)[0];
+  const nodeNm = typeof segment === 'string' ? decodeURIComponent(segment) : '';
   const router = useRouter();
 
   const [versions, setVersions] = useState<PromptVersionSummary[]>([]);
@@ -32,6 +36,12 @@ export default function NodePromptsPage() {
 
   const reload = useCallback(
     async (selectId?: number) => {
+      // No segment → say so instead of querying for a node that cannot exist and
+      // rendering an empty shell with no way to tell what went wrong.
+      if (!nodeNm) {
+        setError('노드 이름을 URL에서 읽지 못했습니다. 노드 목록에서 다시 선택해 주세요.');
+        return;
+      }
       try {
         const rows = await api.get<PromptVersionSummary[]>(`/nodes/${encodeURIComponent(nodeNm)}/prompts`);
         setVersions(rows);
