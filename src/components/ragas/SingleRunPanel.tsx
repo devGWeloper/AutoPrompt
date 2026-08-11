@@ -23,6 +23,8 @@ import {
   ErrBox,
   EvalOptions,
   FormRow,
+  PROMPT_TARGET_BLOCKED_HINT,
+  PROMPT_TARGET_ENABLED,
   ScoreToggle,
   SegToggle,
   StatusPill,
@@ -95,7 +97,11 @@ export default function SingleRunPanel() {
   const nodes = usePromptNodes();
   // What is under test. 'endpoint' swaps no prompt version: the endpoint answers
   // exactly as it currently stands (As-is).
-  const [target, setTarget] = useState<'prompt' | 'endpoint'>('prompt');
+  // 프롬프트 버전 대상이 막혀 있는 동안에는 엔드포인트로 시작한다 — 고를 수 없는
+  // 대상이 기본값이면 패널이 열리자마자 아무것도 못 하는 상태가 된다.
+  const [target, setTarget] = useState<'prompt' | 'endpoint'>(
+    PROMPT_TARGET_ENABLED ? 'prompt' : 'endpoint',
+  );
   const [source, setSource] = useState<'dataset' | 'manual'>('dataset');
   const [nodeNm, setNodeNm] = useState<string>('');
   const [versions, setVersions] = useState<PromptVersionSummary[]>([]);
@@ -182,7 +188,9 @@ export default function SingleRunPanel() {
     if (!saved) return;
     setSource('dataset');
     // A run recorded without a node was aimed at an endpoint, not a version.
-    setTarget(saved.nodeNm ? 'prompt' : 'endpoint');
+    // A resumed version run predates the block, so it must not drop the form
+    // back into the blocked target — the run itself still streams either way.
+    setTarget(saved.nodeNm && PROMPT_TARGET_ENABLED ? 'prompt' : 'endpoint');
     setScoreOn(saved.scoreOn);
     setRunMeta({ nodeNm: saved.nodeNm, verLabel: saved.verLabel });
     setStatus('running');
@@ -253,8 +261,14 @@ export default function SingleRunPanel() {
           <SegToggle
             value={target}
             onChange={setTarget}
-            options={[{ id: 'prompt', label: '프롬프트 버전' }, { id: 'endpoint', label: '엔드포인트' }]}
+            options={[
+              { id: 'prompt', label: '프롬프트 버전', disabled: !PROMPT_TARGET_ENABLED, hint: PROMPT_TARGET_BLOCKED_HINT },
+              { id: 'endpoint', label: '엔드포인트' },
+            ]}
           />
+          {!PROMPT_TARGET_ENABLED && (
+            <span className="text-xs text-muted">{PROMPT_TARGET_BLOCKED_HINT}</span>
+          )}
           {target === 'prompt' ? (
             <>
               <Select value={nodeNm} onChange={(e) => setNodeNm(e.target.value)} className="w-44">

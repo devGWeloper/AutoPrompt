@@ -24,6 +24,8 @@ import {
   ErrBox,
   EvalOptions,
   FormRow,
+  PROMPT_TARGET_BLOCKED_HINT,
+  PROMPT_TARGET_ENABLED,
   ScoreToggle,
   PendingHint,
   RunProgress,
@@ -83,7 +85,11 @@ export default function ComparePanel() {
   // Temporary: the two versions currently live behind different endpoints, so a
   // comparison can be driven by endpoints (config agent.baseUrlA / baseUrlB, or
   // URLs typed here) instead of by two prompt versions of one node.
-  const [mode, setMode] = useState<'version' | 'endpoint'>('version');
+  // 프롬프트 버전 대상이 막혀 있는 동안에는 엔드포인트로 시작한다 — 고를 수 없는
+  // 대상이 기본값이면 패널이 열리자마자 아무것도 못 하는 상태가 된다.
+  const [mode, setMode] = useState<'version' | 'endpoint'>(
+    PROMPT_TARGET_ENABLED ? 'version' : 'endpoint',
+  );
   const [urlA, setUrlA] = useState('');
   const [urlB, setUrlB] = useState('');
   // Dataset vs one typed message — the same input axis the Single tab offers.
@@ -256,8 +262,14 @@ export default function ComparePanel() {
           <SegToggle
             value={mode}
             onChange={setMode}
-            options={[{ id: 'version', label: '프롬프트 버전' }, { id: 'endpoint', label: '엔드포인트' }]}
+            options={[
+              { id: 'version', label: '프롬프트 버전', disabled: !PROMPT_TARGET_ENABLED, hint: PROMPT_TARGET_BLOCKED_HINT },
+              { id: 'endpoint', label: '엔드포인트' },
+            ]}
           />
+          {!PROMPT_TARGET_ENABLED && (
+            <span className="text-xs text-muted">{PROMPT_TARGET_BLOCKED_HINT}</span>
+          )}
           {mode === 'version' ? (
             <>
               <Select value={nodeNm ?? ''} onChange={(e) => setNodeNm(e.target.value)} className="w-44">

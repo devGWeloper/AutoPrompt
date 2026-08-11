@@ -16,14 +16,10 @@ import type { AuditLog, PromptVersionDetail, PromptVersionSummary } from '@/lib/
 type Tab = 'editor' | 'history';
 
 export default function NodePromptsPage() {
-  // The dynamic segment is the NODE_NM string. `useParams()` keys the value by
-  // the *folder* name, so reading `params.nodeId` breaks the moment that folder
-  // is renamed (e.g. to `[node_nm]`, matching the API routes) — and it breaks
-  // silently, because `decodeURIComponent(undefined)` is the string "undefined",
-  // not an error. Read the one segment this route has, whatever it is called.
-  const params = useParams();
-  const segment = params.nodeId ?? Object.values(params)[0];
-  const nodeNm = typeof segment === 'string' ? decodeURIComponent(segment) : '';
+  // The dynamic segment is the NODE_NM string (folder name is a Next.js artifact;
+  // see `[nodeId]` — kept until a clean dev-server-down rename).
+  const params = useParams<{ nodeId: string }>();
+  const nodeNm = decodeURIComponent(params.nodeId);
   const router = useRouter();
 
   const [versions, setVersions] = useState<PromptVersionSummary[]>([]);
@@ -36,12 +32,6 @@ export default function NodePromptsPage() {
 
   const reload = useCallback(
     async (selectId?: number) => {
-      // No segment → say so instead of querying for a node that cannot exist and
-      // rendering an empty shell with no way to tell what went wrong.
-      if (!nodeNm) {
-        setError('노드 이름을 URL에서 읽지 못했습니다. 노드 목록에서 다시 선택해 주세요.');
-        return;
-      }
       try {
         const rows = await api.get<PromptVersionSummary[]>(`/nodes/${encodeURIComponent(nodeNm)}/prompts`);
         setVersions(rows);
@@ -58,19 +48,6 @@ export default function NodePromptsPage() {
   useEffect(() => {
     reload();
   }, [reload]);
-
-  /** Back to the node list.
-   *
-   * A missing segment means this page is mounted under a route that has none —
-   * i.e. the router already believes it is on /nodes while this tree is still on
-   * screen (a soft navigation that never finished). `router.push('/nodes')` is
-   * then a no-op: it is the address we are already at. Only a full load rebuilds
-   * the tree and gets out, so the broken state navigates hard and the normal
-   * one keeps the soft push. */
-  const goToList = useCallback(() => {
-    if (nodeNm) router.push('/nodes');
-    else window.location.assign('/nodes');
-  }, [nodeNm, router]);
 
   async function selectVersion(id: number) {
     setDetail(await api.get<PromptVersionDetail>(`/prompts/${id}`));
@@ -102,7 +79,7 @@ export default function NodePromptsPage() {
       <div className="border-b border-line bg-surface">
         <div className={cn(SHELL, 'flex h-11 items-center gap-1.5 px-6')}>
           <button
-            onClick={goToList}
+            onClick={() => router.push('/nodes')}
             className="-ml-2 inline-flex items-center gap-1 rounded-sm px-2 py-1 text-[13px] font-medium text-muted transition-colors hover:bg-surface-3 hover:text-ink"
           >
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden>
@@ -116,15 +93,8 @@ export default function NodePromptsPage() {
       </div>
 
       {error && (
-        <div className="mx-6 mt-4 flex items-center justify-between gap-4 rounded-sm border border-bad/20 bg-bad/5 px-4 py-3 text-sm text-bad">
-          <span>{error}</span>
-          {/* The breadcrumb above is easy to miss while reading the error, and in
-              this state it is the only way out — repeat it where the eye is. */}
-          {!nodeNm && (
-            <Button variant="secondary" size="sm" onClick={goToList} className="shrink-0">
-              노드 목록으로
-            </Button>
-          )}
+        <div className="mx-6 mt-4 rounded-sm border border-bad/20 bg-bad/5 px-4 py-3 text-sm text-bad">
+          {error}
         </div>
       )}
 

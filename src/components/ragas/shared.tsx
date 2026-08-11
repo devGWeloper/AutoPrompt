@@ -295,14 +295,32 @@ export function VersionSelect({ versions, value, onChange, placeholder, classNam
   );
 }
 
-export function SegToggle<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: { id: T; label: string }[] }) {
+/**
+ * 프롬프트 버전을 대상으로 한 실행이 현재 사용할 수 없는 상태여서, Single ·
+ * Compare 양쪽의 "프롬프트 버전" 대상을 임시로 막아둔다. 다시 열 때는 이 값만
+ * true 로 되돌리면 되고, 그 아래 동작 코드는 손대지 않았다.
+ */
+export const PROMPT_TARGET_ENABLED = false;
+
+/** 막아둔 선택지에 붙는 안내 — 왜 못 고르는지 없이 회색으로만 두면 고장으로 읽힌다. */
+export const PROMPT_TARGET_BLOCKED_HINT = '프롬프트 버전 대상 실행은 현재 준비 중입니다.';
+
+export function SegToggle<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: { id: T; label: string; disabled?: boolean; hint?: string }[] }) {
   return (
     <div className="inline-flex rounded-md border border-line bg-surface p-0.5">
       {options.map((o) => (
         <button
           key={o.id}
           onClick={() => onChange(o.id)}
-          className={'rounded px-3 py-1.5 text-sm font-medium transition-colors ' + (value === o.id ? 'bg-accent text-accent-fg' : 'text-muted hover:text-ink')}
+          disabled={o.disabled}
+          title={o.disabled ? o.hint : undefined}
+          className={cn(
+            'rounded px-3 py-1.5 text-sm font-medium transition-colors',
+            value === o.id ? 'bg-accent text-accent-fg' : 'text-muted hover:text-ink',
+            // Not `disabled:opacity-50` alone — the point is that it stays
+            // readable as a real option that is simply out of service.
+            o.disabled && 'cursor-not-allowed text-muted/50 hover:text-muted/50',
+          )}
         >
           {o.label}
         </button>
