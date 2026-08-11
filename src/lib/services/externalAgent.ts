@@ -1,10 +1,4 @@
-import {
-  getAgentConfig,
-  getFlowAuthKey,
-  getFlowBaseUrl,
-  getFlowProtocol,
-  type AgentProtocol,
-} from "@/lib/config";
+import { getAgentConfig, getFlowBaseUrl, getFlowHeaders } from "@/lib/config";
 import { ApiError, badGateway, errorText } from "@/lib/http";
 import { logger } from "@/lib/logger";
 
@@ -27,7 +21,7 @@ function seedSeq(d: Date): number {
   return (d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds()) * 100;
 }
 
-/** ``PM-YYYYMMDD-NNNN`` — monotonic within a day, across restarts. */
+/** ``PTX-YYYYMMDD-NNNN`` — monotonic within a day, across restarts. */
 function nextTraceId(): string {
   const d = new Date();
   const day =
@@ -39,7 +33,7 @@ function nextTraceId(): string {
     traceSeq = seedSeq(d);
   }
   traceSeq += 1;
-  return `PM-${day}-${String(traceSeq).padStart(4, "0")}`;
+  return `PTX-${day}-${String(traceSeq).padStart(4, "0")}`;
 }
 
 function sessionContext(userId: string, traceId: string): Record<string, string> {
@@ -72,7 +66,7 @@ export type FlowSide = "a" | "b";
 
 export function externalEnabled(): boolean {
   const a = getAgentConfig();
-  return a.runMode === "external" && (a.baseUrl || a.baseUrlA || a.baseUrlB).length > 0;
+  return a.runMode === "external" && (a.a.url || a.b.url).length > 0;
 }
 
 function normalizeDocs(raw: unknown): string[] {
@@ -100,21 +94,6 @@ function collectTxt(obj: unknown, out: string[]): void {
     const o = obj as Record<string, unknown>;
     if (o.type === "txt" && typeof o.value === "string") out.push(o.value);
   }
-}
-
-/** Walk an A2A result for `{kind|type: "text", text}` parts (message / artifacts). */
-function collectParts(obj: unknown, out: string[]): void {
-  if (Array.isArray(obj)) {
-    for (const item of obj) collectParts(item, out);
-    return;
-  }
-  if (!obj || typeof obj !== "object") return;
-  const o = obj as Record<string, unknown>;
-  if (typeof o.text === "string" && (o.kind === "text" || o.type === "text")) {
-    out.push(o.text);
-    return;
-  }
-  for (const v of Object.values(o)) collectParts(v, out);
 }
 
 /** Aggregate a text/event-stream reply into {response, docs, raw}. */
@@ -153,30 +132,29 @@ async function parseChatResponse(resp: Response): Promise<AgentAnswer> {
   }
   if (data && typeof data === "object" && !Array.isArray(data)) {
     let o = data as Record<string, unknown>;
-    let rpc = false;
-    // JSON-RPC 2.0 envelope: raise the error, else unwrap `result` and score that.
-    if (o.jsonrpc !== undefined || o.error !== undefined || o.result !== undefined) {
-      rpc = true;
-      if (o.error && typeof o.error === "object") {
-        const e = o.error as Record<string, unknown>;
-        const detail = e.data === undefined ? "" : ` ${JSON.stringify(e.data)}`;
-        throw new Error(`RPC error ${String(e.code ?? "")}: ${String(e.message ?? "")}${detail}`);
-      }
-      const result = o.result;
-      if (result !== undefined) {
-        if (result && typeof result === "object" && !Array.isArray(result)) {
-          o = result as Record<string, unknown>;
-        } else {
-          const txt = typeof result === "string" ? result : JSON.stringify(result);
-          return { response: txt, docs: [], raw: Array.isArray(result) ? result : txt };
-        }
-      }
+    // A 200 carrying an `error` object is still a failure — raise it rather than
+    // scoring the error body as if it were an answer. The endpoint's own code and
+    // message are the whole content of the failure, so both are surfaced.
+    if (o.error && typeof o.error === "object") {
+      const e = o.error as Record<string, unknown>;
+      const code = String(e.code ?? "").trim();
+      // `data: null` carries nothing; appending it just puts a bare "null" in
+      // front of the user.
+      const detail =
+        e.data === undefined || e.data === null ? "" : ` ${JSON.stringify(e.data)}`;
+      throw new Error(
+        `엔드포인트 오류${code ? ` ${code}` : ""} — ${String(e.message ?? "")}${detail}`,
+      );
     }
-    // A2A results carry the reply as message/artifact `parts`, not a `response` key.
-    if (rpc) {
-      const parts: string[] = [];
-      collectParts(o, parts);
-      if (parts.length) return { response: parts.join(""), docs: normalizeDocs(o.docs), raw: o };
+    // Some endpoints wrap the payload in `result`; score what is inside it.
+    const result = o.result;
+    if (result !== undefined) {
+      if (result && typeof result === "object" && !Array.isArray(result)) {
+        o = result as Record<string, unknown>;
+      } else {
+        const txt = typeof result === "string" ? result : JSON.stringify(result);
+        return { response: txt, docs: [], raw: Array.isArray(result) ? result : txt };
+      }
     }
     // Endpoints that reply with a different envelope (no `response` key, e.g.
     // {header, body}) keep their whole JSON as the answer so 정답 일치 can
@@ -190,97 +168,39 @@ async function parseChatResponse(resp: Response): Promise<AgentAnswer> {
   return { response: String(data), docs: [], raw: data as string };
 }
 
-function requestHeaders(
-  side?: FlowSide | null,
-  authKey?: string | null,
-  userId?: string | null,
-): Record<string, string> {
-  const a = getAgentConfig();
-  const ak = (authKey ?? getFlowAuthKey(side)).trim();
-  const uid = (userId ?? a.userId).trim();
+/** Content-Type plus whatever that side's config lists — names and values both
+ * come from the config, so A and B need share nothing. ``authKey`` is the key
+ * typed into the UI for a one-off call; it overrides the FIRST configured
+ * header's value, that slot being the side's credential. */
+function requestHeaders(side?: FlowSide | null, authKey?: string | null): Record<string, string> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (ak) headers[a.authHeader || "auth-key"] = ak;
-  if (uid) headers[a.userHeader || "user-id"] = uid;
+  const configured = getFlowHeaders(side);
+  for (const h of configured) headers[h.name] = h.value;
+  const override = (authKey ?? "").trim();
+  if (override && configured.length) headers[configured[0].name] = override;
   return headers;
 }
 
-/** Body for the plain chat endpoint (protocol=chat). */
-function chatPayload(message: string, uid: string, traceId: string): Record<string, unknown> {
-  return {
-    message,
-    user_id: uid,
-    session_id: "",
-    chat_type: "default",
-    a2a_remote_urls: null,
-    is_super_agent: null,
-    main_model_name: null,
-    // A STRING that is a stringified JSON object — the agent json.loads it.
-    session_system_prompt: JSON.stringify(sessionContext(uid, traceId)),
-  };
-}
-
-/** Body for the gaia gateway (protocol=gaia) — takes `query` instead of `message`
- * and wants the gaia channel fields plus the URL it was called on. `trace_id`
- * stays empty; the run's id rides in TRACE_ID. */
-function gaiaParams(message: string, uid: string, traceId: string, url: string): Record<string, unknown> {
-  return {
-    query: message,
-    user_id: uid,
-    session_id: "",
-    gaia_session_name: "",
-    gaia_input_channel: "api",
-    chat_type: "default",
-    a2a_remote_urls: null,
-    is_super_agent: null,
-    main_model_name: null,
-    session_system_prompt: JSON.stringify(sessionContext(uid, traceId)),
-    request_url: url,
-    trace_id: "",
-  };
-}
-
-/** The A2A `Message` — the one field `SendMessageRequest` requires under `params`
- * ("1 validation error for SendMessageRequest params.message"). The question
- * travels as text parts, not as a plain string. */
-function a2aMessage(message: string, traceId: string): Record<string, unknown> {
-  return {
-    role: "user",
-    parts: [{ kind: "text", text: message }],
-    messageId: traceId,
-    kind: "message",
-  };
-}
-
-/** The gaia endpoint speaks standard A2A `message/send`: the JSON-RPC trio at the
- * top level and a `params.message` object. The gaia body fields cannot sit
- * directly under `params` (the request model only knows message/configuration/
- * metadata and pushes anything else into the handler's first argument), so they
- * ride in `params.metadata`. */
-function gaiaPayload(message: string, uid: string, traceId: string, url: string): Record<string, unknown> {
-  return {
-    jsonrpc: "2.0",
-    id: traceId,
-    method: getAgentConfig().rpcMethod,
-    params: {
-      message: a2aMessage(message, traceId),
-      metadata: gaiaParams(message, uid, traceId, url),
-    },
-  };
-}
-
-/** The request body plus the TRACE_ID embedded in it — the caller needs the id to
- * look up whatever the agent captured mid-flow. */
+/** The request body — exactly these five keys, the endpoint's spec and nothing
+ * beyond it — plus the TRACE_ID embedded in it, which the caller needs to look
+ * up whatever the agent captured mid-flow. */
 function buildPayload(
-  protocol: AgentProtocol,
   message: string,
-  url: string,
   userId?: string | null,
 ): { body: Record<string, unknown>; traceId: string } {
   const uid = userId ?? getAgentConfig().userId;
   const traceId = nextTraceId();
-  const body =
-    protocol === "gaia" ? gaiaPayload(message, uid, traceId, url) : chatPayload(message, uid, traceId);
-  return { body, traceId };
+  return {
+    body: {
+      message,
+      user_id: uid,
+      session_id: "",
+      chat_type: "default",
+      // A STRING that is a stringified JSON object — the agent json.loads it.
+      session_system_prompt: JSON.stringify(sessionContext(uid, traceId)),
+    },
+    traceId,
+  };
 }
 
 const CALL_TIMEOUT_MS = 60000;
@@ -342,31 +262,20 @@ function oneLine(s: string): string {
 /** A non-2xx reply, with the body — the endpoint's own explanation of the
  * refusal ("field required", a stack trace, a gateway notice) is the whole
  * point; `HTTP 500` on its own tells nobody anything. */
-async function httpError(resp: Response, protocol: AgentProtocol, body: unknown): Promise<Error> {
+async function httpError(resp: Response, body: unknown): Promise<Error> {
   const text = oneLine(await resp.text().catch(() => ""));
   const status = `HTTP ${resp.status}${resp.statusText ? ` ${resp.statusText}` : ""}`;
   // A rejected request shape is the usual cause of 400/422, so those — and only
   // those — are worth telling the user what we actually sent.
-  const sent = resp.status === 400 || resp.status === 422 ? sentTag(protocol, body) : "";
+  const sent = resp.status === 400 || resp.status === 422 ? sentTag(body) : "";
   return new Error(`${status}${text ? ` — ${text.slice(0, 500)}` : ""}${sent}`);
 }
 
 /** Short "what we actually sent" tag appended to failures — the terminal log is
  * not always visible, so the shape of the request has to reach the UI. */
-function sentTag(protocol: AgentProtocol, body: unknown): string {
+function sentTag(body: unknown): string {
   if (!body || typeof body !== "object") return "";
-  const o = body as Record<string, unknown>;
-  const keys = Object.keys(o).join(",");
-  const method = typeof o.method === "string" ? ` method=${o.method}` : "";
-  let params = "";
-  if (o.params && typeof o.params === "object") {
-    const p = o.params as Record<string, unknown>;
-    params = ` params=[${Object.keys(p).join(",")}]`;
-    if (p.metadata && typeof p.metadata === "object") {
-      params += ` metadata=[${Object.keys(p.metadata as Record<string, unknown>).join(",")}]`;
-    }
-  }
-  return ` | sent: protocol=${protocol}${method} keys=[${keys}]${params}`;
+  return ` | sent: keys=[${Object.keys(body as Record<string, unknown>).join(",")}]`;
 }
 
 /** `fetch` only takes absolute URLs; a host written without a scheme fails as
@@ -378,18 +287,23 @@ function requireScheme(url: string, where: string): string {
   return url;
 }
 
+/** Which config key a side's URL lives under — for error messages only. */
+function urlSetting(side?: FlowSide | null): string {
+  return `agent.${side === "b" ? "b" : "a"}.url`;
+}
+
 function baseUrl(side?: FlowSide | null): string {
-  const setting = `agent.baseUrl${side ? side.toUpperCase() : ""}`;
+  const setting = urlSetting(side);
   const url = getFlowBaseUrl(side).trim().replace(/\/+$/, "");
   if (!url) throw badGateway(`${setting} 이 설정되어 있지 않습니다 (config.yml)`);
   return requireScheme(url, setting);
 }
 
 /** ``side`` picks which configured endpoint answers when nothing was typed —
- * a manual A/B compares agent.baseUrlA against agent.baseUrlB. */
+ * a manual A/B compares agent.a.url against agent.b.url. */
 export function ensureDirectUrl(override?: string | null, side: FlowSide = "a"): string {
   const url = (override || getFlowBaseUrl(side)).trim().replace(/\/+$/, "");
-  const setting = `agent.baseUrl${side === "b" ? "B" : ""}`;
+  const setting = urlSetting(side);
   if (!url) {
     throw badGateway(
       `호출할 외부 API URL이 없습니다 — 요청에 base_url을 넣거나 config.yml 의 ${setting} 을 설정하세요`,
@@ -400,28 +314,26 @@ export function ensureDirectUrl(override?: string | null, side: FlowSide = "a"):
 
 /** POST one turn to the external chat endpoint (RUN_MODE=external).
  * ``urlOverride`` pins this call to a specific endpoint; otherwise the side's
- * configured endpoint is used (agent.baseUrlA / agent.baseUrlB). */
+ * configured endpoint is used (agent.a.url / agent.b.url). */
 export async function runFlow(message: string, urlOverride?: string | null, side?: FlowSide | null): Promise<AgentAnswer> {
   // Kept outside the try so a failure can log exactly what went on the wire.
   let url = "";
   let body: unknown = null;
   let traceId = "";
-  const protocol = getFlowProtocol(side);
   try {
     url = urlOverride ? ensureDirectUrl(urlOverride) : baseUrl(side);
-    ({ body, traceId } = buildPayload(protocol, message, url));
+    ({ body, traceId } = buildPayload(message));
     const resp = await post(url, body, requestHeaders(side));
-    if (!resp.ok) throw await httpError(resp, protocol, body);
+    if (!resp.ok) throw await httpError(resp, body);
     const parsed = await parseChatResponse(resp);
     return { response: parsed.response, docs: parsed.docs, traceId };
   } catch (e) {
     logger.error("chat run failed", {
       side: side ?? null,
-      protocol,
       url,
       body: body === null ? null : JSON.stringify(body),
       err: String(e),
-      sent: sentTag(protocol, body),
+      sent: sentTag(body),
     });
     const err = badGateway(`답변 호출 실패 — ${describeCallError(e)}${url ? ` (${url})` : ""}`);
     // Carried so a run whose call died can still score a variable the agent
@@ -443,20 +355,18 @@ export async function runDirect(args: {
 }): Promise<AgentAnswer> {
   const side = args.side ?? "a";
   const url = ensureDirectUrl(args.baseUrl, side);
-  const protocol = getFlowProtocol(side);
-  const { body, traceId } = buildPayload(protocol, args.message, url, args.userId);
+  const { body, traceId } = buildPayload(args.message, args.userId);
   try {
-    const resp = await post(url, body, requestHeaders(side, args.authKey, args.userId));
-    if (!resp.ok) throw await httpError(resp, protocol, body);
+    const resp = await post(url, body, requestHeaders(side, args.authKey));
+    if (!resp.ok) throw await httpError(resp, body);
     return { ...(await parseChatResponse(resp)), traceId };
   } catch (e) {
     logger.error("direct call failed", {
       side,
-      protocol,
       url,
       body: JSON.stringify(body),
       err: String(e),
-      sent: sentTag(protocol, body),
+      sent: sentTag(body),
     });
     throw badGateway(`답변 호출 실패 — ${describeCallError(e)} (${url})`);
   }
@@ -475,7 +385,7 @@ export async function flowAnswer(
   urlOverride?: string | null,
   side?: FlowSide | null,
 ): Promise<AgentAnswer> {
-  // The side still decides the protocol even when the URL is typed in the UI.
+  // The side still decides which headers go out even when the URL is typed in the UI.
   if (urlOverride) return runFlow(message, urlOverride, side);
   if (externalEnabled()) return runFlow(message, null, side);
   return stubRunFlow(message);

@@ -444,7 +444,7 @@ interface RunCtx {
   exact: boolean;
   /** Endpoint typed into the UI for this run; null = use the side's config URL. */
   baseUrl: string | null;
-  /** Which configured endpoint this run calls (agent.baseUrlA / baseUrlB). */
+  /** Which configured endpoint this run calls (agent.a.url / agent.b.url). */
   side: agent.FlowSide | null;
   cases: CaseRow[];
   swapNode: string | null;
@@ -724,7 +724,7 @@ async function recordFailure(conn: OracleConnection, runId: number, msg: string,
 }
 
 /** Execute a single flow RAGAS run, streaming events via ``emit``.
- * ``opts.side`` picks the configured endpoint (agent.baseUrlA / baseUrlB) and
+ * ``opts.side`` picks the configured endpoint (agent.a.url / agent.b.url) and
  * ``opts.baseUrl`` overrides it with a URL typed into the UI. */
 export async function executeRun(
   runId: number,

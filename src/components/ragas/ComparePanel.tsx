@@ -83,7 +83,7 @@ export default function ComparePanel() {
   const [metrics, setMetrics] = useState<string[]>([EXACT_MATCH]);
   const [scoreOn, setScoreOn] = useState(true);
   // Temporary: the two versions currently live behind different endpoints, so a
-  // comparison can be driven by endpoints (config agent.baseUrlA / baseUrlB, or
+  // comparison can be driven by endpoints (config agent.a.url / agent.b.url, or
   // URLs typed here) instead of by two prompt versions of one node.
   // 프롬프트 버전 대상이 막혀 있는 동안에는 엔드포인트로 시작한다 — 고를 수 없는
   // 대상이 기본값이면 패널이 열리자마자 아무것도 못 하는 상태가 된다.
@@ -288,9 +288,9 @@ export default function ComparePanel() {
                프롬프트 교체 없이 각 URL을 그대로 호출한다. */
             <>
               <span className="text-[11px] font-semibold text-muted">A</span>
-              <Input value={urlA} onChange={(e) => setUrlA(e.target.value)} placeholder="비우면 config 의 agent.baseUrlA" className="w-64 text-sm" />
+              <Input value={urlA} onChange={(e) => setUrlA(e.target.value)} placeholder="비우면 config 의 agent.a.url" className="w-64 text-sm" />
               <span className="text-[11px] font-semibold text-muted">B</span>
-              <Input value={urlB} onChange={(e) => setUrlB(e.target.value)} placeholder="비우면 config 의 agent.baseUrlB" className="w-64 text-sm" />
+              <Input value={urlB} onChange={(e) => setUrlB(e.target.value)} placeholder="비우면 config 의 agent.b.url" className="w-64 text-sm" />
             </>
           )}
         </FormRow>

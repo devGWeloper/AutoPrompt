@@ -30,17 +30,21 @@ db:                       # PTX_* 테이블이 있는 Oracle 접속. 비우면 D
   connectString: "localhost:1521/XEPDB1"
 agent:                    # flow-level RAGAS 답변 생성용 외부 채팅 엔드포인트
   runMode: "stub"         # stub=결정론적 placeholder / external=실제 엔드포인트 호출
-  baseUrl: ""             # 공용 기본 엔드포인트 (A/B 가 비면 이 값)
-  baseUrlA: ""            # 비교 A 쪽 기본 엔드포인트 (단일 실행/단건 호출도 A)
-  baseUrlB: ""            # 비교 B 쪽 기본 엔드포인트
-  protocol: "chat"        # 요청 형식: chat(기존 채팅 body) | jsonrpc(JSON-RPC 2.0 / A2A)
-  protocolA: ""           # A 쪽 요청 형식 (비우면 protocol)
-  protocolB: ""           # B 쪽 요청 형식 (비우면 protocol)
-  rpcMethod: "message/send"  # protocol=jsonrpc 일 때의 method
-  authKey: ""             # 공용 인증 키 (A/B 가 비면 이 값)
-  authKeyA: ""            # A 쪽 인증 키
-  authKeyB: ""            # B 쪽 인증 키
-  userId: "pm-test"
+  userId: "pm-test"       # 요청자 사번. 본문의 user_id / CUBE_USER_ID 로 나간다
+  a:                      # 기본 엔드포인트. 사이드를 안 고르는 실행은 전부 a 를 쓴다
+    url: ""
+    headers:              # 그대로 실려 나간다. Content-Type 은 코드가 붙임
+      - name: ""
+        value: ""
+      - name: ""
+        value: ""
+  b:                      # 비교 대상. a 와 아무것도 공유하지 않는다
+    url: ""
+    headers:
+      - name: ""
+        value: ""
+      - name: ""
+        value: ""
 ragasEngine: "auto"       # auto=LLM 설정 시 LLM 심판, 아니면 FALLBACK / fallback / ragas
 llm:                      # 심판 LLM (OpenAI 호환). 비우면 LLM 채점 꺼짐 → FALLBACK
   endpoint: ""
@@ -96,14 +100,17 @@ npm run typecheck      # tsc --noEmit  (npm run build 는 dev .next 캐시를 �
 
 ## 외부 엔드포인트 호출 형식
 
-`src/lib/services/externalAgent.ts`. 엔드포인트마다 요청 형식이 달라서 `agent.protocol`(및 `protocolA`/`protocolB`)로 고른다. 어느 쪽이든 세션 컨텍스트(`CUBE_CHANNEL_ID`/`CUBE_CHANNEL_NM`/`CUBE_USER_ID`/`CUBE_USER_NM`/`TRACE_ID`)가 함께 나가며, `CUBE_USER_ID`는 호출자 사번(`agent.userId` 또는 요청의 `user_id`), `TRACE_ID`는 호출마다 `PM-YYYYMMDD-NNNN`으로 발급된다(일 단위 리셋, 카운터는 프로세스 메모리).
+`src/lib/services/externalAgent.ts`. 요청 형식은 **하나뿐**이다 — 설정으로 고르는 분기가 없다.
 
-- **`chat`** (기본) — `{message, user_id, session_id, chat_type, a2a_remote_urls, is_super_agent, main_model_name, session_system_prompt}`. `session_system_prompt`는 세션 컨텍스트를 **문자열로 직렬화**한 값이다.
-- **`gaia`** — 두 번째 엔드포인트(gaia 게이트웨이)용. 이쪽은 **표준 A2A `message/send`**(JSON-RPC 2.0)라서 `{jsonrpc:"2.0", id, method, params:{message, metadata}}` 구조를 요구한다. `params.message`가 필수이고(빠지면 `-32600 … 1 validation error for SendMessageRequest params.message`) `{role:"user", parts:[{kind:"text", text:<질문>}], messageId, kind:"message"}` 형태다. gaia 고유 필드(`query`, `user_id`, `session_id`, `gaia_session_name`, `gaia_input_channel:"api"`, `chat_type`, `a2a_remote_urls`, `is_super_agent`, `main_model_name`, `session_system_prompt`, `request_url`, `trace_id`)는 `params` 바로 아래에 두면 모델이 거부하므로 **`params.metadata`**에 실어 보낸다. `request_url`은 실제로 호출하는 URL, `trace_id`는 빈 문자열이다(실제 번호는 `session_system_prompt.TRACE_ID`).
+```json
+{ "message": "<질문>", "user_id": "<사번>", "session_id": "", "chat_type": "default", "session_system_prompt": "{…}" }
+```
 
-응답이 JSON-RPC 봉투(`{jsonrpc, result|error}`)로 오면 `error`는 그대로 실패 처리하고 `result`를 벗겨 `parts[].text`를 이어붙인다.
+**딱 다섯 개**이고, 이 밖의 키는 보내지 않는다. `session_system_prompt`는 세션 컨텍스트(`CUBE_CHANNEL_ID`/`CUBE_CHANNEL_NM`/`CUBE_USER_ID`/`CUBE_USER_NM`/`TRACE_ID`)를 **문자열로 직렬화**한 값이다(에이전트가 `json.loads` 한다). `CUBE_USER_ID`는 호출자 사번(`agent.userId` 또는 요청의 `user_id`), `TRACE_ID`는 호출마다 `PTX-YYYYMMDD-NNNN`으로 발급된다(일 단위 리셋, 카운터는 프로세스 메모리).
 
-헤더는 `auth-key`/`user-id`(이름은 `authHeader`/`userHeader`로 변경 가능)이고, 인증 키는 `authKeyA`/`authKeyB`로 A/B를 나눠 줄 수 있다. URL은 설정값 뒤 슬래시만 떼고 **그 주소로 그대로 POST**한다(코드가 `/chat` 같은 경로를 붙이지 않음).
+응답에 `error` 객체가 있으면 200이어도 실패로 올린다(`엔드포인트 오류 <code> — <message>`). `result` 로 감싸 오면 그 안을 벗겨 채점한다.
+
+헤더는 사이드별 `agent.a.headers` / `agent.b.headers`에 적은 이름·값이 그대로 나간다. A와 B는 아무것도 공유하지 않으므로 헤더 이름이 서로 달라도 된다(예: A는 `auth-key`, B는 `accesskey`). `Content-Type: application/json`은 코드가 항상 붙이므로 적지 않는다. URL은 설정값 뒤 슬래시만 떼고 **그 주소로 그대로 POST**한다(코드가 `/chat` 같은 경로를 붙이지 않음).
 
 ## 진행 스트리밍 (SSE)
 
@@ -111,7 +118,7 @@ RAGAS 실행 진행상황은 WebSocket 대신 **SSE**로 전송된다. `POST /ap
 
 **실행은 연결이 아니라 `src/lib/services/runRegistry.ts` 가 소유한다.** 스트림은 실행에 붙었다 떨어질 뿐이라 새로고침·탭 닫기·네트워크 끊김이 실행을 죽이지 않는다. 다시 붙으면 그동안의 이벤트(RUNNING → 케이스별 최신 결과 → 종료)를 재생받아 화면이 그대로 복구된다. 프론트는 진행 중인 run id 를 `sessionStorage`(`ptx.activeRun.*`)에 남겨 새로고침 후 자동 재접속한다. 레지스트리는 프로세스 메모리이므로 **서버가 재시작되면** 그 run 은 되살릴 수 없다 — 이 경우 재접속 시 케이스를 다시 실행해 행을 중복 적재하지 않고 해당 run 을 FAILED(`실행이 중단되었습니다…`)로 마감한다.
 
-스트림에 `?side=a|b` 를 붙이면 그 런은 해당 쪽 기본 엔드포인트(`agent.baseUrlA` / `baseUrlB`)를 호출하고, `?base_url=` 를 함께 주면 그 URL이 우선한다. Compare 탭의 **엔드포인트** 모드가 이 경로로, 두 버전이 서로 다른 API에 떠 있을 때 쓰는 임시 수단이다(이 모드에서는 프롬프트 버전을 고르지 않으므로 활성 버전 교체도 일어나지 않는다). **프롬프트 버전** 모드는 종전대로 한 노드의 두 버전을 같은 엔드포인트에서 비교한다.
+스트림에 `?side=a|b` 를 붙이면 그 런은 해당 쪽 엔드포인트(`agent.a.url` / `agent.b.url`)를 호출하고, `?base_url=` 를 함께 주면 그 URL이 우선한다. Compare 탭의 **엔드포인트** 모드가 이 경로로, 두 버전이 서로 다른 API에 떠 있을 때 쓰는 임시 수단이다(이 모드에서는 프롬프트 버전을 고르지 않으므로 활성 버전 교체도 일어나지 않는다). **프롬프트 버전** 모드는 종전대로 한 노드의 두 버전을 같은 엔드포인트에서 비교한다.
 
 ## 내보내기
 

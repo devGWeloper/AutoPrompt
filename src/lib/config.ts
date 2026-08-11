@@ -12,38 +12,34 @@ export interface DbConfig {
   connectString: string;
 }
 
-/** Request format an endpoint speaks: the plain chat body ({message, …}) or the
- * gaia gateway body ({query, gaia_*, request_url, …}). */
-export type AgentProtocol = "chat" | "gaia";
+/** One request header the endpoint wants. A slot with a blank `name` is unused
+ * and is skipped, so empty slots can sit in the config as placeholders. */
+export interface AgentHeader {
+  name: string;
+  value: string;
+}
+
+/** One endpoint the flow can call. A and B are configured independently —
+ * different URL, different header names AND values. There is no shared fallback
+ * between them; A is simply the default. */
+export interface AgentSideConfig {
+  url: string;
+  /** Sent as-is. `Content-Type: application/json` is added by the caller and is
+   * not listed here. */
+  headers: AgentHeader[];
+}
 
 /** External chat / super-agent integration (flow-level RAGAS answer generation). */
 export interface AgentConfig {
   /** "external" routes answer generation to the real chat endpoint; "stub" returns a placeholder. */
   runMode: "external" | "stub";
-  /** Shared default endpoint; used when the per-side URL is empty. */
-  baseUrl: string;
-  /** Compare side A endpoint (falls back to baseUrl). */
-  baseUrlA: string;
-  /** Compare side B endpoint — the two versions currently live behind
-   * different URLs, so B is configured separately (falls back to baseUrl). */
-  baseUrlB: string;
-  /** Shared default request format; used when the per-side value is empty. */
-  protocol: AgentProtocol;
-  /** Per-side request format ("" → use `protocol`). The A/B endpoints may speak
-   * different protocols while the two versions live behind different URLs. */
-  protocolA: AgentProtocol | "";
-  protocolB: AgentProtocol | "";
-  /** JSON-RPC method name sent when protocol=gaia (the body rides in `params`). */
-  rpcMethod: string;
-  /** Shared default auth key; used when the per-side key is empty. */
-  authKey: string;
-  /** Per-side auth key — the A/B endpoints are different services and may each
-   * want their own credential (falls back to authKey). */
-  authKeyA: string;
-  authKeyB: string;
+  /** Caller's employee number. Goes out in the BODY (`user_id` and
+   * `CUBE_USER_ID`), not as a header — headers are per-side and explicit. */
   userId: string;
-  authHeader: string;
-  userHeader: string;
+  /** Side A. Also the default: a run that names no side calls A. */
+  a: AgentSideConfig;
+  /** Side B — the comparison target. */
+  b: AgentSideConfig;
 }
 
 /** OpenAI-compatible endpoint (base URL + key + model). Used for the RAGAS
@@ -71,13 +67,18 @@ interface AppConfig {
   sourceFile: string | null;
 }
 
+interface RawSide {
+  url?: string;
+  headers?: { name?: string; value?: string }[];
+}
+
 interface RawConfig {
   db?: Partial<DbConfig>;
-  agent?: Partial<Omit<AgentConfig, "runMode" | "protocol" | "protocolA" | "protocolB">> & {
+  agent?: {
     runMode?: string;
-    protocol?: string;
-    protocolA?: string;
-    protocolB?: string;
+    userId?: string;
+    a?: RawSide;
+    b?: RawSide;
   };
   llm?: Partial<OpenAiCompatConfig>;
   embedding?: Partial<OpenAiCompatConfig>;
@@ -110,32 +111,24 @@ function normalizeDb(raw: RawConfig | null): DbConfig | null {
   return { user, password, connectString };
 }
 
-/** "gaia" (and the older jsonrpc/rpc/a2a spellings) → gaia; empty → `fallback`
- * (so a blank per-side value defers to the shared setting); else → chat. */
-function normalizeProtocol<T extends AgentProtocol | "">(v: unknown, fallback: T): AgentProtocol | T {
-  const m = String(v ?? "").trim().toLowerCase();
-  if (!m) return fallback;
-  return m === "gaia" || m === "jsonrpc" || m === "rpc" || m === "a2a" ? "gaia" : "chat";
+function normalizeSide(v: RawSide | undefined): AgentSideConfig {
+  const headers: AgentHeader[] = [];
+  for (const h of Array.isArray(v?.headers) ? v!.headers : []) {
+    const name = String(h?.name ?? "").trim();
+    // An empty slot is a placeholder waiting to be filled in, not a header.
+    if (!name) continue;
+    headers.push({ name, value: String(h?.value ?? "").trim() });
+  }
+  return { url: (v?.url ?? "").trim().replace(/\/+$/, ""), headers };
 }
 
 function normalizeAgent(raw: RawConfig | null): AgentConfig {
   const a = raw?.agent ?? {};
-  const runMode = (a.runMode ?? "").trim().toLowerCase() === "external" ? "external" : "stub";
   return {
-    runMode,
-    baseUrl: (a.baseUrl ?? "").trim(),
-    baseUrlA: (a.baseUrlA ?? "").trim(),
-    baseUrlB: (a.baseUrlB ?? "").trim(),
-    protocol: normalizeProtocol(a.protocol, "chat"),
-    protocolA: normalizeProtocol(a.protocolA, ""),
-    protocolB: normalizeProtocol(a.protocolB, ""),
-    rpcMethod: (a.rpcMethod ?? "").trim() || "message/send",
-    authKey: (a.authKey ?? "").trim(),
-    authKeyA: (a.authKeyA ?? "").trim(),
-    authKeyB: (a.authKeyB ?? "").trim(),
+    runMode: (a.runMode ?? "").trim().toLowerCase() === "external" ? "external" : "stub",
     userId: (a.userId ?? "pm-test").trim() || "pm-test",
-    authHeader: (a.authHeader ?? "auth-key").trim() || "auth-key",
-    userHeader: (a.userHeader ?? "user-id").trim() || "user-id",
+    a: normalizeSide(a.a),
+    b: normalizeSide(a.b),
   };
 }
 
@@ -191,10 +184,11 @@ export function loadConfig(): AppConfig {
     sourceFile: cached.sourceFile,
     dbConfigured: cached.db !== null,
     runMode: cached.agent.runMode,
-    agentBaseUrlA: cached.agent.baseUrlA || cached.agent.baseUrl,
-    agentBaseUrlB: cached.agent.baseUrlB || cached.agent.baseUrl,
-    agentProtocolA: cached.agent.protocolA || cached.agent.protocol,
-    agentProtocolB: cached.agent.protocolB || cached.agent.protocol,
+    agentUrlA: cached.agent.a.url,
+    agentUrlB: cached.agent.b.url,
+    // Names only — the values are credentials and must not reach the log.
+    agentHeadersA: cached.agent.a.headers.map((h) => h.name),
+    agentHeadersB: cached.agent.b.headers.map((h) => h.name),
     ragasEngine: cached.ragasEngine,
     llmConfigured: cached.llm.endpoint !== "",
     embeddingConfigured: cached.embedding.endpoint !== "",
@@ -214,26 +208,21 @@ export function getAgentConfig(): AgentConfig {
   return loadConfig().agent;
 }
 
-/** Which chat endpoint a run should call: the A/B side URL when configured,
- * otherwise the shared default. '' when nothing is configured. */
+/** The endpoint a run talks to. Anything that does not name a side gets A —
+ * A *is* the default, so there is no separate shared URL to fall back to. */
+export function getFlowSide(side?: "a" | "b" | null): AgentSideConfig {
+  const a = loadConfig().agent;
+  return side === "b" ? a.b : a.a;
+}
+
+/** That side's URL. '' when it is not configured. */
 export function getFlowBaseUrl(side?: "a" | "b" | null): string {
-  const a = loadConfig().agent;
-  const perSide = side === "b" ? a.baseUrlB : side === "a" ? a.baseUrlA : "";
-  return perSide || a.baseUrl;
+  return getFlowSide(side).url;
 }
 
-/** Which request format that side's endpoint speaks (per-side, else shared). */
-export function getFlowProtocol(side?: "a" | "b" | null): AgentProtocol {
-  const a = loadConfig().agent;
-  const perSide = side === "b" ? a.protocolB : side === "a" ? a.protocolA : "";
-  return perSide || a.protocol;
-}
-
-/** Auth key for that side's endpoint (per-side, else shared). '' when unset. */
-export function getFlowAuthKey(side?: "a" | "b" | null): string {
-  const a = loadConfig().agent;
-  const perSide = side === "b" ? a.authKeyB : side === "a" ? a.authKeyA : "";
-  return perSide || a.authKey;
+/** That side's configured headers (Content-Type not included). */
+export function getFlowHeaders(side?: "a" | "b" | null): AgentHeader[] {
+  return getFlowSide(side).headers;
 }
 
 export function getLlmConfig(): OpenAiCompatConfig {

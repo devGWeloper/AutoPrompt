@@ -79,7 +79,7 @@ function AuthOverrides({
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
       <div>
         <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Auth Key</label>
-        <Input value={authKey} onChange={(e) => setAuthKey(e.target.value)} placeholder="비우면 config.yml 의 agent.authKey" className="w-full text-sm" />
+        <Input value={authKey} onChange={(e) => setAuthKey(e.target.value)} placeholder="비우면 config.yml 의 agent.a.headers 값" className="w-full text-sm" />
       </div>
       <div>
         <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">User ID</label>
@@ -284,7 +284,7 @@ export default function SingleRunPanel() {
               <Input
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder="비우면 config.yml 의 agent.baseUrl"
+                placeholder="비우면 config.yml 의 agent.a.url"
                 className="w-80 text-sm"
               />
               <span className="text-xs text-muted">프롬프트를 교체하지 않고 현재 상태(As-is) 그대로 호출합니다.</span>

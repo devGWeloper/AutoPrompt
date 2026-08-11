@@ -344,7 +344,7 @@ export interface DirectTestOut {
 }
 
 /** One side of a manual A/B: a prompt version to swap in, or an endpoint to
- * call. Both blank = that side's configured endpoint (agent.baseUrlA / B). */
+ * call. Both blank = that side's configured endpoint (agent.a.url / agent.b.url). */
 export interface DirectAbSide {
   prompt_id?: number | null;
   base_url?: string | null;

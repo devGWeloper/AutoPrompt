@@ -13,21 +13,33 @@ db:
   password: "orcl"
   connectString: "localhost:1521/orcl"
 
+# a / b 는 완전히 독립적이다 — URL·헤더 이름·헤더 값 어느 것도 서로 공유하지
+# 않는다. 사이드를 지정하지 않는 실행(단일 실행, 단건 호출)은 전부 a 를 쓴다.
+# 즉 a 가 곧 기본 엔드포인트다.
+#
+# headers 는 그대로 실려 나간다. Content-Type: application/json 은 코드가
+# 항상 붙이므로 여기 적지 않는다. name 이 비어 있는 칸은 무시된다.
 agent:
   runMode: "stub"           # stub | external
-  baseUrl: ""               # 공용 기본 엔드포인트 (아래 A/B 가 비면 이 값을 쓴다)
-  baseUrlA: ""              # 비교 A 쪽 기본 엔드포인트 (단일 실행/단건 호출도 A 를 쓴다)
-  baseUrlB: ""              # 비교 B 쪽 기본 엔드포인트 (두 버전이 다른 API 에 떠 있는 경우)
-  protocol: "chat"          # 공용 요청 형식. chat = {message,…} / gaia = {query, gaia_*, request_url,…}
-  protocolA: ""             # A 쪽 요청 형식 (비우면 위 protocol)
-  protocolB: ""             # B 쪽 요청 형식 (비우면 위 protocol)
-  rpcMethod: "message/send" # protocol=gaia 일 때 JSON-RPC method 이름
-  authKey: ""               # 공용 인증 키 (아래 A/B 가 비면 이 값)
-  authKeyA: ""              # A 쪽 인증 키
-  authKeyB: ""              # B 쪽 인증 키
-  userId: "pm-test"
-  authHeader: "auth-key"
-  userHeader: "user-id"
+  userId: "pm-test"         # 요청자 사번. 본문의 user_id / CUBE_USER_ID 로 나간다
+
+  # ── A (기본 엔드포인트) ───────────────────────────────────────
+  a:
+    url: ""
+    headers:
+      - name: ""
+        value: ""
+      - name: ""
+        value: ""
+
+  # ── B (비교 대상) ────────────────────────────────────────────
+  b:
+    url: ""
+    headers:
+      - name: ""
+        value: ""
+      - name: ""
+        value: ""
 
 # RAGAS 채점 엔진
 #   auto     = llm.endpoint 이 있으면 LLM 심판(RAGAS), 없으면 FALLBACK(토큰 겹침)
