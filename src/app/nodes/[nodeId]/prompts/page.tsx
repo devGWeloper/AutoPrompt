@@ -59,6 +59,19 @@ export default function NodePromptsPage() {
     reload();
   }, [reload]);
 
+  /** Back to the node list.
+   *
+   * A missing segment means this page is mounted under a route that has none —
+   * i.e. the router already believes it is on /nodes while this tree is still on
+   * screen (a soft navigation that never finished). `router.push('/nodes')` is
+   * then a no-op: it is the address we are already at. Only a full load rebuilds
+   * the tree and gets out, so the broken state navigates hard and the normal
+   * one keeps the soft push. */
+  const goToList = useCallback(() => {
+    if (nodeNm) router.push('/nodes');
+    else window.location.assign('/nodes');
+  }, [nodeNm, router]);
+
   async function selectVersion(id: number) {
     setDetail(await api.get<PromptVersionDetail>(`/prompts/${id}`));
     setTab('editor');
@@ -89,7 +102,7 @@ export default function NodePromptsPage() {
       <div className="border-b border-line bg-surface">
         <div className={cn(SHELL, 'flex h-11 items-center gap-1.5 px-6')}>
           <button
-            onClick={() => router.push('/nodes')}
+            onClick={goToList}
             className="-ml-2 inline-flex items-center gap-1 rounded-sm px-2 py-1 text-[13px] font-medium text-muted transition-colors hover:bg-surface-3 hover:text-ink"
           >
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden>
@@ -103,8 +116,15 @@ export default function NodePromptsPage() {
       </div>
 
       {error && (
-        <div className="mx-6 mt-4 rounded-sm border border-bad/20 bg-bad/5 px-4 py-3 text-sm text-bad">
-          {error}
+        <div className="mx-6 mt-4 flex items-center justify-between gap-4 rounded-sm border border-bad/20 bg-bad/5 px-4 py-3 text-sm text-bad">
+          <span>{error}</span>
+          {/* The breadcrumb above is easy to miss while reading the error, and in
+              this state it is the only way out — repeat it where the eye is. */}
+          {!nodeNm && (
+            <Button variant="secondary" size="sm" onClick={goToList} className="shrink-0">
+              노드 목록으로
+            </Button>
+          )}
         </div>
       )}
 
