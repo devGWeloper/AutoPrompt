@@ -72,13 +72,25 @@ export default function NodePromptsPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <TopBar
-        right={
-          <Button variant="secondary" size="sm" onClick={() => router.push('/nodes')}>
-            ← Nodes
-          </Button>
-        }
-      />
+      <TopBar />
+
+      {/* Breadcrumb strip: the way back sits top-left, where the eye starts and
+          directly above the version list — not buried beside the status pills. */}
+      <div className="border-b border-line bg-surface">
+        <div className={cn(SHELL, 'flex h-11 items-center gap-1.5 px-6')}>
+          <button
+            onClick={() => router.push('/nodes')}
+            className="-ml-2 inline-flex items-center gap-1 rounded-sm px-2 py-1 text-[13px] font-medium text-muted transition-colors hover:bg-surface-3 hover:text-ink"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden>
+              <path d="M15 6 L9 12 L15 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Prompt nodes
+          </button>
+          <span className="text-line-strong">/</span>
+          <span className="truncate text-[13px] font-semibold text-ink">{nodeNm}</span>
+        </div>
+      </div>
 
       {error && (
         <div className="mx-6 mt-4 rounded-sm border border-bad/20 bg-bad/5 px-4 py-3 text-sm text-bad">
@@ -140,9 +152,10 @@ export default function NodePromptsPage() {
             <>
               <div className="flex items-center justify-between gap-3 border-b border-line bg-surface px-6 py-4">
                 <div className="min-w-0">
+                  {/* The node name now lives in the breadcrumb above, so the
+                      header only carries which version is open. */}
                   <div className="flex items-center gap-2">
-                    <h1 className="truncate text-base font-semibold text-ink">{nodeNm}</h1>
-                    <span className="font-mono text-sm text-muted">v{detail.version_no}</span>
+                    <h1 className="font-mono text-base font-semibold text-ink">v{detail.version_no}</h1>
                     {detail.model_nm && <Badge tone="neutral">{detail.model_nm}</Badge>}
                   </div>
                   {detail.change_summary && (
