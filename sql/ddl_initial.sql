@@ -149,8 +149,9 @@ CREATE TABLE PTX_TRACE_HIS (
 
 -- 8) 외부 에이전트의 LLM role 별 모델명. 에이전트가 ROLE_CD 로 읽어 자기 config 의
 --    모델명을 덮어쓴다 — PTX 는 쓰기만 하고 적용은 에이전트가 한다.
---    ROLE_CD 는 에이전트 LLMModel enum 의 value 와 글자까지 같아야 한다(유일한 조인 키).
---    endpoint / api_key 는 role 4종 공통이라 에이전트 config 에 그대로 둔다. 키를 여기
+--    ROLE_CD 는 에이전트 LLMModel enum 의 멤버 이름(.name)과 글자까지 같아야 한다
+--    — 유일한 조인 키다. enum 의 value 는 실제 모델명이 아니라 라벨이라 쓰지 않는다.
+--    endpoint / api_key 는 role 공통이라 에이전트 config 에 그대로 둔다. 키를 여기
 --    넣으면 PTX_AUDIT_HIS 의 before/after 스냅샷에 평문으로 복사된다.
 CREATE TABLE PTX_MODEL_MAS (
     MODEL_ID     NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -170,8 +171,11 @@ CREATE INDEX IDX_PTX_RUN_DET_RUN  ON PTX_RUN_DET (RUN_ID);
 CREATE INDEX IDX_PTX_RUN_MAS_DS   ON PTX_RUN_MAS (DATASET_ID);
 CREATE INDEX IDX_PTX_AUDIT_TARGET ON PTX_AUDIT_HIS (TARGET_TABLE_NM, TARGET_ID);
 
--- role 4종 seed. 이후 추가·삭제는 /models 화면에서 한다(에이전트 enum 이 바뀔 때).
--- MODEL_NM 이 NULL 이면 에이전트는 자기 config 의 기본 모델명을 그대로 쓴다.
+-- role seed. ★ 아래 4개는 가정값이다 — 에이전트 LLMModel 의 실제 멤버 이름으로 바꿔서
+-- 넣을 것 (대소문자까지 일치해야 한다. 파이썬 enum 관례상 'LLM','VLM',... 일 가능성이 높다).
+-- 확인:  python -c "from config.settings import LLMModel; print([e.name for e in LLMModel])"
+-- 이후 추가·삭제는 /models 화면에서 한다. MODEL_NM 이 NULL 이면 에이전트는 자기 config 의
+-- 기본 모델명을 그대로 쓴다.
 INSERT INTO PTX_MODEL_MAS (ROLE_CD, USER_ID) VALUES ('llm', 'system');
 
 INSERT INTO PTX_MODEL_MAS (ROLE_CD, USER_ID) VALUES ('vlm', 'system');

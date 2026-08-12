@@ -122,7 +122,13 @@ export interface PromptVersionEdit {
  * role should run; the agent reads PTX_MODEL_MAS by ROLE_CD and overrides the
  * model name in its own config (endpoint/api key stay there — they're shared by
  * all four roles). ROLE_CD must equal the agent's LLMModel enum value exactly:
- * that string is the only join key between the two systems. */
+ * that string is the only join key between the two systems.
+ *
+ * This list is a hint for the add dialog, NOT the truth. The truth is the
+ * agent's `LLMModel` enum, which lives in another process and can change without
+ * PTX knowing — so the dialog offers these as shortcuts and says where to check.
+ * (Agents that self-register their roles at startup make the table itself the
+ * truth; see docs/model-roles-agent.md.) */
 export const MODEL_ROLES = ["llm", "vlm", "light_llm", "judge_llm"] as const;
 
 /** Captions the UI shows under a role name. Only for roles whose name would
