@@ -15,6 +15,7 @@ import { exactMatchScore } from "@/lib/exactMatch";
 import { resolveRagasEngine } from "@/lib/config";
 import { requireDataset } from "./datasets";
 import { currentModelSnapshot, modelSnapshot } from "./models";
+import { stageCallConfig, writeCallConfig } from "./callConfig";
 import * as agent from "./externalAgent";
 import { readTraceVar } from "./trace";
 import * as registry from "./runRegistry";
@@ -127,8 +128,6 @@ export async function createFlowRagasAbRun(args: {
   promptIdB?: number | null;
   metrics: string[];
   score?: boolean;
-  /** role→model for side B only. A always runs the saved baseline. */
-  modelOverrideB?: Record<string, string> | null;
 }): Promise<{ ragas_run_a_id: number; ragas_run_b_id: number }> {
   await requireDataset(args.datasetId);
   return withConn(async (conn, oracle) => {
@@ -143,16 +142,14 @@ export async function createFlowRagasAbRun(args: {
       }
     }
     const chosen = args.score === false ? [] : chosenMetrics(args.metrics);
-    // A runs the saved baseline; B layers the override on top. Only B can carry
-    // one, so a comparison always has a fixed reference side (see the panel).
-    // Each side's effective config is stamped on its own run row and is what
-    // that side actually sends — record and request can't drift apart.
+    // A runs what /models pins; B runs the agent's own config untouched. So a
+    // comparison always reads "변경안(A) vs 현행(B)" and needs no model control
+    // of its own — changing the model anywhere means changing it on /models.
     const modelsA = await modelSnapshot(conn);
-    const modelsB = await modelSnapshot(conn, args.modelOverrideB);
     const ids: number[] = [];
     for (const [pid, models] of [
       [args.promptIdA ?? null, modelsA],
-      [args.promptIdB ?? null, modelsB],
+      [args.promptIdB ?? null, null],
     ] as [number | null, string | null][]) {
       const id = await insertReturningId(
         conn,
@@ -232,15 +229,17 @@ export interface DirectRunArgs {
   score?: boolean;
   metrics?: string[];
   expectedOutput?: string | null;
-  /** role→model layered on the saved baseline for this call. */
-  modelOverride?: Record<string, string> | null;
 }
 
 export async function recordDirectRun(args: DirectRunArgs): Promise<DirectRunResult> {
-  // Resolved once: the same value goes out on the wire and onto the run row, so
-  // the record cannot claim a config the call did not use.
-  const models = await currentModelSnapshot(args.modelOverride);
-  const data = await callForPrompt({ ...args, models });
+  // Side B is the untouched reference: it runs the agent's own config, so it gets
+  // no staged row. Everything else (single calls, side A) runs what /models pins.
+  const models = args.side === "b" ? null : await currentModelSnapshot();
+  // Issued up front so the config can be staged under it before the call. The run
+  // row does not exist yet — RUN_ID is backfilled once it does.
+  const callId = agent.nextTraceId();
+  await stageCallConfig(callId, null, models);
+  const data = await callForPrompt({ ...args, traceId: callId });
   // Optional inline scoring — a single case whose ground truth is whatever the
   // caller typed as the expected answer (blank → gt-based metrics stay null).
   const groundTruth = args.expectedOutput?.trim() ? args.expectedOutput : null;
@@ -312,6 +311,12 @@ export async function recordDirectRun(args: DirectRunArgs): Promise<DirectRunRes
         ac: dec("answer_correctness"),
       },
     );
+    // Backfill the staged row now that there is a run to attach it to, so it is
+    // cleaned up with the record instead of lingering as an orphan.
+    await conn.execute(`UPDATE PTX_CALL_MAS SET RUN_ID = :rid WHERE TRACE_ID = :t`, {
+      rid: runId,
+      t: callId,
+    });
     return runId;
   }, { commit: true });
   // score_error rides back with the answer: the call succeeded, so failing
@@ -334,8 +339,6 @@ export async function recordDirectAbRun(args: {
   score?: boolean;
   metrics?: string[];
   expectedOutput?: string | null;
-  /** role→model for side B only — A is the fixed reference (saved baseline). */
-  modelOverrideB?: Record<string, string> | null;
   a: Pick<DirectRunArgs, "promptId" | "baseUrl" | "authKey" | "userId">;
   b: Pick<DirectRunArgs, "promptId" | "baseUrl" | "authKey" | "userId">;
 }): Promise<{ a: DirectRunResult; b: DirectRunResult }> {
@@ -355,7 +358,7 @@ export async function recordDirectAbRun(args: {
     }
   };
   const a = await sideRun("A", { ...common, ...args.a, side: "a" });
-  const b = await sideRun("B", { ...common, ...args.b, side: "b", modelOverride: args.modelOverrideB });
+  const b = await sideRun("B", { ...common, ...args.b, side: "b" });
   await withConn(async (conn) => {
     await conn.execute(`UPDATE PTX_RUN_MAS SET AB_GROUP_ID = :g WHERE RUN_ID IN (:a, :b)`, {
       g: a.run_id,
@@ -565,8 +568,12 @@ async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx,
     let errMsg: string | null = null;
     let contexts = fields.contexts;
     let traceId: string | null = null;
+    // The id is issued here, not inside the client, because the model config has
+    // to be staged (and committed) under it before the request goes out.
+    const callId = agent.nextTraceId();
+    await writeCallConfig(conn, callId, ctx.runId, ctx.models);
     try {
-      const data = await agent.flowAnswer(message, ctx.baseUrl, ctx.side, ctx.models);
+      const data = await agent.flowAnswer(message, ctx.baseUrl, ctx.side, callId);
       answer = data.response;
       traceId = data.traceId ?? null;
       if (!contexts.length && data.docs.length) contexts = data.docs;

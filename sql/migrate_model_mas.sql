@@ -2,9 +2,10 @@
 -- LLM role 별 모델 관리 — 기존 DB 에 적용하는 마이그레이션
 --
 -- 외부 에이전트 config 의 LLM 4종(llm / vlm / light_llm / judge_llm)을 PTX 화면에서
--- 조정하기 위한 테이블. PTX 만 읽고 쓴다 — 지정한 모델은 호출마다
--- session_system_prompt 의 MODEL_OVERRIDE 로 실려 나가고, 에이전트는 그 호출에만
--- 적용한다(docs/model-roles-agent.md). endpoint / api_key 는 계속 에이전트 config 에 둔다.
+-- 조정하기 위한 테이블. 모델을 바꾸는 유일한 곳이다. 지정한 값은 호출 직전에
+-- PTX_CALL_MAS 로 옮겨 적히고 에이전트가 거기서 읽어 간다(docs/model-roles-agent.md).
+-- endpoint / api_key 는 계속 에이전트 config 에 둔다.
+-- ※ 이 테이블만으로는 적용이 안 된다 — sql/migrate_call_config.sql 도 같이 돌릴 것.
 --
 -- 한 문장씩 실행할 것. 중간에 빈 줄을 넣지 말 것(SQL*Plus 가 문장을 끊는다).
 -- ============================================================
@@ -35,8 +36,7 @@ INSERT INTO PTX_MODEL_MAS (ROLE_CD, USER_ID) VALUES ('judge_llm', 'system');
 
 COMMIT;
 
--- 3) 에이전트에게 줄 권한은 없다. 이 표는 PTX 만 읽고 쓰며, 지정한 모델은 호출마다
---    session_system_prompt 의 MODEL_OVERRIDE 로 실려 나간다.
+-- 3) 이 표에 대한 에이전트 권한은 필요 없다. 에이전트가 읽는 건 PTX_CALL_MAS 쪽이다.
 
 -- 4) 확인 — 4행이 나오면 정상
 SELECT ROLE_CD, MODEL_NM, TEMPERATURE FROM PTX_MODEL_MAS ORDER BY MODEL_ID;

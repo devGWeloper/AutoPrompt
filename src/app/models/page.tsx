@@ -289,10 +289,11 @@ export default function ModelsPage() {
           )}
 
           <p className="mt-6 text-xs leading-relaxed text-muted">
-            저장한 값은 <strong className="font-medium text-ink/70">여기서 실행하는 호출에만</strong> 실려
-            나갑니다 (<span className="font-mono">session_system_prompt</span> 의{' '}
-            <span className="font-mono">MODEL_OVERRIDE</span>) — 운영 트래픽은 영향받지 않습니다. Compare 에서는
-            이 값이 A(기준)가 되고 B 쪽만 다른 모델로 바꿔 비교할 수 있습니다. role 이름은 에이전트{' '}
+            모델을 바꾸는 곳은 여기 하나입니다. 저장한 값은{' '}
+            <strong className="font-medium text-ink/70">여기서 실행하는 호출에만</strong> 적용되고 운영
+            트래픽은 영향받지 않습니다. Compare 에서는 <strong className="font-medium text-ink/70">A</strong> 가
+            이 값으로, <strong className="font-medium text-ink/70">B</strong> 는 에이전트 config 그대로
+            실행되므로 그대로 &ldquo;변경안 vs 현행&rdquo; 비교가 됩니다. role 이름은 에이전트{' '}
             <span className="font-mono">LLMModel</span> enum 의 멤버 이름과 글자까지 같아야 합니다
             (<span className="font-mono">docs/model-roles-agent.md</span>).
           </p>

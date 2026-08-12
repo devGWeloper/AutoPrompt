@@ -1,6 +1,6 @@
 # PTX DB 스키마 (Oracle 19c+)
 
-Prompt Trace eXplorer(PTX) 소유 테이블 8개. 외부 테이블(`CHAT_VER_MAS` / `NODE_MAS` / `MODEL_MAS`)에 대한 FK 없음.
+Prompt Trace eXplorer(PTX) 소유 테이블 9개. 외부 테이블(`CHAT_VER_MAS` / `NODE_MAS` / `MODEL_MAS`)에 대한 FK 없음.
 노드 식별자는 `NODE_NM` 문자열이고 별도 노드 마스터 테이블은 없다.
 
 실행용 DDL은 **`sql/ddl_initial.sql`**(권위 스키마)에 있다. 이 문서는 컬럼 명세만 담는다.
@@ -20,7 +20,8 @@ Prompt Trace eXplorer(PTX) 소유 테이블 8개. 외부 테이블(`CHAT_VER_MAS
 | `PTX_RUN_DET`     | 케이스별 결과            | `RESULT_ID` | `RUN_ID` → `PTX_RUN_MAS`, `CASE_ID` → `PTX_DATASET_DET`          |
 | `PTX_AUDIT_HIS`   | 변경 감사 로그           | `LOG_ID`    | 없음 (`TARGET_TABLE_NM`+`TARGET_ID`만 기록)                        |
 | `PTX_TRACE_HIS`   | 호출 중 중간 변수         | `TRACE_SEQ_ID` | 없음 (**에이전트가 쓰고 PTX가 읽는** 유일한 테이블)                 |
-| `PTX_MODEL_MAS`   | LLM role 별 모델         | `MODEL_ID`  | 없음 (**PTX가 쓰고 에이전트가 읽는다** — join key `ROLE_CD`)        |
+| `PTX_MODEL_MAS`   | LLM role 별 모델         | `MODEL_ID`  | 없음 (PTX 전용 설정)                                              |
+| `PTX_CALL_MAS`    | 호출별 모델 지정         | `TRACE_ID`  | 없음 (**PTX가 쓰고 에이전트가 읽는다** — 상관키 `TRACE_ID`)         |
 
 ---
 
@@ -156,15 +157,13 @@ Prompt Trace eXplorer(PTX) 소유 테이블 8개. 외부 테이블(`CHAT_VER_MAS
 (`docs/model-roles-agent.md`). DDL 이 현재 role 을 seed 하고, 에이전트 `LLMModel` enum 이
 늘거나 줄면 화면에서 행을 추가·삭제한다.
 
-**에이전트는 이 표를 읽지 않는다.** PTX 가 읽어서 호출마다 `session_system_prompt` 의
-`MODEL_OVERRIDE` 로 실어 보낸다(`docs/model-roles-agent.md`). 그래서:
+**에이전트는 이 표를 읽지 않는다.** PTX 가 읽어서 호출 직전에 `PTX_CALL_MAS` 로 옮겨 적고,
+에이전트는 그쪽을 `TRACE_ID` 로 읽는다(`docs/model-roles-agent.md`).
 
-- **운영 트래픽은 무영향** — 그 키가 없는 요청은 에이전트 config 그대로 돈다. "테스트
-  중에만" 을 뜻하는 `ACTIVE_YN` 같은 플래그가 이 테이블에 없는 이유다. 전역 플래그는 켜져
-  있는 동안의 운영 요청을 막지 못해 격리 수단이 못 된다.
-- **A/B 한쪽만 다른 모델로 돌릴 수 있다** — 설정이 요청과 함께 다니므로 B 쪽에만 override
-  를 실을 수 있다. 이 표는 A(기준값)로 쓰인다.
-- 에이전트 계정에 이 테이블 권한이 필요 없다.
+**모델을 바꾸는 곳은 이 화면 하나다.** Compare 는 모델 컨트롤을 갖지 않는다 — A 는 여기
+지정한 값으로, B 는 에이전트 config 그대로 돌아서 "변경안(A) vs 현행(B)" 이 된다. 운영
+트래픽은 `TRACE_ID` 가 없어 아예 빗나가므로 "테스트 중에만" 을 뜻하는 `ACTIVE_YN` 류
+플래그가 필요 없다(전역 플래그는 켜져 있는 동안의 운영 요청을 못 막아 격리가 안 된다).
 
 `endpoint` / `api_key` 는 role 4종이 공통으로 써서 에이전트 config 에 남긴다. 키를 여기
 두면 `PTX_AUDIT_HIS` 의 before/after 스냅샷에 평문으로 복사된다.
@@ -181,6 +180,31 @@ Prompt Trace eXplorer(PTX) 소유 테이블 8개. 외부 테이블(`CHAT_VER_MAS
 | `CRT_TM` | TIMESTAMP | Y | SYSTIMESTAMP | |
 
 > 에이전트에게 줄 권한이 없다 — 이 표는 PTX 만 읽고 쓴다.
+
+## PTX_CALL_MAS
+
+호출 한 건에 적용할 모델. **PTX 가 호출 직전에 INSERT 하고 에이전트가 읽기만 한다** —
+`PTX_TRACE_HIS` 와 방향만 반대인 대칭 테이블이고, 상관키도 같은 `TRACE_ID` 다(PTX 가 발급해
+`session_system_prompt` 로 원래부터 보내던 값이라 요청 형식은 바뀌지 않는다).
+
+**행이 없으면 지정 없음** = 에이전트 config 그대로. 이 한 가지 규칙이 세 경우를 다 처리한다.
+
+| 호출 | 행 | 결과 |
+|---|---|---|
+| 운영 트래픽 | `TRACE_ID` 자체가 없음 | config 그대로 |
+| Single · Compare A | 있음 | `PTX_MODEL_MAS` 지정값 |
+| Compare B | 없음 | config 그대로 (= 현행) |
+
+| 컬럼 | 타입 | NULL | 기본값 | 비고 |
+|---|---|---|---|---|
+| `TRACE_ID` | VARCHAR2(50) | N | — | PK. PTX 가 발급한 호출 식별자 |
+| `RUN_ID` | NUMBER | Y | — | 정리용. 수동 호출은 행이 먼저 생기므로 나중에 backfill |
+| `MODEL_CTN` | CLOB | Y | — | `{"LLM":{"model":"…","temperature":0.3}}` — 지정 없는 role 은 빠짐 |
+| `CRT_TM` | TIMESTAMP | Y | SYSTIMESTAMP | |
+
+> FK 없음 — 수동 호출은 실행 기록보다 이 행이 먼저 생긴다. 실행을 지우면 PTX 가 `RUN_ID` 로
+> 같이 지운다. 어느 실행에도 안 붙은 행은 보존기간을 정해 주기적으로 지운다.
+> 에이전트 계정이 PTX 스키마와 다르면 `GRANT SELECT ON PTX_CALL_MAS TO <agent_user>` 가 필요하다.
 
 ---
 
@@ -216,3 +240,4 @@ IDX_PTX_TRACE_ID        ON PTX_TRACE_HIS (TRACE_ID)
 - LLM role 별 모델 관리를 붙일 때 → `sql/migrate_model_mas.sql` (`PTX_MODEL_MAS` 생성 +
   role 4종 seed). 에이전트 쪽 연동은 `docs/model-roles-agent.md`.
 - 실행 기록에 모델 스냅샷을 남길 때 → `sql/migrate_run_model.sql` (`PTX_RUN_MAS.MODEL_CTN` 추가).
+- 지정한 모델을 실제로 적용할 때 → `sql/migrate_call_config.sql` (`PTX_CALL_MAS` 생성).

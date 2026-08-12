@@ -356,13 +356,12 @@ export interface FlowRagasRequest {
   score?: boolean;
 }
 
-/** role → model name, layered on the saved baseline for one call. Only side B of
- * a comparison may carry one: A stays the fixed reference, so a run always has
- * something to be measured against. */
-export type ModelOverride = Record<string, string>;
-
 /** A/B request. node/prompt ids may be null when each side is pinned to its own
- * endpoint instead of a prompt version (base_url_a / base_url_b). */
+ * endpoint instead of a prompt version (base_url_a / base_url_b).
+ *
+ * There is no model field: models are set once on /models and land on side A,
+ * while B runs the agent's own config. One place to change a model, and a
+ * comparison always reads 변경안(A) vs 현행(B). */
 export interface FlowRagasAbRequest {
   dataset_id: number;
   node_nm?: string | null;
@@ -370,7 +369,6 @@ export interface FlowRagasAbRequest {
   prompt_id_b?: number | null;
   metrics?: string[];
   score?: boolean;
-  model_override_b?: ModelOverride | null;
 }
 
 export interface FlowRagasAbOut {
@@ -417,7 +415,6 @@ export interface DirectAbRequest {
   score?: boolean;
   metrics?: string[];
   expected_output?: string | null;
-  model_override_b?: ModelOverride | null;
   a: DirectAbSide;
   b: DirectAbSide;
 }

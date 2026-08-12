@@ -79,6 +79,11 @@ WITH expected AS (
   SELECT 'PTX_TRACE_HIS',        'VAR_CTN'                FROM dual UNION ALL
   SELECT 'PTX_TRACE_HIS',        'CRT_TM'                 FROM dual UNION ALL
 
+  SELECT 'PTX_CALL_MAS',        'TRACE_ID'               FROM dual UNION ALL
+  SELECT 'PTX_CALL_MAS',        'RUN_ID'                 FROM dual UNION ALL
+  SELECT 'PTX_CALL_MAS',        'MODEL_CTN'              FROM dual UNION ALL
+  SELECT 'PTX_CALL_MAS',        'CRT_TM'                 FROM dual UNION ALL
+
   SELECT 'PTX_MODEL_MAS',       'MODEL_ID'               FROM dual UNION ALL
   SELECT 'PTX_MODEL_MAS',       'ROLE_CD'                FROM dual UNION ALL
   SELECT 'PTX_MODEL_MAS',       'MODEL_NM'               FROM dual UNION ALL

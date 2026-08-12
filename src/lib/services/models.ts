@@ -23,14 +23,13 @@ export async function listModelRoles(): Promise<ModelRole[]> {
 }
 
 /**
- * The effective role→model config for one call, as JSON. This is both what goes
- * out on the wire (`MODEL_OVERRIDE` inside `session_system_prompt`) and what the
- * run records in `PTX_RUN_MAS.MODEL_CTN` — the same value, so the record always
- * matches what was actually sent.
+ * The pinned role→model config as JSON. The same value is staged for the agent
+ * (PTX_CALL_MAS.MODEL_CTN) and stamped on the run record (PTX_RUN_MAS.MODEL_CTN),
+ * so what a run claims and what it actually ran under cannot drift apart.
  *
- * ``overrides`` (role → model name) is layered on top of the saved baseline. It
- * is how one side of an A/B runs a different model without touching the other:
- * the config travels with the request instead of living in shared state.
+ * ``overrides`` (role → model name) layers on top of the saved values. Nothing
+ * passes it today — /models is the only place a model changes — but the merge is
+ * what makes a per-run variation a one-line change if that is ever wanted.
  *
  * Takes an open connection so the stamp can land in the same transaction as the
  * run row it describes.

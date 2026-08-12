@@ -152,10 +152,10 @@ CREATE TABLE PTX_TRACE_HIS (
     CRT_TM        TIMESTAMP DEFAULT SYSTIMESTAMP
 );
 
--- 8) 외부 에이전트의 LLM role 별 모델명. PTX 만 읽고 쓴다 — 여기 지정한 값을 PTX 가
---    호출마다 session_system_prompt 의 MODEL_OVERRIDE 로 실어 보내고, 에이전트는 그
---    호출에만 적용한다. 그래서 운영 트래픽은 무영향이고("테스트 중" 플래그가 필요 없다),
---    A/B 는 B 쪽에만 다른 모델을 실을 수 있다(이 표는 A = 기준값).
+-- 8) 외부 에이전트의 LLM role 별 모델명. 모델을 바꾸는 유일한 곳(/models 화면)이다.
+--    PTX 가 호출 직전에 이 값을 PTX_CALL_MAS 로 옮겨 적고 에이전트가 거기서 읽어 간다.
+--    Compare 는 A 에만 적용되고 B 는 에이전트 config 그대로라 "변경안 vs 현행" 이 된다.
+--    운영 트래픽은 아예 빗나가므로 "테스트 중" 플래그가 필요 없다.
 --    ROLE_CD 는 에이전트 LLMModel enum 의 멤버 이름(.name)과 글자까지 같아야 한다.
 --    enum 의 value 는 실제 모델명이 아니라 라벨이라 쓰지 않는다.
 --    endpoint / api_key 는 role 공통이라 에이전트 config 에 그대로 둔다. 키를 여기
@@ -172,7 +172,21 @@ CREATE TABLE PTX_MODEL_MAS (
     CONSTRAINT UQ_PTX_MODEL_ROLE UNIQUE (ROLE_CD)
 );
 
+-- 9) 호출별 모델 지정. PTX 가 호출 직전에 쓰고 에이전트가 TRACE_ID 로 읽어 그 호출에만
+--    적용한다 — PTX_TRACE_HIS 와 방향만 반대인 대칭 테이블이다.
+--    행이 없으면 지정 없음 = config 그대로. 운영 트래픽은 TRACE_ID 가 없어 빗나가고,
+--    A/B 는 사이드마다 TRACE_ID 가 달라 한쪽에만 행을 남길 수 있다.
+--    FK 없음: 수동 호출은 실행 기록보다 이 행이 먼저 생긴다.
+CREATE TABLE PTX_CALL_MAS (
+    TRACE_ID   VARCHAR2(50) NOT NULL,
+    RUN_ID     NUMBER,
+    MODEL_CTN  CLOB,
+    CRT_TM     TIMESTAMP DEFAULT SYSTIMESTAMP,
+    CONSTRAINT PK_PTX_CALL_MAS PRIMARY KEY (TRACE_ID)
+);
+
 CREATE INDEX IDX_PTX_PROMPT_NODE  ON PTX_PROMPT_HIS (NODE_NM, ACTIVE_YN);
+CREATE INDEX IDX_PTX_CALL_RUN     ON PTX_CALL_MAS (RUN_ID);
 CREATE INDEX IDX_PTX_TRACE_ID     ON PTX_TRACE_HIS (TRACE_ID);
 CREATE INDEX IDX_PTX_RUN_DET_RUN  ON PTX_RUN_DET (RUN_ID);
 CREATE INDEX IDX_PTX_RUN_MAS_DS   ON PTX_RUN_MAS (DATASET_ID);
