@@ -11,8 +11,10 @@ PTX 가 읽어서 정답지와 비교한다.
 - **에이전트는 `PTX_TRACE_HIS` 에 INSERT 만 한다.** 다른 PTX 테이블은 건드리지 않는다.
 - **행이 있으면 PTX 가 그 값을 채점하고, 없으면 최종 답변을 채점한다.** 노드 매핑도
   케이스 설정도 없다 — 기록하는 노드만 기록하면 된다.
-- **`TRACE_ID` 가 비어 있으면 아무것도 쓰지 않는다.** 운영 트래픽에는 이 값이 없으므로
-  평가 호출만 기록된다.
+- **`TRACE_ID` 가 `PTX-` 로 시작하지 않으면 아무것도 쓰지 않는다.** PTX 가 발급하는 id 는
+  `PTX-YYYYMMDD-NNNN` 뿐이므로(접두사는 고정, 설정으로 바뀌지 않는다) 이 조건이 평가
+  호출과 운영 트래픽을 가르는 유일한 기준이다. 운영 챗이 자체 `TRACE_ID`(예: `AI-…`)를
+  실어 보내면 "비어 있는지"만 보는 검사로는 그 행까지 들어온다.
 
 ## 붙이는 코드
 
@@ -41,9 +43,10 @@ import oracledb
 from app.db import trace_pool     # PTX_PROMPT_HIS 로더가 쓰는 DSN 그대로
 
 _MAX = 200_000                    # CLOB 상한 — 값이 커도 호출을 망가뜨리지 않게
+_PREFIX = "PTX-"                  # PTX 가 발급한 id 만 기록한다
 
 def trace_write(trace_id: str | None, var_nm: str, value) -> None:
-    if not trace_id:              # 운영 트래픽은 여기서 끝
+    if not trace_id or not trace_id.startswith(_PREFIX):   # 운영 트래픽은 여기서 끝
         return
     try:
         ctn = json.dumps(value, ensure_ascii=False, default=str)[:_MAX]
@@ -72,12 +75,19 @@ GRANT INSERT ON PTX_TRACE_HIS TO <agent_user>;   -- PTX 스키마와 계정이 �
 ```
 
 PTX 가 실행 기록(Records)을 지우면 그 실행이 쓴 `TRACE_ID` 행도 같이 지운다.
-남는 건 어느 실행에도 붙지 않은 행(운영 트래픽·실패한 호출)뿐이므로, 보존기간을
-정해 주기적으로 지운다. 실행 기록에는 `PTX_RUN_DET.TRACE_CTN` 스냅샷이 남으므로
-지워도 과거 결과는 그대로다.
+남는 건 어느 실행에도 붙지 않은 행(실패한 호출)뿐이므로, 보존기간을 정해 주기적으로
+지운다. 실행 기록에는 `PTX_RUN_DET.TRACE_CTN` 스냅샷이 남으므로 지워도 과거 결과는
+그대로다.
 
 ```sql
 DELETE FROM PTX_TRACE_HIS WHERE CRT_TM < SYSTIMESTAMP - INTERVAL '30' DAY;
+```
+
+접두사 검사가 들어가기 전에 쌓인 운영 트래픽 행(`PTX-` 로 시작하지 않는 `TRACE_ID`)은
+PTX 가 조회하지 않으므로 한 번 비워주면 된다.
+
+```sql
+DELETE FROM PTX_TRACE_HIS WHERE TRACE_ID NOT LIKE 'PTX-%';
 ```
 
 ## 채점 규칙 (PTX 쪽 — 정답지 작성에 필요)
