@@ -1,6 +1,6 @@
 # PTX DB 스키마 (Oracle 19c+)
 
-Prompt Trace eXplorer(PTX) 소유 테이블 7개. 외부 테이블(`CHAT_VER_MAS` / `NODE_MAS` / `MODEL_MAS`)에 대한 FK 없음.
+Prompt Trace eXplorer(PTX) 소유 테이블 8개. 외부 테이블(`CHAT_VER_MAS` / `NODE_MAS` / `MODEL_MAS`)에 대한 FK 없음.
 노드 식별자는 `NODE_NM` 문자열이고 별도 노드 마스터 테이블은 없다.
 
 실행용 DDL은 **`sql/ddl_initial.sql`**(권위 스키마)에 있다. 이 문서는 컬럼 명세만 담는다.
@@ -20,6 +20,7 @@ Prompt Trace eXplorer(PTX) 소유 테이블 7개. 외부 테이블(`CHAT_VER_MAS
 | `PTX_RUN_DET`     | 케이스별 결과            | `RESULT_ID` | `RUN_ID` → `PTX_RUN_MAS`, `CASE_ID` → `PTX_DATASET_DET`          |
 | `PTX_AUDIT_HIS`   | 변경 감사 로그           | `LOG_ID`    | 없음 (`TARGET_TABLE_NM`+`TARGET_ID`만 기록)                        |
 | `PTX_TRACE_HIS`   | 호출 중 중간 변수         | `TRACE_SEQ_ID` | 없음 (**에이전트가 쓰고 PTX가 읽는** 유일한 테이블)                 |
+| `PTX_MODEL_MAS`   | LLM role 별 모델         | `MODEL_ID`  | 없음 (**PTX가 쓰고 에이전트가 읽는다** — join key `ROLE_CD`)        |
 
 ---
 
@@ -146,6 +147,29 @@ Prompt Trace eXplorer(PTX) 소유 테이블 7개. 외부 테이블(`CHAT_VER_MAS
 > 계속 쌓이기만 하므로 보존기간을 정해 주기적으로 지운다 (실행 기록엔 `PTX_RUN_DET.TRACE_CTN` 로 남는다).
 > 에이전트 계정이 PTX 스키마와 다르면 `GRANT INSERT ON PTX_TRACE_HIS TO <agent_user>` 가 필요하다.
 
+## PTX_MODEL_MAS
+
+외부 에이전트 config 의 LLM role(`llm` / `vlm` / `light_llm` / `judge_llm`) 별 모델명.
+**PTX 가 쓰고 에이전트가 읽는다** — 적용은 에이전트가 자기 config 를 조립할 때 한다
+(`docs/model-roles-agent.md`). 행 추가/삭제는 하지 않는다: role 집합은 에이전트가 정하고
+DDL seed 가 그걸 따라간다.
+
+`endpoint` / `api_key` 는 role 4종이 공통으로 써서 에이전트 config 에 남긴다. 키를 여기
+두면 `PTX_AUDIT_HIS` 의 before/after 스냅샷에 평문으로 복사된다.
+
+| 컬럼 | 타입 | NULL | 기본값 | 비고 |
+|---|---|---|---|---|
+| `MODEL_ID` | NUMBER | N | IDENTITY | PK |
+| `ROLE_CD` | VARCHAR2(30) | N | — | UQ. 에이전트 `LLMModel` enum 의 value 와 **글자까지 동일** |
+| `MODEL_NM` | VARCHAR2(200) | Y | — | NULL = 에이전트 config 의 기본 모델명 사용 |
+| `TEMPERATURE` | NUMBER(3,2) | Y | — | NULL = `LLMModelConfig` 기본값(0.1) |
+| `DESC_CTN` | VARCHAR2(500) | Y | — | 메모 |
+| `USER_ID` | VARCHAR2(50) | N | — | 마지막으로 저장한 사람 |
+| `UPDATE_TM` | TIMESTAMP | Y | — | |
+| `CRT_TM` | TIMESTAMP | Y | SYSTIMESTAMP | |
+
+> 에이전트 계정이 PTX 스키마와 다르면 `GRANT SELECT ON PTX_MODEL_MAS TO <agent_user>` 가 필요하다.
+
 ---
 
 ## 인덱스
@@ -177,3 +201,5 @@ IDX_PTX_TRACE_ID        ON PTX_TRACE_HIS (TRACE_ID)
   재정의 + `DATASET_NM` 백필 + 감사 로그의 옛 테이블명 갱신). 데이터는 보존된다.
 - 중간 변수 채점을 붙일 때 → `sql/migrate_trace_var.sql` (`PTX_TRACE_HIS` 생성 +
   `PTX_RUN_DET.TRACE_*` 3컬럼 추가). 에이전트 쪽 연동은 `docs/trace-var-agent.md`.
+- LLM role 별 모델 관리를 붙일 때 → `sql/migrate_model_mas.sql` (`PTX_MODEL_MAS` 생성 +
+  role 4종 seed). 에이전트 쪽 연동은 `docs/model-roles-agent.md`.

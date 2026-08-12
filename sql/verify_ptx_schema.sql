@@ -78,6 +78,15 @@ WITH expected AS (
   SELECT 'PTX_TRACE_HIS',        'VAR_CTN'                FROM dual UNION ALL
   SELECT 'PTX_TRACE_HIS',        'CRT_TM'                 FROM dual UNION ALL
 
+  SELECT 'PTX_MODEL_MAS',       'MODEL_ID'               FROM dual UNION ALL
+  SELECT 'PTX_MODEL_MAS',       'ROLE_CD'                FROM dual UNION ALL
+  SELECT 'PTX_MODEL_MAS',       'MODEL_NM'               FROM dual UNION ALL
+  SELECT 'PTX_MODEL_MAS',       'TEMPERATURE'            FROM dual UNION ALL
+  SELECT 'PTX_MODEL_MAS',       'DESC_CTN'               FROM dual UNION ALL
+  SELECT 'PTX_MODEL_MAS',       'USER_ID'                FROM dual UNION ALL
+  SELECT 'PTX_MODEL_MAS',       'UPDATE_TM'              FROM dual UNION ALL
+  SELECT 'PTX_MODEL_MAS',       'CRT_TM'                 FROM dual UNION ALL
+
   SELECT 'PTX_AUDIT_HIS',        'LOG_ID'                 FROM dual UNION ALL
   SELECT 'PTX_AUDIT_HIS',        'TARGET_TABLE_NM'        FROM dual UNION ALL
   SELECT 'PTX_AUDIT_HIS',        'TARGET_ID'              FROM dual UNION ALL

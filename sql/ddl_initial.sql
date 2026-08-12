@@ -147,8 +147,37 @@ CREATE TABLE PTX_TRACE_HIS (
     CRT_TM        TIMESTAMP DEFAULT SYSTIMESTAMP
 );
 
+-- 8) 외부 에이전트의 LLM role 별 모델명. 에이전트가 ROLE_CD 로 읽어 자기 config 의
+--    모델명을 덮어쓴다 — PTX 는 쓰기만 하고 적용은 에이전트가 한다.
+--    ROLE_CD 는 에이전트 LLMModel enum 의 value 와 글자까지 같아야 한다(유일한 조인 키).
+--    endpoint / api_key 는 role 4종 공통이라 에이전트 config 에 그대로 둔다. 키를 여기
+--    넣으면 PTX_AUDIT_HIS 의 before/after 스냅샷에 평문으로 복사된다.
+CREATE TABLE PTX_MODEL_MAS (
+    MODEL_ID     NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    ROLE_CD      VARCHAR2(30) NOT NULL,
+    MODEL_NM     VARCHAR2(200),
+    TEMPERATURE  NUMBER(3,2),
+    DESC_CTN     VARCHAR2(500),
+    USER_ID      VARCHAR2(50) NOT NULL,
+    UPDATE_TM    TIMESTAMP,
+    CRT_TM       TIMESTAMP DEFAULT SYSTIMESTAMP,
+    CONSTRAINT UQ_PTX_MODEL_ROLE UNIQUE (ROLE_CD)
+);
+
 CREATE INDEX IDX_PTX_PROMPT_NODE  ON PTX_PROMPT_HIS (NODE_NM, ACTIVE_YN);
 CREATE INDEX IDX_PTX_TRACE_ID     ON PTX_TRACE_HIS (TRACE_ID);
 CREATE INDEX IDX_PTX_RUN_DET_RUN  ON PTX_RUN_DET (RUN_ID);
 CREATE INDEX IDX_PTX_RUN_MAS_DS   ON PTX_RUN_MAS (DATASET_ID);
 CREATE INDEX IDX_PTX_AUDIT_TARGET ON PTX_AUDIT_HIS (TARGET_TABLE_NM, TARGET_ID);
+
+-- role 4종 seed. 화면은 행 추가/삭제를 하지 않으므로 여기 있는 행이 곧 관리 대상이다.
+-- MODEL_NM 이 NULL 이면 에이전트는 자기 config 의 기본 모델명을 그대로 쓴다.
+INSERT INTO PTX_MODEL_MAS (ROLE_CD, USER_ID) VALUES ('llm', 'system');
+
+INSERT INTO PTX_MODEL_MAS (ROLE_CD, USER_ID) VALUES ('vlm', 'system');
+
+INSERT INTO PTX_MODEL_MAS (ROLE_CD, USER_ID) VALUES ('light_llm', 'system');
+
+INSERT INTO PTX_MODEL_MAS (ROLE_CD, USER_ID) VALUES ('judge_llm', 'system');
+
+COMMIT;

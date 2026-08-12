@@ -7,6 +7,7 @@ import type {
   ActivePrompt,
   AuditLog,
   Dataset,
+  ModelRole,
   PromptVersionDetail,
   PromptVersionSummary,
   RagasResultRow,
@@ -148,6 +149,17 @@ export const RESULT_COLS = [
   "TRACE_CTN",
 ].join(", ");
 
+export const MODEL_COLS = [
+  "MODEL_ID",
+  "ROLE_CD",
+  "MODEL_NM",
+  "TEMPERATURE",
+  "DESC_CTN",
+  "USER_ID",
+  tsCol("UPDATE_TM"),
+  tsCol("CRT_TM"),
+].join(", ");
+
 export const AUDIT_COLS = [
   "LOG_ID",
   "TARGET_TABLE_NM",
@@ -193,6 +205,19 @@ export function mapActivePrompt(r: Row): ActivePrompt {
     model_nm: str(r.MODEL_NM),
     system_prompt: str(r.SYSTEM_CTN),
     user_prompt: str(r.USER_CTN),
+  };
+}
+
+export function mapModelRole(r: Row): ModelRole {
+  return {
+    model_id: num(r.MODEL_ID)!,
+    role_cd: String(r.ROLE_CD),
+    model_nm: str(r.MODEL_NM),
+    temperature: num(r.TEMPERATURE),
+    description: str(r.DESC_CTN),
+    updated_by: String(r.USER_ID),
+    updated_dt: str(r.UPDATE_TM),
+    created_dt: String(r.CRT_TM),
   };
 }
 

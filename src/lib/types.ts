@@ -116,6 +116,42 @@ export interface PromptVersionEdit {
   change_reason?: string | null;
 }
 
+// ---- model roles (external agent config) ----
+
+/** The LLM roles the external agent's config defines. PTX only records what each
+ * role should run; the agent reads PTX_MODEL_MAS by ROLE_CD and overrides the
+ * model name in its own config (endpoint/api key stay there — they're shared by
+ * all four roles). ROLE_CD must equal the agent's LLMModel enum value exactly:
+ * that string is the only join key between the two systems. */
+export const MODEL_ROLES = ["llm", "vlm", "light_llm", "judge_llm"] as const;
+
+/** Captions the UI shows under a role name. Only for roles whose name would
+ * otherwise mislead — the rest is what the 메모 field is for. */
+export const MODEL_ROLE_NOTES: Record<string, string> = {
+  judge_llm: "에이전트 내부 심판 — PTX의 RAGAS 채점 LLM(config.yml)과는 다릅니다.",
+};
+
+export interface ModelRole {
+  model_id: number;
+  role_cd: string;
+  /** null = 에이전트 config 의 기본 모델명을 그대로 쓴다. */
+  model_nm: string | null;
+  temperature: number | null;
+  description: string | null;
+  updated_by: string;
+  updated_dt: string | null;
+  created_dt: string;
+}
+
+/** One row of a save. Every editable field is sent whether or not it changed —
+ * an omitted field is stored as NULL, not left alone. */
+export interface ModelRoleUpdate {
+  role_cd: string;
+  model_nm?: string | null;
+  temperature?: number | null;
+  description?: string | null;
+}
+
 // ---- diff ----
 
 export interface PromptDiffLine {

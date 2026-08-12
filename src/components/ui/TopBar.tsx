@@ -63,9 +63,11 @@ function SectionNav({ className }: { className?: string }) {
   const router = useRouter();
   const pathname = usePathname() || '/';
   const onPrompts = pathname.startsWith('/nodes');
+  const onModels = pathname.startsWith('/models');
   const items = [
-    { href: '/', label: 'Test', active: !onPrompts },
+    { href: '/', label: 'Test', active: !onPrompts && !onModels },
     { href: '/nodes', label: 'Prompts', active: onPrompts },
+    { href: '/models', label: 'Models', active: onModels },
   ];
   return (
     <nav className={cn('inline-flex h-9 items-center gap-0.5 rounded-lg border border-line bg-surface-2 p-1', className)}>
