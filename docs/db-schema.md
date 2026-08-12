@@ -144,7 +144,8 @@ Prompt Trace eXplorer(PTX) 소유 테이블 8개. 외부 테이블(`CHAT_VER_MAS
 | `CRT_TM` | TIMESTAMP | Y | SYSTIMESTAMP | |
 
 > FK 없음 — 에이전트가 먼저 쓰고 PTX 가 나중에 읽으므로 부모 행이 아직 없을 수 있다.
-> 계속 쌓이기만 하므로 보존기간을 정해 주기적으로 지운다 (실행 기록엔 `PTX_RUN_DET.TRACE_CTN` 로 남는다).
+> 실행 기록을 지우면 그 실행의 `TRACE_ID` 행도 함께 지운다. 남는 행(어느 실행에도 안 붙은 호출)은
+> 보존기간을 정해 주기적으로 지운다 (실행 기록엔 `PTX_RUN_DET.TRACE_CTN` 스냅샷으로 남는다).
 > 에이전트 계정이 PTX 스키마와 다르면 `GRANT INSERT ON PTX_TRACE_HIS TO <agent_user>` 가 필요하다.
 
 ## PTX_MODEL_MAS

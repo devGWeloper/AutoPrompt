@@ -138,7 +138,9 @@ CREATE TABLE PTX_AUDIT_HIS (
 --    노드의 `parsed`)을 채점하려고 에이전트가 직접 INSERT 한다 — PTX 는 읽기만 한다.
 --    상관키는 PTX 가 발급해 session_system_prompt 의 TRACE_ID 로 실어 보낸 값.
 --    FK 없음: 에이전트가 먼저 쓰고 PTX 가 나중에 읽는 순서라 부모 행이 아직 없다.
---    보존기간을 정해 주기적으로 지운다(실행 기록엔 PTX_RUN_DET.TRACE_CTN 로 남는다).
+--    그래서 cascade 도 없다 — 실행 기록 삭제 시 PTX 가 TRACE_ID 로 직접 지운다.
+--    어느 실행에도 안 붙은 행은 보존기간을 정해 주기적으로 지운다
+--    (실행 기록엔 PTX_RUN_DET.TRACE_CTN 스냅샷으로 남는다).
 CREATE TABLE PTX_TRACE_HIS (
     TRACE_SEQ_ID  NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     TRACE_ID      VARCHAR2(50) NOT NULL,

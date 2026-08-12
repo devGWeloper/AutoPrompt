@@ -250,6 +250,14 @@ export async function deleteRun(runId: number): Promise<void> {
   await withConn(async (conn) => {
     const res = await conn.execute(`SELECT RUN_ID FROM PTX_RUN_MAS WHERE RUN_ID = :id`, { id: runId });
     if (((res.rows ?? []) as unknown[]).length === 0) throw notFound("ragas run not found");
+    // The captured intermediate variables belong to this run's calls, but there is
+    // no FK to cascade through (the agent writes them before the run row exists),
+    // so clear them by TRACE_ID first — while PTX_RUN_DET still holds the ids.
+    await conn.execute(
+      `DELETE FROM PTX_TRACE_HIS WHERE TRACE_ID IN
+         (SELECT TRACE_ID FROM PTX_RUN_DET WHERE RUN_ID = :id AND TRACE_ID IS NOT NULL)`,
+      { id: runId },
+    );
     // PTX_RUN_DET.RUN_ID is ON DELETE CASCADE — the per-case rows go with the run.
     await conn.execute(`DELETE FROM PTX_RUN_MAS WHERE RUN_ID = :id`, { id: runId });
     await writeAudit(conn, {

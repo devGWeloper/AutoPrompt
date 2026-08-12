@@ -71,8 +71,10 @@ def trace_write(trace_id: str | None, var_nm: str, value) -> None:
 GRANT INSERT ON PTX_TRACE_HIS TO <agent_user>;   -- PTX 스키마와 계정이 다를 때만
 ```
 
-행은 계속 쌓이기만 하므로 보존기간을 정해 주기적으로 지운다. 실행 기록에는
-`PTX_RUN_DET.TRACE_CTN` 스냅샷이 남으므로 지워도 과거 결과는 그대로다.
+PTX 가 실행 기록(Records)을 지우면 그 실행이 쓴 `TRACE_ID` 행도 같이 지운다.
+남는 건 어느 실행에도 붙지 않은 행(운영 트래픽·실패한 호출)뿐이므로, 보존기간을
+정해 주기적으로 지운다. 실행 기록에는 `PTX_RUN_DET.TRACE_CTN` 스냅샷이 남으므로
+지워도 과거 결과는 그대로다.
 
 ```sql
 DELETE FROM PTX_TRACE_HIS WHERE CRT_TM < SYSTIMESTAMP - INTERVAL '30' DAY;
