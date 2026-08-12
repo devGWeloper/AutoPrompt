@@ -151,8 +151,8 @@ Prompt Trace eXplorer(PTX) 소유 테이블 8개. 외부 테이블(`CHAT_VER_MAS
 
 외부 에이전트 config 의 LLM role(`llm` / `vlm` / `light_llm` / `judge_llm`) 별 모델명.
 **PTX 가 쓰고 에이전트가 읽는다** — 적용은 에이전트가 자기 config 를 조립할 때 한다
-(`docs/model-roles-agent.md`). 행 추가/삭제는 하지 않는다: role 집합은 에이전트가 정하고
-DDL seed 가 그걸 따라간다.
+(`docs/model-roles-agent.md`). DDL 이 현재 role 을 seed 하고, 에이전트 `LLMModel` enum 이
+늘거나 줄면 화면에서 행을 추가·삭제한다.
 
 `endpoint` / `api_key` 는 role 4종이 공통으로 써서 에이전트 config 에 남긴다. 키를 여기
 두면 `PTX_AUDIT_HIS` 의 before/after 스냅샷에 평문으로 복사된다.

@@ -22,8 +22,8 @@ CREATE TABLE PTX_MODEL_MAS (
     CONSTRAINT UQ_PTX_MODEL_ROLE UNIQUE (ROLE_CD)
 );
 
--- 2) role seed. 화면은 행 추가/삭제를 하지 않으므로 여기 있는 행이 곧 관리 대상이다.
---    실제 enum value 가 아래와 다르면 그 이름으로 바꿔서 넣을 것.
+-- 2) role seed. 실제 enum value 가 아래와 다르면 그 이름으로 바꿔서 넣을 것
+--    (넣고 나서 /models 화면에서 추가·삭제해도 된다).
 --    MODEL_NM 이 NULL 이면 에이전트는 자기 config 의 기본 모델명을 그대로 쓴다.
 INSERT INTO PTX_MODEL_MAS (ROLE_CD, USER_ID) VALUES ('llm', 'system');
 

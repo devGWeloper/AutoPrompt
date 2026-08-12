@@ -2,16 +2,22 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import TopBar from '@/components/ui/TopBar';
+import Modal from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Field';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { SHELL } from '@/lib/layout';
-import { MODEL_ROLES, MODEL_ROLE_NOTES, type ModelRole, type ModelRoleUpdate } from '@/lib/types';
+import { MODEL_ROLES, MODEL_ROLE_NOTES, type ModelRole } from '@/lib/types';
+import type { ModelRoleUpdate } from '@/lib/types';
 
-// One row per LLM role the external agent's config defines. Rows are seeded by
-// the DDL and only edited here — no add/delete, because the set of roles is the
-// agent's to decide, not ours.
+// One row per LLM role the external agent's config defines. The DDL seeds the
+// roles that exist today; add/delete is for when the agent's LLMModel enum grows
+// or shrinks. The role name is the whole contract with the agent, so it is the
+// one thing the add dialog makes noise about.
+
+const GRID =
+  'grid grid-cols-[minmax(140px,180px)_minmax(200px,1.4fr)_92px_minmax(160px,1fr)_44px] gap-x-4';
 
 /** Editable fields as text: '' means "unset", which the agent reads as "use the
  * model name in my own config". */
@@ -49,6 +55,8 @@ export default function ModelsPage() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<ModelRole | null>(null);
 
   const apply = useCallback((list: ModelRole[]) => {
     setRows(list);
@@ -121,6 +129,21 @@ export default function ModelsPage() {
     }
   }
 
+  async function doDelete() {
+    if (!confirmDelete) return;
+    setBusy(true);
+    setError(null);
+    try {
+      apply(await api.del<ModelRole[]>(`/models/${encodeURIComponent(confirmDelete.role_cd)}`));
+      setConfirmDelete(null);
+      setSaved(false);
+    } catch (e) {
+      setError(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const list = rows ?? [];
 
   return (
@@ -132,31 +155,40 @@ export default function ModelsPage() {
             <div className="mb-4 rounded-sm border border-bad/20 bg-bad/5 px-4 py-3 text-sm text-bad">{error}</div>
           )}
 
-          <div className="mb-5">
-            <h1 className="text-lg font-semibold text-ink">
-              Model roles <span className="text-muted">({list.length})</span>
-            </h1>
-            <p className="mt-0.5 text-sm text-muted">
-              외부 에이전트 config 의 LLM role 별 모델을 지정합니다. endpoint 와 API key 는 role 4종이 공통으로
-              쓰므로 에이전트 config 에 그대로 둡니다.
-            </p>
+          <div className="mb-5 flex items-start justify-between gap-3">
+            <div>
+              <h1 className="text-lg font-semibold text-ink">
+                Model roles <span className="text-muted">({list.length})</span>
+              </h1>
+              <p className="mt-0.5 text-sm text-muted">
+                외부 에이전트 config 의 LLM role 별 모델을 지정합니다. endpoint 와 API key 는 role 이 공통으로
+                쓰므로 에이전트 config 에 그대로 둡니다.
+              </p>
+            </div>
+            <Button onClick={() => setShowNew(true)}>+ role 추가</Button>
           </div>
 
           {rows !== null && list.length === 0 ? (
             <div className="rounded-md border border-line bg-surface px-4 py-8 text-center">
               <p className="text-sm text-ink">등록된 role 이 없습니다.</p>
               <p className="mt-1.5 text-xs text-muted">
-                <span className="font-mono">sql/migrate_model_mas.sql</span> 을 실행해 role
-                ({MODEL_ROLES.join(' / ')})을 넣으세요. DB 가 연결돼 있지 않아도 이 화면은 비어 보입니다.
+                <span className="font-mono">sql/migrate_model_mas.sql</span> 을 실행하면 기본 role(
+                {MODEL_ROLES.join(' / ')})이 들어갑니다. DB 가 연결돼 있지 않아도 이 화면은 비어 보입니다.
               </p>
             </div>
           ) : (
             <div className="overflow-hidden rounded-md border border-line bg-surface">
-              <div className="grid grid-cols-[minmax(140px,180px)_minmax(200px,1.4fr)_92px_minmax(160px,1fr)] gap-x-4 border-b border-line bg-surface-2 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">
+              <div
+                className={cn(
+                  GRID,
+                  'border-b border-line bg-surface-2 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em] text-muted',
+                )}
+              >
                 <span>Role</span>
                 <span>모델명</span>
                 <span>Temp</span>
                 <span>메모</span>
+                <span />
               </div>
               {list.map((m) => {
                 const d = drafts[m.role_cd] ?? toDraft(m);
@@ -166,7 +198,8 @@ export default function ModelsPage() {
                   <div
                     key={m.role_cd}
                     className={cn(
-                      'grid grid-cols-[minmax(140px,180px)_minmax(200px,1.4fr)_92px_minmax(160px,1fr)] items-start gap-x-4 border-b border-line px-4 py-3 last:border-b-0',
+                      GRID,
+                      'items-start border-b border-line px-4 py-3 last:border-b-0',
                       changed && 'bg-accent-soft/30',
                     )}
                   >
@@ -193,6 +226,13 @@ export default function ModelsPage() {
                       placeholder="어디에 쓰는 role 인지"
                       className="w-full"
                     />
+                    <button
+                      onClick={() => setConfirmDelete(m)}
+                      title={`${m.role_cd} 삭제`}
+                      className="mt-1 h-8 rounded-md border border-line bg-surface text-[11px] font-medium text-muted transition-colors hover:border-bad/40 hover:bg-bad/5 hover:text-bad"
+                    >
+                      삭제
+                    </button>
                   </div>
                 );
               })}
@@ -225,6 +265,124 @@ export default function ModelsPage() {
           </p>
         </div>
       </main>
+
+      {showNew && (
+        <NewRoleModal
+          existing={list.map((m) => m.role_cd)}
+          onClose={() => setShowNew(false)}
+          onCreated={(next) => {
+            apply(next);
+            setShowNew(false);
+            setSaved(false);
+          }}
+        />
+      )}
+
+      <Modal
+        open={!!confirmDelete}
+        title="role 삭제"
+        onClose={() => setConfirmDelete(null)}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setConfirmDelete(null)}>
+              취소
+            </Button>
+            <Button variant="danger" onClick={doDelete} disabled={busy}>
+              삭제
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-ink">
+          <span className="font-mono font-semibold">{confirmDelete?.role_cd}</span> 를 삭제합니다.
+        </p>
+        <p className="mt-2 text-xs leading-relaxed text-muted">
+          에이전트는 이 role 을 자기 config 의 기본 모델로 계속 실행합니다 — 노드가 멈추지는 않습니다.
+          여기서 지정했던 모델명은 사라지며, 되돌리려면 같은 이름으로 다시 추가해야 합니다.
+        </p>
+      </Modal>
     </div>
+  );
+}
+
+function NewRoleModal({
+  existing,
+  onClose,
+  onCreated,
+}: {
+  existing: string[];
+  onClose: () => void;
+  onCreated: (next: ModelRole[]) => void;
+}) {
+  const [roleCd, setRoleCd] = useState('');
+  const [model, setModel] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const name = roleCd.trim();
+  const duplicate = useMemo(() => existing.includes(name), [existing, name]);
+  // Mirrors the service's rule; catching it here keeps the dialog from bouncing
+  // off a 400 for something visible in the box.
+  const badChars = name !== '' && !/^[A-Za-z0-9_.-]+$/.test(name);
+  const valid = name !== '' && !duplicate && !badChars && name.length <= 30;
+
+  async function save() {
+    setBusy(true);
+    setErr(null);
+    try {
+      onCreated(await api.post<ModelRole[]>('/models', { role_cd: name, model_nm: model.trim() || null }));
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      open
+      title="role 추가"
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            취소
+          </Button>
+          <Button onClick={save} disabled={!valid || busy}>
+            추가
+          </Button>
+        </>
+      }
+    >
+      {err && <div className="mb-3 rounded-md border border-bad/20 bg-bad/5 px-3 py-2 text-xs text-bad">{err}</div>}
+      <label className="mb-3 block">
+        <span className="text-sm font-medium text-ink">Role 이름 (ROLE_CD) *</span>
+        <Input
+          value={roleCd}
+          onChange={(e) => setRoleCd(e.target.value)}
+          placeholder="e.g. light_llm"
+          className="mt-1 w-full font-mono"
+        />
+        <span className="mt-1.5 block text-xs leading-relaxed text-muted">
+          에이전트 <span className="font-mono">LLMModel</span> enum 의 value 와 <strong>글자까지 같아야</strong>{' '}
+          합니다. 한 글자라도 다르면 에이전트가 이 행을 읽지 않아, 화면에는 설정된 것처럼 보이지만 실제로는
+          아무 데도 쓰이지 않습니다.
+        </span>
+        {duplicate && <span className="mt-1 block text-xs text-bad">이미 있는 role 이름입니다.</span>}
+        {badChars && (
+          <span className="mt-1 block text-xs text-bad">영문·숫자와 _ . - 만 쓸 수 있습니다 (공백 불가).</span>
+        )}
+        {name.length > 30 && <span className="mt-1 block text-xs text-bad">최대 30자입니다.</span>}
+      </label>
+      <label className="block">
+        <span className="text-sm font-medium text-ink">모델명</span>
+        <Input
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          placeholder="비우면 에이전트 config 기본값"
+          className="mt-1 w-full font-mono"
+        />
+      </label>
+    </Modal>
   );
 }

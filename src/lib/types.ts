@@ -143,6 +143,14 @@ export interface ModelRole {
   created_dt: string;
 }
 
+/** A new role. Only the name is required — the rest is filled in on the row
+ * afterwards. The name must match the agent's LLMModel enum value exactly or
+ * the agent will never read it. */
+export interface ModelRoleCreate {
+  role_cd: string;
+  model_nm?: string | null;
+}
+
 /** One row of a save. Every editable field is sent whether or not it changed —
  * an omitted field is stored as NULL, not left alone. */
 export interface ModelRoleUpdate {

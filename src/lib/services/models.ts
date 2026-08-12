@@ -1,16 +1,17 @@
 import { readConn, withConn } from "@/lib/db";
 import type { OracleConnection } from "@/lib/db";
-import { badRequest, notFound } from "@/lib/http";
-import { MODEL_COLS, mapModelRole } from "@/lib/db/rows";
-import type { ModelRole, ModelRoleUpdate } from "@/lib/types";
+import { badRequest, conflict, notFound } from "@/lib/http";
+import { MODEL_COLS, insertReturningId, mapModelRole } from "@/lib/db/rows";
+import type { ModelRole, ModelRoleCreate, ModelRoleUpdate } from "@/lib/types";
 import { writeAudit } from "./audit";
 
 // PTX_MODEL_MAS holds one row per LLM role the external agent defines in its
 // config. PTX edits the model name; the agent reads the table by ROLE_CD and
-// applies it. Rows are never created or deleted here — the DDL seeds them, so a
-// role that is not in the table is a mismatch worth an error rather than an
-// insert (a typo'd role would otherwise sit in the DB looking configured while
-// the agent never reads it).
+// applies it. The DDL seeds the roles that exist today; adding one here is for
+// when the agent's LLMModel enum grows. ROLE_CD is the whole contract — a name
+// that does not match an enum value sits in the DB looking configured while the
+// agent never reads it, so it is validated on the way in and a save against an
+// unknown role is an error rather than a silent insert.
 
 async function fetchAll(conn: OracleConnection): Promise<ModelRole[]> {
   const res = await conn.execute(`SELECT ${MODEL_COLS} FROM PTX_MODEL_MAS ORDER BY MODEL_ID`);
@@ -36,6 +37,74 @@ function temperature(v: number | null | undefined, role: string): number | null 
     throw badRequest(`${role} 의 temperature 는 0 과 2 사이 숫자여야 합니다`);
   }
   return v;
+}
+
+/** Role names are join keys, not prose: no spaces, and short enough for the
+ * column. The agent's enum values are plain identifiers. */
+const ROLE_RE = /^[A-Za-z0-9_.-]+$/;
+
+function roleCd(v: string | null | undefined): string {
+  const s = (v ?? "").trim();
+  if (!s) throw badRequest("role 이름을 입력하세요");
+  if (s.length > 30) throw badRequest("role 이름이 너무 깁니다 (최대 30자)");
+  if (!ROLE_RE.test(s)) throw badRequest("role 이름에는 영문·숫자와 _ . - 만 쓸 수 있습니다");
+  return s;
+}
+
+/** Add a role. Returns the full list so the caller needs no second read. */
+export async function createModelRole(payload: ModelRoleCreate, actor: string): Promise<ModelRole[]> {
+  const role = roleCd(payload.role_cd);
+  const model = text(payload.model_nm, 200, `${role} 의 모델명`);
+
+  return withConn(async (conn, oracle) => {
+    // Checked before the insert so a duplicate reads as a sentence rather than
+    // an ORA-00001 on UQ_PTX_MODEL_ROLE.
+    const existing = await fetchAll(conn);
+    if (existing.some((m) => m.role_cd === role)) throw conflict(`이미 있는 role 입니다: ${role}`);
+
+    const id = await insertReturningId(
+      conn,
+      oracle,
+      `INSERT INTO PTX_MODEL_MAS (ROLE_CD, MODEL_NM, USER_ID)
+       VALUES (:role, :model, :actor) RETURNING MODEL_ID INTO :out_id`,
+      { role, model, actor },
+    );
+    await writeAudit(conn, {
+      targetTable: "PTX_MODEL_MAS",
+      targetId: id,
+      action: "CREATE",
+      before: null,
+      after: { role_cd: role, model_nm: model },
+      createdBy: actor,
+    });
+    return fetchAll(conn);
+  }, { commit: true });
+}
+
+/** Remove a role. The agent simply falls back to its own config for it. */
+export async function deleteModelRole(role: string, actor: string): Promise<ModelRole[]> {
+  const name = (role ?? "").trim();
+
+  return withConn(async (conn) => {
+    const before = (await fetchAll(conn)).find((m) => m.role_cd === name);
+    if (!before) throw notFound(`등록되지 않은 role 입니다: ${name || "(빈 값)"}`);
+
+    await conn.execute(`DELETE FROM PTX_MODEL_MAS WHERE ROLE_CD = :role`, { role: name });
+    await writeAudit(conn, {
+      targetTable: "PTX_MODEL_MAS",
+      targetId: before.model_id,
+      action: "DELETE",
+      before: {
+        role_cd: before.role_cd,
+        model_nm: before.model_nm,
+        temperature: before.temperature,
+        description: before.description,
+      },
+      after: null,
+      createdBy: actor,
+    });
+    return fetchAll(conn);
+  }, { commit: true });
 }
 
 /**

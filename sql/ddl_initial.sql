@@ -170,7 +170,7 @@ CREATE INDEX IDX_PTX_RUN_DET_RUN  ON PTX_RUN_DET (RUN_ID);
 CREATE INDEX IDX_PTX_RUN_MAS_DS   ON PTX_RUN_MAS (DATASET_ID);
 CREATE INDEX IDX_PTX_AUDIT_TARGET ON PTX_AUDIT_HIS (TARGET_TABLE_NM, TARGET_ID);
 
--- role 4종 seed. 화면은 행 추가/삭제를 하지 않으므로 여기 있는 행이 곧 관리 대상이다.
+-- role 4종 seed. 이후 추가·삭제는 /models 화면에서 한다(에이전트 enum 이 바뀔 때).
 -- MODEL_NM 이 NULL 이면 에이전트는 자기 config 의 기본 모델명을 그대로 쓴다.
 INSERT INTO PTX_MODEL_MAS (ROLE_CD, USER_ID) VALUES ('llm', 'system');
 
