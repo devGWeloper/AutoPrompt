@@ -28,6 +28,7 @@ export async function POST(req: Request) {
       score: body.score,
       metrics: body.metrics,
       expectedOutput: body.expected_output,
+      modelOverrideB: body.model_override_b ?? null,
       a: side(body.a),
       b: side(body.b),
     });

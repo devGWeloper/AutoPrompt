@@ -12,6 +12,8 @@ import { CompareSummaryDashboard } from './RunSummaryDashboard';
 import {
   ALL_METRICS,
   EXACT_MATCH,
+  type ModelOverride,
+  type ModelRole,
   type PromptVersionSummary,
   type RagasMetric,
   type RagasResultRow,
@@ -87,6 +89,21 @@ export default function ComparePanel() {
   // URLs typed here) instead of by two prompt versions of one node.
   // 프롬프트 버전 대상이 막혀 있는 동안에는 엔드포인트로 시작한다 — 고를 수 없는
   // 대상이 기본값이면 패널이 열리자마자 아무것도 못 하는 상태가 된다.
+  // Model roles are one global setting, so a comparison cannot put a different
+  // model on each side by changing that setting — the config has to travel with
+  // the request. B carries it; A stays the fixed reference.
+  const [roles, setRoles] = useState<ModelRole[]>([]);
+  const [ovRole, setOvRole] = useState('');
+  const [ovModel, setOvModel] = useState('');
+
+  useEffect(() => {
+    api.get<ModelRole[]>('/models').then(setRoles).catch(() => setRoles([]));
+  }, []);
+
+  const ovName = ovModel.trim();
+  const modelOverrideB: ModelOverride | null = ovRole && ovName ? { [ovRole]: ovName } : null;
+  const baselineOf = (role: string) => roles.find((r) => r.role_cd === role)?.model_nm ?? null;
+
   const [mode, setMode] = useState<'version' | 'endpoint'>(
     PROMPT_TARGET_ENABLED ? 'version' : 'endpoint',
   );
@@ -208,6 +225,7 @@ export default function ComparePanel() {
         prompt_id_a: byVersion ? verA : null,
         prompt_id_b: byVersion ? verB : null,
         metrics: scoreOn ? metrics : [], score: scoreOn,
+        model_override_b: modelOverrideB,
       });
       const saved: ActiveCompareRun = {
         runIdA: r.ragas_run_a_id,
@@ -237,6 +255,7 @@ export default function ComparePanel() {
         score: scoreOn,
         metrics: scoreOn ? metrics : undefined,
         expected_output: gt,
+        model_override_b: modelOverrideB,
         a: ep ? { base_url: urlA.trim() || null } : { prompt_id: verA },
         b: ep ? { base_url: urlB.trim() || null } : { prompt_id: verB },
       });
@@ -294,6 +313,44 @@ export default function ComparePanel() {
             </>
           )}
         </FormRow>
+
+        {/* Hidden when no roles are registered — there is nothing to override. */}
+        {roles.length > 0 && (
+          <FormRow label="모델">
+            <span className="text-xs text-muted">A 는 저장된 설정 그대로</span>
+            <span className="text-xs text-muted">·</span>
+            <span className="text-[11px] font-semibold text-muted">B</span>
+            <Select
+              value={ovRole}
+              onChange={(e) => setOvRole(e.target.value)}
+              className="w-44"
+              title="B 쪽에서 바꿔볼 role"
+            >
+              <option value="">변경 안 함</option>
+              {roles.map((r) => (
+                <option key={r.role_cd} value={r.role_cd}>{r.role_cd}</option>
+              ))}
+            </Select>
+            {ovRole && (
+              <>
+                <Input
+                  value={ovModel}
+                  onChange={(e) => setOvModel(e.target.value)}
+                  placeholder="B 에서 쓸 모델명"
+                  className="w-64 text-sm font-mono"
+                />
+                <span className="text-xs text-muted">
+                  A: <span className="font-mono">{baselineOf(ovRole) ?? 'config 기본값'}</span>
+                </span>
+                {!ovName && (
+                  <span className="w-full text-xs text-muted">
+                    모델명을 비워두면 양쪽 다 저장된 설정으로 실행됩니다.
+                  </span>
+                )}
+              </>
+            )}
+          </FormRow>
+        )}
 
         <FormRow label="입력">
           <SegToggle

@@ -36,14 +36,32 @@ function nextTraceId(): string {
   return `PTX-${day}-${String(traceSeq).padStart(4, "0")}`;
 }
 
-function sessionContext(userId: string, traceId: string): Record<string, string> {
-  return {
+/** ``models`` is the run's role→model JSON (see services/models.modelSnapshot).
+ * It rides on the request rather than living in shared state, which is what lets
+ * one side of an A/B use a different model — and what keeps production traffic,
+ * which carries no such key, on the agent's own config. */
+function sessionContext(
+  userId: string,
+  traceId: string,
+  models?: string | null,
+): Record<string, unknown> {
+  const ctx: Record<string, unknown> = {
     CUBE_CHANNEL_ID,
     CUBE_CHANNEL_NM,
     CUBE_USER_ID: userId,
     CUBE_USER_NM,
     TRACE_ID: traceId,
   };
+  // Embedded as an object, not a nested JSON string — one json.loads on the
+  // agent side is enough. A malformed value is dropped rather than sent.
+  if (models) {
+    try {
+      ctx.MODEL_OVERRIDE = JSON.parse(models);
+    } catch {
+      logger.error("model snapshot is not valid JSON — dropped", { models });
+    }
+  }
+  return ctx;
 }
 
 export interface AgentAnswer {
@@ -187,6 +205,7 @@ function requestHeaders(side?: FlowSide | null, authKey?: string | null): Record
 function buildPayload(
   message: string,
   userId?: string | null,
+  models?: string | null,
 ): { body: Record<string, unknown>; traceId: string } {
   const uid = userId ?? getAgentConfig().userId;
   const traceId = nextTraceId();
@@ -197,7 +216,7 @@ function buildPayload(
       session_id: "",
       chat_type: "default",
       // A STRING that is a stringified JSON object — the agent json.loads it.
-      session_system_prompt: JSON.stringify(sessionContext(uid, traceId)),
+      session_system_prompt: JSON.stringify(sessionContext(uid, traceId, models)),
     },
     traceId,
   };
@@ -315,14 +334,19 @@ export function ensureDirectUrl(override?: string | null, side: FlowSide = "a"):
 /** POST one turn to the external chat endpoint (RUN_MODE=external).
  * ``urlOverride`` pins this call to a specific endpoint; otherwise the side's
  * configured endpoint is used (agent.a.url / agent.b.url). */
-export async function runFlow(message: string, urlOverride?: string | null, side?: FlowSide | null): Promise<AgentAnswer> {
+export async function runFlow(
+  message: string,
+  urlOverride?: string | null,
+  side?: FlowSide | null,
+  models?: string | null,
+): Promise<AgentAnswer> {
   // Kept outside the try so a failure can log exactly what went on the wire.
   let url = "";
   let body: unknown = null;
   let traceId = "";
   try {
     url = urlOverride ? ensureDirectUrl(urlOverride) : baseUrl(side);
-    ({ body, traceId } = buildPayload(message));
+    ({ body, traceId } = buildPayload(message, null, models));
     const resp = await post(url, body, requestHeaders(side));
     if (!resp.ok) throw await httpError(resp, body);
     const parsed = await parseChatResponse(resp);
@@ -352,10 +376,12 @@ export async function runDirect(args: {
   /** Which configured endpoint answers when no URL is typed. Only a manual A/B
    * passes 'b'; every other direct call is side A. */
   side?: FlowSide | null;
+  /** role→model JSON for this call; null = the agent's own config. */
+  models?: string | null;
 }): Promise<AgentAnswer> {
   const side = args.side ?? "a";
   const url = ensureDirectUrl(args.baseUrl, side);
-  const { body, traceId } = buildPayload(args.message, args.userId);
+  const { body, traceId } = buildPayload(args.message, args.userId, args.models);
   try {
     const resp = await post(url, body, requestHeaders(side, args.authKey));
     if (!resp.ok) throw await httpError(resp, body);
@@ -384,9 +410,10 @@ export async function flowAnswer(
   message: string,
   urlOverride?: string | null,
   side?: FlowSide | null,
+  models?: string | null,
 ): Promise<AgentAnswer> {
   // The side still decides which headers go out even when the URL is typed in the UI.
-  if (urlOverride) return runFlow(message, urlOverride, side);
-  if (externalEnabled()) return runFlow(message, null, side);
+  if (urlOverride) return runFlow(message, urlOverride, side, models);
+  if (externalEnabled()) return runFlow(message, null, side, models);
   return stubRunFlow(message);
 }

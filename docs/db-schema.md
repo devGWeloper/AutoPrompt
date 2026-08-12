@@ -84,6 +84,7 @@ Prompt Trace eXplorer(PTX) 소유 테이블 8개. 외부 테이블(`CHAT_VER_MAS
 | `ANS_CORRECTNESS_VAL` | NUMBER(5,4) | Y | — | |
 | `JUDGE_PROVIDER_CD` | VARCHAR2(50) | Y | — | 호환용 |
 | `JUDGE_MODEL_NM` | VARCHAR2(100) | Y | — | 요청별 judge LLM override |
+| `MODEL_CTN` | CLOB | Y | — | 실행 시점 `PTX_MODEL_MAS` 스냅샷 JSON `{"LLM":{"model":"…","temperature":0.3}}`. 지정 없는 role 은 빠지고, 아무것도 없으면 NULL |
 | `METRIC_CTN` | CLOB | Y | — | JSON 배열 — 이번 실행에 채점한 지표 (`[]` = 미채점) |
 | `ENGINE_CD` | VARCHAR2(20) | Y | — | RAGAS / FALLBACK / exact(정답 일치만) / direct(수동 호출) |
 | `ERROR_CTN` | CLOB | Y | — | |
@@ -155,13 +156,23 @@ Prompt Trace eXplorer(PTX) 소유 테이블 8개. 외부 테이블(`CHAT_VER_MAS
 (`docs/model-roles-agent.md`). DDL 이 현재 role 을 seed 하고, 에이전트 `LLMModel` enum 이
 늘거나 줄면 화면에서 행을 추가·삭제한다.
 
+**에이전트는 이 표를 읽지 않는다.** PTX 가 읽어서 호출마다 `session_system_prompt` 의
+`MODEL_OVERRIDE` 로 실어 보낸다(`docs/model-roles-agent.md`). 그래서:
+
+- **운영 트래픽은 무영향** — 그 키가 없는 요청은 에이전트 config 그대로 돈다. "테스트
+  중에만" 을 뜻하는 `ACTIVE_YN` 같은 플래그가 이 테이블에 없는 이유다. 전역 플래그는 켜져
+  있는 동안의 운영 요청을 막지 못해 격리 수단이 못 된다.
+- **A/B 한쪽만 다른 모델로 돌릴 수 있다** — 설정이 요청과 함께 다니므로 B 쪽에만 override
+  를 실을 수 있다. 이 표는 A(기준값)로 쓰인다.
+- 에이전트 계정에 이 테이블 권한이 필요 없다.
+
 `endpoint` / `api_key` 는 role 4종이 공통으로 써서 에이전트 config 에 남긴다. 키를 여기
 두면 `PTX_AUDIT_HIS` 의 before/after 스냅샷에 평문으로 복사된다.
 
 | 컬럼 | 타입 | NULL | 기본값 | 비고 |
 |---|---|---|---|---|
 | `MODEL_ID` | NUMBER | N | IDENTITY | PK |
-| `ROLE_CD` | VARCHAR2(30) | N | — | UQ. 에이전트 `LLMModel` enum 의 value 와 **글자까지 동일** |
+| `ROLE_CD` | VARCHAR2(30) | N | — | UQ. 에이전트 `LLMModel` enum 의 **멤버 이름(`.name`)** 과 글자까지 동일 (`value` 는 모델명이 아니라 라벨이라 안 씀) |
 | `MODEL_NM` | VARCHAR2(200) | Y | — | NULL = 에이전트 config 의 기본 모델명 사용 |
 | `TEMPERATURE` | NUMBER(3,2) | Y | — | NULL = `LLMModelConfig` 기본값(0.1) |
 | `DESC_CTN` | VARCHAR2(500) | Y | — | 메모 |
@@ -169,7 +180,7 @@ Prompt Trace eXplorer(PTX) 소유 테이블 8개. 외부 테이블(`CHAT_VER_MAS
 | `UPDATE_TM` | TIMESTAMP | Y | — | |
 | `CRT_TM` | TIMESTAMP | Y | SYSTIMESTAMP | |
 
-> 에이전트 계정이 PTX 스키마와 다르면 `GRANT SELECT ON PTX_MODEL_MAS TO <agent_user>` 가 필요하다.
+> 에이전트에게 줄 권한이 없다 — 이 표는 PTX 만 읽고 쓴다.
 
 ---
 
@@ -204,3 +215,4 @@ IDX_PTX_TRACE_ID        ON PTX_TRACE_HIS (TRACE_ID)
   `PTX_RUN_DET.TRACE_*` 3컬럼 추가). 에이전트 쪽 연동은 `docs/trace-var-agent.md`.
 - LLM role 별 모델 관리를 붙일 때 → `sql/migrate_model_mas.sql` (`PTX_MODEL_MAS` 생성 +
   role 4종 seed). 에이전트 쪽 연동은 `docs/model-roles-agent.md`.
+- 실행 기록에 모델 스냅샷을 남길 때 → `sql/migrate_run_model.sql` (`PTX_RUN_MAS.MODEL_CTN` 추가).

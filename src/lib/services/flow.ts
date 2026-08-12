@@ -14,6 +14,7 @@ import type {
 import { exactMatchScore } from "@/lib/exactMatch";
 import { resolveRagasEngine } from "@/lib/config";
 import { requireDataset } from "./datasets";
+import { currentModelSnapshot, modelSnapshot } from "./models";
 import * as agent from "./externalAgent";
 import { readTraceVar } from "./trace";
 import * as registry from "./runRegistry";
@@ -104,10 +105,16 @@ export async function createFlowRagasRun(args: {
     const id = await insertReturningId(
       conn,
       oracle,
-      `INSERT INTO PTX_RUN_MAS (PROMPT_ID, DATASET_ID, DATASET_NM, STATUS_CD, METRIC_CTN, USER_ID)
+      `INSERT INTO PTX_RUN_MAS (PROMPT_ID, DATASET_ID, DATASET_NM, STATUS_CD, METRIC_CTN, MODEL_CTN, USER_ID)
        VALUES (:pid, :did, (SELECT DATASET_NM FROM PTX_DATASET_MAS WHERE DATASET_ID = :did),
-               'PENDING', :metrics, :cby) RETURNING RUN_ID INTO :out_id`,
-      { pid: args.promptId ?? null, did: args.datasetId, metrics: JSON.stringify(chosen), cby: SYSTEM_USER },
+               'PENDING', :metrics, :models, :cby) RETURNING RUN_ID INTO :out_id`,
+      {
+        pid: args.promptId ?? null,
+        did: args.datasetId,
+        metrics: JSON.stringify(chosen),
+        models: await modelSnapshot(conn),
+        cby: SYSTEM_USER,
+      },
     );
     return (await fetchRun(conn, id))!;
   }, { commit: true });
@@ -120,6 +127,8 @@ export async function createFlowRagasAbRun(args: {
   promptIdB?: number | null;
   metrics: string[];
   score?: boolean;
+  /** role→model for side B only. A always runs the saved baseline. */
+  modelOverrideB?: Record<string, string> | null;
 }): Promise<{ ragas_run_a_id: number; ragas_run_b_id: number }> {
   await requireDataset(args.datasetId);
   return withConn(async (conn, oracle) => {
@@ -134,15 +143,24 @@ export async function createFlowRagasAbRun(args: {
       }
     }
     const chosen = args.score === false ? [] : chosenMetrics(args.metrics);
+    // A runs the saved baseline; B layers the override on top. Only B can carry
+    // one, so a comparison always has a fixed reference side (see the panel).
+    // Each side's effective config is stamped on its own run row and is what
+    // that side actually sends — record and request can't drift apart.
+    const modelsA = await modelSnapshot(conn);
+    const modelsB = await modelSnapshot(conn, args.modelOverrideB);
     const ids: number[] = [];
-    for (const pid of [args.promptIdA ?? null, args.promptIdB ?? null]) {
+    for (const [pid, models] of [
+      [args.promptIdA ?? null, modelsA],
+      [args.promptIdB ?? null, modelsB],
+    ] as [number | null, string | null][]) {
       const id = await insertReturningId(
         conn,
         oracle,
-        `INSERT INTO PTX_RUN_MAS (PROMPT_ID, DATASET_ID, DATASET_NM, STATUS_CD, METRIC_CTN, USER_ID)
+        `INSERT INTO PTX_RUN_MAS (PROMPT_ID, DATASET_ID, DATASET_NM, STATUS_CD, METRIC_CTN, MODEL_CTN, USER_ID)
          VALUES (:pid, :did, (SELECT DATASET_NM FROM PTX_DATASET_MAS WHERE DATASET_ID = :did),
-                 'PENDING', :metrics, :cby) RETURNING RUN_ID INTO :out_id`,
-        { pid, did: args.datasetId, metrics: JSON.stringify(chosen), cby: SYSTEM_USER },
+                 'PENDING', :metrics, :models, :cby) RETURNING RUN_ID INTO :out_id`,
+        { pid, did: args.datasetId, metrics: JSON.stringify(chosen), models, cby: SYSTEM_USER },
       );
       ids.push(id);
     }
@@ -214,10 +232,15 @@ export interface DirectRunArgs {
   score?: boolean;
   metrics?: string[];
   expectedOutput?: string | null;
+  /** role→model layered on the saved baseline for this call. */
+  modelOverride?: Record<string, string> | null;
 }
 
 export async function recordDirectRun(args: DirectRunArgs): Promise<DirectRunResult> {
-  const data = await callForPrompt(args);
+  // Resolved once: the same value goes out on the wire and onto the run row, so
+  // the record cannot claim a config the call did not use.
+  const models = await currentModelSnapshot(args.modelOverride);
+  const data = await callForPrompt({ ...args, models });
   // Optional inline scoring — a single case whose ground truth is whatever the
   // caller typed as the expected answer (blank → gt-based metrics stay null).
   const groundTruth = args.expectedOutput?.trim() ? args.expectedOutput : null;
@@ -248,9 +271,9 @@ export async function recordDirectRun(args: DirectRunArgs): Promise<DirectRunRes
     const runId = await insertReturningId(
       conn,
       oracle,
-      `INSERT INTO PTX_RUN_MAS (PROMPT_ID, DATASET_ID, DATASET_NM, STATUS_CD, ENGINE_CD, METRIC_CTN, USER_ID, START_TM, END_TM,
+      `INSERT INTO PTX_RUN_MAS (PROMPT_ID, DATASET_ID, DATASET_NM, STATUS_CD, ENGINE_CD, METRIC_CTN, MODEL_CTN, USER_ID, START_TM, END_TM,
                                  EXACT_VAL, FAITH_VAL, ANS_RELEVANCY_VAL, CNTX_PRECISION_VAL, CNTX_RECALL_VAL, ANS_CORRECTNESS_VAL)
-       VALUES (:pid, :did, :dnm, 'DONE', :eng, :met, :cby, SYSTIMESTAMP, SYSTIMESTAMP, :em, :f, :ar, :cp, :cr, :ac)
+       VALUES (:pid, :did, :dnm, 'DONE', :eng, :met, :models, :cby, SYSTIMESTAMP, SYSTIMESTAMP, :em, :f, :ar, :cp, :cr, :ac)
        RETURNING RUN_ID INTO :out_id`,
       {
         // Which version answered — a manual call aimed at a version is otherwise
@@ -260,6 +283,7 @@ export async function recordDirectRun(args: DirectRunArgs): Promise<DirectRunRes
         dnm: DIRECT_SINK_NM,
         eng: engine ?? (metrics.length ? EXACT_ENGINE : DIRECT_ENGINE),
         met: metrics.length ? JSON.stringify(metrics) : "[]",
+        models,
         cby: SYSTEM_USER,
         em,
         f: dec("faithfulness"),
@@ -310,6 +334,8 @@ export async function recordDirectAbRun(args: {
   score?: boolean;
   metrics?: string[];
   expectedOutput?: string | null;
+  /** role→model for side B only — A is the fixed reference (saved baseline). */
+  modelOverrideB?: Record<string, string> | null;
   a: Pick<DirectRunArgs, "promptId" | "baseUrl" | "authKey" | "userId">;
   b: Pick<DirectRunArgs, "promptId" | "baseUrl" | "authKey" | "userId">;
 }): Promise<{ a: DirectRunResult; b: DirectRunResult }> {
@@ -329,7 +355,7 @@ export async function recordDirectAbRun(args: {
     }
   };
   const a = await sideRun("A", { ...common, ...args.a, side: "a" });
-  const b = await sideRun("B", { ...common, ...args.b, side: "b" });
+  const b = await sideRun("B", { ...common, ...args.b, side: "b", modelOverride: args.modelOverrideB });
   await withConn(async (conn) => {
     await conn.execute(`UPDATE PTX_RUN_MAS SET AB_GROUP_ID = :g WHERE RUN_ID IN (:a, :b)`, {
       g: a.run_id,
@@ -446,6 +472,10 @@ interface RunCtx {
   baseUrl: string | null;
   /** Which configured endpoint this run calls (agent.a.url / agent.b.url). */
   side: agent.FlowSide | null;
+  /** role→model JSON stamped on the run row at creation, replayed on every call
+   * of this run. Read back from the row rather than recomputed so a mid-run edit
+   * on /models cannot change what half the cases ran under. */
+  models: string | null;
   cases: CaseRow[];
   swapNode: string | null;
   /** Has any case captured an intermediate variable? null until the first case
@@ -515,6 +545,7 @@ async function setupRun(
   const sums = Object.fromEntries(ALL_METRICS.map((m) => [m, [] as number[]])) as Record<RagasMetric, number[]>;
   return {
     runId, engine, score, metrics, llm, exact, baseUrl, side, cases, swapNode,
+    models: run.model_snapshot,
     traceSeen: null, pending: [], sums, cancelled: false,
   };
 }
@@ -535,7 +566,7 @@ async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx,
     let contexts = fields.contexts;
     let traceId: string | null = null;
     try {
-      const data = await agent.flowAnswer(message, ctx.baseUrl, ctx.side);
+      const data = await agent.flowAnswer(message, ctx.baseUrl, ctx.side, ctx.models);
       answer = data.response;
       traceId = data.traceId ?? null;
       if (!contexts.length && data.docs.length) contexts = data.docs;

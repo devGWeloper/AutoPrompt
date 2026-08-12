@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/Field';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/Table';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { formatModelPair, formatModelSnapshot } from '@/lib/modelSnapshot';
 import type { RagasRunDetail, RagasRunSummary } from '@/lib/types';
 import { CaseCompareTable } from './CompareTable';
 import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummaryDashboard';
@@ -76,13 +77,45 @@ function TypeText({ t }: { t: Exclude<RunTypeFilter, 'all'> }) {
  * The first case's question is the cheapest thing that tells two runs of the same
  * version apart at a glance, and it already rides along in the list payload.
  * Omitted for manual runs — there the question *is* the first line. */
-function RunSubline({ ids, question }: { ids: string; question?: string | null }) {
+function RunSubline({
+  ids,
+  question,
+  modelText,
+}: {
+  ids: string;
+  question?: string | null;
+  // The models this run went out under, already formatted (a pair for A/B, one
+  // snapshot for a single). Without it two runs of the same dataset and version
+  // look identical even when the model differed — which is the whole comparison.
+  modelText?: string | null;
+}) {
   const q = question?.trim();
+  const m = modelText;
   return (
-    <div className="flex min-w-0 items-baseline gap-1.5 font-mono text-[11px] text-muted">
-      <span className="shrink-0">{ids}</span>
-      {q && <span className="truncate font-sans text-muted/75" title={q}>· {q}</span>}
+    <div className="min-w-0">
+      <div className="flex min-w-0 items-baseline gap-1.5 font-mono text-[11px] text-muted">
+        <span className="shrink-0">{ids}</span>
+        {q && <span className="truncate font-sans text-muted/75" title={q}>· {q}</span>}
+      </div>
+      {m && (
+        <div className="mt-0.5 truncate font-mono text-[11px] text-muted/75" title={m}>
+          {m}
+        </div>
+      )}
     </div>
+  );
+}
+
+/** Which models this run went out under. Absent when nothing was pinned — that
+ * run used the agent's own config, and saying so on every old record would be
+ * noise. */
+function ModelStamp({ text: s }: { text: string | null }) {
+  if (!s) return null;
+  return (
+    <>
+      <span className="max-w-[22rem] truncate font-mono" title={s}>{s}</span>
+      <span>·</span>
+    </>
   );
 }
 
@@ -248,8 +281,16 @@ export default function RecordsPanel() {
     if (!q) return true;
     const rs = g.kind === 'single' ? [g.run] : [g.a, g.b];
     return rs.some((r) =>
-      [r.node_nm, r.version_no != null ? `v${r.version_no}` : null, r.dataset_nm, r.first_question, `#${r.ragas_run_id}`]
-        .some((v) => v != null && v.toLowerCase().includes(q)),
+      [
+        r.node_nm,
+        r.version_no != null ? `v${r.version_no}` : null,
+        r.dataset_nm,
+        r.first_question,
+        `#${r.ragas_run_id}`,
+        // Searchable by model name: "이 모델로 돌린 실행만" is the main reason to
+        // come back to this list after a model change.
+        formatModelSnapshot(r.model_snapshot),
+      ].some((v) => v != null && v.toLowerCase().includes(q)),
     );
   };
 
@@ -350,7 +391,11 @@ export default function RecordsPanel() {
                             : '엔드포인트'}
                         </div>
                       )}
-                      <RunSubline ids={`#${r.ragas_run_id}`} question={r.is_manual ? null : r.first_question} />
+                      <RunSubline
+                        ids={`#${r.ragas_run_id}`}
+                        question={r.is_manual ? null : r.first_question}
+                        modelText={formatModelSnapshot(r.model_snapshot)}
+                      />
                     </TD>
                     <TD><TypeText t="single" /></TD>
                     <TD><StatusText s={r.status} /></TD>
@@ -397,6 +442,7 @@ export default function RecordsPanel() {
                     <RunSubline
                       ids={`#${g.a.ragas_run_id}/#${g.b.ragas_run_id}`}
                       question={g.a.is_manual ? null : g.a.first_question}
+                      modelText={formatModelPair(g.a.model_snapshot, g.b.model_snapshot)}
                     />
                   </TD>
                   <TD><TypeText t="compare" /></TD>
@@ -618,6 +664,7 @@ function AbCompareView({ aId, bId, labelA, labelB }: { aId: number; bId: number;
           <span>vs</span>
           <Badge tone="accent">B · {sideLabel(labelB)}</Badge>
           <span className="ml-auto flex items-center gap-2">
+            <ModelStamp text={formatModelPair(a.model_snapshot, b.model_snapshot)} />
             <span>Engine {a.engine ?? '—'}</span>
           </span>
         </div>
@@ -649,6 +696,7 @@ function RagasRunDetailView({ ragasId }: { ragasId: number }) {
           {detail.node_nm && <span className="font-medium text-ink">{detail.node_nm}</span>}
           <Badge tone="neutral">{verLabel}</Badge>
           <span className="ml-auto flex items-center gap-2">
+            <ModelStamp text={formatModelSnapshot(detail.model_snapshot)} />
             <span>Engine {detail.engine ?? '—'}</span>
             <span>·</span>
             <span>{detail.results.length} case{detail.results.length === 1 ? '' : 's'}</span>

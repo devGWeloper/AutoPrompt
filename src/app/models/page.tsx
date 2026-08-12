@@ -39,6 +39,11 @@ function same(a: Draft, b: Draft): boolean {
   return a.model_nm === b.model_nm && a.temperature === b.temperature && a.description === b.description;
 }
 
+/** ISO string → 'YYYY-MM-DD HH:MM'. The seconds are noise on a settings row. */
+function fmtTime(iso: string | null): string {
+  return iso ? iso.replace('T', ' ').slice(0, 16) : '';
+}
+
 function errText(e: unknown): string {
   if (e instanceof ApiError) {
     const d = e.detail as { detail?: unknown } | string;
@@ -80,6 +85,9 @@ export default function ModelsPage() {
     () => (rows ?? []).filter((m) => drafts[m.role_cd] && !same(drafts[m.role_cd], toDraft(m))),
     [rows, drafts],
   );
+
+  /** How many roles actually have a model pinned — the rest run the agent's own default. */
+  const assigned = useMemo(() => (rows ?? []).filter((m) => m.model_nm).length, [rows]);
 
   function edit(role: string, patch: Partial<Draft>) {
     setSaved(false);
@@ -158,11 +166,16 @@ export default function ModelsPage() {
           <div className="mb-5 flex items-start justify-between gap-3">
             <div>
               <h1 className="text-lg font-semibold text-ink">
-                Model roles <span className="text-muted">({list.length})</span>
+                Model roles{' '}
+                <span className="text-muted">
+                  ({list.length}
+                  {list.length > 0 && ` · ${assigned}개 지정됨`})
+                </span>
               </h1>
               <p className="mt-0.5 text-sm text-muted">
-                외부 에이전트 config 의 LLM role 별 모델을 지정합니다. endpoint 와 API key 는 role 이 공통으로
-                쓰므로 에이전트 config 에 그대로 둡니다.
+                외부 에이전트 config 의 LLM role 별 모델을 지정합니다. 저장한 값은 계속 유지되며, 에이전트가
+                테스트 호출마다 이 값을 읽어 씁니다. endpoint 와 API key 는 role 이 공통으로 쓰므로 에이전트
+                config 에 그대로 둡니다.
               </p>
             </div>
             <Button onClick={() => setShowNew(true)}>+ role 추가</Button>
@@ -207,12 +220,30 @@ export default function ModelsPage() {
                       <span className="font-mono text-sm font-semibold text-ink">{m.role_cd}</span>
                       {note && <p className="mt-1 text-[11px] leading-snug text-muted">{note}</p>}
                     </div>
-                    <Input
-                      value={d.model_nm}
-                      onChange={(e) => edit(m.role_cd, { model_nm: e.target.value })}
-                      placeholder="비우면 에이전트 config 기본값"
-                      className="w-full font-mono"
-                    />
+                    {/* The box holds the draft, so once you start typing it no longer
+                        shows what is actually stored. The line under it always does —
+                        that is also where "this persists" becomes visible. */}
+                    <div>
+                      <Input
+                        value={d.model_nm}
+                        onChange={(e) => edit(m.role_cd, { model_nm: e.target.value })}
+                        placeholder="비우면 에이전트 config 기본값"
+                        className="w-full font-mono"
+                      />
+                      <p className="mt-1 text-[11px] leading-snug text-muted">
+                        {changed ? (
+                          <>
+                            현재 저장값{' '}
+                            <span className="font-mono text-ink/70">{m.model_nm ?? '없음'}</span>
+                            {' — 저장하면 교체됩니다'}
+                          </>
+                        ) : m.model_nm ? (
+                          <>저장됨{fmtTime(m.updated_dt ?? m.created_dt) && ` · ${fmtTime(m.updated_dt ?? m.created_dt)}`}</>
+                        ) : (
+                          <>저장값 없음 — 에이전트 config 의 기본 모델로 실행됩니다</>
+                        )}
+                      </p>
+                    </div>
                     <Input
                       value={d.temperature}
                       onChange={(e) => edit(m.role_cd, { temperature: e.target.value })}
@@ -258,10 +289,12 @@ export default function ModelsPage() {
           )}
 
           <p className="mt-6 text-xs leading-relaxed text-muted">
-            저장한 값은 에이전트가 <span className="font-mono">ROLE_CD</span> 로 읽어 자기 config 의 모델명을
-            덮어씁니다. <span className="font-mono">ROLE_CD</span> 는 에이전트{' '}
-            <span className="font-mono">LLMModel</span> enum 의 value 와 글자까지 같아야 하며, 반영 시점은
-            에이전트 쪽 구현에 달려 있습니다 (<span className="font-mono">docs/model-roles-agent.md</span>).
+            저장한 값은 <strong className="font-medium text-ink/70">여기서 실행하는 호출에만</strong> 실려
+            나갑니다 (<span className="font-mono">session_system_prompt</span> 의{' '}
+            <span className="font-mono">MODEL_OVERRIDE</span>) — 운영 트래픽은 영향받지 않습니다. Compare 에서는
+            이 값이 A(기준)가 되고 B 쪽만 다른 모델로 바꿔 비교할 수 있습니다. role 이름은 에이전트{' '}
+            <span className="font-mono">LLMModel</span> enum 의 멤버 이름과 글자까지 같아야 합니다
+            (<span className="font-mono">docs/model-roles-agent.md</span>).
           </p>
         </div>
       </main>
@@ -364,9 +397,10 @@ function NewRoleModal({
           className="mt-1 w-full font-mono"
         />
         <span className="mt-1.5 block text-xs leading-relaxed text-muted">
-          에이전트 <span className="font-mono">LLMModel</span> enum 의 value 와 <strong>글자까지 같아야</strong>{' '}
-          합니다. 한 글자라도 다르면 에이전트가 이 행을 읽지 않아, 화면에는 설정된 것처럼 보이지만 실제로는
-          아무 데도 쓰이지 않습니다.
+          에이전트 <span className="font-mono">LLMModel</span> enum 의 <strong>멤버 이름</strong>과 글자까지
+          같아야 합니다 (<span className="font-mono">LLM</span>, <span className="font-mono">VLM</span> 처럼
+          대문자일 수 있습니다). 한 글자라도 다르면 에이전트가 이 행을 읽지 않아, 화면에는 설정된 것처럼
+          보이지만 실제로는 아무 데도 쓰이지 않습니다.
         </span>
         {duplicate && <span className="mt-1 block text-xs text-bad">이미 있는 role 이름입니다.</span>}
         {badChars && (

@@ -22,6 +22,61 @@ export async function listModelRoles(): Promise<ModelRole[]> {
   return readConn(fetchAll, []);
 }
 
+/**
+ * The effective role→model config for one call, as JSON. This is both what goes
+ * out on the wire (`MODEL_OVERRIDE` inside `session_system_prompt`) and what the
+ * run records in `PTX_RUN_MAS.MODEL_CTN` — the same value, so the record always
+ * matches what was actually sent.
+ *
+ * ``overrides`` (role → model name) is layered on top of the saved baseline. It
+ * is how one side of an A/B runs a different model without touching the other:
+ * the config travels with the request instead of living in shared state.
+ *
+ * Takes an open connection so the stamp can land in the same transaction as the
+ * run row it describes.
+ *
+ * Returns null when there is nothing to say — that call goes out on the agent's
+ * own config, and an empty `{}` would read like "we pinned something" instead.
+ * A lookup failure is also null: this must never abort a run.
+ */
+export async function modelSnapshot(
+  conn: OracleConnection,
+  overrides?: Record<string, string> | null,
+): Promise<string | null> {
+  let rows: ModelRole[];
+  try {
+    rows = await fetchAll(conn);
+  } catch {
+    return null;
+  }
+  const out: Record<string, { model?: string; temperature?: number }> = {};
+  for (const m of rows) {
+    // Temperature alone is still a pin worth recording: it changes the answers.
+    if (m.model_nm === null && m.temperature === null) continue;
+    const e: { model?: string; temperature?: number } = {};
+    if (m.model_nm !== null) e.model = m.model_nm;
+    if (m.temperature !== null) e.temperature = m.temperature;
+    out[m.role_cd] = e;
+  }
+  for (const [role, model] of Object.entries(overrides ?? {})) {
+    const r = role.trim();
+    const nm = model.trim();
+    if (!r || !nm) continue;
+    // Keep any baseline temperature for that role — the override is about the
+    // model name only, so silently dropping it would change a second variable.
+    out[r] = { ...(out[r] ?? {}), model: nm };
+  }
+  return Object.keys(out).length ? JSON.stringify(out) : null;
+}
+
+/** :func:`modelSnapshot` on its own connection, for callers with none open.
+ * Null (rather than throwing) when the DB is unavailable. */
+export async function currentModelSnapshot(
+  overrides?: Record<string, string> | null,
+): Promise<string | null> {
+  return readConn((conn) => modelSnapshot(conn, overrides), null);
+}
+
 /** Trim to null — an empty box means "unset", which is what the agent reads as
  * "use the config default". */
 function text(v: string | null | undefined, max: number, label: string): string | null {

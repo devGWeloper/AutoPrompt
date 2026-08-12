@@ -43,6 +43,7 @@ WITH expected AS (
   SELECT 'PTX_RUN_MAS',          'METRIC_CTN'             FROM dual UNION ALL
   SELECT 'PTX_RUN_MAS',          'JUDGE_PROVIDER_CD'      FROM dual UNION ALL
   SELECT 'PTX_RUN_MAS',          'JUDGE_MODEL_NM'         FROM dual UNION ALL
+  SELECT 'PTX_RUN_MAS',          'MODEL_CTN'              FROM dual UNION ALL
   SELECT 'PTX_RUN_MAS',          'EXACT_VAL'              FROM dual UNION ALL
   SELECT 'PTX_RUN_MAS',          'FAITH_VAL'              FROM dual UNION ALL
   SELECT 'PTX_RUN_MAS',          'ANS_RELEVANCY_VAL'      FROM dual UNION ALL

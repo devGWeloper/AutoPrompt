@@ -64,6 +64,8 @@ CREATE TABLE PTX_DATASET_DET (
 -- 4) 평가 실행 1건. PROMPT_ID 는 A/B 대상 버전, AB_GROUP_ID 는 비교 쌍 식별자.
 --    ENGINE_CD='direct' 는 채점 없는 수동 호출, 'exact' 는 정답 일치만 채점한 실행.
 --    DATASET_NM 은 실행 시점 스냅샷 — 데이터셋이 지워져도 기록에 이름이 남는다.
+--    MODEL_CTN 도 스냅샷 — 실행 시작 시점의 PTX_MODEL_MAS 지정값이다. 이게 없으면
+--    "모델 바꾸기 전/후" 두 실행을 나중에 구분할 수 없다.
 CREATE TABLE PTX_RUN_MAS (
     RUN_ID               NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     PROMPT_ID            NUMBER,
@@ -79,6 +81,7 @@ CREATE TABLE PTX_RUN_MAS (
     ANS_CORRECTNESS_VAL  NUMBER(5,4),
     JUDGE_PROVIDER_CD    VARCHAR2(50),
     JUDGE_MODEL_NM       VARCHAR2(100),
+    MODEL_CTN            CLOB,
     METRIC_CTN           CLOB,
     ENGINE_CD            VARCHAR2(20),
     ERROR_CTN            CLOB,
@@ -149,10 +152,12 @@ CREATE TABLE PTX_TRACE_HIS (
     CRT_TM        TIMESTAMP DEFAULT SYSTIMESTAMP
 );
 
--- 8) 외부 에이전트의 LLM role 별 모델명. 에이전트가 ROLE_CD 로 읽어 자기 config 의
---    모델명을 덮어쓴다 — PTX 는 쓰기만 하고 적용은 에이전트가 한다.
---    ROLE_CD 는 에이전트 LLMModel enum 의 멤버 이름(.name)과 글자까지 같아야 한다
---    — 유일한 조인 키다. enum 의 value 는 실제 모델명이 아니라 라벨이라 쓰지 않는다.
+-- 8) 외부 에이전트의 LLM role 별 모델명. PTX 만 읽고 쓴다 — 여기 지정한 값을 PTX 가
+--    호출마다 session_system_prompt 의 MODEL_OVERRIDE 로 실어 보내고, 에이전트는 그
+--    호출에만 적용한다. 그래서 운영 트래픽은 무영향이고("테스트 중" 플래그가 필요 없다),
+--    A/B 는 B 쪽에만 다른 모델을 실을 수 있다(이 표는 A = 기준값).
+--    ROLE_CD 는 에이전트 LLMModel enum 의 멤버 이름(.name)과 글자까지 같아야 한다.
+--    enum 의 value 는 실제 모델명이 아니라 라벨이라 쓰지 않는다.
 --    endpoint / api_key 는 role 공통이라 에이전트 config 에 그대로 둔다. 키를 여기
 --    넣으면 PTX_AUDIT_HIS 의 before/after 스냅샷에 평문으로 복사된다.
 CREATE TABLE PTX_MODEL_MAS (

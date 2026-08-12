@@ -303,6 +303,9 @@ export interface RagasRunOut {
   metrics: string | null;
   judge_provider: string | null;
   judge_model: string | null;
+  /** PTX_MODEL_MAS as it stood when this run started, JSON (see lib/modelSnapshot).
+   * null = nothing was pinned, so the agent ran its own config. */
+  model_snapshot: string | null;
   exact_match: number | null;
   faithfulness: number | null;
   answer_relevancy: number | null;
@@ -331,6 +334,7 @@ export interface RagasRunSummary {
   is_manual: boolean;
   status: string;
   engine: string | null;
+  model_snapshot: string | null;
   exact_match: number | null;
   faithfulness: number | null;
   answer_relevancy: number | null;
@@ -352,6 +356,11 @@ export interface FlowRagasRequest {
   score?: boolean;
 }
 
+/** role → model name, layered on the saved baseline for one call. Only side B of
+ * a comparison may carry one: A stays the fixed reference, so a run always has
+ * something to be measured against. */
+export type ModelOverride = Record<string, string>;
+
 /** A/B request. node/prompt ids may be null when each side is pinned to its own
  * endpoint instead of a prompt version (base_url_a / base_url_b). */
 export interface FlowRagasAbRequest {
@@ -361,6 +370,7 @@ export interface FlowRagasAbRequest {
   prompt_id_b?: number | null;
   metrics?: string[];
   score?: boolean;
+  model_override_b?: ModelOverride | null;
 }
 
 export interface FlowRagasAbOut {
@@ -407,6 +417,7 @@ export interface DirectAbRequest {
   score?: boolean;
   metrics?: string[];
   expected_output?: string | null;
+  model_override_b?: ModelOverride | null;
   a: DirectAbSide;
   b: DirectAbSide;
 }
