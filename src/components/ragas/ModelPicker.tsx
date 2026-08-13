@@ -39,14 +39,35 @@ export interface ModelColumn {
   onChange: (next: ModelDrafts) => void;
 }
 
-/** The registered roles and their defaults. Empty on any failure — the control
- * then just says so, and the manage dialog is still reachable from it. */
+// One role list for the whole app. Single and Compare both stay mounted (see
+// app/page.tsx — unmounting would kill a live run's stream), so a per-hook copy
+// meant editing a default in one tab left the other tab holding the old list
+// until a reload, and running from there quietly pinned the stale value.
+let roleCache: ModelRole[] | null = null;
+const roleSubs = new Set<(next: ModelRole[]) => void>();
+
+function publishRoles(next: ModelRole[]): void {
+  roleCache = next;
+  for (const fn of roleSubs) fn(next);
+}
+
+/** The registered roles and their defaults, shared across tabs. Empty on any
+ * failure — the control then just says so, and the manage dialog is still
+ * reachable from it. */
 export function useModelRoles(): { roles: ModelRole[]; setRoles: (next: ModelRole[]) => void } {
-  const [roles, setRoles] = useState<ModelRole[]>([]);
+  const [roles, setRoles] = useState<ModelRole[]>(roleCache ?? []);
   useEffect(() => {
-    api.get<ModelRole[]>('/models').then(setRoles).catch(() => setRoles([]));
+    roleSubs.add(setRoles);
+    if (roleCache === null) {
+      api.get<ModelRole[]>('/models').then(publishRoles).catch(() => publishRoles([]));
+    } else {
+      setRoles(roleCache);
+    }
+    return () => {
+      roleSubs.delete(setRoles);
+    };
   }, []);
-  return { roles, setRoles };
+  return { roles, setRoles: publishRoles };
 }
 
 export function draftsFromRoles(roles: ModelRole[]): ModelDrafts {

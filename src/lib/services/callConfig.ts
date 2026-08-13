@@ -18,12 +18,19 @@ export async function writeCallConfig(
   runId: number | null,
   models: string | null,
 ): Promise<void> {
-  if (!traceId || !models) return;
+  // Logged either way. "The model did not apply" has two very different causes —
+  // PTX never pinned one, or the agent did not read the row — and without this
+  // line they look identical from the outside.
+  if (!traceId || !models) {
+    logger.info("call runs on agent config (nothing pinned)", { traceId, runId });
+    return;
+  }
   await conn.execute(
     `INSERT INTO PTX_CALL_MAS (TRACE_ID, RUN_ID, MODEL_CTN) VALUES (:t, :rid, :m)`,
     { t: traceId, rid: runId, m: models },
   );
   await conn.commit();
+  logger.info("call config staged", { traceId, runId, models });
 }
 
 /** Same, on its own connection, for callers with none open. Never throws: a
