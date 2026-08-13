@@ -6,6 +6,7 @@ import { ALL_METRICS, DIRECT_SINK_NM, EXACT_MATCH, SYSTEM_USER } from "@/lib/typ
 import type {
   FlowCurrent,
   LlmMetric,
+  ModelSelection,
   RagasMetric,
   RagasRunOut,
   RagasResultRow,
@@ -14,7 +15,7 @@ import type {
 import { exactMatchScore } from "@/lib/exactMatch";
 import { resolveRagasEngine } from "@/lib/config";
 import { requireDataset } from "./datasets";
-import { currentModelSnapshot, modelSnapshot } from "./models";
+import { currentModelSnapshot, explicitSnapshot, modelSnapshot } from "./models";
 import { stageCallConfig, writeCallConfig } from "./callConfig";
 import * as agent from "./externalAgent";
 import { readTraceVar } from "./trace";
@@ -71,6 +72,18 @@ export async function getCurrentFlow(): Promise<FlowCurrent> {
 
 // ---- run row helper ----
 
+/**
+ * What this run pins its models to. A run tab always sends a selection — every
+ * role, exactly as shown — so that is taken literally. Only a caller that sends
+ * none at all falls back to the saved /models defaults.
+ */
+async function runModels(
+  conn: OracleConnection,
+  sel: ModelSelection | null | undefined,
+): Promise<string | null> {
+  return sel ? explicitSnapshot(sel) : modelSnapshot(conn);
+}
+
 async function fetchRun(conn: OracleConnection, runId: number): Promise<RagasRunOut | null> {
   const res = await conn.execute(`SELECT ${RUN_COLS} FROM PTX_RUN_MAS WHERE RUN_ID = :id`, { id: runId });
   const rows = (res.rows ?? []) as Record<string, unknown>[];
@@ -91,6 +104,7 @@ export async function createFlowRagasRun(args: {
   nodeNm?: string | null;
   promptId?: number | null;
   score?: boolean;
+  models?: ModelSelection | null;
 }): Promise<RagasRunOut> {
   await requireDataset(args.datasetId);
   return withConn(async (conn, oracle) => {
@@ -113,7 +127,7 @@ export async function createFlowRagasRun(args: {
         pid: args.promptId ?? null,
         did: args.datasetId,
         metrics: JSON.stringify(chosen),
-        models: await modelSnapshot(conn),
+        models: await runModels(conn, args.models),
         cby: SYSTEM_USER,
       },
     );
@@ -128,6 +142,8 @@ export async function createFlowRagasAbRun(args: {
   promptIdB?: number | null;
   metrics: string[];
   score?: boolean;
+  modelsA?: ModelSelection | null;
+  modelsB?: ModelSelection | null;
 }): Promise<{ ragas_run_a_id: number; ragas_run_b_id: number }> {
   await requireDataset(args.datasetId);
   return withConn(async (conn, oracle) => {
@@ -142,14 +158,14 @@ export async function createFlowRagasAbRun(args: {
       }
     }
     const chosen = args.score === false ? [] : chosenMetrics(args.metrics);
-    // A runs what /models pins; B runs the agent's own config untouched. So a
-    // comparison always reads "변경안(A) vs 현행(B)" and needs no model control
-    // of its own — changing the model anywhere means changing it on /models.
-    const modelsA = await modelSnapshot(conn);
+    // Each side pins its own models, which is the only way a model-vs-model
+    // comparison can work: one shared setting would hand both sides the same
+    // value. The Compare tab pre-fills both from /models, so leaving them alone
+    // varies the prompt/endpoint and nothing else.
     const ids: number[] = [];
     for (const [pid, models] of [
-      [args.promptIdA ?? null, modelsA],
-      [args.promptIdB ?? null, null],
+      [args.promptIdA ?? null, await runModels(conn, args.modelsA)],
+      [args.promptIdB ?? null, await runModels(conn, args.modelsB)],
     ] as [number | null, string | null][]) {
       const id = await insertReturningId(
         conn,
@@ -229,12 +245,13 @@ export interface DirectRunArgs {
   score?: boolean;
   metrics?: string[];
   expectedOutput?: string | null;
+  models?: ModelSelection | null;
 }
 
 export async function recordDirectRun(args: DirectRunArgs): Promise<DirectRunResult> {
-  // Side B is the untouched reference: it runs the agent's own config, so it gets
-  // no staged row. Everything else (single calls, side A) runs what /models pins.
-  const models = args.side === "b" ? null : await currentModelSnapshot();
+  // What the run tab had on screen. No selection at all (a caller outside the
+  // tabs) falls back to the saved /models defaults.
+  const models = args.models ? explicitSnapshot(args.models) : await currentModelSnapshot();
   // Issued up front so the config can be staged under it before the call. The run
   // row does not exist yet — RUN_ID is backfilled once it does.
   const callId = agent.nextTraceId();
@@ -339,8 +356,8 @@ export async function recordDirectAbRun(args: {
   score?: boolean;
   metrics?: string[];
   expectedOutput?: string | null;
-  a: Pick<DirectRunArgs, "promptId" | "baseUrl" | "authKey" | "userId">;
-  b: Pick<DirectRunArgs, "promptId" | "baseUrl" | "authKey" | "userId">;
+  a: Pick<DirectRunArgs, "promptId" | "baseUrl" | "authKey" | "userId" | "models">;
+  b: Pick<DirectRunArgs, "promptId" | "baseUrl" | "authKey" | "userId" | "models">;
 }): Promise<{ a: DirectRunResult; b: DirectRunResult }> {
   const common = {
     message: args.message,

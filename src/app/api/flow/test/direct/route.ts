@@ -17,6 +17,7 @@ export async function POST(req: Request) {
       score: body.score,
       metrics: body.metrics,
       expectedOutput: body.expected_output,
+      models: body.models ?? null,
     });
     // score_error travels with the answer: the call succeeded, so dropping it
     // here would leave the UI with a blank score block and no reason for it.

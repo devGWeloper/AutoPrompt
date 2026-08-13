@@ -173,9 +173,10 @@ export default function ModelsPage() {
                 </span>
               </h1>
               <p className="mt-0.5 text-sm text-muted">
-                외부 에이전트 config 의 LLM role 별 모델을 지정합니다. 저장한 값은 계속 유지되며, 에이전트가
-                테스트 호출마다 이 값을 읽어 씁니다. endpoint 와 API key 는 role 이 공통으로 쓰므로 에이전트
-                config 에 그대로 둡니다.
+                외부 에이전트 config 의 LLM role 목록과 <strong className="font-medium text-ink/70">기본값</strong>
+                입니다. 실제로 적용되는 값은 실행할 때 Single · Compare 탭의 <span className="font-medium">모델</span>{' '}
+                칸에서 정하며, 그 칸이 여기 저장한 값으로 미리 채워집니다. endpoint 와 API key 는 role 이 공통으로
+                쓰므로 에이전트 config 에 그대로 둡니다.
               </p>
             </div>
             <Button onClick={() => setShowNew(true)}>+ role 추가</Button>
@@ -240,7 +241,7 @@ export default function ModelsPage() {
                         ) : m.model_nm ? (
                           <>저장됨{fmtTime(m.updated_dt ?? m.created_dt) && ` · ${fmtTime(m.updated_dt ?? m.created_dt)}`}</>
                         ) : (
-                          <>저장값 없음 — 에이전트 config 의 기본 모델로 실행됩니다</>
+                          <>기본값 없음 — 실행 탭에서 비워두면 에이전트 config 의 모델로 실행됩니다</>
                         )}
                       </p>
                     </div>
@@ -289,11 +290,10 @@ export default function ModelsPage() {
           )}
 
           <p className="mt-6 text-xs leading-relaxed text-muted">
-            모델을 바꾸는 곳은 여기 하나입니다. 저장한 값은{' '}
-            <strong className="font-medium text-ink/70">여기서 실행하는 호출에만</strong> 적용되고 운영
-            트래픽은 영향받지 않습니다. Compare 에서는 <strong className="font-medium text-ink/70">A</strong> 가
-            이 값으로, <strong className="font-medium text-ink/70">B</strong> 는 에이전트 config 그대로
-            실행되므로 그대로 &ldquo;변경안 vs 현행&rdquo; 비교가 됩니다. role 이름은 에이전트{' '}
+            여기 값은 저장만 해두는 기본값이라 그 자체로는 아무것도 실행하지 않습니다. 실행 탭에서 정한 모델은{' '}
+            <strong className="font-medium text-ink/70">그 실행에만</strong> 적용되고 운영 트래픽은 영향받지
+            않습니다 — 그 실행의 호출에만 딸려 나가기 때문입니다. Compare 는 A · B 를 각각 정할 수 있어,
+            한쪽만 바꾸면 그대로 모델 비교가 됩니다. role 이름은 에이전트{' '}
             <span className="font-mono">LLMModel</span> enum 의 멤버 이름과 글자까지 같아야 합니다
             (<span className="font-mono">docs/model-roles-agent.md</span>).
           </p>
@@ -331,8 +331,9 @@ export default function ModelsPage() {
           <span className="font-mono font-semibold">{confirmDelete?.role_cd}</span> 를 삭제합니다.
         </p>
         <p className="mt-2 text-xs leading-relaxed text-muted">
-          에이전트는 이 role 을 자기 config 의 기본 모델로 계속 실행합니다 — 노드가 멈추지는 않습니다.
-          여기서 지정했던 모델명은 사라지며, 되돌리려면 같은 이름으로 다시 추가해야 합니다.
+          에이전트는 이 role 을 자기 config 의 모델로 계속 실행합니다 — 노드가 멈추지는 않습니다. 다만 실행 탭의
+          모델 칸에서도 사라져 더 이상 이 role 을 지정할 수 없습니다. 되돌리려면 같은 이름으로 다시 추가해야
+          합니다.
         </p>
       </Modal>
     </div>

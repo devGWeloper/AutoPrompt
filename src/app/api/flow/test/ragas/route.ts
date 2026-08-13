@@ -14,6 +14,7 @@ export async function POST(req: Request) {
       nodeNm: body.node_nm,
       promptId: body.prompt_id,
       score: body.score,
+      models: body.models ?? null,
     });
     return ok(run);
   } catch (e) {

@@ -10,6 +10,7 @@ const side = (s: DirectAbSide | undefined) => ({
   baseUrl: s?.base_url ?? null,
   authKey: s?.auth_key ?? null,
   userId: s?.user_id ?? null,
+  models: s?.models ?? null,
 });
 
 const out = (r: DirectRunResult) => ({

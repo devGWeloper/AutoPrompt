@@ -41,6 +41,14 @@ import {
   useFlowDatasets,
   usePromptNodes,
 } from './shared';
+import {
+  ModelPicker,
+  draftsFromRoles,
+  modelDraftError,
+  toSelection,
+  useModelRoles,
+  type ModelDrafts,
+} from './ModelPicker';
 
 // ---- direct call (raw external-API smoke test, no scoring) ------------------
 
@@ -107,6 +115,12 @@ export default function SingleRunPanel() {
   const [versions, setVersions] = useState<PromptVersionSummary[]>([]);
   const [ver, setVer] = useState<number | null>(null);
   const [datasetId, setDatasetId] = useState<number | null>(null);
+  // Models for this run, pre-filled with the /models defaults — the boxes are
+  // the pin, so what the form shows is what the run stores and the agent reads.
+  const roles = useModelRoles();
+  const [models, setModels] = useState<ModelDrafts>({});
+  useEffect(() => { setModels(draftsFromRoles(roles)); }, [roles]);
+  const modelErr = modelDraftError(models);
   // 정답 일치 is the default evaluation option (no judge LLM required).
   const [metrics, setMetrics] = useState<string[]>([EXACT_MATCH]);
   const [scoreOn, setScoreOn] = useState(true);
@@ -152,8 +166,8 @@ export default function SingleRunPanel() {
   // needs nothing typed at all — a blank URL means the configured default.
   const targetReady = target === 'endpoint' || (!!nodeNm && ver != null);
   const scoreReady = !scoreOn || metrics.length > 0;
-  const canRun = targetReady && scoreReady && !!datasetId;
-  const canCall = targetReady && scoreReady && callStatus !== 'running' && !!message.trim();
+  const canRun = targetReady && scoreReady && !modelErr && !!datasetId;
+  const canCall = targetReady && scoreReady && !modelErr && callStatus !== 'running' && !!message.trim();
 
   /** Open the run's event stream. Used both when starting a run and when
    * reattaching to one a previous page load left in flight — the server replays
@@ -211,6 +225,7 @@ export default function SingleRunPanel() {
       const r = await api.post<{ ragas_run_id: number }>('/flow/test/ragas', {
         dataset_id: datasetId, metrics: scoreOn ? metrics : [], score: scoreOn,
         node_nm: byPrompt ? nodeNm : null, prompt_id: byPrompt ? ver : null,
+        models: toSelection(models),
       });
       saveActiveRun('single', { runId: r.ragas_run_id, baseUrl: url, scoreOn, ...meta });
       attach(r.ragas_run_id, url);
@@ -242,6 +257,7 @@ export default function SingleRunPanel() {
         score: scoreOn,
         metrics: scoreOn ? metrics : undefined,
         expected_output: exactOn ? expected.trim() || null : null,
+        models: toSelection(models),
       }));
       setCallStatus('done');
     } catch (e) { setCallError(errText(e)); setCallStatus('failed'); }
@@ -291,6 +307,12 @@ export default function SingleRunPanel() {
             </>
           )}
         </FormRow>
+
+        {roles.length > 0 && (
+          <FormRow label="모델">
+            <ModelPicker roles={roles} columns={[{ key: 'a', drafts: models, onChange: setModels }]} />
+          </FormRow>
+        )}
 
         <FormRow label="입력">
           <SegToggle
@@ -358,6 +380,7 @@ export default function SingleRunPanel() {
           )}
           <StatusPill status={source === 'dataset' ? status : callStatus} />
           {!targetReady && <span className="text-[11px] text-muted">노드와 버전을 선택하세요</span>}
+          {modelErr && <span className="text-[11px] text-bad">{modelErr}</span>}
           {/* Auth overrides ride on the direct call only — a dataset run's stream
               carries the base URL and nothing else. */}
           {target === 'endpoint' && source === 'manual' && (

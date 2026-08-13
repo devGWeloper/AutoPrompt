@@ -1,17 +1,20 @@
 # LLM role 별 모델 — 에이전트 쪽 연동 가이드
 
 에이전트 config 는 LLM 을 role 로 나눠 정의한다 (`llm` / `vlm` / `light_llm` / `judge_llm`).
-모델을 바꿔가며 테스트할 때마다 그 config 를 손으로 고치는 대신, **PTX 화면에서 지정하고
+모델을 바꿔가며 테스트할 때마다 그 config 를 손으로 고치는 대신, **PTX 실행 화면에서 지정하고
 에이전트가 호출 단위로 읽어 간다.**
 
 ```
-PTX /models 화면 ──save──▶ PTX_MODEL_MAS
-                                  │  PTX 가 호출 직전에 옮겨 적음
-                                  ▼
-                            PTX_CALL_MAS (TRACE_ID, MODEL_CTN)
-                                  ▲
-                    에이전트가 TRACE_ID 로 SELECT — 그 호출에만 적용
+PTX Single·Compare 탭의 '모델' 칸        ← 실행마다 지정 (PTX_MODEL_MAS 기본값이 미리 채워짐)
+              │  PTX 가 호출 직전에 적음
+              ▼
+        PTX_CALL_MAS (TRACE_ID, MODEL_CTN)
+              ▲
+    에이전트가 TRACE_ID 로 SELECT — 그 호출에만 적용
 ```
+
+`PTX_MODEL_MAS` 는 PTX 전용 설정 테이블(role 목록 + 기본값)이라 **에이전트는 볼 필요가 없다.**
+에이전트가 읽는 건 `PTX_CALL_MAS` 하나다.
 
 `TRACE_ID` 는 PTX 가 발급해 `session_system_prompt` 로 **원래부터 보내던 값**이다
 (`PTX_TRACE_HIS` 상관키). **요청 형식은 바뀌지 않는다.**
@@ -35,11 +38,11 @@ PTX 쪽은 끝났다. 이 문서는 **에이전트(`C:\work\aiai`) 쪽에서 할
 | 호출 | `PTX_CALL_MAS` 행 | 결과 |
 |---|---|---|
 | 운영 트래픽 | `TRACE_ID` 자체가 없음 | config 그대로 |
-| PTX Single · Compare **A** | 있음 | 지정된 모델 |
-| PTX Compare **B** | 없음 | config 그대로 (= 현행) |
+| PTX 실행 — 모델 칸에 값이 있음 | 있음 | 지정된 모델 |
+| PTX 실행 — 모델 칸이 전부 비어 있음 | 없음 | config 그대로 |
 
-A/B 는 사이드마다 `TRACE_ID` 가 다르므로, PTX 가 A 쪽에만 행을 남기면 자연히 갈린다.
-**에이전트는 사이드를 알 필요가 없다.**
+A/B 는 사이드마다 `TRACE_ID` 가 다르고 PTX 가 사이드별로 행을 남기므로, A 와 B 에 서로 다른
+모델이 자연히 갈린다. **에이전트는 사이드를 알 필요가 없다** — `TRACE_ID` 로 조회할 뿐이다.
 
 `MODEL_CTN` 형식:
 
@@ -249,9 +252,9 @@ if config.ORACLE_DB_DSN:                  # DSN 이 비면 initialize() 가 던�
 3. **role 이름** — `[e.name for e in LLMModel]` 과 `/models` 화면의 이름을 대조.
 4. **운영 경로** — `TRACE_ID` 없이 호출 → 로그의 모델명이 **기존 그대로**인지.
    바뀌거나 DB 조회 로그가 찍히면 게이트가 새는 것이다 (Step 2 ⚠️).
-5. **적용 경로** — `/models` 에 모델을 넣고 Single 실행 → 로그의 모델명이 그 값인지.
-6. **A/B** — Compare 실행 → **A 는 지정 모델, B 는 config 모델**로 로그가 찍혀야 한다.
-   같으면 PTX 가 양쪽에 행을 남겼거나 에이전트가 전역에 적용한 것이다.
+5. **적용 경로** — Single 탭 모델 칸에 모델을 넣고 실행 → 로그의 모델명이 그 값인지.
+6. **A/B** — Compare 에서 A 와 B 에 **서로 다른 모델**을 넣고 실행 → 로그에 두 모델이
+   각각 찍혀야 한다. 같으면 에이전트가 전역에 적용한 것이다 (Step 3 ⚠️).
 7. **부분 지정** — `temperature` 만 있는 role 이 모델명은 config 값을 유지하는지.
 8. **DB 차단 시** — DSN 을 일부러 틀리게 하고 에이전트가 경고만 남기고 정상 기동·응답하는지.
 

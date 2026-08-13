@@ -152,9 +152,11 @@ CREATE TABLE PTX_TRACE_HIS (
     CRT_TM        TIMESTAMP DEFAULT SYSTIMESTAMP
 );
 
--- 8) 외부 에이전트의 LLM role 별 모델명. 모델을 바꾸는 유일한 곳(/models 화면)이다.
---    PTX 가 호출 직전에 이 값을 PTX_CALL_MAS 로 옮겨 적고 에이전트가 거기서 읽어 간다.
---    Compare 는 A 에만 적용되고 B 는 에이전트 config 그대로라 "변경안 vs 현행" 이 된다.
+-- 8) 외부 에이전트의 LLM role 목록과 기본값. /models 화면이 읽고 쓰는 PTX 전용 설정이다.
+--    이 표 자체는 아무것도 실행하지 않는다 — 실제로 적용되는 값은 Single·Compare 탭의
+--    '모델' 칸이고, 그 칸이 여기 값으로 미리 채워진다. 실행이 시작되면 화면에 있던 값이
+--    PTX_CALL_MAS 로 적히고 에이전트는 그쪽을 읽는다. 지정을 실행 단위로 둔 이유는 A/B 다:
+--    전역 설정 하나로는 양쪽이 같은 값을 봐서 모델 비교가 성립하지 않는다.
 --    운영 트래픽은 아예 빗나가므로 "테스트 중" 플래그가 필요 없다.
 --    ROLE_CD 는 에이전트 LLMModel enum 의 멤버 이름(.name)과 글자까지 같아야 한다.
 --    enum 의 value 는 실제 모델명이 아니라 라벨이라 쓰지 않는다.

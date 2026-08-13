@@ -85,7 +85,7 @@ Prompt Trace eXplorer(PTX) 소유 테이블 9개. 외부 테이블(`CHAT_VER_MAS
 | `ANS_CORRECTNESS_VAL` | NUMBER(5,4) | Y | — | |
 | `JUDGE_PROVIDER_CD` | VARCHAR2(50) | Y | — | 호환용 |
 | `JUDGE_MODEL_NM` | VARCHAR2(100) | Y | — | 요청별 judge LLM override |
-| `MODEL_CTN` | CLOB | Y | — | 실행 시점 `PTX_MODEL_MAS` 스냅샷 JSON `{"LLM":{"model":"…","temperature":0.3}}`. 지정 없는 role 은 빠지고, 아무것도 없으면 NULL |
+| `MODEL_CTN` | CLOB | Y | — | 실행 시점 모델 스냅샷 JSON `{"LLM":{"model":"…","temperature":0.3}}` — 실행 탭에서 지정한 값 그대로. 지정 없는 role 은 빠지고, 아무것도 없으면 NULL |
 | `METRIC_CTN` | CLOB | Y | — | JSON 배열 — 이번 실행에 채점한 지표 (`[]` = 미채점) |
 | `ENGINE_CD` | VARCHAR2(20) | Y | — | RAGAS / FALLBACK / exact(정답 일치만) / direct(수동 호출) |
 | `ERROR_CTN` | CLOB | Y | — | |
@@ -152,18 +152,19 @@ Prompt Trace eXplorer(PTX) 소유 테이블 9개. 외부 테이블(`CHAT_VER_MAS
 
 ## PTX_MODEL_MAS
 
-외부 에이전트 config 의 LLM role(`llm` / `vlm` / `light_llm` / `judge_llm`) 별 모델명.
-**PTX 가 쓰고 에이전트가 읽는다** — 적용은 에이전트가 자기 config 를 조립할 때 한다
-(`docs/model-roles-agent.md`). DDL 이 현재 role 을 seed 하고, 에이전트 `LLMModel` enum 이
-늘거나 줄면 화면에서 행을 추가·삭제한다.
+외부 에이전트 config 의 LLM role(`llm` / `vlm` / `light_llm` / `judge_llm`) 목록과 **기본값**.
+`/models` 화면이 읽고 쓰는 PTX 전용 설정 표다. DDL 이 현재 role 을 seed 하고, 에이전트
+`LLMModel` enum 이 늘거나 줄면 화면에서 행을 추가·삭제한다.
 
-**에이전트는 이 표를 읽지 않는다.** PTX 가 읽어서 호출 직전에 `PTX_CALL_MAS` 로 옮겨 적고,
-에이전트는 그쪽을 `TRACE_ID` 로 읽는다(`docs/model-roles-agent.md`).
+**이 표는 그 자체로 아무것도 실행하지 않는다.** 실제로 적용되는 값은 Single · Compare 탭의
+`모델` 칸에 있는 것이고, 그 칸이 여기 값으로 미리 채워질 뿐이다. 실행이 시작되면 화면에 있던
+값이 `PTX_CALL_MAS` 로 적히고 에이전트는 그쪽을 `TRACE_ID` 로 읽는다
+(`docs/model-roles-agent.md`). 즉 **에이전트는 이 표를 읽지 않는다.**
 
-**모델을 바꾸는 곳은 이 화면 하나다.** Compare 는 모델 컨트롤을 갖지 않는다 — A 는 여기
-지정한 값으로, B 는 에이전트 config 그대로 돌아서 "변경안(A) vs 현행(B)" 이 된다. 운영
-트래픽은 `TRACE_ID` 가 없어 아예 빗나가므로 "테스트 중에만" 을 뜻하는 `ACTIVE_YN` 류
-플래그가 필요 없다(전역 플래그는 켜져 있는 동안의 운영 요청을 못 막아 격리가 안 된다).
+지정을 실행 단위로 둔 이유는 A/B 다. 전역 설정 하나로는 양쪽이 같은 값을 볼 수밖에 없어
+모델 비교 자체가 성립하지 않는다. 운영 트래픽은 `TRACE_ID` 가 없어 아예 빗나가므로
+"테스트 중에만" 을 뜻하는 `ACTIVE_YN` 류 플래그가 필요 없다(전역 플래그는 켜져 있는 동안의
+운영 요청을 못 막아 격리가 안 된다).
 
 `endpoint` / `api_key` 는 role 4종이 공통으로 써서 에이전트 config 에 남긴다. 키를 여기
 두면 `PTX_AUDIT_HIS` 의 before/after 스냅샷에 평문으로 복사된다.
@@ -192,8 +193,11 @@ Prompt Trace eXplorer(PTX) 소유 테이블 9개. 외부 테이블(`CHAT_VER_MAS
 | 호출 | 행 | 결과 |
 |---|---|---|
 | 운영 트래픽 | `TRACE_ID` 자체가 없음 | config 그대로 |
-| Single · Compare A | 있음 | `PTX_MODEL_MAS` 지정값 |
-| Compare B | 없음 | config 그대로 (= 현행) |
+| 실행 탭의 모델 칸에 값이 있음 | 있음 | 그 값 |
+| 실행 탭의 모델 칸이 전부 비어 있음 | 없음 | config 그대로 |
+
+A/B 는 사이드마다 `TRACE_ID` 가 달라 사이드별로 행이 남는다 — 그래서 A 와 B 에 서로 다른
+모델을 걸 수 있고, 에이전트는 사이드를 알 필요가 없다.
 
 | 컬럼 | 타입 | NULL | 기본값 | 비고 |
 |---|---|---|---|---|

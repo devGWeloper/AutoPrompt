@@ -15,6 +15,8 @@ export async function POST(req: Request) {
       promptIdB: body.prompt_id_b ?? null,
       metrics: body.metrics ?? [],
       score: body.score,
+      modelsA: body.models_a ?? null,
+      modelsB: body.models_b ?? null,
     });
     return ok(out);
   } catch (e) {

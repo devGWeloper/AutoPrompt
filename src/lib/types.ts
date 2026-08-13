@@ -118,11 +118,12 @@ export interface PromptVersionEdit {
 
 // ---- model roles (external agent config) ----
 
-/** The LLM roles the external agent's config defines. PTX only records what each
- * role should run; the agent reads PTX_MODEL_MAS by ROLE_CD and overrides the
- * model name in its own config (endpoint/api key stay there — they're shared by
- * all four roles). ROLE_CD must equal the agent's LLMModel enum value exactly:
- * that string is the only join key between the two systems.
+/** The LLM roles the external agent's config defines. PTX_MODEL_MAS holds the
+ * defaults a run tab starts from; the run itself pins what is on screen when it
+ * starts (PTX_CALL_MAS, keyed by TRACE_ID), and the agent reads that. Endpoint
+ * and API key stay in the agent's config — they're shared by all four roles.
+ * ROLE_CD must equal the agent's LLMModel enum member name exactly: that string
+ * is the only join key between the two systems.
  *
  * This list is a hint for the add dialog, NOT the truth. The truth is the
  * agent's `LLMModel` enum, which lives in another process and can change without
@@ -165,6 +166,24 @@ export interface ModelRoleUpdate {
   temperature?: number | null;
   description?: string | null;
 }
+
+/** What one role runs for one execution. A null/absent field is not a pin — the
+ * agent keeps whatever its own config says for it. */
+export interface ModelPin {
+  model?: string | null;
+  temperature?: number | null;
+}
+
+/**
+ * role → what that role runs, for a single execution. This is the *whole*
+ * selection, not a patch: a run tab shows every role and sends back what is on
+ * screen, so clearing a box hands that role back to the agent's config. The
+ * saved /models values only decide what the boxes start out holding.
+ *
+ * Sending no selection at all (the field absent) falls back to the saved values,
+ * which is what a caller outside the run tabs gets.
+ */
+export type ModelSelection = Record<string, ModelPin>;
 
 // ---- diff ----
 
@@ -354,14 +373,16 @@ export interface FlowRagasRequest {
   prompt_id?: number | null;
   /** false = answers only, no RAGAS scoring (stored as METRICS='[]'). */
   score?: boolean;
+  /** Models for this run. Absent = whatever /models has saved. */
+  models?: ModelSelection | null;
 }
 
 /** A/B request. node/prompt ids may be null when each side is pinned to its own
  * endpoint instead of a prompt version (base_url_a / base_url_b).
  *
- * There is no model field: models are set once on /models and land on side A,
- * while B runs the agent's own config. One place to change a model, and a
- * comparison always reads 변경안(A) vs 현행(B). */
+ * Each side carries its own models, which is what makes a model-vs-model
+ * comparison possible at all — one global setting would hand both sides the
+ * same value. Both start out pre-filled from /models. */
 export interface FlowRagasAbRequest {
   dataset_id: number;
   node_nm?: string | null;
@@ -369,6 +390,8 @@ export interface FlowRagasAbRequest {
   prompt_id_b?: number | null;
   metrics?: string[];
   score?: boolean;
+  models_a?: ModelSelection | null;
+  models_b?: ModelSelection | null;
 }
 
 export interface FlowRagasAbOut {
@@ -389,6 +412,8 @@ export interface DirectTestRequest {
   metrics?: string[];
   /** Expected answer for the 정답 일치 option; null = exact match not scored. */
   expected_output?: string | null;
+  /** Models for this call. Absent = whatever /models has saved. */
+  models?: ModelSelection | null;
 }
 
 export interface DirectTestOut {
@@ -408,6 +433,8 @@ export interface DirectAbSide {
   base_url?: string | null;
   auth_key?: string | null;
   user_id?: string | null;
+  /** Models for this side — the two sides are pinned independently. */
+  models?: ModelSelection | null;
 }
 
 export interface DirectAbRequest {

@@ -38,6 +38,14 @@ import {
   useFlowDatasets,
   usePromptNodes,
 } from './shared';
+import {
+  ModelPicker,
+  draftsFromRoles,
+  modelDraftError,
+  toSelection,
+  useModelRoles,
+  type ModelDrafts,
+} from './ModelPicker';
 
 /** One side's answer to a manual A/B call. */
 type ManualSide = {
@@ -79,6 +87,18 @@ export default function ComparePanel() {
   const [verA, setVerA] = useState<number | null>(null);
   const [verB, setVerB] = useState<number | null>(null);
   const [datasetId, setDatasetId] = useState<number | null>(null);
+  // One model set per side. Both start from the /models defaults, so an
+  // untouched comparison varies the prompt/endpoint and nothing else; changing
+  // one side turns it into a model comparison without any other setup.
+  const roles = useModelRoles();
+  const [modelsA, setModelsA] = useState<ModelDrafts>({});
+  const [modelsB, setModelsB] = useState<ModelDrafts>({});
+  useEffect(() => {
+    const d = draftsFromRoles(roles);
+    setModelsA(d);
+    setModelsB(d);
+  }, [roles]);
+  const modelErr = modelDraftError(modelsA, modelsB);
   // 정답 일치 is the default evaluation option (no judge LLM required).
   const [metrics, setMetrics] = useState<string[]>([EXACT_MATCH]);
   const [scoreOn, setScoreOn] = useState(true);
@@ -133,8 +153,8 @@ export default function ComparePanel() {
   const byVersion = mode === 'version' && !!(nodeNm && verA && verB && verA !== verB);
   const targetReady = mode === 'endpoint' || byVersion;
   const scoreReady = !scoreOn || metrics.length > 0;
-  const canRun = targetReady && scoreReady && !!datasetId && status !== 'running';
-  const canCall = targetReady && scoreReady && !!message.trim() && callStatus !== 'running';
+  const canRun = targetReady && scoreReady && !modelErr && !!datasetId && status !== 'running';
+  const canCall = targetReady && scoreReady && !modelErr && !!message.trim() && callStatus !== 'running';
   const exactOn = scoreOn && metrics.includes(EXACT_MATCH);
   const verLabel = (id: number | null) => (mode === 'version' ? versions.find((v) => v.prompt_id === id)?.version_no ?? '' : '');
   const labA = runLabels?.[0] ?? verLabel(verA);
@@ -208,6 +228,8 @@ export default function ComparePanel() {
         prompt_id_a: byVersion ? verA : null,
         prompt_id_b: byVersion ? verB : null,
         metrics: scoreOn ? metrics : [], score: scoreOn,
+        models_a: toSelection(modelsA),
+        models_b: toSelection(modelsB),
       });
       const saved: ActiveCompareRun = {
         runIdA: r.ragas_run_a_id,
@@ -237,8 +259,8 @@ export default function ComparePanel() {
         score: scoreOn,
         metrics: scoreOn ? metrics : undefined,
         expected_output: gt,
-        a: ep ? { base_url: urlA.trim() || null } : { prompt_id: verA },
-        b: ep ? { base_url: urlB.trim() || null } : { prompt_id: verB },
+        a: { ...(ep ? { base_url: urlA.trim() || null } : { prompt_id: verA }), models: toSelection(modelsA) },
+        b: { ...(ep ? { base_url: urlB.trim() || null } : { prompt_id: verB }), models: toSelection(modelsB) },
       });
       setAb({ ...r, question: message, gt });
       setCallStatus('done');
@@ -294,6 +316,18 @@ export default function ComparePanel() {
             </>
           )}
         </FormRow>
+
+        {roles.length > 0 && (
+          <FormRow label="모델">
+            <ModelPicker
+              roles={roles}
+              columns={[
+                { key: 'a', label: 'A', drafts: modelsA, onChange: setModelsA },
+                { key: 'b', label: 'B', drafts: modelsB, onChange: setModelsB },
+              ]}
+            />
+          </FormRow>
+        )}
 
         <FormRow label="입력">
           <SegToggle
@@ -363,6 +397,7 @@ export default function ComparePanel() {
           {mode === 'version' && !byVersion && (
             <span className="text-[11px] text-muted">노드와 서로 다른 두 버전을 선택하세요</span>
           )}
+          {modelErr && <span className="text-[11px] text-bad">{modelErr}</span>}
         </div>
       </Card>
 
