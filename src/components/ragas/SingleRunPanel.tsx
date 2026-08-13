@@ -115,9 +115,9 @@ export default function SingleRunPanel() {
   const [versions, setVersions] = useState<PromptVersionSummary[]>([]);
   const [ver, setVer] = useState<number | null>(null);
   const [datasetId, setDatasetId] = useState<number | null>(null);
-  // Models for this run, pre-filled with the /models defaults — the boxes are
+  // Models for this run, pre-filled with the saved role defaults — the boxes are
   // the pin, so what the form shows is what the run stores and the agent reads.
-  const roles = useModelRoles();
+  const { roles, setRoles } = useModelRoles();
   const [models, setModels] = useState<ModelDrafts>({});
   useEffect(() => { setModels(draftsFromRoles(roles)); }, [roles]);
   const modelErr = modelDraftError(models);
@@ -308,11 +308,13 @@ export default function SingleRunPanel() {
           )}
         </FormRow>
 
-        {roles.length > 0 && (
-          <FormRow label="모델">
-            <ModelPicker roles={roles} columns={[{ key: 'a', drafts: models, onChange: setModels }]} />
-          </FormRow>
-        )}
+        <FormRow label="모델">
+          <ModelPicker
+            roles={roles}
+            onRolesChange={setRoles}
+            columns={[{ key: 'a', drafts: models, onChange: setModels }]}
+          />
+        </FormRow>
 
         <FormRow label="입력">
           <SegToggle

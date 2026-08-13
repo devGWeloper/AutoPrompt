@@ -26,7 +26,7 @@ CREATE TABLE PTX_MODEL_MAS (
 );
 
 -- 2) role seed. 실제 enum 멤버 이름이 아래와 다르면 그 이름으로 바꿔서 넣을 것
---    (넣고 나서 /models 화면에서 추가·삭제해도 된다).
+--    (넣고 나서 실행 탭 '모델' 칸의 role 관리에서 추가·삭제해도 된다).
 --    MODEL_NM 이 NULL 이면 실행 탭의 그 role 칸이 빈 채로 시작하고, 빈 채로 실행하면
 --    에이전트가 자기 config 의 모델을 그대로 쓴다.
 INSERT INTO PTX_MODEL_MAS (ROLE_CD, USER_ID) VALUES ('llm', 'system');

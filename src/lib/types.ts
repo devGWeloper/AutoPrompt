@@ -178,7 +178,7 @@ export interface ModelPin {
  * role → what that role runs, for a single execution. This is the *whole*
  * selection, not a patch: a run tab shows every role and sends back what is on
  * screen, so clearing a box hands that role back to the agent's config. The
- * saved /models values only decide what the boxes start out holding.
+ * saved PTX_MODEL_MAS values only decide what the boxes start out holding.
  *
  * Sending no selection at all (the field absent) falls back to the saved values,
  * which is what a caller outside the run tabs gets.
@@ -373,7 +373,7 @@ export interface FlowRagasRequest {
   prompt_id?: number | null;
   /** false = answers only, no RAGAS scoring (stored as METRICS='[]'). */
   score?: boolean;
-  /** Models for this run. Absent = whatever /models has saved. */
+  /** Models for this run. Absent = the saved role defaults. */
   models?: ModelSelection | null;
 }
 
@@ -382,7 +382,7 @@ export interface FlowRagasRequest {
  *
  * Each side carries its own models, which is what makes a model-vs-model
  * comparison possible at all — one global setting would hand both sides the
- * same value. Both start out pre-filled from /models. */
+ * same value. Both start out pre-filled from the saved role defaults. */
 export interface FlowRagasAbRequest {
   dataset_id: number;
   node_nm?: string | null;
@@ -412,7 +412,7 @@ export interface DirectTestRequest {
   metrics?: string[];
   /** Expected answer for the 정답 일치 option; null = exact match not scored. */
   expected_output?: string | null;
-  /** Models for this call. Absent = whatever /models has saved. */
+  /** Models for this call. Absent = the saved role defaults. */
   models?: ModelSelection | null;
 }
 

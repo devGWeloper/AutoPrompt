@@ -153,11 +153,13 @@ Prompt Trace eXplorer(PTX) 소유 테이블 9개. 외부 테이블(`CHAT_VER_MAS
 ## PTX_MODEL_MAS
 
 외부 에이전트 config 의 LLM role(`llm` / `vlm` / `light_llm` / `judge_llm`) 목록과 **기본값**.
-`/models` 화면이 읽고 쓰는 PTX 전용 설정 표다. DDL 이 현재 role 을 seed 하고, 에이전트
-`LLMModel` enum 이 늘거나 줄면 화면에서 행을 추가·삭제한다.
+Single · Compare 탭의 `모델` 칸 안에 있는 **role 관리** 대화상자가 읽고 쓰는 PTX 전용 설정
+표다(모델 설정은 실행 화면 밖에 두지 않는다 — 별도 탭은 같은 걸 정하는 두 번째 자리로
+읽혔다). DDL 이 현재 role 을 seed 하고, 에이전트 `LLMModel` enum 이 늘거나 줄면 거기서
+행을 추가·삭제한다.
 
-**이 표는 그 자체로 아무것도 실행하지 않는다.** 실제로 적용되는 값은 Single · Compare 탭의
-`모델` 칸에 있는 것이고, 그 칸이 여기 값으로 미리 채워질 뿐이다. 실행이 시작되면 화면에 있던
+**이 표는 그 자체로 아무것도 실행하지 않는다.** 실제로 적용되는 값은 `모델` 칸에 있는
+것이고, 그 칸이 여기 값으로 미리 채워질 뿐이다. 실행이 시작되면 화면에 있던
 값이 `PTX_CALL_MAS` 로 적히고 에이전트는 그쪽을 `TRACE_ID` 로 읽는다
 (`docs/model-roles-agent.md`). 즉 **에이전트는 이 표를 읽지 않는다.**
 

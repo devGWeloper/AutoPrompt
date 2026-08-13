@@ -68,7 +68,7 @@ export function explicitSnapshot(sel: ModelSelection | null | undefined): string
 }
 
 /**
- * The saved /models defaults as the same JSON — the fallback for a caller that
+ * The saved role defaults as the same JSON — the fallback for a caller that
  * sends no selection of its own (anything outside the run tabs).
  *
  * Takes an open connection so the stamp can land in the same transaction as the

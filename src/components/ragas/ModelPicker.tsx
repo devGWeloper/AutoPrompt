@@ -5,12 +5,13 @@ import { Input } from '@/components/ui/Field';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import type { ModelRole, ModelSelection } from '@/lib/types';
+import { ModelRolesModal } from './ModelRolesModal';
 
 /**
  * Per-run model selection, shared by the Single and Compare tabs.
  *
  * What is in the boxes is what the run pins — there is no hidden layer
- * underneath. The boxes start out holding the /models defaults, so leaving them
+ * underneath. The boxes start out holding the saved defaults, so leaving them
  * alone runs those; clearing one hands that role back to the agent's own config,
  * which is exactly what the empty box reads as. Compare gets one column per
  * side, and that is the only reason a model-vs-model comparison is possible at
@@ -38,14 +39,14 @@ export interface ModelColumn {
   onChange: (next: ModelDrafts) => void;
 }
 
-/** The roles registered on /models, with their saved defaults. Empty on any
- * failure: no roles simply means the run tabs show no model control. */
-export function useModelRoles(): ModelRole[] {
+/** The registered roles and their defaults. Empty on any failure — the control
+ * then just says so, and the manage dialog is still reachable from it. */
+export function useModelRoles(): { roles: ModelRole[]; setRoles: (next: ModelRole[]) => void } {
   const [roles, setRoles] = useState<ModelRole[]>([]);
   useEffect(() => {
     api.get<ModelRole[]>('/models').then(setRoles).catch(() => setRoles([]));
   }, []);
-  return roles;
+  return { roles, setRoles };
 }
 
 export function draftsFromRoles(roles: ModelRole[]): ModelDrafts {
@@ -106,12 +107,21 @@ function pinText(drafts: ModelDrafts): string {
 const sameDrafts = (a: ModelDrafts, b: ModelDrafts) =>
   JSON.stringify(toSelection(a)) === JSON.stringify(toSelection(b));
 
-export function ModelPicker({ roles, columns }: { roles: ModelRole[]; columns: ModelColumn[] }) {
+export function ModelPicker({
+  roles,
+  columns,
+  onRolesChange,
+}: {
+  roles: ModelRole[];
+  columns: ModelColumn[];
+  onRolesChange: (next: ModelRole[]) => void;
+}) {
   const [open, setOpen] = useState(false);
+  const [manage, setManage] = useState(false);
   const saved = useMemo(() => draftsFromRoles(roles), [roles]);
   const dirty = columns.some((c) => !sameDrafts(c.drafts, saved));
   // Two columns holding the same thing is the ordinary case (both pre-filled
-  // from /models), and saying it once is shorter and clearer than saying it
+  // from the same defaults), and saying it once is shorter and clearer than saying it
   // twice — the point of the line is whether the sides differ.
   const identical = columns.length > 1 && columns.every((c) => sameDrafts(c.drafts, columns[0].drafts));
 
@@ -119,6 +129,29 @@ export function ModelPicker({ roles, columns }: { roles: ModelRole[]; columns: M
     col.onChange({ ...col.drafts, [role]: { ...col.drafts[role], ...patch } });
 
   const template = `minmax(84px,116px) ${columns.map(() => 'minmax(130px,1fr) 62px').join(' ')}`;
+
+  // No roles at all (empty table, or the DB is down). The line says so instead
+  // of claiming a default, and the manage dialog stays reachable — otherwise
+  // there is no way to add the first role.
+  if (roles.length === 0) {
+    return (
+      <>
+        <span className="min-w-0 flex-1 truncate text-xs text-muted">
+          등록된 role 이 없습니다 — 에이전트 config 그대로 실행됩니다
+        </span>
+        <button
+          type="button"
+          onClick={() => setManage(true)}
+          className="shrink-0 text-xs font-medium text-muted transition-colors hover:text-ink"
+        >
+          role 관리
+        </button>
+        {manage && (
+          <ModelRolesModal roles={roles} onClose={() => setManage(false)} onSaved={onRolesChange} />
+        )}
+      </>
+    );
+  }
 
   return (
     <>
@@ -201,9 +234,8 @@ export function ModelPicker({ roles, columns }: { roles: ModelRole[]; columns: M
           </div>
           <div className="mt-1.5 flex items-start gap-3">
             <p className="min-w-0 flex-1 text-[11px] leading-snug text-muted">
-              비운 칸은 에이전트 config 의 모델로 실행됩니다. 여기서 고친 값은{' '}
-              <span className="text-ink/70">이 실행에만</span> 적용되고, 미리 채워지는 기본값은 Models 탭에서
-              바꿉니다.
+              비운 칸은 에이전트 config 의 모델로 실행됩니다. 여기 값은{' '}
+              <span className="text-ink/70">이 실행에만</span> 적용됩니다.
             </p>
             {dirty && (
               <button
@@ -214,8 +246,19 @@ export function ModelPicker({ roles, columns }: { roles: ModelRole[]; columns: M
                 기본값으로
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => setManage(true)}
+              className="shrink-0 text-[11px] font-medium text-muted transition-colors hover:text-ink"
+            >
+              role 관리
+            </button>
           </div>
         </div>
+      )}
+
+      {manage && (
+        <ModelRolesModal roles={roles} onClose={() => setManage(false)} onSaved={onRolesChange} />
       )}
     </>
   );

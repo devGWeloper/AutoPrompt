@@ -87,10 +87,10 @@ export default function ComparePanel() {
   const [verA, setVerA] = useState<number | null>(null);
   const [verB, setVerB] = useState<number | null>(null);
   const [datasetId, setDatasetId] = useState<number | null>(null);
-  // One model set per side. Both start from the /models defaults, so an
+  // One model set per side. Both start from the same saved defaults, so an
   // untouched comparison varies the prompt/endpoint and nothing else; changing
   // one side turns it into a model comparison without any other setup.
-  const roles = useModelRoles();
+  const { roles, setRoles } = useModelRoles();
   const [modelsA, setModelsA] = useState<ModelDrafts>({});
   const [modelsB, setModelsB] = useState<ModelDrafts>({});
   useEffect(() => {
@@ -317,17 +317,16 @@ export default function ComparePanel() {
           )}
         </FormRow>
 
-        {roles.length > 0 && (
-          <FormRow label="모델">
-            <ModelPicker
-              roles={roles}
-              columns={[
-                { key: 'a', label: 'A', drafts: modelsA, onChange: setModelsA },
-                { key: 'b', label: 'B', drafts: modelsB, onChange: setModelsB },
-              ]}
-            />
-          </FormRow>
-        )}
+        <FormRow label="모델">
+          <ModelPicker
+            roles={roles}
+            onRolesChange={setRoles}
+            columns={[
+              { key: 'a', label: 'A', drafts: modelsA, onChange: setModelsA },
+              { key: 'b', label: 'B', drafts: modelsB, onChange: setModelsB },
+            ]}
+          />
+        </FormRow>
 
         <FormRow label="입력">
           <SegToggle

@@ -63,11 +63,12 @@ function SectionNav({ className }: { className?: string }) {
   const router = useRouter();
   const pathname = usePathname() || '/';
   const onPrompts = pathname.startsWith('/nodes');
-  const onModels = pathname.startsWith('/models');
+  // No Models entry: which model a run uses is part of that run, so it is asked
+  // inside the Single / Compare forms. A section of its own read as a second,
+  // competing place to set the same thing.
   const items = [
-    { href: '/', label: 'Test', active: !onPrompts && !onModels },
+    { href: '/', label: 'Test', active: !onPrompts },
     { href: '/nodes', label: 'Prompts', active: onPrompts },
-    { href: '/models', label: 'Models', active: onModels },
   ];
   return (
     <nav className={cn('inline-flex h-9 items-center gap-0.5 rounded-lg border border-line bg-surface-2 p-1', className)}>

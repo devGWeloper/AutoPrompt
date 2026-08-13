@@ -152,7 +152,8 @@ CREATE TABLE PTX_TRACE_HIS (
     CRT_TM        TIMESTAMP DEFAULT SYSTIMESTAMP
 );
 
--- 8) 외부 에이전트의 LLM role 목록과 기본값. /models 화면이 읽고 쓰는 PTX 전용 설정이다.
+-- 8) 외부 에이전트의 LLM role 목록과 기본값. 실행 탭 '모델' 칸의 role 관리 대화상자가
+--    읽고 쓰는 PTX 전용 설정이다.
 --    이 표 자체는 아무것도 실행하지 않는다 — 실제로 적용되는 값은 Single·Compare 탭의
 --    '모델' 칸이고, 그 칸이 여기 값으로 미리 채워진다. 실행이 시작되면 화면에 있던 값이
 --    PTX_CALL_MAS 로 적히고 에이전트는 그쪽을 읽는다. 지정을 실행 단위로 둔 이유는 A/B 다:
@@ -197,8 +198,8 @@ CREATE INDEX IDX_PTX_AUDIT_TARGET ON PTX_AUDIT_HIS (TARGET_TABLE_NM, TARGET_ID);
 -- role seed. ★ 아래 4개는 가정값이다 — 에이전트 LLMModel 의 실제 멤버 이름으로 바꿔서
 -- 넣을 것 (대소문자까지 일치해야 한다. 파이썬 enum 관례상 'LLM','VLM',... 일 가능성이 높다).
 -- 확인:  python -c "from config.settings import LLMModel; print([e.name for e in LLMModel])"
--- 이후 추가·삭제는 /models 화면에서 한다. MODEL_NM 이 NULL 이면 에이전트는 자기 config 의
--- 기본 모델명을 그대로 쓴다.
+-- 이후 추가·삭제는 실행 탭 '모델' 칸의 role 관리에서 한다. MODEL_NM 이 NULL 이면 그 role 의
+-- 칸이 빈 채로 열리고, 빈 채로 실행하면 에이전트가 자기 config 의 모델을 그대로 쓴다.
 INSERT INTO PTX_MODEL_MAS (ROLE_CD, USER_ID) VALUES ('llm', 'system');
 
 INSERT INTO PTX_MODEL_MAS (ROLE_CD, USER_ID) VALUES ('vlm', 'system');

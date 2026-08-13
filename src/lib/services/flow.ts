@@ -75,7 +75,7 @@ export async function getCurrentFlow(): Promise<FlowCurrent> {
 /**
  * What this run pins its models to. A run tab always sends a selection — every
  * role, exactly as shown — so that is taken literally. Only a caller that sends
- * none at all falls back to the saved /models defaults.
+ * none at all falls back to the saved role defaults.
  */
 async function runModels(
   conn: OracleConnection,
@@ -160,7 +160,7 @@ export async function createFlowRagasAbRun(args: {
     const chosen = args.score === false ? [] : chosenMetrics(args.metrics);
     // Each side pins its own models, which is the only way a model-vs-model
     // comparison can work: one shared setting would hand both sides the same
-    // value. The Compare tab pre-fills both from /models, so leaving them alone
+    // value. The Compare tab pre-fills both from the defaults, so leaving them alone
     // varies the prompt/endpoint and nothing else.
     const ids: number[] = [];
     for (const [pid, models] of [
@@ -250,7 +250,7 @@ export interface DirectRunArgs {
 
 export async function recordDirectRun(args: DirectRunArgs): Promise<DirectRunResult> {
   // What the run tab had on screen. No selection at all (a caller outside the
-  // tabs) falls back to the saved /models defaults.
+  // tabs) falls back to the saved role defaults.
   const models = args.models ? explicitSnapshot(args.models) : await currentModelSnapshot();
   // Issued up front so the config can be staged under it before the call. The run
   // row does not exist yet — RUN_ID is backfilled once it does.
@@ -494,7 +494,7 @@ interface RunCtx {
   side: agent.FlowSide | null;
   /** role→model JSON stamped on the run row at creation, replayed on every call
    * of this run. Read back from the row rather than recomputed so a mid-run edit
-   * on /models cannot change what half the cases ran under. */
+   * to the role defaults cannot change what half the cases ran under. */
   models: string | null;
   cases: CaseRow[];
   swapNode: string | null;

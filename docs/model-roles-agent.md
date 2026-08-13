@@ -86,7 +86,8 @@ MODEL_CTN 의 키   ←→  LLMModel.<멤버>.name        (슬롯 = 안 바뀌�
 그 값의 "model"   ──▶  LLMModelConfig.model 자리   (모델명 = 바꾸려는 것)
 ```
 
-확인하고 PTX `/models` 화면의 role 이름을 이 출력과 똑같이 맞춘다 (대소문자까지):
+확인하고 PTX 실행 탭 `모델` 칸의 **role 관리** 에 있는 이름을 이 출력과 똑같이 맞춘다
+(대소문자까지):
 
 ```bash
 python -c "from config.settings import LLMModel; print([e.name for e in LLMModel])"
@@ -249,7 +250,7 @@ if config.ORACLE_DB_DSN:                  # DSN 이 비면 initialize() 가 던�
    PTX 와 **같은 DB** 를 보고 있는지도 같이 확인한다.
 2. **조회 단독** — PTX 에서 Single 을 한 번 돌려 행을 만든 뒤, 그 `TRACE_ID` 로
    `load_call_models()` 가 dict 를 돌려주는지. 없는 id 면 `{}` 인지.
-3. **role 이름** — `[e.name for e in LLMModel]` 과 `/models` 화면의 이름을 대조.
+3. **role 이름** — `[e.name for e in LLMModel]` 과 `모델` 칸에 뜨는 이름을 대조.
 4. **운영 경로** — `TRACE_ID` 없이 호출 → 로그의 모델명이 **기존 그대로**인지.
    바뀌거나 DB 조회 로그가 찍히면 게이트가 새는 것이다 (Step 2 ⚠️).
 5. **적용 경로** — Single 탭 모델 칸에 모델을 넣고 실행 → 로그의 모델명이 그 값인지.
@@ -279,7 +280,7 @@ if config.ORACLE_DB_DSN:                  # DSN 이 비면 initialize() 가 던�
 - [ ] `GRANT SELECT ON PTX_CALL_MAS TO <agent_user>`
 - [ ] 에이전트 DSN = PTX DSN (같은 DB)
 - [ ] `OracleDBManager.initialize()` — DSN 없을 때 가드 포함
-- [ ] `[e.name for e in LLMModel]` ↔ `/models` 의 role 이름 일치 (대소문자까지)
+- [ ] `[e.name for e in LLMModel]` ↔ `모델` 칸의 role 이름 일치 (대소문자까지)
 - [ ] `config/call_config.py` — 예외를 밖으로 던지지 않음
 - [ ] **엔벨로프 `TRACE_ID` 로만 조회** (자체 발번 폴백 금지)
 - [ ] 요청당 1회 조회 (노드마다 반복 금지)
