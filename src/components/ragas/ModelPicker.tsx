@@ -154,21 +154,22 @@ export function ModelPicker({
 
   const template = `minmax(84px,116px) ${columns.map(() => 'minmax(130px,1fr) 62px').join(' ')}`;
 
-  // No roles at all (empty table, or the DB is down). The line says so instead
-  // of claiming a default, and the manage dialog stays reachable — otherwise
-  // there is no way to add the first role.
+  // No roles at all (empty table, or the DB is down). This only renders under
+  // 대상 = 모델, where the whole point is to change a model — so the one way
+  // forward sits directly beside the sentence and looks like a button. Pushed to
+  // the far right as muted text it read as decoration, and the mode as a dead end.
   if (roles.length === 0) {
     return (
       <>
-        <span className="min-w-0 flex-1 truncate text-xs text-muted">
-          등록된 role 이 없습니다 — 에이전트 config 그대로 실행됩니다
+        <span className="text-xs text-muted">
+          등록된 role 이 없습니다 — 지금 실행하면 에이전트 config 그대로 돕니다
         </span>
         <button
           type="button"
           onClick={() => setManage(true)}
-          className="shrink-0 text-xs font-medium text-muted transition-colors hover:text-ink"
+          className="shrink-0 rounded-sm border border-line px-2 py-1 text-xs font-medium text-ink transition-colors hover:bg-surface-2"
         >
-          role 관리
+          role 등록
         </button>
         {manage && (
           <ModelRolesModal roles={roles} onClose={() => setManage(false)} onSaved={onRolesChange} />

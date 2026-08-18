@@ -324,9 +324,6 @@ export default function ComparePanel() {
                 { id: 'model', label: '모델' },
               ]}
             />
-            {!PROMPT_TARGET_ENABLED && (
-              <span className="text-xs text-muted">{PROMPT_TARGET_BLOCKED_HINT}</span>
-            )}
           </div>
           <div className="flex w-full flex-wrap items-center gap-2">
             {mode === 'version' ? (
