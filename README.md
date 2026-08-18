@@ -1,4 +1,6 @@
-# Prompt Trace Explorer (PTX) — Prompt Management & RAGAS
+# ScoreX — Prompt Management & Flow RAGAS
+
+> DB 테이블 접두사 `PTX_*`는 이전 이름(Prompt Trace Explorer)에서 온 것으로, 스키마 호환을 위해 그대로 둔다.
 
 AI Agent의 프롬프트/모델 설정을 중앙에서 버전 관리하고, 전체 플로우 단위 **RAGAS 회귀 평가**를 수행하는 웹 시스템. **백엔드 없이 단일 Next.js 14 앱**으로 동작한다(FastAPI 백엔드는 제거되고 로직이 Next.js route handler + `src/lib`로 이식됨).
 

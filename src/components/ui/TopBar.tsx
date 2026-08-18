@@ -90,6 +90,35 @@ function SectionNav({ className }: { className?: string }) {
   );
 }
 
+/** Brand mark: a score gauge — track arc, the scored portion of it, and the
+ * needle. The name is about the score a run comes back with, so the mark says
+ * that rather than the generic rising line it replaced. */
+function BrandMark() {
+  return (
+    <span
+      aria-hidden
+      className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-[#2563eb] to-[#4f46e5] shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_2px_8px_rgba(37,99,235,0.28)]"
+    >
+      <svg viewBox="0 0 24 24" fill="none" width="17" height="17">
+        <path
+          d="M4.6 16.6 A7.6 7.6 0 0 1 19.4 16.6"
+          stroke="#fff"
+          strokeOpacity="0.42"
+          strokeWidth="2.4"
+          strokeLinecap="round"
+        />
+        <path
+          d="M4.6 16.6 A7.6 7.6 0 0 1 16.9 10.4"
+          stroke="#fff"
+          strokeWidth="2.4"
+          strokeLinecap="round"
+        />
+        <path d="M12 16.6 L15.4 11.6" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
+      </svg>
+    </span>
+  );
+}
+
 /** App top bar: gradient brand mark + pill nav (inview tone). */
 export default function TopBar({ title, right }: { title?: string; right?: ReactNode }) {
   const router = useRouter();
@@ -99,27 +128,16 @@ export default function TopBar({ title, right }: { title?: string; right?: React
       {/* Bar spans the window; its contents line up with the page below. */}
       <div className={cn(SHELL, 'relative flex h-16 items-center justify-between gap-4 px-6')}>
         <button onClick={() => router.push('/')} className="flex items-center gap-2.5">
-          <span
-            aria-hidden
-            className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-[#2563eb] to-[#7c3aed] shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_2px_8px_rgba(37,99,235,0.35)]"
-          >
-            <svg viewBox="0 0 24 24" fill="none" width="16" height="16">
-              <path
-                d="M4 17 L10 11 L14 14 L20 6"
-                stroke="#fff"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <circle cx="4" cy="17" r="1.7" fill="#fff" />
-              <circle cx="20" cy="6" r="1.7" fill="#fff" />
-            </svg>
-          </span>
+          <BrandMark />
           <span className="flex items-baseline gap-1.5">
-            <span className="whitespace-nowrap text-base font-bold tracking-tight text-ink">Prompt TraceX</span>
-            {/* Full name as a subtitle — it only appears once there is room for it
-                beside the centred section nav. */}
-            <span className="hidden whitespace-nowrap text-xs font-medium text-muted lg:inline">· Prompt Trace Explorer</span>
+            {/* The X carries the accent so the wordmark has one point of colour
+                without turning the whole name blue. */}
+            <span className="whitespace-nowrap text-base font-bold tracking-tight text-ink">
+              Score<span className="text-accent">X</span>
+            </span>
+            {/* What the app does, as a subtitle — it only appears once there is
+                room for it beside the centred section nav. */}
+            <span className="hidden whitespace-nowrap text-xs font-medium text-muted lg:inline">· AI Agent Test</span>
           </span>
         </button>
 

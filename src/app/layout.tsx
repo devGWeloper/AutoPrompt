@@ -4,7 +4,7 @@ import { ReactNode } from 'react';
 import pkg from '../../package.json';
 
 export const metadata: Metadata = {
-  title: 'Prompt TraceX · Prompt Trace Explorer',
+  title: 'ScoreX · AI Agent Test',
   description: 'AI agent prompt management & flow-level RAGAS evaluation',
 };
 
@@ -17,7 +17,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <div className="flex h-dvh flex-col">
           <div className="min-h-0 flex-1">{children}</div>
           <footer className="flex h-7 shrink-0 items-center justify-between border-t border-line bg-surface-2 px-[18px] text-xs tracking-[0.2px] text-muted">
-            <span>Prompt TraceX · Prompt Trace Explorer</span>
+            <span>ScoreX · AI Agent Test</span>
             <span className="flex items-center gap-2">
               <span>Test</span>
               <span className="font-mono text-muted/80">v{pkg.version}</span>

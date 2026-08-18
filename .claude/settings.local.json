@@ -105,7 +105,9 @@
       "Bash(npx eslint *)",
       "Bash(git rm *)",
       "Bash(git reset *)",
-      "Bash(git checkout *)"
+      "Bash(git checkout *)",
+      "PowerShell(& \"C:\\\\Program Files\\\\nodejs\\\\node.exe\" .\\\\node_modules\\\\typescript\\\\bin\\\\tsc --noEmit 2>&1 | Select-Object -Last 15; \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(& \"C:\\\\Program Files\\\\nodejs\\\\node.exe\" .\\\\node_modules\\\\typescript\\\\bin\\\\tsc --noEmit 2>&1 | Select-Object -Last 10; \"EXIT=$LASTEXITCODE\")"
     ]
   }
 }
