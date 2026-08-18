@@ -100,7 +100,9 @@
       "Bash(cd /c/work/AutoPrompt && grep -rniE \"alembic\" --include=\"*.py\" --include=\"*.md\" --include=\"*.txt\" --include=\"*.ini\" --include=\"*.cfg\" --include=\"*.toml\" . 2>/dev/null | grep -v \"/.venv/\" | grep -v \"egg-info\" | grep -v \"__pycache__\")",
       "Read(//c/c/work/**)",
       "Bash(APP_ENV=test .venv/Scripts/python.exe -c \"import app.main; print\\('app import OK'\\)\")",
-      "Bash(APP_ENV=test .venv/Scripts/python.exe -m pytest tests/ -q)"
+      "Bash(APP_ENV=test .venv/Scripts/python.exe -m pytest tests/ -q)",
+      "Bash(npm run *)",
+      "Bash(npx eslint *)"
     ]
   }
 }

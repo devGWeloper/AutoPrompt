@@ -107,7 +107,7 @@ export default function SingleRunPanel() {
   // exactly as it currently stands (As-is).
   // 프롬프트 버전 대상이 막혀 있는 동안에는 엔드포인트로 시작한다 — 고를 수 없는
   // 대상이 기본값이면 패널이 열리자마자 아무것도 못 하는 상태가 된다.
-  const [target, setTarget] = useState<'prompt' | 'endpoint'>(
+  const [target, setTarget] = useState<'prompt' | 'endpoint' | 'model'>(
     PROMPT_TARGET_ENABLED ? 'prompt' : 'endpoint',
   );
   const [source, setSource] = useState<'dataset' | 'manual'>('dataset');
@@ -120,7 +120,9 @@ export default function SingleRunPanel() {
   const { roles, setRoles } = useModelRoles();
   const [models, setModels] = useState<ModelDrafts>({});
   useEffect(() => { setModels(draftsFromRoles(roles)); }, [roles]);
-  const modelErr = modelDraftError(models);
+  // Only blocks the run when the models are what's being tested — in the other
+  // targets the drafts are not sent at all, so a stale typo in them is harmless.
+  const modelErr = target === 'model' ? modelDraftError(models) : null;
   // 정답 일치 is the default evaluation option (no judge LLM required).
   const [metrics, setMetrics] = useState<string[]>([EXACT_MATCH]);
   const [scoreOn, setScoreOn] = useState(true);
@@ -162,9 +164,9 @@ export default function SingleRunPanel() {
   // Default to the latest version of the selected node (list is newest-first).
   useEffect(() => { setVer(versions[0]?.prompt_id ?? null); }, [versions]);
 
-  // A prompt-version target needs both halves of the identity; an endpoint target
-  // needs nothing typed at all — a blank URL means the configured default.
-  const targetReady = target === 'endpoint' || (!!nodeNm && ver != null);
+  // A prompt-version target needs both halves of the identity; an endpoint or
+  // model target needs nothing typed at all — a blank URL means the configured default.
+  const targetReady = target !== 'prompt' || (!!nodeNm && ver != null);
   const scoreReady = !scoreOn || metrics.length > 0;
   const canRun = targetReady && scoreReady && !modelErr && !!datasetId;
   const canCall = targetReady && scoreReady && !modelErr && callStatus !== 'running' && !!message.trim();
@@ -218,14 +220,16 @@ export default function SingleRunPanel() {
     setError(null); setDetail(null); setStatus('running');
     setLive([]); setTotal(0); setRunMetrics(null); setCancelling(false); runIdRef.current = null;
     const byPrompt = target === 'prompt';
-    const url = byPrompt ? null : baseUrl.trim() || null;
+    // Only the target under test is pinned; everything else runs as the agent's
+    // own config has it. A URL belongs to an endpoint test, models to a model test.
+    const url = target === 'endpoint' ? baseUrl.trim() || null : null;
     const meta = { nodeNm: byPrompt ? nodeNm : '', verLabel: verLabel(byPrompt ? ver : null) };
     setRunMeta(meta);
     try {
       const r = await api.post<{ ragas_run_id: number }>('/flow/test/ragas', {
         dataset_id: datasetId, metrics: scoreOn ? metrics : [], score: scoreOn,
         node_nm: byPrompt ? nodeNm : null, prompt_id: byPrompt ? ver : null,
-        models: toSelection(models),
+        models: target === 'model' ? toSelection(models) : {},
       });
       saveActiveRun('single', { runId: r.ragas_run_id, baseUrl: url, scoreOn, ...meta });
       attach(r.ragas_run_id, url);
@@ -248,22 +252,26 @@ export default function SingleRunPanel() {
     try {
       setCallResult(await api.post<DirectResult>('/flow/test/direct', {
         message,
-        // The two targets are exclusive: a version is swapped active for the call,
-        // or the endpoint answers as it stands. Never both.
+        // The three targets are exclusive — only the one under test is pinned.
+        // A version is swapped active, or a URL is called as it stands, or the
+        // models are overridden; never more than one at a time.
         prompt_id: byPrompt ? ver : null,
-        base_url: byPrompt ? null : baseUrl.trim() || null,
-        auth_key: byPrompt ? null : authKey.trim() || null,
-        user_id: byPrompt ? null : userId.trim() || null,
+        base_url: target === 'endpoint' ? baseUrl.trim() || null : null,
+        auth_key: target === 'endpoint' ? authKey.trim() || null : null,
+        user_id: target === 'endpoint' ? userId.trim() || null : null,
         score: scoreOn,
         metrics: scoreOn ? metrics : undefined,
         expected_output: exactOn ? expected.trim() || null : null,
-        models: toSelection(models),
+        models: target === 'model' ? toSelection(models) : {},
       }));
       setCallStatus('done');
     } catch (e) { setCallError(errText(e)); setCallStatus('failed'); }
   }
 
   const verLabel = (id: number | null) => {
+    // Model target: same as-is call as endpoint, but flagged separately so the
+    // run header reads as "testing the model" rather than "testing the endpoint".
+    if (target === 'model') return '모델';
     // No version = nothing was swapped; the endpoint itself is what ran.
     if (!id) return '엔드포인트';
     const found = versions.find((v) => v.prompt_id === id);
@@ -273,47 +281,50 @@ export default function SingleRunPanel() {
   return (
     <div className="space-y-5">
       <Card tone="muted" className="divide-y divide-line px-4 py-1.5">
-        <FormRow label="대상">
-          <SegToggle
-            value={target}
-            onChange={setTarget}
-            options={[
-              { id: 'prompt', label: '프롬프트 버전', disabled: !PROMPT_TARGET_ENABLED, hint: PROMPT_TARGET_BLOCKED_HINT },
-              { id: 'endpoint', label: '엔드포인트' },
-            ]}
-          />
-          {!PROMPT_TARGET_ENABLED && (
-            <span className="text-xs text-muted">{PROMPT_TARGET_BLOCKED_HINT}</span>
-          )}
-          {target === 'prompt' ? (
-            <>
-              <Select value={nodeNm} onChange={(e) => setNodeNm(e.target.value)} className="w-44">
-                <option value="" disabled>노드 선택</option>
-                {nodes.map((n) => (
-                  <option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>
-                ))}
-              </Select>
-              <VersionSelect versions={versions} value={ver} onChange={setVer} className="w-36" placeholder="버전 선택" />
-            </>
-          ) : (
-            <>
-              <Input
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder="비우면 config.yml 의 agent.a.url"
-                className="w-80 text-sm"
-              />
-              <span className="text-xs text-muted">프롬프트를 교체하지 않고 현재 상태(As-is) 그대로 호출합니다.</span>
-            </>
-          )}
-        </FormRow>
-
-        <FormRow label="모델">
-          <ModelPicker
-            roles={roles}
-            onRolesChange={setRoles}
-            columns={[{ key: 'a', drafts: models, onChange: setModels }]}
-          />
+        {/* 대상 = 무엇을 테스트하는가. 셋 중 하나만 변인이고 나머지는 손대지 않는다 —
+            그래서 고른 것의 컨트롤만 아래에 나온다. 엔드포인트 테스트에 모델 표가
+            같이 떠 있으면 그건 이미 As-is 테스트가 아니다. */}
+        <FormRow label="대상" alignTop>
+          <div className="flex w-full flex-wrap items-center gap-2">
+            <SegToggle
+              value={target}
+              onChange={setTarget}
+              options={[
+                { id: 'prompt', label: '프롬프트 버전', disabled: !PROMPT_TARGET_ENABLED, hint: PROMPT_TARGET_BLOCKED_HINT },
+                { id: 'endpoint', label: '엔드포인트' },
+                { id: 'model', label: '모델' },
+              ]}
+            />
+            {!PROMPT_TARGET_ENABLED && (
+              <span className="text-xs text-muted">{PROMPT_TARGET_BLOCKED_HINT}</span>
+            )}
+          </div>
+          <div className="flex w-full flex-wrap items-center gap-2">
+            {target === 'prompt' ? (
+              <>
+                <Select value={nodeNm} onChange={(e) => setNodeNm(e.target.value)} className="w-44">
+                  <option value="" disabled>노드 선택</option>
+                  {nodes.map((n) => (
+                    <option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>
+                  ))}
+                </Select>
+                <VersionSelect versions={versions} value={ver} onChange={setVer} className="w-36" placeholder="버전 선택" />
+                <span className="text-xs text-muted">이 버전으로만 교체하고, 모델은 config 그대로 실행합니다.</span>
+              </>
+            ) : target === 'endpoint' ? (
+              <>
+                <Input
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder="비우면 config.yml 의 agent.a.url"
+                  className="w-80 text-sm"
+                />
+                <span className="text-xs text-muted">프롬프트 · 모델 모두 교체 없이 현재 상태(As-is) 그대로 호출합니다.</span>
+              </>
+            ) : (
+              <ModelPicker roles={roles} onRolesChange={setRoles} columns={[{ key: 'a', drafts: models, onChange: setModels }]} />
+            )}
+          </div>
         </FormRow>
 
         <FormRow label="입력">
@@ -457,7 +468,7 @@ export default function SingleRunPanel() {
           {status === 'idle' && !error && (
             <Card className="flex flex-col items-center justify-center gap-1 px-6 py-16 text-center">
               <div className="text-sm text-ink">대상과 데이터셋을 선택한 뒤 <span className="font-medium">Run evaluation</span>을 누르세요.</div>
-              <div className="text-xs text-muted"><span className="font-medium">프롬프트 버전</span>은 그 버전으로 교체해 평가하고, <span className="font-medium">엔드포인트</span>는 교체 없이 현재 상태(As-is) 그대로 평가합니다. 지난 결과는 Records 탭에서 확인할 수 있습니다.</div>
+              <div className="text-xs text-muted">고른 대상만 바뀌고 나머지는 config 그대로 갑니다 — <span className="font-medium">프롬프트 버전</span>은 그 버전으로 교체해, <span className="font-medium">엔드포인트</span>는 교체 없이 현재 상태(As-is) 그대로, <span className="font-medium">모델</span>은 모델만 바꿔 평가합니다. 지난 결과는 Records 탭에서 확인할 수 있습니다.</div>
             </Card>
           )}
 

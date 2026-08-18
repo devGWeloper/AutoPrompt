@@ -79,6 +79,14 @@ function manualDetail(side: ManualSide, question: string, groundTruth: string | 
   return { status: 'DONE', results: [row] } as RagasRunDetail;
 }
 
+/** How one side of a model comparison is named in the result badges: the first
+ * pinned model. An unpinned side runs the agent's own config, which is a real
+ * thing to compare against and so is said out loud rather than left blank. */
+function modelLabel(drafts: ModelDrafts): string {
+  const hit = Object.values(drafts).find((d) => d.model.trim() !== '');
+  return hit?.model.trim() || 'config 기본값';
+}
+
 export default function ComparePanel() {
   const { datasets } = useFlowDatasets();
   const nodes = usePromptNodes();
@@ -87,9 +95,9 @@ export default function ComparePanel() {
   const [verA, setVerA] = useState<number | null>(null);
   const [verB, setVerB] = useState<number | null>(null);
   const [datasetId, setDatasetId] = useState<number | null>(null);
-  // One model set per side. Both start from the same saved defaults, so an
-  // untouched comparison varies the prompt/endpoint and nothing else; changing
-  // one side turns it into a model comparison without any other setup.
+  // One model set per side, used only when 모델 is the axis under test. Both
+  // start from the same saved defaults, so a fresh model comparison begins from
+  // a known baseline and you change just the side you want to move.
   const { roles, setRoles } = useModelRoles();
   const [modelsA, setModelsA] = useState<ModelDrafts>({});
   const [modelsB, setModelsB] = useState<ModelDrafts>({});
@@ -98,7 +106,6 @@ export default function ComparePanel() {
     setModelsA(d);
     setModelsB(d);
   }, [roles]);
-  const modelErr = modelDraftError(modelsA, modelsB);
   // 정답 일치 is the default evaluation option (no judge LLM required).
   const [metrics, setMetrics] = useState<string[]>([EXACT_MATCH]);
   const [scoreOn, setScoreOn] = useState(true);
@@ -107,11 +114,14 @@ export default function ComparePanel() {
   // URLs typed here) instead of by two prompt versions of one node.
   // 프롬프트 버전 대상이 막혀 있는 동안에는 엔드포인트로 시작한다 — 고를 수 없는
   // 대상이 기본값이면 패널이 열리자마자 아무것도 못 하는 상태가 된다.
-  const [mode, setMode] = useState<'version' | 'endpoint'>(
+  const [mode, setMode] = useState<'version' | 'endpoint' | 'model'>(
     PROMPT_TARGET_ENABLED ? 'version' : 'endpoint',
   );
   const [urlA, setUrlA] = useState('');
   const [urlB, setUrlB] = useState('');
+  // Only blocks the run when the models are the axis under test — the other
+  // modes never send the drafts, so a stale typo in them is harmless.
+  const modelErr = mode === 'model' ? modelDraftError(modelsA, modelsB) : null;
   // Dataset vs one typed message — the same input axis the Single tab offers.
   const [source, setSource] = useState<'dataset' | 'manual'>('dataset');
   const [message, setMessage] = useState('');
@@ -149,16 +159,26 @@ export default function ComparePanel() {
     setVerB(versions[1]?.prompt_id ?? null);
   }, [versions]);
 
-  // Endpoint mode identifies the two sides by URL, so no version is needed.
+  // Endpoint mode identifies the two sides by URL; model mode runs both sides on
+  // the configured default endpoint and varies only the models. Neither needs a version.
   const byVersion = mode === 'version' && !!(nodeNm && verA && verB && verA !== verB);
-  const targetReady = mode === 'endpoint' || byVersion;
+  const targetReady = mode === 'endpoint' || mode === 'model' || byVersion;
   const scoreReady = !scoreOn || metrics.length > 0;
   const canRun = targetReady && scoreReady && !modelErr && !!datasetId && status !== 'running';
   const canCall = targetReady && scoreReady && !modelErr && !!message.trim() && callStatus !== 'running';
   const exactOn = scoreOn && metrics.includes(EXACT_MATCH);
   const verLabel = (id: number | null) => (mode === 'version' ? versions.find((v) => v.prompt_id === id)?.version_no ?? '' : '');
-  const labA = runLabels?.[0] ?? verLabel(verA);
-  const labB = runLabels?.[1] ?? verLabel(verB);
+  // What each side is actually varying — that is what the result badges should
+  // name. Model mode's sides differ only by model, so the model name is the label.
+  const curLabels = (): [string, string] =>
+    mode === 'model'
+      ? [modelLabel(modelsA), modelLabel(modelsB)]
+      : [verLabel(verA), verLabel(verB)];
+  const labA = runLabels?.[0] ?? curLabels()[0];
+  const labB = runLabels?.[1] ?? curLabels()[1];
+  // `sideLabel` reads a label as a prompt version ("v3") or, when blank, as the
+  // endpoint — neither of which describes a model-mode side.
+  const dispLabel = (label: string) => (mode === 'model' ? label : sideLabel(label));
 
   const waitDone = (
     id: number,
@@ -216,10 +236,12 @@ export default function ComparePanel() {
     if (!canRun) return;
     setError(null); setDetailA(null); setDetailB(null); setStatus('running');
     setLiveA([]); setLiveB([]); setTotal(0); setRunMetrics(null); setCancelling(false); runIdsRef.current = [];
-    // Version mode compares two prompt versions on the same endpoint, so the
-    // A/B side (and its own URL) only applies in endpoint mode.
+    // Only endpoint mode gives the two sides their own URL. Version and model
+    // mode both run against the configured default endpoint — they vary the
+    // prompt or the models, and the endpoint is held as it is.
     const ep = mode === 'endpoint';
-    const labels: [string, string] = [verLabel(verA), verLabel(verB)];
+    const byModel = mode === 'model';
+    const labels = curLabels();
     setRunLabels(labels);
     try {
       const r = await api.post<{ ragas_run_a_id: number; ragas_run_b_id: number }>('/flow/test/ragas/ab', {
@@ -228,8 +250,8 @@ export default function ComparePanel() {
         prompt_id_a: byVersion ? verA : null,
         prompt_id_b: byVersion ? verB : null,
         metrics: scoreOn ? metrics : [], score: scoreOn,
-        models_a: toSelection(modelsA),
-        models_b: toSelection(modelsB),
+        models_a: byModel ? toSelection(modelsA) : {},
+        models_b: byModel ? toSelection(modelsB) : {},
       });
       const saved: ActiveCompareRun = {
         runIdA: r.ragas_run_a_id,
@@ -250,17 +272,22 @@ export default function ComparePanel() {
   async function callAb() {
     if (!canCall) return;
     setCallError(null); setAb(null); setCallStatus('running');
-    setRunLabels([verLabel(verA), verLabel(verB)]);
-    const ep = mode === 'endpoint';
+    setRunLabels(curLabels());
     const gt = exactOn ? expected.trim() || null : null;
+    // Each side pins exactly the axis under test and nothing else: a URL in
+    // endpoint mode, a version in version mode, models in model mode.
+    const sideSpec = (url: string, ver: number | null, models: ModelDrafts) =>
+      mode === 'endpoint' ? { base_url: url.trim() || null, models: {} }
+      : mode === 'version' ? { prompt_id: ver, models: {} }
+      : { models: toSelection(models) };
     try {
       const r = await api.post<{ a: ManualSide; b: ManualSide }>('/flow/test/direct/ab', {
         message,
         score: scoreOn,
         metrics: scoreOn ? metrics : undefined,
         expected_output: gt,
-        a: { ...(ep ? { base_url: urlA.trim() || null } : { prompt_id: verA }), models: toSelection(modelsA) },
-        b: { ...(ep ? { base_url: urlB.trim() || null } : { prompt_id: verB }), models: toSelection(modelsB) },
+        a: sideSpec(urlA, verA, modelsA),
+        b: sideSpec(urlB, verB, modelsB),
       });
       setAb({ ...r, question: message, gt });
       setCallStatus('done');
@@ -280,52 +307,66 @@ export default function ComparePanel() {
       {/* 대상 · 입력 · 채점 — the same three questions in the same order as the
           Single tab, so the two panels read alike. */}
       <Card tone="muted" className="divide-y divide-line px-4 py-1.5">
-        <FormRow label="대상">
-          <SegToggle
-            value={mode}
-            onChange={setMode}
-            options={[
-              { id: 'version', label: '프롬프트 버전', disabled: !PROMPT_TARGET_ENABLED, hint: PROMPT_TARGET_BLOCKED_HINT },
-              { id: 'endpoint', label: '엔드포인트' },
-            ]}
-          />
-          {!PROMPT_TARGET_ENABLED && (
-            <span className="text-xs text-muted">{PROMPT_TARGET_BLOCKED_HINT}</span>
-          )}
-          {mode === 'version' ? (
-            <>
-              <Select value={nodeNm ?? ''} onChange={(e) => setNodeNm(e.target.value)} className="w-44">
-                <option value="" disabled>노드 선택</option>
-                {nodes.map((n) => (<option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>))}
-              </Select>
-              <VersionSelect versions={versions} value={verA} onChange={setVerA} placeholder="버전 A" />
-              <span className="text-xs text-muted">vs</span>
-              <VersionSelect versions={versions} value={verB} onChange={setVerB} placeholder="버전 B" />
-              {verA && verB && verA === verB && (
-                <span className="w-full text-xs text-bad">버전 A와 B는 서로 달라야 합니다.</span>
-              )}
-            </>
-          ) : (
-            /* 임시: 두 버전이 서로 다른 엔드포인트에 떠 있어 각 쪽 URL로 비교한다.
-               프롬프트 교체 없이 각 URL을 그대로 호출한다. */
-            <>
-              <span className="text-[11px] font-semibold text-muted">A</span>
-              <Input value={urlA} onChange={(e) => setUrlA(e.target.value)} placeholder="비우면 config 의 agent.a.url" className="w-64 text-sm" />
-              <span className="text-[11px] font-semibold text-muted">B</span>
-              <Input value={urlB} onChange={(e) => setUrlB(e.target.value)} placeholder="비우면 config 의 agent.b.url" className="w-64 text-sm" />
-            </>
-          )}
-        </FormRow>
-
-        <FormRow label="모델">
-          <ModelPicker
-            roles={roles}
-            onRolesChange={setRoles}
-            columns={[
-              { key: 'a', label: 'A', drafts: modelsA, onChange: setModelsA },
-              { key: 'b', label: 'B', drafts: modelsB, onChange: setModelsB },
-            ]}
-          />
+        {/* 프롬프트 버전 · 엔드포인트 · 모델 중 정확히 하나만 A/B 로 갈린다 — 두 축을
+            동시에 다르게 두는 복합 비교는 읽기 어렵고 뭘 바꿔서 결과가 달라졌는지도
+            불분명해지므로 허용하지 않는다. */}
+        {/* 대상 = 무엇을 비교하는가. 고른 축 하나만 A/B 로 갈리고 나머지는 손대지
+            않는다 — 그래서 고른 것의 컨트롤만 아래에 나온다. 엔드포인트를 비교하는데
+            모델 표가 같이 떠 있으면 그건 이미 As-is 비교가 아니다. */}
+        <FormRow label="대상" alignTop>
+          <div className="flex w-full flex-wrap items-center gap-2">
+            <SegToggle
+              value={mode}
+              onChange={setMode}
+              options={[
+                { id: 'version', label: '프롬프트 버전', disabled: !PROMPT_TARGET_ENABLED, hint: PROMPT_TARGET_BLOCKED_HINT },
+                { id: 'endpoint', label: '엔드포인트' },
+                { id: 'model', label: '모델' },
+              ]}
+            />
+            {!PROMPT_TARGET_ENABLED && (
+              <span className="text-xs text-muted">{PROMPT_TARGET_BLOCKED_HINT}</span>
+            )}
+          </div>
+          <div className="flex w-full flex-wrap items-center gap-2">
+            {mode === 'version' ? (
+              <>
+                <Select value={nodeNm ?? ''} onChange={(e) => setNodeNm(e.target.value)} className="w-44">
+                  <option value="" disabled>노드 선택</option>
+                  {nodes.map((n) => (<option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>))}
+                </Select>
+                <VersionSelect versions={versions} value={verA} onChange={setVerA} placeholder="버전 A" />
+                <span className="text-xs text-muted">vs</span>
+                <VersionSelect versions={versions} value={verB} onChange={setVerB} placeholder="버전 B" />
+                <span className="text-xs text-muted">이 노드의 프롬프트만 교체하고, 모델은 config 그대로 실행합니다.</span>
+                {verA && verB && verA === verB && (
+                  <span className="w-full text-xs text-bad">버전 A와 B는 서로 달라야 합니다.</span>
+                )}
+              </>
+            ) : mode === 'endpoint' ? (
+              /* 임시: 두 버전이 서로 다른 엔드포인트에 떠 있어 각 쪽 URL로 비교한다.
+                 프롬프트 · 모델 교체 없이 각 URL을 그대로 호출한다. */
+              <>
+                <span className="text-[11px] font-semibold text-muted">A</span>
+                <Input value={urlA} onChange={(e) => setUrlA(e.target.value)} placeholder="비우면 config 의 agent.a.url" className="w-64 text-sm" />
+                <span className="text-[11px] font-semibold text-muted">B</span>
+                <Input value={urlB} onChange={(e) => setUrlB(e.target.value)} placeholder="비우면 config 의 agent.b.url" className="w-64 text-sm" />
+                <span className="w-full text-xs text-muted">각 엔드포인트를 프롬프트 · 모델 교체 없이 현재 상태(As-is) 그대로 호출합니다.</span>
+              </>
+            ) : (
+              <>
+                <ModelPicker
+                  roles={roles}
+                  onRolesChange={setRoles}
+                  columns={[
+                    { key: 'a', label: 'A', drafts: modelsA, onChange: setModelsA },
+                    { key: 'b', label: 'B', drafts: modelsB, onChange: setModelsB },
+                  ]}
+                />
+                <span className="w-full text-xs text-muted">같은 엔드포인트(config 기본값)에 모델만 바꿔 두 번 실행합니다.</span>
+              </>
+            )}
+          </div>
         </FormRow>
 
         <FormRow label="입력">
@@ -405,7 +446,7 @@ export default function ComparePanel() {
           {callError && <ErrBox msg={callError} />}
           {callStatus === 'idle' && !callError && (
             <Card className="flex flex-col items-center justify-center gap-1 px-6 py-16 text-center">
-              <div className="text-sm text-ink">비교할 <span className="font-medium">두 대상</span>을 고르고 메시지를 입력한 뒤 <span className="font-medium">Call A · B</span>를 누르세요.</div>
+              <div className="text-sm text-ink">비교할 <span className="font-medium">대상</span>의 A · B를 채우고 메시지를 입력한 뒤 <span className="font-medium">Call A · B</span>를 누르세요.</div>
               <div className="text-xs text-muted">같은 메시지를 양쪽에 보내 답변을 나란히 보여줍니다. 채점을 켜면 지표도 A/B로 비교합니다.</div>
             </Card>
           )}
@@ -416,9 +457,9 @@ export default function ComparePanel() {
             <Card>
               <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
                 <h3 className="mr-1 text-sm font-semibold text-ink">Manual Comparison</h3>
-                <Badge tone="neutral">A · {sideLabel(labA)}</Badge>
+                <Badge tone="neutral">A · {dispLabel(labA)}</Badge>
                 <span>vs</span>
-                <Badge tone="accent">B · {sideLabel(labB)}</Badge>
+                <Badge tone="accent">B · {dispLabel(labB)}</Badge>
               </div>
               <div className="p-4">
                 <div className="overflow-hidden rounded-sm border border-line bg-surface">
@@ -440,8 +481,8 @@ export default function ComparePanel() {
 
       {status === 'idle' && !error && (
         <Card className="flex flex-col items-center justify-center gap-1 px-6 py-16 text-center">
-          <div className="text-sm text-ink">비교할 <span className="font-medium">두 대상</span>과 데이터셋을 선택한 뒤 실행하세요.</div>
-          <div className="text-xs text-muted"><span className="font-medium">프롬프트 버전</span>은 해당 노드의 프롬프트만 교체해 A/B로 실행합니다. 두 버전이 서로 다른 API에 떠 있다면 <span className="font-medium">엔드포인트</span>로 바꿔 각 URL을 그대로 호출하세요. 어느 쪽이든 두 실행 모두 같은 데이터셋으로 채점됩니다.</div>
+          <div className="text-sm text-ink">비교할 <span className="font-medium">대상</span>과 데이터셋을 선택한 뒤 실행하세요.</div>
+          <div className="text-xs text-muted">고른 대상 하나만 A/B로 갈리고 나머지는 config 그대로 갑니다 — <span className="font-medium">프롬프트 버전</span>은 해당 노드의 프롬프트만, <span className="font-medium">엔드포인트</span>는 각 URL을 그대로, <span className="font-medium">모델</span>은 같은 엔드포인트에 모델만 바꿔 실행합니다. 어느 쪽이든 두 실행 모두 같은 데이터셋으로 채점됩니다.</div>
         </Card>
       )}
 
@@ -451,9 +492,9 @@ export default function ComparePanel() {
           <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
             <h3 className="mr-1 text-sm font-semibold text-ink">Comparison</h3>
             <Badge tone="neutral" dot>RUNNING</Badge>
-            <Badge tone="neutral">A · {sideLabel(labA)}</Badge>
+            <Badge tone="neutral">A · {dispLabel(labA)}</Badge>
             <span>vs</span>
-            <Badge tone="accent">B · {sideLabel(labB)}</Badge>
+            <Badge tone="accent">B · {dispLabel(labB)}</Badge>
           </div>
           {/* One progress block per side — A and B run as two independent streams
               and routinely sit in different phases. */}
@@ -494,9 +535,9 @@ export default function ComparePanel() {
             <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
               <h3 className="mr-1 text-sm font-semibold text-ink">Comparison Detail</h3>
               {nodeNm && <span className="font-medium text-ink">{nodeNm}</span>}
-              <Badge tone="neutral">A · {sideLabel(labA)}</Badge>
+              <Badge tone="neutral">A · {dispLabel(labA)}</Badge>
               <span>vs</span>
-              <Badge tone="accent">B · {sideLabel(labB)}</Badge>
+              <Badge tone="accent">B · {dispLabel(labB)}</Badge>
               <span className="ml-auto flex items-center gap-2.5">
                 <CompareVerdict detailA={detailA} detailB={detailB} />
                 <span>Engine {detailA.engine ?? '—'}</span>

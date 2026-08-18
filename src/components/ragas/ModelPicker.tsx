@@ -137,7 +137,10 @@ export function ModelPicker({
   columns: ModelColumn[];
   onRolesChange: (next: ModelRole[]) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  // Open from the start. This only renders when 대상 is 모델 — i.e. the models
+  // *are* what the run is testing — so hiding them behind a '변경' click would
+  // hide the one thing on screen that matters.
+  const [open, setOpen] = useState(true);
   const [manage, setManage] = useState(false);
   const saved = useMemo(() => draftsFromRoles(roles), [roles]);
   const dirty = columns.some((c) => !sameDrafts(c.drafts, saved));
