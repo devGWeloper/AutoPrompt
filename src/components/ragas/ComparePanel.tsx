@@ -547,7 +547,7 @@ export default function ComparePanel() {
                 <CaseCompareTable detailA={detailA} detailB={detailB} labelA={labA} labelB={labB} />
               </div>
               {(detailA.status === 'CANCELLED' || detailB.status === 'CANCELLED') && (
-                <p className="mt-3 text-xs text-muted">취소된 실행 — 답변만 저장되고 점수는 없습니다.</p>
+                <p className="mt-3 text-xs text-muted">취소된 실행 — 멈춘 시점까지 채점된 결과만 남아 있습니다. 전체 평균은 내지 않습니다.</p>
               )}
             </div>
           </Card>

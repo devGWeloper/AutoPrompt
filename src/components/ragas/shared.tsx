@@ -549,17 +549,12 @@ export function OxBadge({ value, rate }: { value: number | null; rate?: boolean 
   );
 }
 
-/** ms → a short Korean duration. Sub-minute calls read to a tenth of a second
- * (the difference between 2.1s and 2.9s matters when comparing endpoints);
- * anything longer rounds to whole seconds, where tenths are noise. */
+/** ms → seconds, always. Minutes are never used: a 92초 call sits next to the
+ * 90초 timeout on the same scale, which '1분 32초' hides. Tenths stay because
+ * the gap between 2.1초 and 2.9초 is the point when comparing endpoints. */
 export function fmtElapsed(ms: number | null | undefined): string | null {
   if (ms == null || !Number.isFinite(ms) || ms < 0) return null;
-  const sec = Math.round(ms / 100) / 10;
-  if (sec < 60) return `${sec.toFixed(1)}초`;
-  const whole = Math.round(sec);
-  const m = Math.floor(whole / 60);
-  const s = whole % 60;
-  return s ? `${m}분 ${s}초` : `${m}분`;
+  return `${(ms / 1000).toFixed(1)}초`;
 }
 
 /** How long the endpoint took to answer this case. Deliberately quiet — it is
@@ -577,9 +572,14 @@ export function ElapsedTag({ ms, className }: { ms: number | null | undefined; c
   );
 }
 
-export function ScoreBars({ row }: { row: RagasResultRow }) {
+export function ScoreBars({ row, cancelled }: { row: RagasResultRow; cancelled?: boolean }) {
   const shown = scoredMetrics(row);
   if (!shown.length) {
+    // A stopped run never reaches this case's scoring, so '채점 중…' would wait
+    // for something that is never coming.
+    if (cancelled && row.answer != null && !row.error_msg) {
+      return <span className="text-[11px] text-muted">실행 취소 — 채점하지 않음</span>;
+    }
     // ERROR_CTN carries both kinds of failure, told apart by whether the answer
     // arrived: without one the call itself died (and AnswerBox already says so);
     // with one, the message is the scorer's. Anything else is still in flight —
@@ -631,8 +631,10 @@ export function ScoreBars({ row }: { row: RagasResultRow }) {
 // the question (plus its average score when collapsed); the body holds ground
 // truth, answer, and the per-metric score bars.
 export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: { detail: RagasRunDetail; bordered?: boolean; scored?: boolean; defaultAllOpen?: boolean }) {
-  const showScores =
-    detail.status !== 'CANCELLED' && (scored ?? (detail.engine !== 'direct' && detail.metrics !== '[]'));
+  // A cancelled run keeps whatever it scored before the stop, so its cases are
+  // shown with scores like any other run — the ones that never got there say so.
+  const cancelled = detail.status === 'CANCELLED';
+  const showScores = scored ?? (detail.engine !== 'direct' && detail.metrics !== '[]');
   const ids = detail.results.map((r) => r.ragas_result_id);
   const [opened, setOpened] = useState<Set<number>>(() =>
     defaultAllOpen ? new Set(ids) : new Set()
@@ -675,7 +677,7 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
                   {r.exact_match == null && mean == null && (
                     r.error_msg
                       ? <span className="text-[11px] text-bad" title={r.error_msg}>오류</span>
-                      : <span className="text-[11px] text-muted">채점 중…</span>
+                      : <span className="text-[11px] text-muted">{cancelled ? '채점 안 함' : '채점 중…'}</span>
                   )}
                   {/* A row that scored *something* can still have a failed metric
                       behind it — the badge above would otherwise read as success. */}
@@ -702,7 +704,7 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
                     <ElapsedTag ms={r.elapsed_ms} />
                   </div>
                   <div className="mt-0.5"><AnswerBox text={r.answer} error={r.error_msg} /></div>
-                  {showScores && <div className="mt-3"><ScoreBars row={r} /></div>}
+                  {showScores && <div className="mt-3"><ScoreBars row={r} cancelled={cancelled} /></div>}
                 </div>
               </div>
             )}

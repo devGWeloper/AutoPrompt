@@ -744,9 +744,13 @@ async function phase2(conn: OracleConnection, ctx: RunCtx, emit: Emit, signal?: 
 
 async function finalize(conn: OracleConnection, ctx: RunCtx, emit: Emit): Promise<void> {
   if (ctx.cancelled) {
-    // Drop partial scores; keep answers.
-    const nulls = ALL_METRICS.map((m) => `${METRIC_COLS[m]} = NULL`).join(", ");
-    await conn.execute(`UPDATE PTX_RUN_DET SET ${nulls} WHERE RUN_ID = :id`, { id: ctx.runId });
+    // Per-case scores computed before the stop stay exactly as they are — they
+    // were real judgements on real answers, and throwing them away is what makes
+    // a cancelled run useless to look at afterwards.
+    //
+    // The run-level averages stay NULL on purpose: an average over whatever
+    // prefix happened to finish is not this dataset's score, and in Records it
+    // would sit in the same column as fully scored runs.
     await conn.execute(`UPDATE PTX_RUN_MAS SET STATUS_CD = 'CANCELLED', END_TM = SYSTIMESTAMP WHERE RUN_ID = :id`, {
       id: ctx.runId,
     });

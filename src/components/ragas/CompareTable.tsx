@@ -140,11 +140,19 @@ function PairedMetricList({ rows }: { rows: MetricRow[] }) {
   );
 }
 
-function CaseScoreBars({ a, b }: { a?: RagasResultRow; b?: RagasResultRow }) {
+function CaseScoreBars({ a, b, cancelled }: { a?: RagasResultRow; b?: RagasResultRow; cancelled?: boolean }) {
   const rows = buildMetricRows(a, b);
   const scored = rows.some((r) => r.av != null || r.bv != null);
 
   if (!scored) {
+    // Stopped before this case was judged — nothing is still on its way.
+    if (cancelled && ![a, b].some((r) => r?.error_msg)) {
+      return (
+        <div className="mt-3 overflow-hidden rounded-sm border border-line bg-surface p-3 text-center text-[11px] text-muted">
+          실행 취소 — 채점하지 않음
+        </div>
+      );
+    }
     // An answer that arrived but has an error carries the scorer's failure — say
     // so rather than leaving the panel on '채점 중…' for the rest of the session.
     const failed = [a, b].filter((r) => r?.answer != null && r?.error_msg).map((r) => r!.error_msg!);
@@ -199,9 +207,9 @@ export function CaseCompareTable({
   const ids = Array.from(new Set([...byA.keys(), ...byB.keys()]));
   // Answers only if either run was cancelled (incomplete scoring) or the pair
   // ran without scoring (METRICS='[]'); live streaming passes `scored` directly.
-  const showScores =
-    detailA.status !== 'CANCELLED' && detailB.status !== 'CANCELLED' &&
-    (scored ?? (detailA.metrics !== '[]' && detailB.metrics !== '[]'));
+  // Same rule as the single-run table: a stopped pair keeps what it scored.
+  const cancelled = detailA.status === 'CANCELLED' || detailB.status === 'CANCELLED';
+  const showScores = scored ?? (detailA.metrics !== '[]' && detailB.metrics !== '[]');
   const keys = ids.map((cid) => String(cid));
   const [opened, setOpened] = useState<Set<string>>(() =>
     defaultAllOpen ? new Set(keys) : new Set()
@@ -293,7 +301,7 @@ export function CaseCompareTable({
                       {a?.exact_match == null && b?.exact_match == null && aMean == null && bMean == null && (
                         (a?.error_msg || b?.error_msg)
                           ? <span className="text-[11px] text-bad" title={a?.error_msg ?? b?.error_msg ?? undefined}>오류</span>
-                          : <span className="text-[11px] text-muted">채점 중…</span>
+                          : <span className="text-[11px] text-muted">{cancelled ? '채점 안 함' : '채점 중…'}</span>
                       )}
                     </>
                   )}
@@ -321,7 +329,7 @@ export function CaseCompareTable({
                     <div className="mt-2"><AnswerBox text={b?.answer} error={b?.error_msg} /></div>
                   </div>
                 </div>
-                {showScores && <CaseScoreBars a={a} b={b} />}
+                {showScores && <CaseScoreBars a={a} b={b} cancelled={cancelled} />}
               </div>
             )}
           </div>
