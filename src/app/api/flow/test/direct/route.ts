@@ -27,6 +27,7 @@ export async function POST(req: Request) {
       raw: data.raw ?? "",
       scores: data.scores,
       score_error: data.score_error,
+      elapsed_ms: data.elapsed_ms,
     });
   } catch (e) {
     return errorResponse(e);

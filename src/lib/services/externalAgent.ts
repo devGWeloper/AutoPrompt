@@ -208,13 +208,17 @@ function buildPayload(
   };
 }
 
-const CALL_TIMEOUT_MS = 60000;
+/** Read per call rather than captured at module load: the config is reloadable
+ * and a run should honour the value in effect when it starts. */
+function callTimeoutMs(): number {
+  return getAgentConfig().timeoutMs;
+}
 
 async function post(
   url: string,
   body: unknown,
   headers: Record<string, string>,
-  timeoutMs = CALL_TIMEOUT_MS,
+  timeoutMs = callTimeoutMs(),
 ): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -251,7 +255,7 @@ function describeCallError(e: unknown): string {
   if (e instanceof Error) {
     // The abort is ours: `post` fires it when the timeout elapses.
     if (e.name === "AbortError" || e.name === "TimeoutError") {
-      return `응답 시간 초과 (${Math.round(CALL_TIMEOUT_MS / 1000)}초) — 엔드포인트가 제때 응답하지 않았습니다`;
+      return `응답 시간 초과 (${Math.round(callTimeoutMs() / 1000)}초) — 엔드포인트가 제때 응답하지 않았습니다`;
     }
     const code = (e as { cause?: { code?: unknown } }).cause?.code;
     if (typeof code === "string") return `${NET_CODES[code] ?? "네트워크 오류"} (${code})`;

@@ -27,7 +27,7 @@ export async function ragasRunRows(runId: number): Promise<Rows> {
     // produced which.
     const models = formatModelSnapshot(runRows[0].MODEL_CTN as string | null);
     const results = await runResults(conn, runId);
-    const header = ["ragas_result_id", "case_id", "question", "answer", "ground_truth", ...ALL_METRICS, "error_msg", "models"];
+    const header = ["ragas_result_id", "case_id", "question", "answer", "ground_truth", ...ALL_METRICS, "elapsed_ms", "error_msg", "models"];
     const data = results.map((r) => [
       r.ragas_result_id,
       r.case_id,
@@ -35,6 +35,7 @@ export async function ragasRunRows(runId: number): Promise<Rows> {
       r.answer,
       r.ground_truth,
       ...ALL_METRICS.map((m) => r[m]),
+      r.elapsed_ms,
       r.error_msg,
       models,
     ]);
@@ -81,6 +82,8 @@ export async function ragasAbRows(abGroupId: number): Promise<Rows> {
       `${labelA}_answer`,
       `${labelB}_answer`,
       ...ALL_METRICS.flatMap((m) => [`${labelA}_${m}`, `${labelB}_${m}`]),
+      `${labelA}_elapsed_ms`,
+      `${labelB}_elapsed_ms`,
       `${labelA}_error_msg`,
       `${labelB}_error_msg`,
       `${labelA}_models`,
@@ -99,6 +102,8 @@ export async function ragasAbRows(abGroupId: number): Promise<Rows> {
         ra ? ra.answer : null,
         rb ? rb.answer : null,
         ...ALL_METRICS.flatMap((m) => [ra ? ra[m] : null, rb ? rb[m] : null]),
+        ra ? ra.elapsed_ms : null,
+        rb ? rb.elapsed_ms : null,
         ra ? ra.error_msg : null,
         rb ? rb.error_msg : null,
         modelsA,

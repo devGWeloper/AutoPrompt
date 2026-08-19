@@ -233,6 +233,8 @@ export interface DirectRunResult extends agent.AgentAnswer {
   run_id: number;
   scores: CaseScore | null;
   score_error: string | null;
+  /** Wall time of the endpoint call, in ms. Scoring is not counted. */
+  elapsed_ms: number;
 }
 
 export interface DirectRunArgs {
@@ -256,7 +258,10 @@ export async function recordDirectRun(args: DirectRunArgs): Promise<DirectRunRes
   // row does not exist yet — RUN_ID is backfilled once it does.
   const callId = agent.nextTraceId();
   await stageCallConfig(callId, null, models);
+  // Same measurement a dataset case gets: the endpoint call alone.
+  const startedAt = Date.now();
   const data = await callForPrompt({ ...args, traceId: callId });
+  const elapsedMs = Date.now() - startedAt;
   // Optional inline scoring — a single case whose ground truth is whatever the
   // caller typed as the expected answer (blank → gt-based metrics stay null).
   const groundTruth = args.expectedOutput?.trim() ? args.expectedOutput : null;
@@ -310,9 +315,9 @@ export async function recordDirectRun(args: DirectRunArgs): Promise<DirectRunRes
       },
     );
     await conn.execute(
-      `INSERT INTO PTX_RUN_DET (RUN_ID, CASE_ID, QUESTION_CTN, ANSWER_CTN, CNTX_CTN, TRUTH_CTN, ERROR_CTN,
+      `INSERT INTO PTX_RUN_DET (RUN_ID, CASE_ID, QUESTION_CTN, ANSWER_CTN, CNTX_CTN, TRUTH_CTN, ERROR_CTN, ELAPSED_MS,
                                     EXACT_VAL, FAITH_VAL, ANS_RELEVANCY_VAL, CNTX_PRECISION_VAL, CNTX_RECALL_VAL, ANS_CORRECTNESS_VAL)
-       VALUES (:rid, NULL, :q, :a, :ctx, :gt, :err, :em, :f, :ar, :cp, :cr, :ac)`,
+       VALUES (:rid, NULL, :q, :a, :ctx, :gt, :err, :el, :em, :f, :ar, :cp, :cr, :ac)`,
       {
         rid: runId,
         q: args.message,
@@ -320,6 +325,7 @@ export async function recordDirectRun(args: DirectRunArgs): Promise<DirectRunRes
         ctx: JSON.stringify(data.docs),
         gt: groundTruth,
         err: scoreErr,
+        el: elapsedMs,
         em,
         f: dec("faithfulness"),
         ar: dec("answer_relevancy"),
@@ -338,10 +344,11 @@ export async function recordDirectRun(args: DirectRunArgs): Promise<DirectRunRes
   }, { commit: true });
   // score_error rides back with the answer: the call succeeded, so failing
   // silently here would show a blank score block with no reason.
-  if (!metrics.length) return { ...data, run_id: runId, scores: null, score_error: null };
+  if (!metrics.length) return { ...data, run_id: runId, elapsed_ms: elapsedMs, scores: null, score_error: null };
   return {
     ...data,
     run_id: runId,
+    elapsed_ms: elapsedMs,
     scores: { ...(scores ?? {}), ...(metrics.includes(EXACT_MATCH) ? { exact_match: em } : {}) },
     score_error: scoreErr,
   };
@@ -589,12 +596,19 @@ async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx,
     // to be staged (and committed) under it before the request goes out.
     const callId = agent.nextTraceId();
     await writeCallConfig(conn, callId, ctx.runId, ctx.models);
+    // Timed around the endpoint call alone — the config staging above and the
+    // trace read below are ours, not the agent's, and would muddy the number.
+    const startedAt = Date.now();
+    let elapsedMs: number;
     try {
       const data = await agent.flowAnswer(message, ctx.baseUrl, ctx.side, callId);
+      elapsedMs = Date.now() - startedAt;
       answer = data.response;
       traceId = data.traceId ?? null;
       if (!contexts.length && data.docs.length) contexts = data.docs;
     } catch (e) {
+      // A failure took time too — for a timeout that time IS the finding.
+      elapsedMs = Date.now() - startedAt;
       error = true;
       answer = null;
       errMsg = errorText(e).slice(0, 1000);
@@ -626,8 +640,8 @@ async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx,
       conn,
       oracle,
       `INSERT INTO PTX_RUN_DET (RUN_ID, CASE_ID, QUESTION_CTN, CNTX_CTN, TRUTH_CTN, ANSWER_CTN, ERROR_CTN, EXACT_VAL,
-                                TRACE_ID, TRACE_VAR_NM, TRACE_CTN)
-       VALUES (:rid, :cid, :q, :ctx, :gt, :a, :err, :em, :tid, :tvar, :tctn) RETURNING RESULT_ID INTO :out_id`,
+                                TRACE_ID, TRACE_VAR_NM, TRACE_CTN, ELAPSED_MS)
+       VALUES (:rid, :cid, :q, :ctx, :gt, :a, :err, :em, :tid, :tvar, :tctn, :el) RETURNING RESULT_ID INTO :out_id`,
       {
         rid: ctx.runId,
         cid: c.case_id,
@@ -641,6 +655,7 @@ async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx,
         tvar: captured?.varNm ?? null,
         // Snapshot — PTX_TRACE_HIS gets purged on retention, run records do not.
         tctn: captured?.ctn ?? null,
+        el: elapsedMs,
       },
     );
     await conn.commit();

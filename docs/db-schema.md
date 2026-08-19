@@ -115,6 +115,7 @@ Prompt Trace eXplorer(PTX) 소유 테이블 9개. 외부 테이블(`CHAT_VER_MAS
 | `CNTX_RECALL_VAL` | NUMBER(5,4) | Y | — | |
 | `ANS_CORRECTNESS_VAL` | NUMBER(5,4) | Y | — | |
 | `ERROR_CTN` | CLOB | Y | — | |
+| `ELAPSED_MS` | NUMBER | Y | — | 에이전트 호출 1건에 걸린 시간(ms). 채점 시간은 제외. 실패·타임아웃도 걸린 만큼 기록 |
 | `CRT_TM` | TIMESTAMP | Y | SYSTIMESTAMP | |
 
 ## PTX_AUDIT_HIS

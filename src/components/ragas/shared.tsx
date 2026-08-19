@@ -549,6 +549,34 @@ export function OxBadge({ value, rate }: { value: number | null; rate?: boolean 
   );
 }
 
+/** ms → a short Korean duration. Sub-minute calls read to a tenth of a second
+ * (the difference between 2.1s and 2.9s matters when comparing endpoints);
+ * anything longer rounds to whole seconds, where tenths are noise. */
+export function fmtElapsed(ms: number | null | undefined): string | null {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return null;
+  const sec = Math.round(ms / 100) / 10;
+  if (sec < 60) return `${sec.toFixed(1)}초`;
+  const whole = Math.round(sec);
+  const m = Math.floor(whole / 60);
+  const s = whole % 60;
+  return s ? `${m}분 ${s}초` : `${m}분`;
+}
+
+/** How long the endpoint took to answer this case. Deliberately quiet — it is
+ * context for the answer, not a verdict, so it never competes with the score. */
+export function ElapsedTag({ ms, className }: { ms: number | null | undefined; className?: string }) {
+  const text = fmtElapsed(ms);
+  if (text === null) return null;
+  return (
+    <span
+      title="응답 시간 (채점 시간 제외)"
+      className={cn('shrink-0 font-mono text-[11px] tabular-nums text-muted', className)}
+    >
+      {text}
+    </span>
+  );
+}
+
 export function ScoreBars({ row }: { row: RagasResultRow }) {
   const shown = scoredMetrics(row);
   if (!shown.length) {
@@ -632,6 +660,7 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
                 {r.question ?? '—'}
               </span>
               {isClosed && <ScoredPreview row={r} className="mt-0.5 min-w-0 flex-1" />}
+              {isClosed && <ElapsedTag ms={r.elapsed_ms} className="mt-0.5" />}
               {isClosed && showScores && (
                 <span className="flex shrink-0 items-center gap-2">
                   {/* O/X and the RAGAS mean stand on their own — a verdict and a
@@ -666,9 +695,12 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
                 )}
                 <TraceValueBox row={r} />
                 <div className={cn('min-w-0', r.trace_value && r.ground_truth && 'sm:col-span-2')}>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">
-                    답변{r.trace_value && <span className="ml-1.5 font-normal normal-case tracking-normal">· 채점 대상 아님</span>}
-                  </p>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">
+                      답변{r.trace_value && <span className="ml-1.5 font-normal normal-case tracking-normal">· 채점 대상 아님</span>}
+                    </p>
+                    <ElapsedTag ms={r.elapsed_ms} />
+                  </div>
                   <div className="mt-0.5"><AnswerBox text={r.answer} error={r.error_msg} /></div>
                   {showScores && <div className="mt-3"><ScoreBars row={r} /></div>}
                 </div>

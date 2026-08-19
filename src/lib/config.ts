@@ -36,6 +36,10 @@ export interface AgentConfig {
   /** Caller's employee number. Goes out in the BODY (`user_id` and
    * `CUBE_USER_ID`), not as a header — headers are per-side and explicit. */
   userId: string;
+  /** How long one endpoint call may take before it is aborted. From
+   * `agent.timeoutSec` (default 90s) — a flow that fans out to several nodes is
+   * slow, so this is generous on purpose. */
+  timeoutMs: number;
   /** Side A. Also the default: a run that names no side calls A. */
   a: AgentSideConfig;
   /** Side B — the comparison target. */
@@ -77,6 +81,7 @@ interface RawConfig {
   agent?: {
     runMode?: string;
     userId?: string;
+    timeoutSec?: number;
     a?: RawSide;
     b?: RawSide;
   };
@@ -122,11 +127,21 @@ function normalizeSide(v: RawSide | undefined): AgentSideConfig {
   return { url: (v?.url ?? "").trim().replace(/\/+$/, ""), headers };
 }
 
+const DEFAULT_TIMEOUT_SEC = 90;
+
+/** Seconds → ms. A missing, non-numeric or non-positive value falls back to the
+ * default rather than producing a call that aborts instantly. */
+function normalizeTimeout(v: unknown): number {
+  const sec = Number(v);
+  return Number.isFinite(sec) && sec > 0 ? Math.round(sec * 1000) : DEFAULT_TIMEOUT_SEC * 1000;
+}
+
 function normalizeAgent(raw: RawConfig | null): AgentConfig {
   const a = raw?.agent ?? {};
   return {
     runMode: (a.runMode ?? "").trim().toLowerCase() === "external" ? "external" : "stub",
     userId: (a.userId ?? "pm-test").trim() || "pm-test",
+    timeoutMs: normalizeTimeout(a.timeoutSec),
     a: normalizeSide(a.a),
     b: normalizeSide(a.b),
   };
@@ -184,6 +199,7 @@ export function loadConfig(): AppConfig {
     sourceFile: cached.sourceFile,
     dbConfigured: cached.db !== null,
     runMode: cached.agent.runMode,
+    agentTimeoutSec: cached.agent.timeoutMs / 1000,
     agentUrlA: cached.agent.a.url,
     agentUrlB: cached.agent.b.url,
     // Names only — the values are credentials and must not reach the log.

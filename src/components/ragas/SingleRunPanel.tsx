@@ -31,6 +31,7 @@ import {
   VersionSelect,
   CaseTable,
   ScoreBars,
+  ElapsedTag,
   AnswerBox,
   PendingHint,
   errText,
@@ -59,6 +60,8 @@ type DirectResult = {
   scores: Partial<Record<RagasMetric, number | null>> | null;
   /** The call succeeded but the scorer did not — a separate failure. */
   score_error: string | null;
+  /** How long the endpoint took, in ms. Scoring time is not in it. */
+  elapsed_ms: number;
 };
 
 /** Adapt a manual call's inline scores to the RagasResultRow shape ScoreBars renders. */
@@ -70,6 +73,7 @@ function directScoresRow(res: DirectResult): RagasResultRow | null {
   return {
     ragas_result_id: 0, ragas_run_id: 0, case_id: null, question: '',
     answer: res.response, contexts: null, ground_truth: null, error_msg: null,
+    elapsed_ms: res.elapsed_ms,
     ...metricVals,
   } as RagasResultRow;
 }
@@ -424,8 +428,9 @@ export default function SingleRunPanel() {
           )}
           {callResult && callStatus !== 'running' && (
             <Card>
-              <div className="border-b border-line px-4 py-3">
+              <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
                 <h3 className="text-sm font-semibold text-ink">Response</h3>
+                <ElapsedTag ms={callResult.elapsed_ms} />
               </div>
               <div className="p-4">
                 <AnswerBox text={callResult.response} />

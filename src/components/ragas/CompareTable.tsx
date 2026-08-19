@@ -13,9 +13,33 @@ import {
   type RagasRunDetail,
 } from '@/lib/types';
 import {
-  AnswerBox, caseMean, Chevron, CollapseAllStrip, fmt3, OxBadge,
+  AnswerBox, caseMean, Chevron, CollapseAllStrip, ElapsedTag, fmt3, fmtElapsed, OxBadge,
   PendingHint, ScoredPreview, sideLabel, TraceValueBox,
 } from './shared';
+
+/** Both sides' response times on one line, in the same A · B shape the score
+ * badges use. Shown for unscored runs too — speed is a comparison of its own,
+ * and on an A/B it is often the only difference the two endpoints have. */
+function ElapsedPair({ a, b }: { a?: RagasResultRow; b?: RagasResultRow }) {
+  const ta = fmtElapsed(a?.elapsed_ms);
+  const tb = fmtElapsed(b?.elapsed_ms);
+  if (ta === null && tb === null) return null;
+  // Faster wins — but only when both sides answered, or the ink would mark a
+  // lone time as if it had beaten something.
+  const both = a?.elapsed_ms != null && b?.elapsed_ms != null;
+  const aWins = both && a!.elapsed_ms! < b!.elapsed_ms!;
+  const bWins = both && b!.elapsed_ms! < a!.elapsed_ms!;
+  return (
+    <div className="flex items-center gap-1.5 font-mono text-[11px] tabular-nums text-muted" title="응답 시간 (채점 시간 제외)">
+      <span className="font-sans text-[10px] font-semibold uppercase tracking-wide">시간</span>
+      <span>
+        <span className={cn(aWins && 'font-semibold text-ink')}>A {ta ?? '—'}</span>
+        {' · '}
+        <span className={cn(bWins && 'font-semibold text-ink')}>B {tb ?? '—'}</span>
+      </span>
+    </div>
+  );
+}
 
 // One side's absolute-score bar (fills 0→value on a 0..1 scale). B is the accent
 // colour, A is neutral grey; the winning side's number is inked + bold.
@@ -228,44 +252,50 @@ export function CaseCompareTable({
                 </span>
               )}
               {/* Two independent verdicts per side: the O/X pair and the RAGAS
-                  pair. They are stacked rather than merged — a run with both
-                  selected has two answers to give, not one blended number. */}
-              {isClosed && showScores && (
+                  pair, plus the response times. They are stacked rather than
+                  merged — a run with both selected has two answers to give, not
+                  one blended number. */}
+              {isClosed && (
                 <div className="flex shrink-0 flex-col items-end gap-1">
-                  {(a?.exact_match != null || b?.exact_match != null) && (
-                    <div className="flex items-center gap-1.5 text-[10px] font-semibold text-muted">
-                      A <OxBadge value={a?.exact_match ?? null} />
-                      B <OxBadge value={b?.exact_match ?? null} />
-                    </div>
-                  )}
-                  {(aMean != null || bMean != null) && (
-                    <div className="flex items-center gap-1.5 font-mono text-xs tabular-nums text-muted">
-                      <span className="font-sans text-[10px] font-semibold uppercase tracking-wide">RAGAS</span>
-                      <span>
-                        <span className={cn(aMean != null && bMean != null && aMean > bMean && 'font-semibold text-ink')}>A {fmt3(aMean)}</span>
-                        {' · '}
-                        <span className={cn(aMean != null && bMean != null && bMean > aMean && 'font-semibold text-ink')}>B {fmt3(bMean)}</span>
-                      </span>
-                      {delta != null && (
-                        <span
-                          className={cn(
-                            'inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-semibold border',
-                            delta > 0
-                              ? 'border-[#bbf7d0] bg-[#f0fdf4] text-[#15803d]'
-                              : delta < 0
-                              ? 'border-[#fecdd3] bg-[#fff1f2] text-[#be123c]'
-                              : 'border-[#e2e8f0] bg-[#f8fafc] text-muted'
-                          )}
-                        >
-                          {(delta > 0 ? '+' : '') + delta.toFixed(3)}
-                        </span>
+                  <ElapsedPair a={a} b={b} />
+                  {showScores && (
+                    <>
+                      {(a?.exact_match != null || b?.exact_match != null) && (
+                        <div className="flex items-center gap-1.5 text-[10px] font-semibold text-muted">
+                          A <OxBadge value={a?.exact_match ?? null} />
+                          B <OxBadge value={b?.exact_match ?? null} />
+                        </div>
                       )}
-                    </div>
-                  )}
-                  {a?.exact_match == null && b?.exact_match == null && aMean == null && bMean == null && (
-                    (a?.error_msg || b?.error_msg)
-                      ? <span className="text-[11px] text-bad" title={a?.error_msg ?? b?.error_msg ?? undefined}>오류</span>
-                      : <span className="text-[11px] text-muted">채점 중…</span>
+                      {(aMean != null || bMean != null) && (
+                        <div className="flex items-center gap-1.5 font-mono text-xs tabular-nums text-muted">
+                          <span className="font-sans text-[10px] font-semibold uppercase tracking-wide">RAGAS</span>
+                          <span>
+                            <span className={cn(aMean != null && bMean != null && aMean > bMean && 'font-semibold text-ink')}>A {fmt3(aMean)}</span>
+                            {' · '}
+                            <span className={cn(aMean != null && bMean != null && bMean > aMean && 'font-semibold text-ink')}>B {fmt3(bMean)}</span>
+                          </span>
+                          {delta != null && (
+                            <span
+                              className={cn(
+                                'inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-semibold border',
+                                delta > 0
+                                  ? 'border-[#bbf7d0] bg-[#f0fdf4] text-[#15803d]'
+                                  : delta < 0
+                                  ? 'border-[#fecdd3] bg-[#fff1f2] text-[#be123c]'
+                                  : 'border-[#e2e8f0] bg-[#f8fafc] text-muted'
+                              )}
+                            >
+                              {(delta > 0 ? '+' : '') + delta.toFixed(3)}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {a?.exact_match == null && b?.exact_match == null && aMean == null && bMean == null && (
+                        (a?.error_msg || b?.error_msg)
+                          ? <span className="text-[11px] text-bad" title={a?.error_msg ?? b?.error_msg ?? undefined}>오류</span>
+                          : <span className="text-[11px] text-muted">채점 중…</span>
+                      )}
+                    </>
                   )}
                 </div>
               )}
@@ -275,12 +305,18 @@ export function CaseCompareTable({
                 {gt && <p className="mb-3 whitespace-pre-wrap text-xs text-muted"><span className="font-medium">Ground truth ·</span> {gt}</p>}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="rounded-sm border border-line bg-bg/40 p-3">
-                    <Badge tone="neutral">A · {sideLabel(labelA)}</Badge>
+                    <div className="flex items-center justify-between gap-2">
+                      <Badge tone="neutral">A · {sideLabel(labelA)}</Badge>
+                      <ElapsedTag ms={a?.elapsed_ms} />
+                    </div>
                     {a?.trace_value && <div className="mt-2"><TraceValueBox row={a} /></div>}
                     <div className="mt-2"><AnswerBox text={a?.answer} error={a?.error_msg} /></div>
                   </div>
                   <div className="rounded-sm border border-line bg-bg/40 p-3">
-                    <Badge tone="accent">B · {sideLabel(labelB)}</Badge>
+                    <div className="flex items-center justify-between gap-2">
+                      <Badge tone="accent">B · {sideLabel(labelB)}</Badge>
+                      <ElapsedTag ms={b?.elapsed_ms} />
+                    </div>
                     {b?.trace_value && <div className="mt-2"><TraceValueBox row={b} /></div>}
                     <div className="mt-2"><AnswerBox text={b?.answer} error={b?.error_msg} /></div>
                   </div>

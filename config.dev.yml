@@ -22,6 +22,7 @@ db:
 agent:
   runMode: "stub"           # stub | external
   userId: "pm-test"         # 요청자 사번. 본문의 user_id / CUBE_USER_ID 로 나간다
+  timeoutSec: 90            # 호출 1건의 응답 대기 한도(초). 비우면 90
 
   # ── A (기본 엔드포인트) ───────────────────────────────────────
   a:

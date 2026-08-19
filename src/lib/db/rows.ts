@@ -148,6 +148,7 @@ export const RESULT_COLS = [
   "ERROR_CTN",
   "TRACE_VAR_NM",
   "TRACE_CTN",
+  "ELAPSED_MS",
 ].join(", ");
 
 export const MODEL_COLS = [
@@ -325,6 +326,8 @@ export function mapRagasResult(r: Row): RagasResultRow {
     // then the score compared this, not ANSWER_CTN.
     trace_var_nm: str(r.TRACE_VAR_NM),
     trace_value: str(r.TRACE_CTN),
+    // null on rows written before the column existed — the UI just shows nothing.
+    elapsed_ms: num(r.ELAPSED_MS),
   };
 }
 

@@ -118,6 +118,9 @@ CREATE TABLE PTX_RUN_DET (
     CNTX_RECALL_VAL      NUMBER(5,4),
     ANS_CORRECTNESS_VAL  NUMBER(5,4),
     ERROR_CTN            CLOB,
+    -- 에이전트 호출 1건에 걸린 시간(ms). 채점 시간은 빠져 있고, 타임아웃으로
+    -- 끊긴 케이스에도 끊길 때까지의 시간이 남는다.
+    ELAPSED_MS           NUMBER,
     CRT_TM               TIMESTAMP DEFAULT SYSTIMESTAMP,
     CONSTRAINT FK_PTX_RUN_DET_MAS FOREIGN KEY (RUN_ID)
         REFERENCES PTX_RUN_MAS(RUN_ID) ON DELETE CASCADE,

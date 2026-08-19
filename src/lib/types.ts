@@ -308,6 +308,9 @@ export interface RagasResultRow {
   trace_var_nm: string | null;
   /** The captured value as JSON text — what 정답 일치 actually compared. */
   trace_value: string | null;
+  /** Wall time of the agent call for this case, in ms. Excludes scoring. null on
+   * rows written before the column existed, and on synthesised rows. */
+  elapsed_ms: number | null;
 }
 
 export interface RagasRunOut {
