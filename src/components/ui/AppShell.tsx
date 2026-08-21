@@ -1,0 +1,251 @@
+'use client';
+
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useState, type ReactNode } from 'react';
+import { cn } from '@/lib/cn';
+import pkg from '../../../package.json';
+
+/**
+ * App shell: one sidebar carries every destination in the product, so there is a
+ * single place to look for where to go instead of a top nav and an in-page tab
+ * strip competing to answer it.
+ *
+ * The four run/data sections live on one route (`/`) because Single and Compare
+ * must stay mounted — unmounting drops a live run's SSE stream, which the server
+ * reads as a cancel. So the sidebar switches them through `onSelect` when that
+ * page is already open, and navigates to `/?section=…` from anywhere else.
+ */
+
+export type SectionId = 'single' | 'compare' | 'datasets' | 'records' | 'prompts' | 'settings';
+
+/** The sections that live on the run page and are switched in place. */
+export const RUN_SECTIONS: SectionId[] = ['single', 'compare', 'datasets', 'records'];
+
+interface Item {
+  id: SectionId;
+  label: string;
+  href: string;
+  icon: ReactNode;
+}
+
+const stroke = {
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 1.6,
+  strokeLinecap: 'round' as const,
+  strokeLinejoin: 'round' as const,
+};
+
+/** Icons carry the meaning of each row; the label names it. Both, always — an
+ * icon rail alone is a guessing game and a text list has no shape. */
+const ICONS: Record<SectionId, ReactNode> = {
+  single: (
+    <svg viewBox="0 0 20 20" width="17" height="17" {...stroke}>
+      <circle cx="10" cy="10" r="7" />
+      <path d="M8.4 7.3 13 10l-4.6 2.7z" />
+    </svg>
+  ),
+  compare: (
+    <svg viewBox="0 0 20 20" width="17" height="17" {...stroke}>
+      <rect x="2.5" y="3.5" width="6" height="13" rx="1.2" />
+      <rect x="11.5" y="3.5" width="6" height="13" rx="1.2" />
+    </svg>
+  ),
+  datasets: (
+    <svg viewBox="0 0 20 20" width="17" height="17" {...stroke}>
+      <rect x="2.5" y="3.5" width="15" height="13" rx="1.5" />
+      <path d="M2.5 8h15M7.5 8v8.5" />
+    </svg>
+  ),
+  records: (
+    <svg viewBox="0 0 20 20" width="17" height="17" {...stroke}>
+      <circle cx="10" cy="10" r="7" />
+      <path d="M10 6v4.2l2.8 1.8" />
+    </svg>
+  ),
+  prompts: (
+    <svg viewBox="0 0 20 20" width="17" height="17" {...stroke}>
+      <path d="M5 2.8h6.4L15.5 7v10.2H5z" />
+      <path d="M11 2.8V7h4.5M7.6 10.5h5M7.6 13.4h3.4" />
+    </svg>
+  ),
+  settings: (
+    <svg viewBox="0 0 20 20" width="17" height="17" {...stroke}>
+      <path d="M3 6h9M15.5 6h1.5M3 14h1.5M8 14h9" />
+      <circle cx="13.6" cy="6" r="2" />
+      <circle cx="6.2" cy="14" r="2" />
+    </svg>
+  ),
+};
+
+const GROUPS: { label: string; items: Item[] }[] = [
+  {
+    label: '실행',
+    items: [
+      { id: 'single', label: '단일 실행', href: '/?section=single', icon: ICONS.single },
+      { id: 'compare', label: 'A · B 비교', href: '/?section=compare', icon: ICONS.compare },
+    ],
+  },
+  {
+    label: '데이터',
+    items: [
+      { id: 'datasets', label: '데이터셋', href: '/?section=datasets', icon: ICONS.datasets },
+      { id: 'records', label: '실행 기록', href: '/?section=records', icon: ICONS.records },
+    ],
+  },
+  {
+    label: '관리',
+    items: [
+      { id: 'prompts', label: '프롬프트', href: '/nodes', icon: ICONS.prompts },
+      { id: 'settings', label: '설정', href: '/settings', icon: ICONS.settings },
+    ],
+  },
+];
+
+const ALL_ITEMS = GROUPS.flatMap((g) => g.items);
+
+export const SECTION_META = Object.fromEntries(
+  ALL_ITEMS.map((i) => [i.id, { label: i.label, icon: i.icon }]),
+) as Record<SectionId, { label: string; icon: ReactNode }>;
+
+interface HealthData {
+  env?: string;
+  dbConnected?: boolean;
+}
+
+/** Environment and DB state as two dots — the sidebar foot says what this app is
+ * talking to without a sentence about it. */
+function StatusFoot() {
+  const [health, setHealth] = useState<HealthData | null>(null);
+  useEffect(() => {
+    fetch('/api/health', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: HealthData | null) => setHealth(d ?? null))
+      .catch(() => {});
+  }, []);
+  if (!health?.env) return null;
+  const prd = health.env === 'prd';
+  const db = !!health.dbConnected;
+  return (
+    <div className="flex items-center gap-3 border-t border-line px-4 py-3 text-caption">
+      <span
+        className={cn('inline-flex items-center gap-1.5', prd ? 'text-warn' : 'text-muted')}
+        title={`환경 ${health.env}`}
+      >
+        <span className={cn('h-1.5 w-1.5 rounded-full', prd ? 'bg-chroma-orange' : 'bg-accent')} />
+        <span className="uppercase tracking-[0.6px]">{health.env}</span>
+      </span>
+      <span
+        className={cn('inline-flex items-center gap-1.5', db ? 'text-muted' : 'text-muted-soft')}
+        title={db ? 'Oracle DB 연결됨' : 'DB 미연결'}
+      >
+        <span className={cn("h-1.5 w-1.5 rounded-full", db ? "bg-ok-vivid" : "bg-muted-soft")} />
+        DB
+      </span>
+      <span className="ml-auto font-mono text-caption-mono text-muted-soft" title="앱 버전">v{pkg.version}</span>
+    </div>
+  );
+}
+
+function BrandMark() {
+  return (
+    <span aria-hidden className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-primary">
+      <svg viewBox="0 0 24 24" fill="none" width="16" height="16">
+        <path d="M7 7 L17 17" stroke="#fff" strokeOpacity="0.45" strokeWidth="2.6" strokeLinecap="round" />
+        <path d="M17 7 L7 17" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" />
+      </svg>
+    </span>
+  );
+}
+
+function NavRow({
+  item,
+  active,
+  compact,
+  onClick,
+}: {
+  item: Item;
+  active: boolean;
+  compact?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={item.label}
+      aria-current={active ? 'page' : undefined}
+      className={cn(
+        'group relative flex items-center gap-2.5 rounded-sm py-2 pl-3 pr-2.5 text-left text-body-sm transition-colors',
+        compact ? 'shrink-0 pl-2.5' : 'w-full',
+        active ? 'bg-surface font-medium text-ink shadow-[0_1px_2px_rgba(8,8,8,0.06)]' : 'text-muted hover:bg-surface hover:text-ink',
+      )}
+    >
+      {/* The active row is marked in near-black, the brand's own emphasis. */}
+      <span
+        aria-hidden
+        className={cn('absolute bottom-1.5 left-0 top-1.5 w-0.5', active ? 'bg-primary' : 'bg-transparent')}
+      />
+      <span className={cn('shrink-0 transition-colors', active ? 'text-ink' : 'text-muted-soft group-hover:text-muted')}>
+        {item.icon}
+      </span>
+      {!compact && <span className="truncate">{item.label}</span>}
+    </button>
+  );
+}
+
+export default function AppShell({
+  section,
+  onSelect,
+  children,
+}: {
+  section: SectionId;
+  /** Provided by the run page so its four sections switch without a navigation. */
+  onSelect?: (id: SectionId) => void;
+  children: ReactNode;
+}) {
+  const router = useRouter();
+  const pathname = usePathname() || '/';
+
+  const go = (item: Item) => {
+    if (onSelect && RUN_SECTIONS.includes(item.id) && pathname === '/') onSelect(item.id);
+    else router.push(item.href);
+  };
+
+  return (
+    <div className="flex h-full">
+      {/* Sidebar — the whole map of the product in one column. */}
+      <aside className="hidden w-[228px] shrink-0 flex-col border-r border-line bg-bg md:flex">
+        <button onClick={() => router.push('/')} className="flex items-center gap-2.5 px-4 py-4">
+          <BrandMark />
+          <span className="text-display-xs font-semibold tracking-[-0.4px] text-ink">TestX</span>
+        </button>
+        <nav className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
+          {GROUPS.map((g) => (
+            <div key={g.label} className="mb-4">
+              <p className="eyebrow px-3 pb-1.5">{g.label}</p>
+              <div className="flex flex-col gap-0.5">
+                {g.items.map((it) => (
+                  <NavRow key={it.id} item={it} active={it.id === section} onClick={() => go(it)} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </nav>
+        <StatusFoot />
+      </aside>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Below md the same rows become one icon rail across the top. */}
+        <div className="flex items-center gap-1 border-b border-line bg-bg px-3 py-2 md:hidden">
+          <BrandMark />
+          <div className="ml-1 flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+            {ALL_ITEMS.map((it) => (
+              <NavRow key={it.id} item={it} active={it.id === section} compact onClick={() => go(it)} />
+            ))}
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto [scrollbar-gutter:stable]">{children}</div>
+      </div>
+    </div>
+  );
+}

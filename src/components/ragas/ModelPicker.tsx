@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/Field';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import type { ModelRole, ModelSelection } from '@/lib/types';
-import { ModelRolesModal } from './ModelRolesModal';
+import { SettingsLink, useLlmModels } from './shared';
 
 /**
  * Per-run model selection, shared by the Single and Compare tabs.
@@ -131,17 +131,19 @@ const sameDrafts = (a: ModelDrafts, b: ModelDrafts) =>
 export function ModelPicker({
   roles,
   columns,
-  onRolesChange,
 }: {
   roles: ModelRole[];
   columns: ModelColumn[];
-  onRolesChange: (next: ModelRole[]) => void;
 }) {
   // Open from the start. This only renders when 대상 is 모델 — i.e. the models
   // *are* what the run is testing — so hiding them behind a '변경' click would
   // hide the one thing on screen that matters.
   const [open, setOpen] = useState(true);
-  const [manage, setManage] = useState(false);
+  // 고를 수 있는 모델 목록. 저장돼 있던 값이 목록에서 빠졌다면 조용히 사라지지
+  // 않도록 그 값만 따로 남겨 둔다.
+  const catalogAll = useLlmModels();
+  const catalog = useMemo(() => catalogAll.filter((m) => m.is_active === 'Y'), [catalogAll]);
+  const catalogMissing = (v: string) => v !== '' && !catalog.some((o) => o.llm_nm === v);
   const saved = useMemo(() => draftsFromRoles(roles), [roles]);
   const dirty = columns.some((c) => !sameDrafts(c.drafts, saved));
   // Two columns holding the same thing is the ordinary case (both pre-filled
@@ -154,28 +156,11 @@ export function ModelPicker({
 
   const template = `minmax(84px,116px) ${columns.map(() => 'minmax(130px,1fr) 62px').join(' ')}`;
 
-  // No roles at all (empty table, or the DB is down). This only renders under
-  // 대상 = 모델, where the whole point is to change a model — so the one way
-  // forward sits directly beside the sentence and looks like a button. Pushed to
-  // the far right as muted text it read as decoration, and the mode as a dead end.
+  // No roles registered yet. This only renders under 대상 = 모델, where the
+  // whole point is to change a model — so the empty state is the link to where
+  // roles are registered, not a sentence about not having any.
   if (roles.length === 0) {
-    return (
-      <>
-        <span className="text-xs text-muted">
-          등록된 role 이 없습니다 — 지금 실행하면 에이전트 config 그대로 돕니다
-        </span>
-        <button
-          type="button"
-          onClick={() => setManage(true)}
-          className="shrink-0 rounded-sm border border-line px-2 py-1 text-xs font-medium text-ink transition-colors hover:bg-surface-2"
-        >
-          role 등록
-        </button>
-        {manage && (
-          <ModelRolesModal roles={roles} onClose={() => setManage(false)} onSaved={onRolesChange} />
-        )}
-      </>
-    );
+    return <SettingsLink label="설정에서 role 등록" />;
   }
 
   return (
@@ -208,7 +193,7 @@ export function ModelPicker({
         <div className="w-full pb-1 pt-1">
           <div className="overflow-hidden rounded-sm border border-line bg-surface">
             <div
-              className="gap-x-3 border-b border-line bg-surface-2 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.04em] text-muted"
+              className="gap-x-3 border-b border-line bg-surface-2 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.6px] text-muted"
               style={{ display: 'grid', gridTemplateColumns: template }}
             >
               <span>Role</span>
@@ -238,12 +223,24 @@ export function ModelPicker({
                   </span>
                   {columns.map((c, i) => (
                     <Fragment key={c.key}>
-                      <Input
+                      {/* 설정에 등록된 모델만 고를 수 있다 — 오타로 존재하지 않는
+                          모델을 고정해 버리는 일이 여기서 사라진다. */}
+                      <select
                         value={cells[i].model}
                         onChange={(e) => set(c, r.role_cd, { model: e.target.value })}
-                        placeholder="에이전트 config 기본값"
-                        className="w-full font-mono text-xs"
-                      />
+                        className={cn(
+                          'h-9 w-full rounded-sm border bg-surface px-2 font-mono text-xs text-ink transition',
+                          'hover:border-line-strong focus:border-ink focus:shadow-ring focus:outline-none',
+                          catalogMissing(cells[i].model) ? 'border-warn' : 'border-line',
+                        )}
+                        title={cells[i].model || 'config 기본값'}
+                      >
+                        <option value="">—</option>
+                        {catalogMissing(cells[i].model) && <option value={cells[i].model}>{cells[i].model}</option>}
+                        {catalog.map((o) => (
+                          <option key={o.llm_id} value={o.llm_nm}>{o.llm_nm}</option>
+                        ))}
+                      </select>
                       <Input
                         value={cells[i].temperature}
                         onChange={(e) => set(c, r.role_cd, { temperature: e.target.value })}
@@ -257,34 +254,22 @@ export function ModelPicker({
               );
             })}
           </div>
-          <div className="mt-1.5 flex items-start gap-3">
-            <p className="min-w-0 flex-1 text-[11px] leading-snug text-muted">
-              비운 칸은 에이전트 config 의 모델로 실행됩니다. 여기 값은{' '}
-              <span className="text-ink/70">이 실행에만</span> 적용됩니다.
-            </p>
+          <div className="mt-1.5 flex items-center justify-end gap-3">
             {dirty && (
               <button
                 type="button"
+                title="저장된 기본값으로 되돌리기"
                 onClick={() => columns.forEach((c) => c.onChange(draftsFromRoles(roles)))}
-                className="shrink-0 text-[11px] font-medium text-muted transition-colors hover:text-ink"
+                className="shrink-0 text-caption text-muted transition-colors hover:text-ink"
               >
-                기본값으로
+                ↺ 기본값
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => setManage(true)}
-              className="shrink-0 text-[11px] font-medium text-muted transition-colors hover:text-ink"
-            >
-              role 관리
-            </button>
+            <SettingsLink label="설정" />
           </div>
         </div>
       )}
 
-      {manage && (
-        <ModelRolesModal roles={roles} onClose={() => setManage(false)} onSaved={onRolesChange} />
-      )}
     </>
   );
 }

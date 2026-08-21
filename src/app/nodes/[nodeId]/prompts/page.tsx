@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ChangeEventHandler } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import TopBar from '@/components/ui/TopBar';
+import AppShell from '@/components/ui/AppShell';
 import Modal from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -71,13 +71,13 @@ export default function NodePromptsPage() {
   }
 
   return (
+    <AppShell section="prompts">
     <div className="flex h-full flex-col">
-      <TopBar />
 
       {/* Breadcrumb strip: the way back sits top-left, where the eye starts and
           directly above the version list — not buried beside the status pills. */}
       <div className="border-b border-line bg-surface">
-        <div className={cn(SHELL, 'flex h-11 items-center gap-1.5 px-6')}>
+        <div className={cn(SHELL, 'flex h-11 items-center gap-1.5 px-8')}>
           <button
             onClick={() => router.push('/nodes')}
             className="-ml-2 inline-flex items-center gap-1 rounded-sm px-2 py-1 text-[13px] font-medium text-muted transition-colors hover:bg-surface-3 hover:text-ink"
@@ -93,7 +93,7 @@ export default function NodePromptsPage() {
       </div>
 
       {error && (
-        <div className="mx-6 mt-4 rounded-sm border border-bad/20 bg-bad/5 px-4 py-3 text-sm text-bad">
+        <div className="mx-8 mt-4 rounded-sm border border-bad/20 bg-bad/5 px-4 py-3 text-sm text-bad">
           {error}
         </div>
       )}
@@ -102,7 +102,7 @@ export default function NodePromptsPage() {
         {/* version list */}
         <aside className="w-72 overflow-auto border-r border-line bg-surface p-4">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Versions</h2>
+            <h2 className="eyebrow">Versions</h2>
             <Button size="sm" onClick={() => setShowNew(true)}>+ New version</Button>
           </div>
           <ul className="space-y-1.5">
@@ -113,7 +113,7 @@ export default function NodePromptsPage() {
                   className={
                     'w-full rounded-md border px-3 py-2.5 text-left transition-colors ' +
                     (detail?.prompt_id === v.prompt_id
-                      ? 'border-accent/40 bg-accent-soft/60'
+                      ? 'border-ink bg-surface-2'
                       : 'border-line hover:bg-surface-2')
                   }
                 >
@@ -134,7 +134,7 @@ export default function NodePromptsPage() {
                     setConfirmDelete(v);
                   }}
                   title="Delete this version"
-                  className="absolute right-2 top-2 rounded-md border border-line bg-surface px-2 py-1 text-[11px] font-medium text-muted transition-colors hover:border-bad/40 hover:bg-bad/5 hover:text-bad"
+                  className="absolute right-2 top-2 rounded-sm border border-line bg-surface px-2 py-1 text-[11px] font-medium text-muted transition-colors hover:border-bad/40 hover:bg-bad/5 hover:text-bad"
                 >
                   Delete
                 </button>
@@ -155,7 +155,7 @@ export default function NodePromptsPage() {
                   {/* The node name now lives in the breadcrumb above, so the
                       header only carries which version is open. */}
                   <div className="flex items-center gap-2">
-                    <h1 className="font-mono text-base font-semibold text-ink">v{detail.version_no}</h1>
+                    <h1 className="font-mono text-display-xs text-ink">v{detail.version_no}</h1>
                     {detail.model_nm && <Badge tone="neutral">{detail.model_nm}</Badge>}
                   </div>
                   {detail.change_summary && (
@@ -211,11 +211,12 @@ export default function NodePromptsPage() {
           </>
         }
       >
-        <p className="text-sm text-ink">
-          <span className="font-semibold">v{confirmDelete?.version_no}</span> will be deleted. This cannot be undone.
+        <p className="text-body-md text-ink">
+          <span className="font-mono">v{confirmDelete?.version_no}</span> 삭제
         </p>
       </Modal>
     </div>
+    </AppShell>
   );
 }
 
@@ -263,7 +264,7 @@ function EditorTab({
 
   return (
     <div className="flex flex-col gap-5">
-      {err && <div className="rounded-md border border-bad/20 bg-bad/5 px-3 py-2 text-sm text-bad">{err}</div>}
+      {err && <div className="rounded-sm border border-bad/20 bg-bad/5 px-3 py-2 text-sm text-bad">{err}</div>}
       <div>
         <div className="mb-1.5 flex items-baseline gap-2">
           <span className="text-sm font-medium text-ink">Model</span>
@@ -367,7 +368,7 @@ function AuditDetail({ log }: { log: AuditLog }) {
   if (!keys.length) {
     if (!log.before_value && !log.after_value) return null;
     return (
-      <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-md bg-bg p-2 text-xs text-muted">
+      <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-sm bg-surface-2 p-2 text-xs text-muted">
         {log.after_value ?? log.before_value}
       </pre>
     );
@@ -384,14 +385,14 @@ function AuditDetail({ log }: { log: AuditLog }) {
           const changed = b !== a;
           return (
             <div key={k}>
-              <dt className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">{label}</dt>
+              <dt className="eyebrow">{label}</dt>
               <dd className="mt-0.5 grid gap-1">
                 {changed && b && (
-                  <pre className="max-h-28 overflow-auto whitespace-pre-wrap rounded-md border border-bad/20 bg-bad/5 p-2 text-xs text-bad">
+                  <pre className="max-h-28 overflow-auto whitespace-pre-wrap rounded-sm border border-bad/20 bg-bad/5 p-2 text-xs text-bad">
                     − {b}
                   </pre>
                 )}
-                <pre className="max-h-28 overflow-auto whitespace-pre-wrap rounded-md border border-ok/20 bg-ok/5 p-2 text-xs text-ok">
+                <pre className="max-h-28 overflow-auto whitespace-pre-wrap rounded-sm border border-ok/20 bg-ok/5 p-2 text-xs text-ok">
                   {changed && b ? '+ ' : ''}{a || '(empty)'}
                 </pre>
               </dd>
@@ -494,7 +495,7 @@ function NewVersionModal({
         </>
       }
     >
-      {err && <div className="mb-3 rounded-md border border-bad/20 bg-bad/5 px-3 py-2 text-xs text-bad">{err}</div>}
+      {err && <div className="mb-3 rounded-sm border border-bad/20 bg-bad/5 px-3 py-2 text-xs text-bad">{err}</div>}
       <label className="mb-3 block">
         <span className="text-sm font-medium text-ink">Model</span>
         <Input value={model} onChange={(e) => setModel(e.target.value)} placeholder="e.g. claude-sonnet-4-6" className="mt-1 w-full font-mono" />

@@ -9,10 +9,10 @@
    (purple / pink / blue / orange / green) used as surface fills — never as
    button backgrounds. */
 :root {
-  --bg: 255 255 255;        /* #ffffff — the canvas; the page is white */
+  --bg: 249 249 249;        /* #f9f9f9 — app background; white cards sit on it */
   --surface: 255 255 255;   /* white    — cards/panels (hairline is the chrome) */
-  --surface-2: 247 247 247; /* #f7f7f7 — recessed strips (table heads, statusbar) */
-  --surface-3: 240 240 240; /* #f0f0f0 — deeper recess (segmented tracks, hovers) */
+  --surface-2: 245 245 245; /* #f5f5f5 — recessed strips (row hover, code blocks) */
+  --surface-3: 236 236 236; /* #ececec — deeper recess (selected rows, control hover) */
   --line: 216 216 216;      /* #d8d8d8 — hairline borders */
   --line-strong: 190 190 190; /* #bebebe — control borders (inputs, buttons) */
 

@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 
 const side = (s: DirectAbSide | undefined) => ({
   promptId: s?.prompt_id ?? null,
+  endpointId: s?.endpoint_id ?? null,
   baseUrl: s?.base_url ?? null,
   authKey: s?.auth_key ?? null,
   userId: s?.user_id ?? null,

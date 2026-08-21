@@ -9,6 +9,7 @@ import { api } from '@/lib/api';
 import { clearActiveRun, readActiveRun, saveActiveRun, type ActiveSingleRun } from '@/lib/activeRun';
 import { connectRagasRunStream as connectRagasRunWs } from '@/lib/sse-client';
 import { SingleRunSummaryDashboard } from './RunSummaryDashboard';
+import LastRunPreview from './LastRunPreview';
 import {
   ALL_METRICS,
   EXACT_MATCH,
@@ -20,9 +21,11 @@ import {
 } from '@/lib/types';
 import {
   DatasetSelect,
+  EndpointToggle,
+  InlineDivider,
+  InlineField,
   ErrBox,
   EvalOptions,
-  FormRow,
   PROMPT_TARGET_BLOCKED_HINT,
   PROMPT_TARGET_ENABLED,
   ScoreToggle,
@@ -39,6 +42,7 @@ import {
   RunProgress,
   scoredMetrics,
   upsertResult,
+  useEndpoints,
   useFlowDatasets,
   usePromptNodes,
 } from './shared';
@@ -90,12 +94,12 @@ function AuthOverrides({
   return (
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
       <div>
-        <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Auth Key</label>
-        <Input value={authKey} onChange={(e) => setAuthKey(e.target.value)} placeholder="비우면 config.yml 의 agent.a.headers 값" className="w-full text-sm" />
+        <label className="mb-1 block eyebrow">Auth Key</label>
+        <Input value={authKey} onChange={(e) => setAuthKey(e.target.value)} placeholder="—" title="비우면 등록된 API 의 첫 헤더 값" className="w-full text-sm" />
       </div>
       <div>
-        <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">User ID</label>
-        <Input value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="비우면 config.yml 의 agent.userId" className="w-full text-sm" />
+        <label className="mb-1 block eyebrow">User ID</label>
+        <Input value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="—" title="비우면 config.yml 의 agent.userId" className="w-full text-sm" />
       </div>
     </div>
   );
@@ -115,13 +119,20 @@ export default function SingleRunPanel() {
     PROMPT_TARGET_ENABLED ? 'prompt' : 'endpoint',
   );
   const [source, setSource] = useState<'dataset' | 'manual'>('dataset');
+  // 어느 API 를 부를지. 설정에 등록된 것 중에서만 고른다 — 목록이 하나뿐이면
+  // 고를 것도 없으므로 그것으로 열린다.
+  const endpoints = useEndpoints();
+  const [endpointId, setEndpointId] = useState<number | null>(null);
+  useEffect(() => {
+    setEndpointId((cur) => (cur != null && endpoints.some((e) => e.endpoint_id === cur) ? cur : endpoints[0]?.endpoint_id ?? null));
+  }, [endpoints]);
   const [nodeNm, setNodeNm] = useState<string>('');
   const [versions, setVersions] = useState<PromptVersionSummary[]>([]);
   const [ver, setVer] = useState<number | null>(null);
   const [datasetId, setDatasetId] = useState<number | null>(null);
   // Models for this run, pre-filled with the saved role defaults — the boxes are
   // the pin, so what the form shows is what the run stores and the agent reads.
-  const { roles, setRoles } = useModelRoles();
+  const { roles } = useModelRoles();
   const [models, setModels] = useState<ModelDrafts>({});
   useEffect(() => { setModels(draftsFromRoles(roles)); }, [roles]);
   // Only blocks the run when the models are what's being tested — in the other
@@ -148,9 +159,8 @@ export default function SingleRunPanel() {
   const resumedRef = useRef(false);
   const wsRef = useRef<EventSource | null>(null);
   // Manual (raw single message) state.
-  const [message, setMessage] = useState('');
-  const [expected, setExpected] = useState('');
-  const [baseUrl, setBaseUrl] = useState('');
+  const [message, setMessage] = useState("");
+  const [expected, setExpected] = useState("");
   const [authKey, setAuthKey] = useState('');
   const [userId, setUserId] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -168,17 +178,20 @@ export default function SingleRunPanel() {
   // Default to the latest version of the selected node (list is newest-first).
   useEffect(() => { setVer(versions[0]?.prompt_id ?? null); }, [versions]);
 
-  // A prompt-version target needs both halves of the identity; an endpoint or
-  // model target needs nothing typed at all — a blank URL means the configured default.
+  // Every run names the API it calls; a prompt-version target additionally needs
+  // both halves of the identity. The button's disabled state is the whole
+  // message — each unmet condition is a control still sitting empty above it.
   const targetReady = target !== 'prompt' || (!!nodeNm && ver != null);
+  const apiReady = endpointId != null;
   const scoreReady = !scoreOn || metrics.length > 0;
-  const canRun = targetReady && scoreReady && !modelErr && !!datasetId;
-  const canCall = targetReady && scoreReady && !modelErr && callStatus !== 'running' && !!message.trim();
+  const canRun = apiReady && targetReady && scoreReady && !modelErr && !!datasetId;
+  const canCall =
+    apiReady && targetReady && scoreReady && !modelErr && callStatus !== 'running' && !!message.trim();
 
   /** Open the run's event stream. Used both when starting a run and when
    * reattaching to one a previous page load left in flight — the server replays
    * everything already emitted, so either entry point ends up with the same view. */
-  function attach(runId: number, url: string | null) {
+  function attach(runId: number, epId: number | null) {
     runIdRef.current = runId;
     const ws = connectRagasRunWs(runId, {
       onMessage: async (m: RunWsMessage) => {
@@ -195,7 +208,7 @@ export default function SingleRunPanel() {
           ws.close();
         }
       },
-    }, { side: 'a', baseUrl: url });
+    }, { side: 'a', endpointId: epId });
     wsRef.current = ws;
   }
 
@@ -214,7 +227,7 @@ export default function SingleRunPanel() {
     setScoreOn(saved.scoreOn);
     setRunMeta({ nodeNm: saved.nodeNm, verLabel: saved.verLabel });
     setStatus('running');
-    attach(saved.runId, saved.baseUrl);
+    attach(saved.runId, saved.endpointId);
     // Mount only: a resume must not re-fire when the form state settles.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -226,7 +239,7 @@ export default function SingleRunPanel() {
     const byPrompt = target === 'prompt';
     // Only the target under test is pinned; everything else runs as the agent's
     // own config has it. A URL belongs to an endpoint test, models to a model test.
-    const url = target === 'endpoint' ? baseUrl.trim() || null : null;
+
     const meta = { nodeNm: byPrompt ? nodeNm : '', verLabel: verLabel(byPrompt ? ver : null) };
     setRunMeta(meta);
     try {
@@ -235,8 +248,8 @@ export default function SingleRunPanel() {
         node_nm: byPrompt ? nodeNm : null, prompt_id: byPrompt ? ver : null,
         models: target === 'model' ? toSelection(models) : {},
       });
-      saveActiveRun('single', { runId: r.ragas_run_id, baseUrl: url, scoreOn, ...meta });
-      attach(r.ragas_run_id, url);
+      saveActiveRun('single', { runId: r.ragas_run_id, endpointId, baseUrl: null, scoreOn, ...meta });
+      attach(r.ragas_run_id, endpointId);
     } catch (e) { setError(errText(e)); setStatus('failed'); }
   }
 
@@ -260,9 +273,9 @@ export default function SingleRunPanel() {
         // A version is swapped active, or a URL is called as it stands, or the
         // models are overridden; never more than one at a time.
         prompt_id: byPrompt ? ver : null,
-        base_url: target === 'endpoint' ? baseUrl.trim() || null : null,
-        auth_key: target === 'endpoint' ? authKey.trim() || null : null,
-        user_id: target === 'endpoint' ? userId.trim() || null : null,
+        endpoint_id: endpointId,
+        auth_key: authKey.trim() || null,
+        user_id: userId.trim() || null,
         score: scoreOn,
         metrics: scoreOn ? metrics : undefined,
         expected_output: exactOn ? expected.trim() || null : null,
@@ -284,129 +297,127 @@ export default function SingleRunPanel() {
 
   return (
     <div className="space-y-5">
-      <Card tone="muted" className="divide-y divide-line px-4 py-1.5">
-        {/* 대상 = 무엇을 테스트하는가. 셋 중 하나만 변인이고 나머지는 손대지 않는다 —
-            그래서 고른 것의 컨트롤만 아래에 나온다. 엔드포인트 테스트에 모델 표가
-            같이 떠 있으면 그건 이미 As-is 테스트가 아니다. */}
-        <FormRow label="대상" alignTop>
-          <div className="flex w-full flex-wrap items-center gap-2">
+      {/* 실행 조건은 두 줄이다: API·대상 한 줄, 입력·채점·실행 한 줄. 항목마다
+          한 행을 주면 화면의 절반이 아직 누르지도 않은 폼이 된다. */}
+      <Card className="px-4 py-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
+          <InlineField label="API">
+            <EndpointToggle endpoints={endpoints} value={endpointId} onChange={setEndpointId} />
+          </InlineField>
+
+          <InlineDivider />
+
+          {/* 대상 = 무엇을 바꾸는가. 셋 중 하나만 변인이고 나머지는 손대지
+              않는다 — 그래서 고른 것의 컨트롤만 옆에 나온다. */}
+          <InlineField label="대상">
             <SegToggle
               value={target}
               onChange={setTarget}
               options={[
-                { id: 'prompt', label: '프롬프트 버전', disabled: !PROMPT_TARGET_ENABLED, hint: PROMPT_TARGET_BLOCKED_HINT },
-                { id: 'endpoint', label: '엔드포인트' },
+                { id: 'prompt', label: '프롬프트', disabled: !PROMPT_TARGET_ENABLED, hint: PROMPT_TARGET_BLOCKED_HINT },
+                { id: 'endpoint', label: 'As-is' },
                 { id: 'model', label: '모델' },
               ]}
             />
-          </div>
-          <div className="flex w-full flex-wrap items-center gap-2">
-            {target === 'prompt' ? (
+            {target === 'prompt' && (
               <>
-                <Select value={nodeNm} onChange={(e) => setNodeNm(e.target.value)} className="w-44">
-                  <option value="" disabled>노드 선택</option>
+                <Select value={nodeNm} onChange={(e) => setNodeNm(e.target.value)} className="h-9 w-40">
+                  <option value="" disabled>노드</option>
                   {nodes.map((n) => (
                     <option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>
                   ))}
                 </Select>
-                <VersionSelect versions={versions} value={ver} onChange={setVer} className="w-36" placeholder="버전 선택" />
-                <span className="text-xs text-muted">이 버전으로만 교체하고, 모델은 config 그대로 실행합니다.</span>
+                <VersionSelect versions={versions} value={ver} onChange={setVer} className="h-9 w-28" placeholder="버전" />
               </>
-            ) : target === 'endpoint' ? (
-              <>
-                <Input
-                  value={baseUrl}
-                  onChange={(e) => setBaseUrl(e.target.value)}
-                  placeholder="비우면 config.yml 의 agent.a.url"
-                  className="w-80 text-sm"
-                />
-                <span className="text-xs text-muted">프롬프트 · 모델 모두 교체 없이 현재 상태(As-is) 그대로 호출합니다.</span>
-              </>
-            ) : (
-              <ModelPicker roles={roles} onRolesChange={setRoles} columns={[{ key: 'a', drafts: models, onChange: setModels }]} />
             )}
-          </div>
-        </FormRow>
+          </InlineField>
 
-        <FormRow label="입력">
-          <SegToggle
-            value={source}
-            onChange={setSource}
-            options={[{ id: 'dataset', label: '데이터셋' }, { id: 'manual', label: '직접 입력' }]}
-          />
-          {source === 'dataset'
-            ? <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />
-            : <span className="text-xs text-muted">메시지 하나를 그대로 보냅니다.</span>}
-        </FormRow>
-
-        {source === 'manual' && (
-          <div className="space-y-3 py-3">
-            <div>
-              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Message <span className="text-bad">*</span></label>
-              <Textarea
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                rows={4}
-                placeholder="외부 API 에 그대로 전달되는 메시지"
-                className="w-full text-sm"
-              />
-            </div>
-            {exactOn && (
-              <div>
-                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">기대 정답</label>
-                <Textarea
-                  value={expected}
-                  onChange={(e) => setExpected(e.target.value)}
-                  rows={3}
-                  placeholder="응답 JSON 의 body 와 비교할 정답 (비우면 정답 일치는 채점하지 않습니다)"
-                  className="w-full text-sm"
-                />
-              </div>
-            )}
-          </div>
-        )}
-
-        <FormRow label="채점" alignTop>
-          <ScoreToggle on={scoreOn} onChange={setScoreOn} />
-          {scoreOn && (
-            <>
-              <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-line" />
-              <EvalOptions metrics={metrics} setMetrics={setMetrics} />
-              {metrics.length === 0 && <span className="text-[11px] text-bad">평가 옵션을 하나 이상 선택하세요</span>}
-            </>
-          )}
-        </FormRow>
-
-        <div className="flex flex-wrap items-center gap-3 py-3">
-          {source === 'dataset' ? (
-            <Button
-              variant={status === 'running' ? 'secondary' : 'primary'}
-              className="whitespace-nowrap"
-              disabled={status === 'running' ? cancelling : !canRun}
-              onClick={status === 'running' ? cancel : run}
-            >
-              {status === 'running' ? (cancelling ? 'Cancelling…' : 'Cancel run') : 'Run evaluation'}
-            </Button>
-          ) : (
-            <Button variant="primary" disabled={!canCall} onClick={call}>
-              {callStatus === 'running' ? 'Calling…' : 'Call'}
-            </Button>
-          )}
-          <StatusPill status={source === 'dataset' ? status : callStatus} />
-          {!targetReady && <span className="text-[11px] text-muted">노드와 버전을 선택하세요</span>}
-          {modelErr && <span className="text-[11px] text-bad">{modelErr}</span>}
-          {/* Auth overrides ride on the direct call only — a dataset run's stream
-              carries the base URL and nothing else. */}
           {target === 'endpoint' && source === 'manual' && (
             <button
               type="button"
               onClick={() => setShowAdvanced((v) => !v)}
-              className="ml-auto text-xs font-medium text-muted hover:text-ink"
+              title="이 호출에만 적용되는 인증 값"
+              className="rounded-sm border border-line px-2 py-1 text-caption text-muted transition-colors hover:border-line-strong hover:text-ink"
             >
-              {showAdvanced ? '인증 설정 숨기기' : '인증 설정 (선택)'}
+              {showAdvanced ? '인증 −' : '인증 +'}
             </button>
           )}
         </div>
+
+        {/* 모델 대상일 때만 role 표가 열린다 — 다른 대상에서는 실행에 쓰이지도 않는다. */}
+        {target === 'model' && (
+          <div className="mt-2.5 flex flex-wrap items-center gap-2 border-t border-line pt-2.5">
+            <ModelPicker roles={roles} columns={[{ key: 'a', drafts: models, onChange: setModels }]} />
+          </div>
+        )}
+
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2.5 border-t border-line pt-2.5">
+          <InlineField label="입력">
+            <SegToggle
+              value={source}
+              onChange={setSource}
+              options={[{ id: 'dataset', label: '데이터셋' }, { id: 'manual', label: '직접 입력' }]}
+            />
+            {source === 'dataset' && <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />}
+          </InlineField>
+
+          <InlineDivider />
+
+          <InlineField label="채점">
+            <ScoreToggle on={scoreOn} onChange={setScoreOn} />
+            {scoreOn && (
+              <>
+                <EvalOptions metrics={metrics} setMetrics={setMetrics} />
+                {metrics.length === 0 && <span className="text-caption text-bad">하나 이상</span>}
+              </>
+            )}
+          </InlineField>
+
+          <div className="ml-auto flex shrink-0 items-center gap-2.5">
+            <StatusPill status={source === 'dataset' ? status : callStatus} />
+            {modelErr && <span className="text-caption text-bad">{modelErr}</span>}
+            {source === 'dataset' ? (
+              <Button
+                variant={status === 'running' ? 'secondary' : 'primary'}
+                className="whitespace-nowrap"
+                disabled={status === 'running' ? cancelling : !canRun}
+                onClick={status === 'running' ? cancel : run}
+              >
+                {status === 'running' ? (cancelling ? '취소 중…' : '취소') : '실행'}
+              </Button>
+            ) : (
+              <Button variant="primary" disabled={!canCall} onClick={call}>
+                {callStatus === 'running' ? '호출 중…' : '호출'}
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {source === 'manual' && (
+          <div className="mt-2.5 grid gap-2.5 border-t border-line pt-2.5 sm:grid-cols-2">
+            <Textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              rows={3}
+              placeholder="메시지 *"
+              className="w-full text-sm"
+            />
+            {exactOn && (
+              <Textarea
+                value={expected}
+                onChange={(e) => setExpected(e.target.value)}
+                rows={3}
+                placeholder="기대 정답"
+                title="응답 JSON 의 body 와 비교합니다. 비우면 정답 일치는 채점하지 않습니다."
+                className="w-full text-sm"
+              />
+            )}
+          </div>
+        )}
+
+        
+        {/* Auth overrides ride on the direct call only — a dataset run reaches
+            the endpoint through its own stream. */}
         {target === 'endpoint' && source === 'manual' && showAdvanced && (
           <div className="py-3">
             <AuthOverrides authKey={authKey} setAuthKey={setAuthKey} userId={userId} setUserId={setUserId} />
@@ -418,10 +429,7 @@ export default function SingleRunPanel() {
         <>
           {callError && <ErrBox msg={callError} />}
           {callStatus === 'idle' && !callError && (
-            <Card className="flex flex-col items-center justify-center gap-1 px-6 py-16 text-center">
-              <div className="text-sm text-ink">메시지를 입력하고 <span className="font-medium">Call</span>을 누르세요.</div>
-              <div className="text-xs text-muted">외부 API 응답을 그대로 보여주며, 채점을 켜면 정답 일치(O/X)와 지표 점수를 함께 표시합니다.</div>
-            </Card>
+            <LastRunPreview kind="single" />
           )}
           {callStatus === 'running' && (
             <Card className="px-6 py-12 text-center"><PendingHint label="외부 API 호출 중…" /></Card>
@@ -442,7 +450,7 @@ export default function SingleRunPanel() {
                 {manualScores && <div className="mt-4"><ScoreBars row={manualScores} /></div>}
                 {callResult.docs.length > 0 && (
                   <div className="mt-4 border-t border-line pt-3">
-                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Contexts ({callResult.docs.length})</p>
+                    <p className="mb-1.5 eyebrow">Contexts ({callResult.docs.length})</p>
                     <ol className="max-h-48 list-decimal space-y-1 overflow-y-auto pl-4 text-xs text-muted">
                       {callResult.docs.map((d, i) => (<li key={i} className="whitespace-pre-wrap break-words">{d}</li>))}
                     </ol>
@@ -453,7 +461,7 @@ export default function SingleRunPanel() {
                     {showRaw ? 'Hide raw response' : 'Raw response (JSON)'}
                   </button>
                   {showRaw && (
-                    <pre className="mt-2 max-h-72 overflow-auto rounded-sm border border-line bg-bg/60 p-3 text-xs text-ink">
+                    <pre className="mt-2 max-h-72 overflow-auto rounded-sm border border-line bg-surface-2 p-3 text-xs text-ink">
                       {JSON.stringify(callResult.raw, null, 2)}
                     </pre>
                   )}
@@ -468,10 +476,7 @@ export default function SingleRunPanel() {
           {detail?.error_msg && <ErrBox msg={detail.error_msg} />}
 
           {status === 'idle' && !error && (
-            <Card className="flex flex-col items-center justify-center gap-1 px-6 py-16 text-center">
-              <div className="text-sm text-ink">대상과 데이터셋을 선택한 뒤 <span className="font-medium">Run evaluation</span>을 누르세요.</div>
-              <div className="text-xs text-muted">고른 대상만 바뀌고 나머지는 config 그대로 갑니다 — <span className="font-medium">프롬프트 버전</span>은 그 버전으로 교체해, <span className="font-medium">엔드포인트</span>는 교체 없이 현재 상태(As-is) 그대로, <span className="font-medium">모델</span>은 모델만 바꿔 평가합니다. 지난 결과는 Records 탭에서 확인할 수 있습니다.</div>
-            </Card>
+            <LastRunPreview kind="single" />
           )}
 
           {/* Live streaming view while running: answers appear first, scores fill in. */}
@@ -519,9 +524,6 @@ export default function SingleRunPanel() {
                   <div className="overflow-hidden rounded-sm border border-line bg-surface">
                     <CaseTable detail={detail} />
                   </div>
-                  {detail.status === 'CANCELLED' && (
-                    <p className="mt-3 text-xs text-muted">취소된 실행 — 멈춘 시점까지 채점된 결과만 남아 있습니다. 전체 평균은 내지 않습니다.</p>
-                  )}
                 </div>
               </Card>
             </div>

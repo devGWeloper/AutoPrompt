@@ -1,7 +1,6 @@
 import './globals.css';
 import type { Metadata } from 'next';
 import { ReactNode } from 'react';
-import pkg from '../../package.json';
 
 export const metadata: Metadata = {
   title: 'TestX · AI Agent Test',
@@ -9,21 +8,14 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
-  // System font stack (no next/font/google — the internal network is closed).
-  // Shell mirrors inview: topbar (per page) / content / slim statusbar footer.
+  // System font stack (no next/font/google — the internal network is closed; the
+  // stack in tailwind.config.ts falls back from Inter to the platform faces).
+  // The shell (sidebar + content) is AppShell's; nothing wraps it here — a
+  // status footer under it only repeated what the sidebar foot already shows.
   return (
     <html lang="ko">
       <body className="font-sans">
-        <div className="flex h-dvh flex-col">
-          <div className="min-h-0 flex-1">{children}</div>
-          <footer className="flex h-7 shrink-0 items-center justify-between border-t border-line bg-surface-2 px-[18px] text-xs tracking-[0.2px] text-muted">
-            <span>TestX · AI Agent Test</span>
-            <span className="flex items-center gap-2">
-              <span>Test</span>
-              <span className="font-mono text-muted/80">v{pkg.version}</span>
-            </span>
-          </footer>
-        </div>
+        <div className="h-dvh">{children}</div>
       </body>
     </html>
   );

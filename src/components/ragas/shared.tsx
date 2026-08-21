@@ -12,6 +12,8 @@ import {
   METRIC_DESCRIPTIONS,
   type RagasMetric,
   type Dataset,
+  type Endpoint,
+  type LlmModel,
   type FlowCurrent,
   type FlowNode,
   type PromptVersionSummary,
@@ -115,7 +117,7 @@ export function ScoreToggle({ on, onChange }: { on: boolean; onChange: (v: boole
         aria-hidden
         className={cn(
           'relative h-4 w-7 shrink-0 rounded-full transition-colors',
-          on ? 'bg-accent' : 'bg-muted/30 group-hover:bg-muted/45',
+          on ? 'bg-primary' : 'bg-muted/30 group-hover:bg-muted/45',
         )}
       >
         <span
@@ -140,7 +142,7 @@ function Chip({
       aria-pressed={on}
       onClick={onClick}
       className={cn(
-        'inline-flex items-center whitespace-nowrap rounded-full border px-2.5 py-1 text-xs transition-colors',
+        'inline-flex items-center whitespace-nowrap rounded-sm border px-2.5 py-1 text-xs transition-colors',
         strong ? 'font-semibold' : 'font-medium',
         on ? 'border-accent/25 bg-accent-soft/60 text-accent' : 'border-transparent text-muted hover:bg-surface-2',
       )}
@@ -219,7 +221,7 @@ export function runProgress(rows: RagasResultRow[], total: number, metrics?: Rag
 function Bar({ done, total, tone }: { done: number; total: number; tone: 'accent' | 'muted' }) {
   const pct = total > 0 ? Math.min(100, (done / total) * 100) : 0;
   return (
-    <span className="relative block h-1 w-full overflow-hidden rounded-full bg-bg">
+    <span className="relative block h-1 w-full overflow-hidden rounded-full bg-surface-3">
       <span
         className={cn('absolute inset-y-0 left-0 rounded-full transition-[width] duration-300', tone === 'accent' ? 'bg-accent' : 'bg-muted/50')}
         style={{ width: `${pct}%` }}
@@ -315,8 +317,8 @@ export function SegToggle<T extends string>({ value, onChange, options }: { valu
           disabled={o.disabled}
           title={o.disabled ? o.hint : undefined}
           className={cn(
-            'rounded px-3 py-1.5 text-sm font-medium transition-colors',
-            value === o.id ? 'bg-accent text-accent-fg' : 'text-muted hover:text-ink',
+            'rounded-sm px-3.5 py-1.5 text-sm font-medium transition-colors',
+            value === o.id ? 'bg-primary text-primary-fg' : 'text-muted hover:text-ink',
             // Not `disabled:opacity-50` alone — the point is that it stays
             // readable as a real option that is simply out of service.
             o.disabled && 'cursor-not-allowed text-muted/50 hover:text-muted/50',
@@ -329,29 +331,10 @@ export function SegToggle<T extends string>({ value, onChange, options }: { valu
   );
 }
 
-/** One labelled line of a run's configuration. Single and Compare ask the same
- * three questions in the same order — 대상 · 입력 · 채점 — so the label column is
- * fixed-width and the controls line up across rows and across the two tabs. */
-export function FormRow({
-  label, alignTop, children,
-}: { label: string; alignTop?: boolean; children: ReactNode }) {
-  return (
-    <div className={cn('flex gap-3 py-2.5', alignTop ? 'items-start' : 'items-center')}>
-      <span className={cn(
-        'w-11 shrink-0 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted',
-        alignTop && 'mt-1.5',
-      )}>
-        {label}
-      </span>
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">{children}</div>
-    </div>
-  );
-}
-
 export function StatusPill({ status }: { status: string }) {
   const dot =
-    status === 'done' ? 'bg-ok'
-    : status === 'failed' ? 'bg-bad'
+    status === 'done' ? 'bg-ok-vivid'
+    : status === 'failed' ? 'bg-bad-vivid'
     : status === 'cancelled' ? 'bg-bad/60'
     : status === 'running' ? 'bg-accent animate-pulse'
     : 'bg-muted';
@@ -403,7 +386,7 @@ export function useArmed(ms = 4000) {
 }
 
 export function ErrBox({ msg }: { msg: string }) {
-  return <div className="rounded-md border border-bad/20 bg-bad/5 px-4 py-3 text-sm text-bad">{msg}</div>;
+  return <div className="rounded-sm border border-bad/20 bg-bad/5 px-4 py-3 text-sm text-bad">{msg}</div>;
 }
 
 /** Placeholder for an answer that hasn't arrived yet. A bare '—' in error red
@@ -496,7 +479,7 @@ export function TraceValueBox({ row }: { row: RagasResultRow }) {
   return (
     <div className="min-w-0">
       <div className="flex items-center gap-2">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">
+        <p className="eyebrow">
           {row.trace_var_nm || '중간 변수'}
         </p>
         <span className="text-[11px] text-muted">— 채점 대상</span>
@@ -539,7 +522,7 @@ export function OxBadge({ value, rate }: { value: number | null; rate?: boolean 
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold',
+        'inline-flex items-center gap-1 whitespace-nowrap rounded-sm border px-2 py-0.5 text-[11px] font-semibold',
         ok ? 'border-ok/30 bg-ok/10 text-ok' : 'border-bad/25 bg-bad/10 text-bad',
       )}
     >
@@ -593,7 +576,7 @@ export function ScoreBars({ row, cancelled }: { row: RagasResultRow; cancelled?:
   }
   return (
     <div className="overflow-hidden rounded-sm border border-line bg-surface p-3">
-      <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">평가 결과</p>
+      <p className="mb-2 eyebrow">평가 결과</p>
       <ul className="flex flex-col gap-2">
         {shown.map((m) => {
           const v = row[m] != null ? Number(row[m]) : null;
@@ -609,7 +592,7 @@ export function ScoreBars({ row, cancelled }: { row: RagasResultRow; cancelled?:
           return (
             <li key={m} className="grid grid-cols-[minmax(92px,auto)_1fr_auto] items-center gap-3">
               <span className="truncate text-[11px] text-muted" title={METRIC_DESCRIPTIONS[m]}>{METRIC_LABELS[m]}</span>
-              <div className="relative h-2 overflow-hidden rounded-full bg-bg">
+              <div className="relative h-2 overflow-hidden rounded-full bg-surface-3">
                 <span className="absolute inset-y-0 left-0 rounded-full bg-accent" style={{ width: pct + '%' }} />
               </div>
               <span className={'w-12 shrink-0 text-right font-mono text-xs tabular-nums ' + (v != null ? 'text-ink' : 'text-muted')}>{fmt3(v)}</span>
@@ -691,14 +674,14 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
               <div className={cn('px-4 pb-3.5 pl-10', !!r.ground_truth && 'grid gap-4 sm:grid-cols-2')}>
                 {r.ground_truth && (
                   <div className="min-w-0">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Ground truth</p>
+                    <p className="eyebrow">Ground truth</p>
                     <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-ink">{r.ground_truth}</p>
                   </div>
                 )}
                 <TraceValueBox row={r} />
                 <div className={cn('min-w-0', r.trace_value && r.ground_truth && 'sm:col-span-2')}>
                   <div className="flex items-baseline justify-between gap-2">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">
+                    <p className="eyebrow">
                       답변{r.trace_value && <span className="ml-1.5 font-normal normal-case tracking-normal">· 채점 대상 아님</span>}
                     </p>
                     <ElapsedTag ms={r.elapsed_ms} />
@@ -725,4 +708,159 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
     );
   }
   return bordered ? <div className="overflow-hidden rounded-sm border border-line bg-surface">{list}</div> : list;
+}
+
+// ---- endpoint registry -----------------------------------------------------
+
+/**
+ * The APIs a run may call, as registered on the settings page. One list for the
+ * whole app: Single and Compare both stay mounted, so a per-hook copy would let
+ * one tab keep offering an endpoint the other one just removed.
+ */
+let endpointCache: Endpoint[] | null = null;
+const endpointSubs = new Set<(next: Endpoint[]) => void>();
+
+function publishEndpoints(next: Endpoint[]): void {
+  endpointCache = next;
+  for (const fn of endpointSubs) fn(next);
+}
+
+export function useEndpoints(): Endpoint[] {
+  const [list, setList] = useState<Endpoint[]>(endpointCache ?? []);
+  useEffect(() => {
+    endpointSubs.add(setList);
+    if (endpointCache === null) {
+      api.get<Endpoint[]>('/endpoints?selectable=1').then(publishEndpoints).catch(() => publishEndpoints([]));
+    } else {
+      setList(endpointCache);
+    }
+    return () => {
+      endpointSubs.delete(setList);
+    };
+  }, []);
+  return list;
+}
+
+
+
+/** Nothing to show yet. An outline mark and the action's own name — the form
+ * above already says what the action does, so this does not repeat it. */
+export function EmptyState({ icon, label }: { icon?: ReactNode; label: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-2.5 px-6 py-16 text-center">
+      <span aria-hidden className="text-muted-soft">
+        {icon ?? (
+          <svg viewBox="0 0 32 32" width="28" height="28" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="4.5" y="6.5" width="23" height="19" rx="2.5" />
+            <path d="M4.5 12h23M11 12v13.5" />
+          </svg>
+        )}
+      </span>
+      <span className="text-body-sm text-muted">{label}</span>
+    </div>
+  );
+}
+
+/** The model names a role may be set to, as registered on the settings page.
+ * Shared like the endpoint list, and for the same reason. */
+let llmCache: LlmModel[] | null = null;
+const llmSubs = new Set<(next: LlmModel[]) => void>();
+
+function publishLlms(next: LlmModel[]): void {
+  llmCache = next;
+  for (const fn of llmSubs) fn(next);
+}
+
+export function useLlmModels(): LlmModel[] {
+  const [list, setList] = useState<LlmModel[]>(llmCache ?? []);
+  useEffect(() => {
+    llmSubs.add(setList);
+    if (llmCache === null) {
+      api.get<LlmModel[]>('/llms').then(publishLlms).catch(() => publishLlms([]));
+    } else {
+      setList(llmCache);
+    }
+    return () => {
+      llmSubs.delete(setList);
+    };
+  }, []);
+  return list;
+}
+
+/** Link to where a missing prerequisite is registered. Shown in place of a
+ * control that has nothing to offer yet, so the empty state is the next step. */
+export function SettingsLink({ label }: { label: string }) {
+  return (
+    <a
+      href="/settings"
+      className="inline-flex items-center gap-1 text-caption text-muted underline decoration-line underline-offset-2 transition-colors hover:text-ink"
+    >
+      {label} →
+    </a>
+  );
+}
+
+/** Pick the API this run calls, as a segmented chip row — the same shape as the
+ * other run settings, so the whole form reads as one strip of choices rather
+ * than a dropdown among toggles. */
+export function EndpointToggle({
+  endpoints,
+  value,
+  onChange,
+  className,
+}: {
+  endpoints: Endpoint[];
+  value: number | null;
+  onChange: (id: number) => void;
+  className?: string;
+}) {
+  if (!endpoints.length) return <SettingsLink label="설정에서 API 등록" />;
+  return (
+    <div
+      className={cn(
+        'inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-md border border-line bg-surface p-0.5',
+        className,
+      )}
+    >
+      {endpoints.map((e) => (
+        <button
+          key={e.endpoint_id}
+          type="button"
+          onClick={() => onChange(e.endpoint_id)}
+          title={e.endpoint_url}
+          aria-pressed={value === e.endpoint_id}
+          className={cn(
+            'shrink-0 rounded-sm px-3 py-1 text-[13px] font-medium tracking-[-0.16px] transition-colors',
+            value === e.endpoint_id ? 'bg-primary text-primary-fg' : 'text-muted hover:bg-surface-3 hover:text-ink',
+          )}
+        >
+          {e.endpoint_nm}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** One setting on a shared line: a small label, then its controls. Replaces the
+ * label-column rows so a whole run's settings fit in two lines. */
+export function InlineField({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={cn('flex min-w-0 flex-wrap items-center gap-2', className)}>
+      <span className="eyebrow shrink-0">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+/** Hairline between two inline settings on the same line. */
+export function InlineDivider() {
+  return <span aria-hidden className="h-5 w-px shrink-0 bg-line" />;
 }

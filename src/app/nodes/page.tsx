@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import TopBar from '@/components/ui/TopBar';
+import AppShell from '@/components/ui/AppShell';
+import PageHeader from '@/components/ui/PageHeader';
 import Modal from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -53,38 +54,28 @@ export default function NodesPage() {
   const nodes = flow?.nodes ?? [];
 
   return (
-    <div className="flex h-full flex-col">
-      <TopBar />
-      {/* Scrollbar width stays reserved so the centred content never shifts
-          sideways when the page grows past one screen (see Test page). */}
-      <main className="flex-1 overflow-auto [scrollbar-gutter:stable]">
-        <div className={cn(SHELL, 'px-6 py-5')}>
+    <AppShell section="prompts">
+      <div className="flex h-full flex-col">
+        <div className={cn(SHELL, 'px-8 py-7')}>
           {error && (
             <div className="mb-4 rounded-sm border border-bad/20 bg-bad/5 px-4 py-3 text-sm text-bad">{error}</div>
           )}
-          <div className="mb-5 flex items-start justify-between gap-3">
-            <div>
-              <h1 className="text-lg font-semibold text-ink">
-                Prompt nodes <span className="text-muted">({nodes.length})</span>
-              </h1>
-              <p className="mt-0.5 text-sm text-muted">
-                노드를 선택해 시스템/유저 프롬프트와 모델 버전을 관리하세요.
-              </p>
-            </div>
-            <Button onClick={() => setShowNew(true)}>+ Add node</Button>
-          </div>
-          <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <PageHeader
+            title={<>프롬프트 <span className="text-muted-soft">{nodes.length}</span></>}
+            right={<Button onClick={() => setShowNew(true)}>+ 노드</Button>}
+          />
+          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {nodes.map((n) => (
               <li key={n.node_nm} className="group relative">
                 <button
                   onClick={() => openNode(n)}
-                  className="flex w-full flex-col rounded-md border border-line bg-surface p-4 text-left transition-colors hover:border-accent/40 hover:bg-accent-soft/40"
+                  className="flex w-full flex-col rounded-md border border-line bg-surface p-6 text-left transition-all hover:border-ink hover:shadow-lift"
                 >
                   <div className="flex items-center gap-2 pr-28">
-                    <span className="truncate text-sm font-semibold text-ink">{n.node_nm}</span>
+                    <span className="truncate text-display-xs text-ink">{n.node_nm}</span>
                   </div>
-                  <p className="mt-1.5 truncate text-xs text-muted">{n.latest_model_nm ?? 'No model set'}</p>
-                  <span className="mt-3 text-xs font-medium text-muted transition-colors group-hover:text-accent">
+                  <p className="mt-1.5 truncate font-mono text-caption-mono text-muted">{n.latest_model_nm ?? 'No model set'}</p>
+                  <span className="mt-4 text-body-sm font-medium text-muted transition-colors group-hover:text-ink">
                     Manage prompts →
                   </span>
                 </button>
@@ -96,19 +87,17 @@ export default function NodesPage() {
                       setConfirmDelete(n);
                     }}
                     title="Delete node"
-                    className="rounded-md border border-line bg-surface px-2 py-1 text-[11px] font-medium text-muted transition-colors hover:border-bad/40 hover:bg-bad/5 hover:text-bad"
+                    className="rounded-sm border border-line bg-surface px-2 py-1 text-[11px] font-medium text-muted transition-colors hover:border-bad/40 hover:bg-bad/5 hover:text-bad"
                   >
                     Delete
                   </button>
                 </div>
               </li>
             ))}
-            {flow && nodes.length === 0 && (
-              <li className="text-sm text-muted">No nodes yet. Use “+ Add node” to create your first one.</li>
-            )}
+            {flow && nodes.length === 0 && <li className="text-body-sm text-muted-soft">—</li>}
           </ul>
         </div>
-      </main>
+      </div>
 
       {showNew && (
         <NewNodeModal
@@ -129,11 +118,11 @@ export default function NodesPage() {
           </>
         }
       >
-        <p className="text-sm text-ink">
-          <span className="font-semibold">All prompt versions</span> of node <span className="font-semibold">{confirmDelete?.node_nm}</span> will be deleted. This cannot be undone.
+        <p className="text-body-md text-ink">
+          <span className="font-mono">{confirmDelete?.node_nm}</span> · 전체 버전 삭제
         </p>
       </Modal>
-    </div>
+    </AppShell>
   );
 }
 
@@ -196,7 +185,7 @@ function NewNodeModal({
         </>
       }
     >
-      {err && <div className="mb-3 rounded-md border border-bad/20 bg-bad/5 px-3 py-2 text-xs text-bad">{err}</div>}
+      {err && <div className="mb-3 rounded-sm border border-bad/20 bg-bad/5 px-3 py-2 text-xs text-bad">{err}</div>}
       <label className="mb-3 block">
         <span className="text-sm font-medium text-ink">Node name (NODE_NM) *</span>
         <Input value={nodeNm} onChange={(e) => setNodeNm(e.target.value)} placeholder="e.g. router" className="mt-1 w-full font-mono" />

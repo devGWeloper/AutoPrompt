@@ -11,6 +11,8 @@
 
 export interface ActiveSingleRun {
   runId: number;
+  /** 실행이 고른 등록 엔드포인트. null = config 기본값. */
+  endpointId: number | null;
   baseUrl: string | null;
   scoreOn: boolean;
   nodeNm: string;
@@ -20,7 +22,9 @@ export interface ActiveSingleRun {
 export interface ActiveCompareRun {
   runIdA: number;
   runIdB: number;
-  side: boolean; // endpoint mode: each run calls its own configured/typed URL
+  side: boolean; // endpoint mode: each side calls its own endpoint
+  endpointA: number | null;
+  endpointB: number | null;
   urlA: string | null;
   urlB: string | null;
   labelA: string;

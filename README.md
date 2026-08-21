@@ -7,7 +7,8 @@ AI Agent의 프롬프트/모델 설정을 중앙에서 버전 관리하고, 전�
 - Stack: **Next.js 14 (App Router)** + TypeScript + Tailwind(토큰 기반 디자인 시스템)
 - DB: **Oracle 19c+** — `oracledb` 드라이버로 직접 접근 (PTX_* 7개 테이블). Docker 미사용, 로컬 직접 설치
 - 인증: **없음** (사내 단일 신뢰 환경 가정). 네트워크 레벨에서 접근 통제할 것
-- 설계 톤: `C:\work\inview` 앱과 동일한 구조·톤앤매너(설정 yml + `deploy.sh` + `src/lib` 패턴)로 정렬 — 추후 inview 통합 대비
+- 설계 톤: 코드 구조는 `C:\work\inview` 앱과 동일한 패턴(설정 yml + `deploy.sh` + `src/lib`)으로 정렬 — 추후 inview 통합 대비
+- UI 디자인: Webflow 디자인 언어(`docs/DESIGN-webflow.md`) 기반 — 흰 캔버스 + 니어블랙 `#080808` 프라이머리, `#d8d8d8` 헤어라인, 5색 크로마 팔레트(purple·pink·blue·orange·green)는 섹션 키/서피스 전용, 버튼 4px · 카드 8px 라운드. 토큰은 `src/app/globals.css` + `tailwind.config.ts`
 
 ## 디렉토리 구조
 
@@ -16,9 +17,9 @@ config.yml / config.dev.yml   Oracle 접속 + 외부 에이전트 설정 (dev.ym
 deploy.sh                     배포 스크립트 (git reset → build → nohup next start)
 sql/ddl_initial.sql           PTX_* 스키마 (권위 스키마)
 src/
-  app/            페이지(page.tsx=RAGAS, nodes/…) + api/**/route.ts (모든 API)
+  app/            페이지(page.tsx=실행/데이터, nodes/…, settings/) + api/**/route.ts (모든 API)
   lib/            config·logger·db, db/rows, services/*(prompt·dataset·flow·ragas·export·externalAgent), types
-  components/ui   공용 UI 컴포넌트
+  components/ui   공용 UI 컴포넌트 (AppShell=사이드바 셸, PageHeader, Button/Card/Table…)
 ```
 
 ## 설정 (config.yml)
@@ -67,11 +68,32 @@ npm install
 npm run dev
 ```
 
-`http://localhost:5175` — 루트(`/`)는 **RAGAS 회귀 평가**(Single / Compare / Datasets / Records). Single 탭이 Dataset 실행과 Manual 단건 호출(구 Direct)을 모두 담당한다. 프롬프트 관리는 상단 내비의 **Prompts**(`/nodes` → `/nodes/{node}/prompts`).
+`http://localhost:5175` — 화면 전체가 왼쪽 사이드바 하나로 이동한다.
+
+| 사이드바 | 경로 | 내용 |
+|---|---|---|
+| 실행 · 단일 실행 | `/?section=single` | 데이터셋 실행 + 단건 메시지 호출 |
+| 실행 · A · B 비교 | `/?section=compare` | 한 축만 갈라 두 번 실행하고 지표 비교 |
+| 데이터 · 데이터셋 | `/?section=datasets` | 질문 · 컨텍스트 · 정답 케이스 관리 |
+| 데이터 · 실행 기록 | `/?section=records` | 지난 실행 조회 · CSV 내보내기 |
+| 관리 · 프롬프트 | `/nodes` | 노드별 시스템/유저 프롬프트 버전 |
+| 관리 · 설정 | `/settings` | 호출 가능한 API · 모델 · role 기본값 |
+
+네 개의 실행/데이터 화면은 한 라우트 안에서 전환된다 — Single/Compare 가 언마운트되면 진행 중인 SSE 스트림이 끊기고 서버가 그것을 취소로 읽기 때문이다.
+
+### 설정에서 정하고, 실행에서는 고르기만 한다
+
+실행 화면에는 URL·모델명을 자유 입력하는 칸이 없다. `/settings` 에 등록한 것 중에서만 고른다.
+
+- **API 엔드포인트**(`PTX_ENDPOINT_MAS`) — 이름 + URL + 헤더. 실행은 `endpoint_id` 만 보내고 서버가 URL·헤더를 붙인다(자격 증명이 쿼리스트링에 실리지 않는다). 등록된 것이 하나도 없으면 `config.yml` 의 `agent.a` / `agent.b` 가 읽기 전용 항목으로 대신 나온다.
+- **모델**(`PTX_LLM_MAS`) — role 에 지정할 수 있는 모델명 목록. 실행 화면의 모델 칸은 이 목록의 select 가 된다.
+- **Role 기본값**(`PTX_MODEL_MAS`) — role 별 기본 모델 / temperature.
+
+화면에는 설명 문단을 두지 않는다 — 무엇을 하는 화면인지는 컨트롤과 상태(비활성 버튼, 툴팁, 지난 실행 미리보기)가 말한다. 각 실행 화면은 결과가 비어 있는 동안 **가장 최근 실행 한 건**을 접힌 카드로 띄워, 실행하면 무엇이 나오는지 실물로 보여준다.
 
 ### DB 스키마
 
-마이그레이션 도구 없음. `sql/ddl_initial.sql`을 PTX Oracle 스키마에 직접 적용한다(PTX_* 7개 테이블만 생성; 운영 테이블은 건드리지 않음). DB 미설정 상태로도 UI는 뜨며 조회는 빈 결과가 된다. 컬럼 명세는 `docs/db-schema.md`.
+마이그레이션 도구 없음. `sql/ddl_initial.sql`을 PTX Oracle 스키마에 직접 적용한다(PTX_* 테이블만 생성; 운영 테이블은 건드리지 않음). 이미 떠 있는 스키마에 설정 레지스트리 2종(`PTX_ENDPOINT_MAS` / `PTX_LLM_MAS`)만 추가할 때는 `sql/migrate_endpoint_llm.sql`. DB 미설정 상태로도 UI는 뜨며 조회는 빈 결과가 된다. 컬럼 명세는 `docs/db-schema.md`.
 
 테이블은 `PTX_<대상>_MAS|_DET|_HIS`, 컬럼은 `_ID/_NM/_NO/_CD/_CTN/_YN/_DT/_SCR` postfix 규칙을 따른다. 삭제 순서는 앱이 챙기지 않고 FK의 `ON DELETE CASCADE`/`SET NULL`에 맡긴다 — 데이터셋을 지워도 과거 실행 기록은 남고(`PTX_RUN_MAS.DATASET_NM` 스냅샷), 실행을 지우면 그 결과만 함께 사라진다. 옛 `PM_*` 스키마가 있으면 `sql/migrate_ptx_rename.sql`로 이름을 옮긴다.
 

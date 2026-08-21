@@ -4,6 +4,7 @@ import { ApiError, errorText, notFound } from "@/lib/http";
 import { METRIC_COLS, RUN_COLS, insertReturningId, mapRagasRun } from "@/lib/db/rows";
 import { ALL_METRICS, DIRECT_SINK_NM, EXACT_MATCH, SYSTEM_USER } from "@/lib/types";
 import type {
+  EndpointHeader,
   FlowCurrent,
   LlmMetric,
   ModelSelection,
@@ -15,6 +16,7 @@ import type {
 import { exactMatchScore } from "@/lib/exactMatch";
 import { resolveRagasEngine } from "@/lib/config";
 import { requireDataset } from "./datasets";
+import { resolveEndpoint } from "./endpoints";
 import { currentModelSnapshot, explicitSnapshot, modelSnapshot } from "./models";
 import { stageCallConfig, writeCallConfig } from "./callConfig";
 import * as agent from "./externalAgent";
@@ -240,7 +242,11 @@ export interface DirectRunResult extends agent.AgentAnswer {
 export interface DirectRunArgs {
   message: string;
   promptId?: number | null;
+  /** Which registered endpoint (PTX_ENDPOINT_MAS) answers. Resolved into the URL
+   * and headers below before the call — the screen only ever sends the id. */
+  endpointId?: number | null;
   baseUrl?: string | null;
+  headers?: EndpointHeader[] | null;
   authKey?: string | null;
   userId?: string | null;
   side?: agent.FlowSide | null;
@@ -250,7 +256,16 @@ export interface DirectRunArgs {
   models?: ModelSelection | null;
 }
 
-export async function recordDirectRun(args: DirectRunArgs): Promise<DirectRunResult> {
+export async function recordDirectRun(argsIn: DirectRunArgs): Promise<DirectRunResult> {
+  // A picked endpoint decides both the URL and the headers, so it is resolved
+  // once here rather than re-read at each layer below.
+  const picked = await resolveEndpoint(argsIn.endpointId);
+  if (argsIn.endpointId != null && !picked) {
+    throw notFound(`등록되지 않은 엔드포인트입니다: ${argsIn.endpointId}`);
+  }
+  const args: DirectRunArgs = picked
+    ? { ...argsIn, baseUrl: picked.url, headers: picked.headers }
+    : argsIn;
   // What the run tab had on screen. No selection at all (a caller outside the
   // tabs) falls back to the saved role defaults.
   const models = args.models ? explicitSnapshot(args.models) : await currentModelSnapshot();
@@ -363,8 +378,8 @@ export async function recordDirectAbRun(args: {
   score?: boolean;
   metrics?: string[];
   expectedOutput?: string | null;
-  a: Pick<DirectRunArgs, "promptId" | "baseUrl" | "authKey" | "userId" | "models">;
-  b: Pick<DirectRunArgs, "promptId" | "baseUrl" | "authKey" | "userId" | "models">;
+  a: Pick<DirectRunArgs, "promptId" | "endpointId" | "baseUrl" | "authKey" | "userId" | "models">;
+  b: Pick<DirectRunArgs, "promptId" | "endpointId" | "baseUrl" | "authKey" | "userId" | "models">;
 }): Promise<{ a: DirectRunResult; b: DirectRunResult }> {
   const common = {
     message: args.message,
@@ -495,8 +510,10 @@ interface RunCtx {
   llm: LlmMetric[];
   /** true when 정답 일치 is selected (scored inline in phase 1). */
   exact: boolean;
-  /** Endpoint typed into the UI for this run; null = use the side's config URL. */
+  /** Endpoint URL this run calls; null = the side's config URL. */
   baseUrl: string | null;
+  /** Headers of the registered endpoint this run picked, when it picked one. */
+  headers: EndpointHeader[] | null;
   /** Which configured endpoint this run calls (agent.a.url / agent.b.url). */
   side: agent.FlowSide | null;
   /** role→model JSON stamped on the run row at creation, replayed on every call
@@ -519,6 +536,7 @@ async function setupRun(
   runId: number,
   emit: Emit,
   baseUrl: string | null,
+  headers: EndpointHeader[] | null,
   side: agent.FlowSide | null,
 ): Promise<RunCtx | null> {
   const run = await fetchRun(conn, runId);
@@ -571,7 +589,7 @@ async function setupRun(
 
   const sums = Object.fromEntries(ALL_METRICS.map((m) => [m, [] as number[]])) as Record<RagasMetric, number[]>;
   return {
-    runId, engine, score, metrics, llm, exact, baseUrl, side, cases, swapNode,
+    runId, engine, score, metrics, llm, exact, baseUrl, headers, side, cases, swapNode,
     models: run.model_snapshot,
     traceSeen: null, pending: [], sums, cancelled: false,
   };
@@ -601,7 +619,7 @@ async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx,
     const startedAt = Date.now();
     let elapsedMs: number;
     try {
-      const data = await agent.flowAnswer(message, ctx.baseUrl, ctx.side, callId);
+      const data = await agent.flowAnswer(message, ctx.baseUrl, ctx.side, callId, ctx.headers);
       elapsedMs = Date.now() - startedAt;
       answer = data.response;
       traceId = data.traceId ?? null;
@@ -797,19 +815,36 @@ async function recordFailure(conn: OracleConnection, runId: number, msg: string,
   emit({ event: "FAILED", run_id: runId, error: msg });
 }
 
-/** Execute a single flow RAGAS run, streaming events via ``emit``.
- * ``opts.side`` picks the configured endpoint (agent.a.url / agent.b.url) and
- * ``opts.baseUrl`` overrides it with a URL typed into the UI. */
+/** What endpoint a run talks to: the registered one it picked, or — when it
+ * picked none — the side's configured endpoint. */
+export interface RunEndpointOpts {
+  endpointId?: number | null;
+  baseUrl?: string | null;
+  side?: agent.FlowSide | null;
+}
+
+/** Execute a single flow RAGAS run, streaming events via ``emit``. */
 export async function executeRun(
   runId: number,
   emit: Emit,
   signal?: AbortSignal,
-  opts?: { baseUrl?: string | null; side?: agent.FlowSide | null },
+  opts?: RunEndpointOpts,
 ): Promise<void> {
+  // Resolved once per run: every case of the run then calls the same endpoint
+  // with the same headers, even if the registry is edited mid-run.
+  const picked = await resolveEndpoint(opts?.endpointId);
   await withConn(async (conn, oracle) => {
     let ctx: RunCtx | null = null;
     try {
-      ctx = await setupRun(conn, oracle, runId, emit, opts?.baseUrl ?? null, opts?.side ?? null);
+      ctx = await setupRun(
+        conn,
+        oracle,
+        runId,
+        emit,
+        picked?.url ?? opts?.baseUrl ?? null,
+        picked?.headers ?? null,
+        opts?.side ?? null,
+      );
       if (!ctx) return;
       try {
         await phase1(conn, oracle, ctx, emit, signal);
@@ -859,7 +894,7 @@ export async function streamRun(
   runId: number,
   emit: Emit,
   signal?: AbortSignal,
-  opts?: { baseUrl?: string | null; side?: agent.FlowSide | null },
+  opts?: RunEndpointOpts,
 ): Promise<void> {
   if (!registry.isLive(runId)) {
     const status = await runStatus(runId);
@@ -929,7 +964,7 @@ export async function executeAbRun(aId: number, bId: number, emit: Emit, signal?
     try {
       const sides: agent.FlowSide[] = ["a", "b"];
       for (const [i, id] of [aId, bId].entries()) {
-        ctxs.push(await setupRun(conn, oracle, id, emit, null, sides[i]));
+        ctxs.push(await setupRun(conn, oracle, id, emit, null, null, sides[i]));
       }
       // Phase 1 — answers for A, then B (each under its own active-prompt swap).
       for (const ctx of ctxs) {

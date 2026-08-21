@@ -20,9 +20,9 @@ function gridCols(n: number): string {
 
 function scoreLevel(score: number | null) {
   if (score == null) return { label: '—', tone: 'neutral', color: 'bg-muted' };
-  if (score >= 0.8) return { label: 'High', tone: 'ok', color: 'bg-[#16a34a]' };
-  if (score >= 0.6) return { label: 'Mid', tone: 'warn', color: 'bg-[#d97706]' };
-  return { label: 'Low', tone: 'bad', color: 'bg-[#dc2626]' };
+  if (score >= 0.8) return { label: 'High', tone: 'ok', color: 'bg-ok-vivid' };
+  if (score >= 0.6) return { label: 'Mid', tone: 'warn', color: 'bg-warn-vivid' };
+  return { label: 'Low', tone: 'bad', color: 'bg-bad-vivid' };
 }
 
 function ScoreBadge({ score }: { score: number | null }) {
@@ -31,12 +31,12 @@ function ScoreBadge({ score }: { score: number | null }) {
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-xs font-semibold tabular-nums border',
+        'inline-flex items-center gap-1 rounded-sm px-2 py-0.5 font-mono text-xs font-semibold tabular-nums border',
         score >= 0.8
-          ? 'border-[#bbf7d0] bg-[#f0fdf4] text-[#15803d]'
+          ? 'border-ok/25 bg-ok/[0.07] text-ok'
           : score >= 0.6
-          ? 'border-[#fef08a] bg-[#fefce8] text-[#a16207]'
-          : 'border-[#fecdd3] bg-[#fff1f2] text-[#be123c]'
+          ? 'border-warn/25 bg-warn/[0.07] text-warn'
+          : 'border-bad/25 bg-bad/[0.07] text-bad'
       )}
     >
       <span className={cn('h-1.5 w-1.5 rounded-full', lvl.color)} />
@@ -62,9 +62,9 @@ export function SingleRunSummaryDashboard({ detail }: { detail: RagasRunDetail }
       <div className={cn('grid gap-3', gridCols(shown.length + (withOverall ? 1 : 0)))}>
         {/* Overall Mean Card */}
         {withOverall && (
-          <div className="flex flex-col justify-between rounded-lg border border-line bg-gradient-to-br from-surface to-surface-2 p-3.5 shadow-card">
+          <div className="flex flex-col justify-between rounded-md border border-line bg-surface-2 p-4">
             <div>
-              <span className="block truncate text-xs font-semibold uppercase tracking-wider text-muted">
+              <span className="block truncate text-xs font-semibold uppercase tracking-[0.6px] text-muted">
                 RAGAS Mean
               </span>
               <div className="mt-1.5 flex items-baseline justify-between">
@@ -74,11 +74,11 @@ export function SingleRunSummaryDashboard({ detail }: { detail: RagasRunDetail }
                 <ScoreBadge score={mean} />
               </div>
             </div>
-            <div className="mt-3 relative h-1.5 w-full overflow-hidden rounded-full bg-bg">
+            <div className="mt-3 relative h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
               <div
                 className={cn(
                   'h-full rounded-full transition-all duration-300',
-                  mean == null ? 'bg-muted' : mean >= 0.8 ? 'bg-[#16a34a]' : mean >= 0.6 ? 'bg-[#d97706]' : 'bg-[#dc2626]'
+                  mean == null ? 'bg-muted' : mean >= 0.8 ? 'bg-ok-vivid' : mean >= 0.6 ? 'bg-warn-vivid' : 'bg-bad-vivid'
                 )}
                 style={{ width: `${mean != null ? mean * 100 : 0}%` }}
               />
@@ -94,7 +94,7 @@ export function SingleRunSummaryDashboard({ detail }: { detail: RagasRunDetail }
           return (
             <div
               key={m}
-              className="flex flex-col justify-between rounded-lg border border-line bg-surface p-3.5 shadow-card transition-shadow hover:shadow-md"
+              className="flex flex-col justify-between rounded-md border border-line bg-surface p-4 transition-shadow hover:shadow-lift"
             >
               <div>
                 <span
@@ -110,11 +110,11 @@ export function SingleRunSummaryDashboard({ detail }: { detail: RagasRunDetail }
                   {isExact ? <OxBadge value={val} rate /> : <ScoreBadge score={val} />}
                 </div>
               </div>
-              <div className="mt-3 relative h-1.5 w-full overflow-hidden rounded-full bg-bg">
+              <div className="mt-3 relative h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
                 <div
                   className={cn(
                     'h-full rounded-full transition-all duration-300',
-                    val == null ? 'bg-muted' : val >= 0.8 ? 'bg-[#16a34a]' : val >= 0.6 ? 'bg-[#d97706]' : 'bg-[#dc2626]'
+                    val == null ? 'bg-muted' : val >= 0.8 ? 'bg-ok-vivid' : val >= 0.6 ? 'bg-warn-vivid' : 'bg-bad-vivid'
                   )}
                   style={{ width: `${pct}%` }}
                 />
@@ -158,8 +158,8 @@ export function CompareSummaryDashboard({
         {/* Version A Hero Card */}
         <div
           className={cn(
-            'flex flex-col justify-between rounded-lg border bg-surface p-4 shadow-card',
-            winner === 'A' ? 'border-accent/40 ring-1 ring-accent/20' : 'border-line'
+            'flex flex-col justify-between rounded-md border bg-surface p-4',
+            winner === 'A' ? 'border-ink ring-1 ring-ink/10' : 'border-line'
           )}
         >
           <div className="flex items-center justify-between">
@@ -180,7 +180,7 @@ export function CompareSummaryDashboard({
               </span>
             )}
           </div>
-          <div className="relative h-2 w-full overflow-hidden rounded-full bg-bg">
+          <div className="relative h-2 w-full overflow-hidden rounded-full bg-surface-3">
             <div
               className="h-full rounded-full bg-muted/60 transition-all duration-300"
               style={{ width: `${meanA != null ? meanA * 100 : 0}%` }}
@@ -191,8 +191,8 @@ export function CompareSummaryDashboard({
         {/* Version B Hero Card */}
         <div
           className={cn(
-            'flex flex-col justify-between rounded-lg border bg-surface p-4 shadow-card',
-            winner === 'B' ? 'border-accent/40 ring-1 ring-accent/20' : 'border-line'
+            'flex flex-col justify-between rounded-md border bg-surface p-4',
+            winner === 'B' ? 'border-ink ring-1 ring-ink/10' : 'border-line'
           )}
         >
           <div className="flex items-center justify-between">
@@ -204,12 +204,12 @@ export function CompareSummaryDashboard({
               {delta != null && (
                 <span
                   className={cn(
-                    'inline-flex items-center rounded-md px-2 py-0.5 font-mono text-xs font-semibold tabular-nums border',
+                    'inline-flex items-center rounded-sm px-2 py-0.5 font-mono text-xs font-semibold tabular-nums border',
                     delta > 0
-                      ? 'border-[#bbf7d0] bg-[#f0fdf4] text-[#15803d]'
+                      ? 'border-ok/25 bg-ok/[0.07] text-ok'
                       : delta < 0
-                      ? 'border-[#fecdd3] bg-[#fff1f2] text-[#be123c]'
-                      : 'border-[#e2e8f0] bg-[#f8fafc] text-muted'
+                      ? 'border-bad/25 bg-bad/[0.07] text-bad'
+                      : 'border-line bg-surface-2 text-muted'
                   )}
                 >
                   Δ {(delta > 0 ? '+' : '') + delta.toFixed(3)}
@@ -229,7 +229,7 @@ export function CompareSummaryDashboard({
               </span>
             )}
           </div>
-          <div className="relative h-2 w-full overflow-hidden rounded-full bg-bg">
+          <div className="relative h-2 w-full overflow-hidden rounded-full bg-surface-3">
             <div
               className="h-full rounded-full bg-accent transition-all duration-300"
               style={{ width: `${meanB != null ? meanB * 100 : 0}%` }}
@@ -248,7 +248,7 @@ export function CompareSummaryDashboard({
           const pctB = bv != null ? Math.max(0, Math.min(1, bv)) * 100 : 0;
 
           return (
-            <div key={m} className="flex flex-col justify-between rounded-lg border border-line bg-surface p-3.5 shadow-card">
+            <div key={m} className="flex flex-col justify-between rounded-md border border-line bg-surface p-4">
               <div>
                 <span className="block truncate text-xs font-semibold text-ink" title={METRIC_DESCRIPTIONS[m]}>
                   {METRIC_LABELS[m]}
@@ -265,10 +265,10 @@ export function CompareSummaryDashboard({
 
               <div className="mt-3 space-y-1">
                 {/* Dual Bars A & B */}
-                <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-bg">
+                <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
                   <div className="h-full rounded-full bg-muted/60" style={{ width: `${pctA}%` }} />
                 </div>
-                <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-bg">
+                <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
                   <div className="h-full rounded-full bg-accent" style={{ width: `${pctB}%` }} />
                 </div>
               </div>
@@ -278,7 +278,7 @@ export function CompareSummaryDashboard({
                 <span
                   className={cn(
                     'font-mono font-semibold tabular-nums',
-                    d == null ? 'text-muted' : d > 0 ? 'text-[#16a34a]' : d < 0 ? 'text-[#dc2626]' : 'text-muted'
+                    d == null ? 'text-muted' : d > 0 ? 'text-ok' : d < 0 ? 'text-bad' : 'text-muted'
                   )}
                 >
                   {d == null ? '—' : (d > 0 ? '+' : '') + d.toFixed(3)}

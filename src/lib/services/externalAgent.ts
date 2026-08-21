@@ -1,4 +1,5 @@
 import { getAgentConfig, getFlowBaseUrl, getFlowHeaders } from "@/lib/config";
+import type { EndpointHeader } from "@/lib/types";
 import { ApiError, badGateway, errorText } from "@/lib/http";
 import { logger } from "@/lib/logger";
 
@@ -170,13 +171,19 @@ async function parseChatResponse(resp: Response): Promise<AgentAnswer> {
   return { response: String(data), docs: [], raw: data as string };
 }
 
-/** Content-Type plus whatever that side's config lists — names and values both
- * come from the config, so A and B need share nothing. ``authKey`` is the key
- * typed into the UI for a one-off call; it overrides the FIRST configured
- * header's value, that slot being the side's credential. */
-function requestHeaders(side?: FlowSide | null, authKey?: string | null): Record<string, string> {
+/** Content-Type plus the headers of whatever endpoint answers this call.
+ * ``registered`` are the headers saved with the endpoint the run picked in the
+ * settings registry; without it the side's config headers are used, so a run
+ * that names no endpoint behaves exactly as before. ``authKey`` is the key typed
+ * into the UI for a one-off call; it overrides the FIRST header's value, that
+ * slot being the endpoint's credential. */
+function requestHeaders(
+  side?: FlowSide | null,
+  authKey?: string | null,
+  registered?: EndpointHeader[] | null,
+): Record<string, string> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  const configured = getFlowHeaders(side);
+  const configured = registered?.length ? registered : getFlowHeaders(side);
   for (const h of configured) headers[h.name] = h.value;
   const override = (authKey ?? "").trim();
   if (override && configured.length) headers[configured[0].name] = override;
@@ -329,6 +336,7 @@ export async function runFlow(
   urlOverride?: string | null,
   side?: FlowSide | null,
   traceIdIn?: string | null,
+  headers?: EndpointHeader[] | null,
 ): Promise<AgentAnswer> {
   // Kept outside the try so a failure can log exactly what went on the wire.
   let url = "";
@@ -337,7 +345,7 @@ export async function runFlow(
   try {
     url = urlOverride ? ensureDirectUrl(urlOverride) : baseUrl(side);
     ({ body, traceId } = buildPayload(message, null, traceIdIn));
-    const resp = await post(url, body, requestHeaders(side));
+    const resp = await post(url, body, requestHeaders(side, null, headers));
     if (!resp.ok) throw await httpError(resp, body);
     const parsed = await parseChatResponse(resp);
     return { response: parsed.response, docs: parsed.docs, traceId };
@@ -366,6 +374,8 @@ export async function runDirect(args: {
   /** Which configured endpoint answers when no URL is typed. Only a manual A/B
    * passes 'b'; every other direct call is side A. */
   side?: FlowSide | null;
+  /** Headers of the registered endpoint this call picked, when it picked one. */
+  headers?: EndpointHeader[] | null;
   /** Pre-issued correlation id when the caller staged rows under it. */
   traceId?: string | null;
 }): Promise<AgentAnswer> {
@@ -373,7 +383,7 @@ export async function runDirect(args: {
   const url = ensureDirectUrl(args.baseUrl, side);
   const { body, traceId } = buildPayload(args.message, args.userId, args.traceId);
   try {
-    const resp = await post(url, body, requestHeaders(side, args.authKey));
+    const resp = await post(url, body, requestHeaders(side, args.authKey, args.headers));
     if (!resp.ok) throw await httpError(resp, body);
     return { ...(await parseChatResponse(resp)), traceId };
   } catch (e) {
@@ -401,9 +411,11 @@ export async function flowAnswer(
   urlOverride?: string | null,
   side?: FlowSide | null,
   traceId?: string | null,
+  headers?: EndpointHeader[] | null,
 ): Promise<AgentAnswer> {
-  // The side still decides which headers go out even when the URL is typed in the UI.
-  if (urlOverride) return runFlow(message, urlOverride, side, traceId);
-  if (externalEnabled()) return runFlow(message, null, side, traceId);
+  // A picked endpoint brings its own headers; without one the side's config
+  // headers decide, even when the URL came from the UI.
+  if (urlOverride) return runFlow(message, urlOverride, side, traceId, headers);
+  if (externalEnabled()) return runFlow(message, null, side, traceId, headers);
   return stubRunFlow(message);
 }

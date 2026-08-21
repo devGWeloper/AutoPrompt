@@ -7,6 +7,9 @@ import type {
   ActivePrompt,
   AuditLog,
   Dataset,
+  Endpoint,
+  EndpointHeader,
+  LlmModel,
   ModelRole,
   PromptVersionDetail,
   PromptVersionSummary,
@@ -340,6 +343,70 @@ export function mapAudit(r: Row): AuditLog {
     before_value: str(r.BEFORE_CTN),
     after_value: str(r.AFTER_CTN),
     created_by: String(r.USER_ID),
+    created_dt: String(r.CRT_TM),
+  };
+}
+
+export const ENDPOINT_COLS = [
+  "ENDPOINT_ID",
+  "ENDPOINT_NM",
+  "ENDPOINT_URL",
+  "HEADER_CTN",
+  "DESC_CTN",
+  "ACTIVE_YN",
+  "USER_ID",
+  tsCol("UPDATE_TM"),
+  tsCol("CRT_TM"),
+].join(", ");
+
+export const LLM_COLS = [
+  "LLM_ID",
+  "LLM_NM",
+  "DESC_CTN",
+  "ACTIVE_YN",
+  "USER_ID",
+  tsCol("UPDATE_TM"),
+  tsCol("CRT_TM"),
+].join(", ");
+
+/** HEADER_CTN 은 [{name,value}] JSON. 깨진 값이 목록 전체를 못 열게 만들지 않도록
+ * 파싱 실패는 '헤더 없음'으로 떨어뜨린다. */
+function parseHeaders(raw: unknown): EndpointHeader[] {
+  if (typeof raw !== "string" || !raw.trim()) return [];
+  try {
+    const v = JSON.parse(raw);
+    if (!Array.isArray(v)) return [];
+    return v
+      .filter((h): h is EndpointHeader => !!h && typeof h === "object" && typeof (h as EndpointHeader).name === "string")
+      .map((h) => ({ name: String(h.name), value: String(h.value ?? "") }))
+      .filter((h) => h.name.trim() !== "");
+  } catch {
+    return [];
+  }
+}
+
+export function mapEndpoint(r: Row): Endpoint {
+  return {
+    endpoint_id: num(r.ENDPOINT_ID)!,
+    endpoint_nm: String(r.ENDPOINT_NM),
+    endpoint_url: String(r.ENDPOINT_URL),
+    headers: parseHeaders(r.HEADER_CTN),
+    description: str(r.DESC_CTN),
+    is_active: r.ACTIVE_YN === "N" ? "N" : "Y",
+    updated_by: String(r.USER_ID),
+    updated_dt: str(r.UPDATE_TM),
+    created_dt: String(r.CRT_TM),
+  };
+}
+
+export function mapLlmModel(r: Row): LlmModel {
+  return {
+    llm_id: num(r.LLM_ID)!,
+    llm_nm: String(r.LLM_NM),
+    description: str(r.DESC_CTN),
+    is_active: r.ACTIVE_YN === "N" ? "N" : "Y",
+    updated_by: String(r.USER_ID),
+    updated_dt: str(r.UPDATE_TM),
     created_dt: String(r.CRT_TM),
   };
 }

@@ -407,6 +407,8 @@ export interface DirectTestRequest {
   /** Prompt version to swap active for the duration of the call. null = call the
    * endpoint as it currently stands (As-is). */
   prompt_id?: number | null;
+  /** 실행이 호출할 등록 엔드포인트. 지정하면 base_url 대신 이 값이 쓰인다. */
+  endpoint_id?: number | null;
   base_url?: string | null;
   auth_key?: string | null;
   user_id?: string | null;
@@ -433,6 +435,7 @@ export interface DirectTestOut {
  * call. Both blank = that side's configured endpoint (agent.a.url / agent.b.url). */
 export interface DirectAbSide {
   prompt_id?: number | null;
+  endpoint_id?: number | null;
   base_url?: string | null;
   auth_key?: string | null;
   user_id?: string | null;
@@ -468,3 +471,50 @@ export type RunEvent =
 
 /** Alias kept for the page code that still imports the old WebSocket name. */
 export type RunWsMessage = RunEvent;
+
+// ---- settings registries ---------------------------------------------------
+// 실행 화면에서 URL·모델명을 자유 입력하던 자리를 목록 선택으로 바꾸기 위한 두
+// 레지스트리. 설정 페이지(/settings)가 이 둘의 유일한 편집 지점이다.
+
+export interface EndpointHeader {
+  name: string;
+  value: string;
+}
+
+/** 호출 가능한 외부 API 하나. */
+export interface Endpoint {
+  endpoint_id: number;
+  endpoint_nm: string;
+  endpoint_url: string;
+  headers: EndpointHeader[];
+  description: string | null;
+  is_active: "Y" | "N";
+  updated_by: string;
+  updated_dt: string | null;
+  created_dt: string;
+}
+
+export interface EndpointInput {
+  endpoint_nm: string;
+  endpoint_url: string;
+  headers?: EndpointHeader[] | null;
+  description?: string | null;
+  is_active?: "Y" | "N";
+}
+
+/** role 에 지정할 수 있는 모델명 하나. */
+export interface LlmModel {
+  llm_id: number;
+  llm_nm: string;
+  description: string | null;
+  is_active: "Y" | "N";
+  updated_by: string;
+  updated_dt: string | null;
+  created_dt: string;
+}
+
+export interface LlmModelInput {
+  llm_nm: string;
+  description?: string | null;
+  is_active?: "Y" | "N";
+}

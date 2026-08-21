@@ -7,7 +7,7 @@ import { Input, Textarea } from '@/components/ui/Field';
 import { cn } from '@/lib/cn';
 import { api } from '@/lib/api';
 import type { CsvUploadResult, TestCase } from '@/lib/types';
-import { Chevron, ErrBox, errText, oneLine, PencilIcon, TrashIcon, useArmed, useFlowDatasets } from './shared';
+import { Chevron, EmptyState, ErrBox, errText, oneLine, PencilIcon, TrashIcon, useArmed, useFlowDatasets } from './shared';
 
 // A case's payload is the JSON in INPUT_CTN. The editor exposes the three fields
 // the evaluation actually reads (see services/ragas.ts parseCase) and carries any
@@ -96,7 +96,7 @@ function download(filename: string, text: string) {
 
 // ---- small pieces ----------------------------------------------------------
 
-const LABEL = 'mb-1 block text-[11px] font-semibold uppercase tracking-[0.05em] text-muted';
+const LABEL = 'mb-1 block eyebrow';
 const HINT = 'font-normal normal-case tracking-normal text-muted';
 
 function FieldsEditor({
@@ -135,7 +135,8 @@ function FieldsEditor({
             value={value.groundTruth}
             onChange={(e) => set({ groundTruth: e.target.value })}
             rows={4}
-            placeholder={'기대하는 답변. JSON 도 그대로 붙여넣으면 됩니다.'}
+            placeholder="기대 답변"
+            title="JSON 도 그대로 붙여넣으면 됩니다"
             className="w-full font-mono text-xs"
           />
         </div>
@@ -395,12 +396,12 @@ export default function DatasetsPanel() {
                     onClick={() => setSelDataset(d.dataset_id)}
                     className={cn(
                       'flex w-full items-center gap-2 rounded-sm py-2 pl-2 pr-2.5 text-left text-sm transition-colors',
-                      on ? 'bg-accent-soft/70 font-medium text-ink' : 'text-ink hover:bg-surface-2',
+                      on ? 'bg-surface-3 font-medium text-ink' : 'text-ink hover:bg-surface-2',
                     )}
                   >
                     {/* A hairline marker instead of a box per row — the list reads
                         as one list, and only the selected row draws a line. */}
-                    <span aria-hidden className={cn('h-4 w-0.5 shrink-0 rounded-full', on ? 'bg-accent' : 'bg-transparent')} />
+                    <span aria-hidden className={cn('h-4 w-0.5 shrink-0', on ? 'bg-primary' : 'bg-transparent')} />
                     <span className="min-w-0 flex-1 truncate">{d.dataset_nm}</span>
                     <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted group-hover:invisible">
                       {d.case_count ?? '—'}
@@ -428,10 +429,7 @@ export default function DatasetsPanel() {
 
         <Card className="min-w-0">
           {selected == null ? (
-            <div className="flex flex-col items-center justify-center gap-1 px-6 py-20 text-center">
-              <div className="text-sm text-ink">왼쪽에서 데이터셋을 선택하세요.</div>
-              <div className="text-xs text-muted">평가에 쓸 질문 · Contexts · 정답(ground truth)을 케이스 단위로 관리합니다.</div>
-            </div>
+            <EmptyState label="← 데이터셋 선택" />
           ) : (
             <>
               {/* Title and toolbar on separate lines: six controls on one row wrapped
@@ -505,9 +503,6 @@ export default function DatasetsPanel() {
                 <div className="border-b border-line bg-surface-2/40 px-4 py-3.5">
                   <FieldsEditor value={draft} onChange={setDraft} autoFocus />
                   <div className="mt-3 flex items-center justify-end gap-2">
-                    <span className="mr-auto text-[11px] text-muted">
-                      CSV 로 여러 건을 한 번에 넣을 수도 있습니다 — 내려받은 파일을 고쳐서 그대로 올리면 됩니다.
-                    </span>
                     <Button variant="ghost" size="sm" onClick={() => { setDraft(EMPTY); setAdding(false); }}>취소</Button>
                     <Button variant="secondary" size="sm" disabled={!draft.question.trim() || busy} onClick={addCase}>추가</Button>
                   </div>
@@ -518,7 +513,7 @@ export default function DatasetsPanel() {
                 <div className="py-12 text-center text-xs text-muted">불러오는 중…</div>
               ) : rows.length === 0 ? (
                 <div className="py-12 text-center text-sm text-muted">
-                  {cases.length === 0 ? '케이스가 없습니다 — 케이스 추가 또는 CSV 가져오기로 시작하세요.' : '검색 결과가 없습니다.'}
+                  {cases.length === 0 ? '—' : '검색 결과 없음'}
                 </div>
               ) : (
                 <ul className="divide-y divide-line">

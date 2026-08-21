@@ -11,6 +11,7 @@ export async function POST(req: Request) {
     const data = await recordDirectRun({
       message: body.message,
       promptId: body.prompt_id,
+      endpointId: body.endpoint_id,
       baseUrl: body.base_url,
       authKey: body.auth_key,
       userId: body.user_id,

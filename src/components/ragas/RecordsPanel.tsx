@@ -53,9 +53,9 @@ function groupType(g: RunGroup): Exclude<RunTypeFilter, 'all'> {
 
 type RunSortKey = 'created' | 'avg';
 
-const RUNS_PAGE_SIZE = 20; // rows per Records page — same as inview's question table
+const RUNS_PAGE_SIZE = 20; // rows per Records page
 
-/** Status pill = inview .pill: tinted rounded background + dot + text.
+/** Status badge: soft tint + dot + text at the brand's 4px radius.
  * FAILED red (wins in mixed pair states like DONE/FAILED), DONE green,
  * everything else (RUNNING/CANCELLED…) muted. */
 function StatusText({ s }: { s: string }) {
@@ -64,10 +64,11 @@ function StatusText({ s }: { s: string }) {
 }
 
 /** Run-type label — plain colored text (badges read too heavy at this density):
- * Single blue, Compare purple (= inview node/model chip colors). */
+ * Single blue, Compare purple — the same two stops of the chromatic palette
+ * that key those two sections in the tab header. */
 function TypeText({ t }: { t: Exclude<RunTypeFilter, 'all'> }) {
   return (
-    <span className={cn('text-xs font-semibold', t === 'compare' ? 'text-[#7c3aed]' : 'text-accent')}>
+    <span className={cn('text-xs font-semibold', t === 'compare' ? 'text-chroma-purple' : 'text-accent')}>
       {t === 'compare' ? 'Compare' : 'Single'}
     </span>
   );
@@ -119,7 +120,7 @@ function ModelStamp({ text: s }: { text: string | null }) {
   );
 }
 
-/** Per-row actions: quiet icon-only ghost buttons (inview .btn idiom at table
+/** Per-row actions: quiet icon-only ghost buttons (secondary-button idiom at table
  * density). Row expansion lives on the row itself, so only export + delete
  * remain here; stopPropagation keeps clicks from toggling the row. */
 function RowActionsCell({ csvHref, onDelete }: { csvHref: string; onDelete: () => void }) {
@@ -140,7 +141,7 @@ function RowActionsCell({ csvHref, onDelete }: { csvHref: string; onDelete: () =
   );
 }
 
-/** Sortable column header = inview .qth-sort: sortable columns always show a
+/** Sortable column header: sortable columns always show a
  * faint ↕ affordance; the active sort darkens to ink with a solid ▲/▼. */
 function SortTH({
   k, label, sort, onSort, className, title,
@@ -186,7 +187,7 @@ function AvgCell({
         <div className="flex flex-col gap-1">
           {(meanA != null || meanB != null) && (
             <div className="flex items-center gap-2">
-              <span className="font-sans text-[10px] font-semibold uppercase tracking-wide text-muted">RAGAS</span>
+              <span className="font-sans text-[10px] font-semibold uppercase tracking-[0.6px] text-muted">RAGAS</span>
               <div className="flex items-center gap-1.5 text-xs">
                 <span className="text-muted font-normal">A <span className="font-semibold text-ink">{fmt2(meanA)}</span></span>
                 <span className="text-muted/60">·</span>
@@ -197,10 +198,10 @@ function AvgCell({
                   className={cn(
                     'inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold border',
                     delta > 0
-                      ? 'border-[#bbf7d0] bg-[#f0fdf4] text-[#15803d]'
+                      ? 'border-ok/25 bg-ok/[0.07] text-ok'
                       : delta < 0
-                      ? 'border-[#fecdd3] bg-[#fff1f2] text-[#be123c]'
-                      : 'border-[#e2e8f0] bg-[#f8fafc] text-muted'
+                      ? 'border-bad/25 bg-bad/[0.07] text-bad'
+                      : 'border-line bg-surface-2 text-muted'
                   )}
                 >
                   {(delta > 0 ? '+' : '') + delta.toFixed(2)}
@@ -210,7 +211,7 @@ function AvgCell({
           )}
           {(exA != null || exB != null) && (
             <div className="flex items-center gap-2 text-xs">
-              <span className="font-sans text-[10px] font-semibold uppercase tracking-wide text-muted">일치</span>
+              <span className="font-sans text-[10px] font-semibold uppercase tracking-[0.6px] text-muted">일치</span>
               <span className="text-muted font-normal">A <span className="font-semibold text-ink">{pct(exA)}</span></span>
               <span className="text-muted/60">·</span>
               <span className="text-muted font-normal">B <span className="font-semibold text-ink">{pct(exB)}</span></span>
@@ -227,13 +228,13 @@ function AvgCell({
       <div className="flex flex-col gap-0.5">
         {mean != null && (
           <span>
-            <span className="font-sans text-[10px] font-semibold uppercase tracking-wide text-muted">RAGAS </span>
+            <span className="font-sans text-[10px] font-semibold uppercase tracking-[0.6px] text-muted">RAGAS </span>
             <span className="font-semibold">{fmt2(mean)}</span>
           </span>
         )}
         {ex != null && (
           <span>
-            <span className="font-sans text-[10px] font-semibold uppercase tracking-wide text-muted">일치 </span>
+            <span className="font-sans text-[10px] font-semibold uppercase tracking-[0.6px] text-muted">일치 </span>
             <span className="font-semibold">{pct(ex)}</span>
           </span>
         )}
@@ -369,11 +370,11 @@ export default function RecordsPanel() {
                 return (
                   <TR
                     key={key}
-                    className={cn('cursor-pointer transition-colors hover:bg-surface-2/70', isSelected && 'bg-accent/10 hover:bg-accent/15')}
+                    className={cn('cursor-pointer transition-colors hover:bg-surface-2/70', isSelected && 'bg-surface-3 hover:bg-surface-3')}
                     onClick={() => setSelectedKey(isSelected ? null : key)}
                   >
                     <TD className="px-2 text-center text-muted">
-                      <span className={cn('text-xs font-bold transition-transform inline-block', isSelected ? 'text-accent translate-x-0.5' : 'opacity-40')}>
+                      <span className={cn('text-xs font-bold transition-transform inline-block', isSelected ? 'text-ink translate-x-0.5' : 'opacity-40')}>
                         ›
                       </span>
                     </TD>
@@ -417,11 +418,11 @@ export default function RecordsPanel() {
               return (
                 <TR
                   key={key}
-                  className={cn('cursor-pointer transition-colors hover:bg-surface-2/70', isSelected && 'bg-accent/10 hover:bg-accent/15')}
+                  className={cn('cursor-pointer transition-colors hover:bg-surface-2/70', isSelected && 'bg-surface-3 hover:bg-surface-3')}
                   onClick={() => setSelectedKey(isSelected ? null : key)}
                 >
                   <TD className="px-2 text-center text-muted">
-                    <span className={cn('text-xs font-bold transition-transform inline-block', isSelected ? 'text-accent translate-x-0.5' : 'opacity-40')}>
+                    <span className={cn('text-xs font-bold transition-transform inline-block', isSelected ? 'text-ink translate-x-0.5' : 'opacity-40')}>
                       ›
                     </span>
                   </TD>
@@ -522,17 +523,17 @@ function RecordDetailDrawer({
     <div className="fixed inset-0 z-50 flex justify-end">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-ink/30 backdrop-blur-[1.5px] transition-opacity"
+        className="fixed inset-0 bg-ink/50 transition-opacity"
         onClick={onClose}
         aria-hidden
       />
 
       {/* Drawer Content */}
-      <aside className="relative z-10 flex h-full w-full max-w-5xl flex-col border-l border-line bg-surface shadow-2xl animate-in slide-in-from-right duration-200">
+      <aside className="relative z-10 flex h-full w-full max-w-5xl flex-col border-l border-line bg-surface shadow-modal animate-in slide-in-from-right duration-200">
         {/* Drawer Header */}
         <div className="flex items-center justify-between border-b border-line px-6 py-4">
           <div className="flex items-center gap-3">
-            <h2 className="text-base font-semibold text-ink">
+            <h2 className="text-display-xs text-ink">
               {isSingle ? (
                 <>Single <span className="font-mono text-xs font-normal text-muted">#{group.run.ragas_run_id}</span></>
               ) : (
@@ -550,7 +551,7 @@ function RecordDetailDrawer({
                 type="button"
                 disabled={!onPrev}
                 onClick={onPrev}
-                className="rounded px-2 py-1 text-xs text-muted hover:bg-surface hover:text-ink disabled:opacity-30"
+                className="rounded-sm px-2 py-1 text-xs text-muted hover:bg-surface hover:text-ink disabled:opacity-30"
                 title="이전 기록"
               >
                 ‹ 이전
@@ -559,7 +560,7 @@ function RecordDetailDrawer({
                 type="button"
                 disabled={!onNext}
                 onClick={onNext}
-                className="rounded px-2 py-1 text-xs text-muted hover:bg-surface hover:text-ink disabled:opacity-30"
+                className="rounded-sm px-2 py-1 text-xs text-muted hover:bg-surface hover:text-ink disabled:opacity-30"
                 title="다음 기록"
               >
                 다음 ›
@@ -569,7 +570,7 @@ function RecordDetailDrawer({
             <a
               href={csvHref}
               title="CSV 내보내기"
-              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-line px-3 text-xs font-medium text-muted hover:bg-surface-2 hover:text-ink transition-colors"
+              className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-line px-3 text-xs font-medium text-muted hover:bg-surface-2 hover:text-ink transition-colors"
             >
               <DownloadIcon /> CSV
             </a>
@@ -577,14 +578,14 @@ function RecordDetailDrawer({
               type="button"
               title="삭제"
               onClick={onDelete}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-bad/20 bg-bad/5 px-3 text-xs font-medium text-bad hover:bg-bad/10 transition-colors"
+              className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-bad/20 bg-bad/5 px-3 text-xs font-medium text-bad hover:bg-bad/10 transition-colors"
             >
               <TrashIcon /> 삭제
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="ml-1 rounded-md p-1.5 text-muted hover:bg-surface-2 hover:text-ink transition-colors"
+              className="ml-1 rounded-full p-1.5 text-muted hover:bg-surface-2 hover:text-ink transition-colors"
               aria-label="닫기 (Esc)"
               title="닫기 (Esc)"
             >
@@ -613,14 +614,14 @@ function RecordDetailDrawer({
   );
 }
 
-/** Centered prev/next pager under the runs table = inview .qpager. */
+/** Centered prev/next pager under the runs table. */
 function RunsPager({
   curPage, pageCount, total, onPage,
 }: {
   curPage: number; pageCount: number; total: number; onPage: (f: (p: number) => number) => void;
 }) {
   const btn =
-    'rounded-md border border-line bg-surface px-3 py-1.5 text-xs font-semibold text-muted transition-colors ' +
+    'rounded-sm border border-line bg-surface px-3 py-1.5 text-xs font-semibold text-muted transition-colors ' +
     'hover:border-line-strong hover:bg-surface-2 disabled:pointer-events-none disabled:opacity-40';
   const from = curPage * RUNS_PAGE_SIZE + 1;
   const to = Math.min(total, from + RUNS_PAGE_SIZE - 1);
@@ -670,9 +671,6 @@ function AbCompareView({ aId, bId, labelA, labelB }: { aId: number; bId: number;
         </div>
         <div className="p-4">
           <CaseCompareTable detailA={a} detailB={b} labelA={labelA} labelB={labelB} defaultAllOpen={false} />
-          {(a.status === 'CANCELLED' || b.status === 'CANCELLED') && (
-            <p className="mt-3 text-xs text-muted">취소된 실행 — 멈춘 시점까지 채점된 결과만 남아 있습니다. 전체 평균은 내지 않습니다.</p>
-          )}
         </div>
       </div>
     </div>
@@ -704,9 +702,6 @@ function RagasRunDetailView({ ragasId }: { ragasId: number }) {
         </div>
         <div className="p-4">
           <CaseTable detail={detail} defaultAllOpen={false} />
-          {detail.status === 'CANCELLED' && (
-            <p className="mt-3 text-xs text-muted">취소된 실행 — 멈춘 시점까지 채점된 결과만 남아 있습니다. 전체 평균은 내지 않습니다.</p>
-          )}
         </div>
       </div>
     </div>

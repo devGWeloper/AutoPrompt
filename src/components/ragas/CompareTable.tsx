@@ -31,7 +31,7 @@ function ElapsedPair({ a, b }: { a?: RagasResultRow; b?: RagasResultRow }) {
   const bWins = both && b!.elapsed_ms! < a!.elapsed_ms!;
   return (
     <div className="flex items-center gap-1.5 font-mono text-[11px] tabular-nums text-muted" title="응답 시간 (채점 시간 제외)">
-      <span className="font-sans text-[10px] font-semibold uppercase tracking-wide">시간</span>
+      <span className="font-sans text-[10px] font-semibold uppercase tracking-[0.6px]">시간</span>
       <span>
         <span className={cn(aWins && 'font-semibold text-ink')}>A {ta ?? '—'}</span>
         {' · '}
@@ -48,7 +48,7 @@ function MetricBar({ side, value, win }: { side: 'A' | 'B'; value: number | null
   return (
     <div className="flex items-center gap-2">
       <span className="w-3 shrink-0 text-[10px] font-semibold text-muted">{side}</span>
-      <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-bg">
+      <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-surface-3">
         <span
           className={'absolute inset-y-0 left-0 rounded-full ' + (side === 'B' ? 'bg-accent' : 'bg-muted/40')}
           style={{ width: pct + '%' }}
@@ -121,14 +121,14 @@ function PairedMetricList({ rows }: { rows: MetricRow[] }) {
           ) : (
             <span
               className={cn(
-                'inline-flex min-w-[60px] items-center justify-center rounded-md px-2 py-0.5 font-mono text-xs font-semibold tabular-nums border',
+                'inline-flex min-w-[60px] items-center justify-center rounded-sm px-2 py-0.5 font-mono text-xs font-semibold tabular-nums border',
                 d == null
                   ? 'border-transparent text-muted'
                   : d > 0
-                  ? 'border-[#bbf7d0] bg-[#f0fdf4] text-[#15803d]'
+                  ? 'border-ok/25 bg-ok/[0.07] text-ok'
                   : d < 0
-                  ? 'border-[#fecdd3] bg-[#fff1f2] text-[#be123c]'
-                  : 'border-[#e2e8f0] bg-[#f8fafc] text-muted'
+                  ? 'border-bad/25 bg-bad/[0.07] text-bad'
+                  : 'border-line bg-surface-2 text-muted'
               )}
             >
               {d == null ? '—' : (d > 0 ? '+' : '') + d.toFixed(3)}
@@ -170,7 +170,7 @@ function CaseScoreBars({ a, b, cancelled }: { a?: RagasResultRow; b?: RagasResul
   return (
     <div className="mt-3 overflow-hidden rounded-sm border border-line bg-surface">
       <div className="border-b border-line bg-surface-2/60 px-3.5 py-2">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">지표 비교</span>
+        <span className="eyebrow">지표 비교</span>
       </div>
       <PairedMetricList rows={rows} />
       {/* Partly scored (e.g. 정답 일치 landed, the RAGAS metrics did not) — the
@@ -276,7 +276,7 @@ export function CaseCompareTable({
                       )}
                       {(aMean != null || bMean != null) && (
                         <div className="flex items-center gap-1.5 font-mono text-xs tabular-nums text-muted">
-                          <span className="font-sans text-[10px] font-semibold uppercase tracking-wide">RAGAS</span>
+                          <span className="font-sans text-[10px] font-semibold uppercase tracking-[0.6px]">RAGAS</span>
                           <span>
                             <span className={cn(aMean != null && bMean != null && aMean > bMean && 'font-semibold text-ink')}>A {fmt3(aMean)}</span>
                             {' · '}
@@ -287,10 +287,10 @@ export function CaseCompareTable({
                               className={cn(
                                 'inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-semibold border',
                                 delta > 0
-                                  ? 'border-[#bbf7d0] bg-[#f0fdf4] text-[#15803d]'
+                                  ? 'border-ok/25 bg-ok/[0.07] text-ok'
                                   : delta < 0
-                                  ? 'border-[#fecdd3] bg-[#fff1f2] text-[#be123c]'
-                                  : 'border-[#e2e8f0] bg-[#f8fafc] text-muted'
+                                  ? 'border-bad/25 bg-bad/[0.07] text-bad'
+                                  : 'border-line bg-surface-2 text-muted'
                               )}
                             >
                               {(delta > 0 ? '+' : '') + delta.toFixed(3)}
@@ -312,7 +312,7 @@ export function CaseCompareTable({
               <div className="px-4 pb-3.5 pl-10">
                 {gt && <p className="mb-3 whitespace-pre-wrap text-xs text-muted"><span className="font-medium">Ground truth ·</span> {gt}</p>}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="rounded-sm border border-line bg-bg/40 p-3">
+                  <div className="rounded-sm border border-line bg-surface-2 p-3">
                     <div className="flex items-center justify-between gap-2">
                       <Badge tone="neutral">A · {sideLabel(labelA)}</Badge>
                       <ElapsedTag ms={a?.elapsed_ms} />
@@ -320,7 +320,7 @@ export function CaseCompareTable({
                     {a?.trace_value && <div className="mt-2"><TraceValueBox row={a} /></div>}
                     <div className="mt-2"><AnswerBox text={a?.answer} error={a?.error_msg} /></div>
                   </div>
-                  <div className="rounded-sm border border-line bg-bg/40 p-3">
+                  <div className="rounded-sm border border-line bg-surface-2 p-3">
                     <div className="flex items-center justify-between gap-2">
                       <Badge tone="accent">B · {sideLabel(labelB)}</Badge>
                       <ElapsedTag ms={b?.elapsed_ms} />
