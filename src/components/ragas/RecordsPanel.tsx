@@ -468,7 +468,7 @@ export default function RecordsPanel() {
             })}
             {groups.length === 0 && (
               <TR><TD colSpan={9} className="py-10 text-center text-sm text-muted">
-                {ragas.length === 0 ? '아직 평가 실행 기록이 없습니다.' : '검색 · 필터 조건에 맞는 기록이 없습니다.'}
+                {ragas.length === 0 ? '실행 기록이 없습니다' : '검색 결과 없음'}
               </TD></TR>
             )}
           </TBody>

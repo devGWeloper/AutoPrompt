@@ -97,7 +97,6 @@ function download(filename: string, text: string) {
 // ---- small pieces ----------------------------------------------------------
 
 const LABEL = 'mb-1 block eyebrow';
-const HINT = 'font-normal normal-case tracking-normal text-muted';
 
 function FieldsEditor({
   value, onChange, autoFocus,
@@ -120,7 +119,7 @@ function FieldsEditor({
           sets the column's minimum and pushes the whole page wider than the viewport. */}
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div className="min-w-0">
-          <label className={LABEL}>Contexts <span className={HINT}>(선택 · 한 줄에 하나)</span></label>
+          <label className={LABEL}>Contexts</label>
           <Textarea
             value={value.contexts}
             onChange={(e) => set({ contexts: e.target.value })}
@@ -130,7 +129,7 @@ function FieldsEditor({
           />
         </div>
         <div className="min-w-0">
-          <label className={LABEL}>정답 <span className={HINT}>(선택 · 정답 일치/정확도 지표에 사용)</span></label>
+          <label className={LABEL}>정답</label>
           <Textarea
             value={value.groundTruth}
             onChange={(e) => set({ groundTruth: e.target.value })}
@@ -421,7 +420,6 @@ export default function DatasetsPanel() {
             {datasets.length === 0 && !creating && (
               <li className="px-1 py-8 text-center text-sm text-muted">
                 데이터셋이 없습니다
-                <span className="mt-0.5 block text-xs">위 <span className="font-medium">+ 새로 만들기</span>로 시작하세요.</span>
               </li>
             )}
           </ul>

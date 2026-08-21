@@ -263,7 +263,6 @@ export function RunProgress({
             </span>
           </>
         )}
-        {scoring && <span className="text-muted">— 심판 LLM 호출 중이라 시간이 걸릴 수 있습니다</span>}
       </div>
       <div className={cn('grid gap-1', scoreOn && hasRagas ? 'grid-cols-2' : 'grid-cols-1')}>
         <Bar done={answered} total={total} tone={answering ? 'accent' : 'muted'} />

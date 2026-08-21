@@ -142,7 +142,7 @@ export default function NodePromptsPage() {
               </li>
             ))}
             {versions.length === 0 && (
-              <li className="px-1 py-2 text-sm text-muted">No versions yet. Create one.</li>
+              <li className="px-1 py-2 text-sm text-muted-soft">—</li>
             )}
           </ul>
         </aside>
@@ -184,7 +184,7 @@ export default function NodePromptsPage() {
               </div>
             </>
           ) : (
-            <div className="p-8 text-sm text-muted">버전을 선택하거나 새로 만드세요.</div>
+            <div className="p-8 text-sm text-muted-soft">—</div>
           )}
         </main>
       </div>
@@ -267,25 +267,23 @@ function EditorTab({
     <div className="flex flex-col gap-5">
       {err && <div className="rounded-sm border border-bad/20 bg-bad/5 px-3 py-2 text-sm text-bad">{err}</div>}
       <div>
-        <div className="mb-1.5 flex items-baseline gap-2">
+        <div className="mb-1.5">
           <span className="text-sm font-medium text-ink">Model</span>
-          <span className="text-xs text-muted">Saved with the version</span>
         </div>
         <ModelSelect value={model} onChange={setModel} className="w-full" />
       </div>
       <PromptField
         label="System prompt"
-        caption="Read as-is by the external model from the active PTX_PROMPT_HIS row"
         value={system}
         onChange={(e) => setSystem(e.target.value)}
         rows={10}
       />
       <PromptField
         label="User prompt"
-        caption={'Test message template · variable {{name}}'}
         value={user}
         onChange={(e) => setUser(e.target.value)}
         rows={8}
+        placeholder={'{{name}}'}
       />
       <div className="flex justify-end">
         <Button onClick={save} disabled={!dirty || busy}>{busy ? 'Saving…' : 'Save prompt'}</Button>
@@ -296,27 +294,27 @@ function EditorTab({
 
 function PromptField({
   label,
-  caption,
   value,
   onChange,
   rows,
+  placeholder,
 }: {
   label: string;
-  caption: string;
   value: string;
   onChange: ChangeEventHandler<HTMLTextAreaElement>;
   rows: number;
+  placeholder?: string;
 }) {
   return (
     <div>
-      <div className="mb-1.5 flex items-baseline gap-2">
+      <div className="mb-1.5">
         <span className="text-sm font-medium text-ink">{label}</span>
-        <span className="text-xs text-muted">{caption}</span>
       </div>
       <Textarea
         value={value}
         onChange={onChange}
         rows={rows}
+        placeholder={placeholder}
         className="w-full font-mono text-sm leading-relaxed"
       />
     </div>
@@ -414,8 +412,8 @@ function HistoryTab({ nodeNm }: { nodeNm: string }) {
       .then(setLogs)
       .catch(() => setLogs([]));
   }, [nodeNm]);
-  if (logs === null) return <div className="text-sm text-muted">Loading…</div>;
-  if (!logs.length) return <div className="text-sm text-muted">No history yet.</div>;
+  if (logs === null) return <div className="text-sm text-muted-soft">…</div>;
+  if (!logs.length) return <div className="text-sm text-muted-soft">—</div>;
   return (
     <ul className="space-y-2.5">
       {logs.map((l) => {
@@ -502,9 +500,9 @@ function NewVersionModal({
       </label>
       <label className="mb-3 block">
         <span className="text-sm font-medium text-ink">
-          User prompt <span className="font-normal text-muted">(test message template, variable: {'{{name}}'})</span>
+          User prompt
         </span>
-        <Textarea value={user} onChange={(e) => setUser(e.target.value)} rows={6} className="mt-1 w-full font-mono" />
+        <Textarea value={user} onChange={(e) => setUser(e.target.value)} rows={6} placeholder={'{{name}}'} className="mt-1 w-full font-mono" />
       </label>
       <div className="grid grid-cols-2 gap-3">
         <label className="block">

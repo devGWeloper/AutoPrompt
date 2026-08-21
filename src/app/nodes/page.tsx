@@ -75,10 +75,7 @@ export default function NodesPage() {
                   <div className="flex items-center gap-2 pr-28">
                     <span className="truncate text-display-xs text-ink">{n.node_nm}</span>
                   </div>
-                  <p className="mt-1.5 truncate font-mono text-caption-mono text-muted">{n.latest_model_nm ?? 'No model set'}</p>
-                  <span className="mt-4 text-body-sm font-medium text-muted transition-colors group-hover:text-ink">
-                    Manage prompts →
-                  </span>
+                  <p className="mt-1.5 truncate font-mono text-caption-mono text-muted">{n.latest_model_nm ?? '—'}</p>
                 </button>
                 <div className="absolute right-3 top-3 flex items-center gap-1.5">
                   <Badge tone="accent">v{n.latest_version_no ?? '—'}</Badge>
@@ -202,9 +199,9 @@ function NewNodeModal({
       </label>
       <label className="mb-3 block">
         <span className="text-sm font-medium text-ink">
-          User prompt <span className="font-normal text-muted">(test message template, variable: {'{{name}}'})</span>
+          User prompt
         </span>
-        <Textarea value={user} onChange={(e) => setUser(e.target.value)} rows={6} className="mt-1 w-full font-mono" />
+        <Textarea value={user} onChange={(e) => setUser(e.target.value)} rows={6} placeholder={'{{name}}'} className="mt-1 w-full font-mono" />
       </label>
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
