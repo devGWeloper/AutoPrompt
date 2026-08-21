@@ -800,9 +800,9 @@ export function SettingsLink({ label }: { label: string }) {
   );
 }
 
-/** Pick the API this run calls. A dropdown rather than a chip row: the address
- * belongs to the choice, so it rides inside the list instead of sitting beside
- * it as a second line of text. */
+/** Pick the API this run calls. The list carries names only — the address is
+ * settings' business, and it made every row long enough to hide the name. It
+ * stays reachable as the control's tooltip. */
 export function EndpointSelect({
   endpoints,
   value,
@@ -821,14 +821,14 @@ export function EndpointSelect({
       value={value ?? ""}
       onChange={(e) => onChange(Number(e.target.value))}
       title={picked?.endpoint_url}
-      className={cn("h-9 w-64 text-xs", className)}
+      className={cn("h-9 w-48 text-xs", className)}
     >
       <option value="" disabled>
         API 선택
       </option>
       {endpoints.map((e) => (
         <option key={e.endpoint_id} value={e.endpoint_id}>
-          {e.endpoint_nm} · {e.endpoint_url}
+          {e.endpoint_nm}
         </option>
       ))}
     </Select>

@@ -147,16 +147,18 @@ function StatusFoot() {
   );
 }
 
-/** The mark is the X of the name, set as a letter. Drawn as two thin strokes it
- * read as a plain black square — an empty placeholder rather than a logo. */
+/** The mark carries its own colours in the SVG — a near-black tile with a white
+ * X. Painted with a token class instead, a build whose CSS is missing that token
+ * renders the tile transparent and the mark inverts to black-on-white. */
 function BrandMark() {
   return (
-    <span
-      aria-hidden
-      className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-primary text-[17px] font-semibold leading-none text-primary-fg"
-    >
-      X
-    </span>
+    <svg aria-hidden width="32" height="32" viewBox="0 0 32 32" className="shrink-0">
+      <rect width="32" height="32" rx="8" fill="#080808" />
+      <g stroke="#ffffff" strokeWidth="3.4" strokeLinecap="round">
+        <path d="M11 11 L21 21" />
+        <path d="M21 11 L11 21" />
+      </g>
+    </svg>
   );
 }
 
