@@ -12,7 +12,8 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { SHELL } from '@/lib/layout';
 import { MODEL_ROLE_NOTES, type Endpoint, type EndpointHeader, type LlmModel, type ModelRole } from '@/lib/types';
-import { errText, PencilIcon, TrashIcon, useArmed } from '@/components/ragas/shared';
+import { errText, PencilIcon, refreshEndpoints, setLlmCatalog, TrashIcon, useArmed } from '@/components/ragas/shared';
+import { setRoleCatalog } from '@/components/ragas/ModelPicker';
 
 /**
  * The one place where what a run may *choose from* is defined: which APIs it can
@@ -96,11 +97,14 @@ function Toggle({ on, onChange, title }: { on: boolean; onChange: (v: boolean) =
       aria-checked={on}
       title={title}
       onClick={() => onChange(!on)}
-      className={cn('relative h-4 w-7 shrink-0 rounded-full transition-colors', on ? 'bg-primary' : 'bg-muted/30')}
+      className={cn(
+        'relative h-4 w-7 shrink-0 rounded-full border transition-colors',
+        on ? 'border-primary bg-primary' : 'border-line-strong bg-surface-3',
+      )}
     >
       <span
         className={cn(
-          'absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform',
+          'absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white shadow-[0_1px_2px_rgba(8,8,8,0.35)] transition-transform',
           on && 'translate-x-3',
         )}
       />
@@ -260,7 +264,7 @@ function EndpointsSection({
         <Table>
           <THead>
             <TR>
-              <TH className="w-10" />
+              <TH className="w-14">사용</TH>
               <TH>이름</TH>
               <TH>URL</TH>
               <TH className="w-24">헤더</TH>
@@ -366,16 +370,7 @@ function ModelsSection({ list, setList }: { list: LlmModel[]; setList: (next: Ll
         <ul className="divide-y divide-line">
           {list.map((m) => (
             <li key={m.llm_id} className="flex items-center gap-3 px-5 py-2.5">
-              <Toggle
-                on={m.is_active === 'Y'}
-                title={m.is_active === 'Y' ? '선택 가능' : '숨김'}
-                onChange={(v) =>
-                  run(() => api.put<LlmModel[]>(`/llms/${m.llm_id}`, { llm_nm: m.llm_nm, description: m.description, is_active: v ? 'Y' : 'N' }))
-                }
-              />
-              <span className={cn('min-w-0 flex-1 truncate font-mono text-body-sm', m.is_active === 'Y' ? 'text-ink' : 'text-muted-soft')}>
-                {m.llm_nm}
-              </span>
+              <span className="min-w-0 flex-1 truncate font-mono text-body-sm text-ink">{m.llm_nm}</span>
               <DeleteBtn title="삭제" onConfirm={() => run(() => api.del<LlmModel[]>(`/llms/${m.llm_id}`))} />
             </li>
           ))}
@@ -469,14 +464,32 @@ export default function SettingsPage() {
 
   useEffect(load, [load]);
 
+  // Every save also republishes the list the run screens read from. They cache
+  // it for the life of the tab, so without this a model added here would not be
+  // selectable until a full reload.
+  const saveEndpoints = useCallback((next: Endpoint[]) => {
+    setEndpoints(next);
+    // Refetched rather than published: the run screens get the active-only,
+    // credential-masked view, which is not what this page is holding.
+    refreshEndpoints();
+  }, []);
+  const saveModels = useCallback((next: LlmModel[]) => {
+    setModels(next);
+    setLlmCatalog(next);
+  }, []);
+  const saveRoles = useCallback((next: ModelRole[]) => {
+    setRoles(next);
+    setRoleCatalog(next);
+  }, []);
+
   return (
     <AppShell section="settings">
       <div className={cn(SHELL, 'px-8 py-7')}>
         <PageHeader title="설정" />
         <div className="flex flex-col gap-5">
-          <EndpointsSection list={endpoints} setList={setEndpoints} />
-          <ModelsSection list={models} setList={setModels} />
-          <RolesSection roles={roles} setRoles={setRoles} />
+          <EndpointsSection list={endpoints} setList={saveEndpoints} />
+          <ModelsSection list={models} setList={saveModels} />
+          <RolesSection roles={roles} setRoles={saveRoles} />
         </div>
       </div>
     </AppShell>

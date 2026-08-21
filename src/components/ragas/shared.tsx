@@ -116,13 +116,13 @@ export function ScoreToggle({ on, onChange }: { on: boolean; onChange: (v: boole
       <span
         aria-hidden
         className={cn(
-          'relative h-4 w-7 shrink-0 rounded-full transition-colors',
-          on ? 'bg-primary' : 'bg-muted/30 group-hover:bg-muted/45',
+          'relative h-4 w-7 shrink-0 rounded-full border transition-colors',
+          on ? 'border-primary bg-primary' : 'border-line-strong bg-surface-3 group-hover:bg-line',
         )}
       >
         <span
           className={cn(
-            'absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform',
+            'absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white shadow-[0_1px_2px_rgba(8,8,8,0.35)] transition-transform',
             on && 'translate-x-3',
           )}
         />
@@ -904,4 +904,23 @@ export function DefaultHint({ value }: { value: string | null }) {
       기본값 {value || '없음'}
     </span>
   );
+}
+
+/**
+ * Settings changed — pull the shared lists again so a run screen that is already
+ * mounted offers what was just registered. The caches above live for the life of
+ * the tab, so without this a newly added model only appears after a full reload.
+ */
+export function refreshEndpoints(): void {
+  endpointCache = null;
+  api
+    .get<Endpoint[]>('/endpoints?selectable=1')
+    .then(publishEndpoints)
+    .catch(() => publishEndpoints([]));
+}
+
+/** The settings page already holds the fresh list, so it is published directly
+ * rather than re-fetched. */
+export function setLlmCatalog(next: LlmModel[]): void {
+  publishLlms(next);
 }

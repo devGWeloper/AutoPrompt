@@ -271,3 +271,9 @@ export function ModelPicker({
     </>
   );
 }
+
+/** Publish a role list the settings page just saved, so run screens that are
+ * already mounted see it without a reload. */
+export function setRoleCatalog(next: ModelRole[]): void {
+  publishRoles(next);
+}
