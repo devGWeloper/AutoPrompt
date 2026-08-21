@@ -20,6 +20,7 @@ import {
   type RagasResultRow,
   type RagasRunDetail,
 } from '@/lib/types';
+import { MatchDiff, PaneLabel } from './MatchDiff';
 
 // ---- formatting ------------------------------------------------------------
 
@@ -111,7 +112,9 @@ export function ScoreToggle({ on, onChange }: { on: boolean; onChange: (v: boole
       role="switch"
       aria-checked={on}
       onClick={() => onChange(!on)}
-      className="group inline-flex items-center gap-2 whitespace-nowrap text-xs font-semibold"
+      aria-label="채점"
+      title={on ? '채점 끄기' : '채점 켜기'}
+      className="group inline-flex items-center whitespace-nowrap"
     >
       <span
         aria-hidden
@@ -127,7 +130,6 @@ export function ScoreToggle({ on, onChange }: { on: boolean; onChange: (v: boole
           )}
         />
       </span>
-      <span className={cn('transition-colors', on ? 'text-ink' : 'text-muted')}>채점</span>
     </button>
   );
 }
@@ -142,9 +144,11 @@ function Chip({
       aria-pressed={on}
       onClick={onClick}
       className={cn(
-        'inline-flex items-center whitespace-nowrap rounded-sm border px-2.5 py-1 text-xs transition-colors',
-        strong ? 'font-semibold' : 'font-medium',
-        on ? 'border-accent/25 bg-accent-soft/60 text-accent' : 'border-transparent text-muted hover:bg-surface-2',
+        'inline-flex items-center whitespace-nowrap rounded-sm border px-2.5 py-1 transition-colors',
+        strong ? 'text-xs font-semibold' : 'text-[11px] font-medium',
+        on
+          ? 'border-accent/30 bg-accent-soft text-accent'
+          : 'border-line bg-surface text-muted hover:border-line-strong hover:text-ink',
       )}
     >
       {label}
@@ -156,36 +160,39 @@ function Chip({
  * Evaluation-option picker: two groups — 정답 일치 (no LLM) and RAGAS. Turning
  * RAGAS on selects all five metrics and reveals them for individual picking;
  * turning it off (or deselecting all five) hides them again.
+ *
+ * One line, read left to right: the two group chips first, then the five RAGAS
+ * metrics behind a hairline that ties them to the group they belong to. Stacking
+ * them as a second wrapped row inside the run form made the row taller and the
+ * grouping had to be guessed from indentation.
  */
 export function EvalOptions({ metrics, setMetrics }: { metrics: string[]; setMetrics: (f: (cur: string[]) => string[]) => void }) {
   const exactOn = metrics.includes(EXACT_MATCH);
   const ragasOn = RAGAS_METRICS.some((m) => metrics.includes(m));
   return (
-    <div className="flex min-w-0 flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-1.5">
-        <Chip
-          strong
-          label={METRIC_LABELS[EXACT_MATCH]}
-          title={METRIC_DESCRIPTIONS[EXACT_MATCH]}
-          on={exactOn}
-          onClick={() => setMetrics((cur) => (exactOn ? cur.filter((x) => x !== EXACT_MATCH) : [...cur, EXACT_MATCH]))}
-        />
-        <Chip
-          strong
-          label="RAGAS"
-          title="심판 LLM으로 채점하는 RAGAS 지표입니다. 켜면 아래에서 지표를 고를 수 있습니다."
-          on={ragasOn}
-          onClick={() =>
-            setMetrics((cur) =>
-              ragasOn
-                ? cur.filter((x) => !RAGAS_METRICS.includes(x as (typeof RAGAS_METRICS)[number]))
-                : [...cur, ...RAGAS_METRICS],
-            )
-          }
-        />
-      </div>
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <Chip
+        strong
+        label={METRIC_LABELS[EXACT_MATCH]}
+        title={METRIC_DESCRIPTIONS[EXACT_MATCH]}
+        on={exactOn}
+        onClick={() => setMetrics((cur) => (exactOn ? cur.filter((x) => x !== EXACT_MATCH) : [...cur, EXACT_MATCH]))}
+      />
+      <Chip
+        strong
+        label="RAGAS"
+        title="심판 LLM 으로 채점하는 다섯 지표"
+        on={ragasOn}
+        onClick={() =>
+          setMetrics((cur) =>
+            ragasOn
+              ? cur.filter((x) => !RAGAS_METRICS.includes(x as (typeof RAGAS_METRICS)[number]))
+              : [...cur, ...RAGAS_METRICS],
+          )
+        }
+      />
       {ragasOn && (
-        <div className="ml-1 flex flex-wrap items-center gap-1.5 border-l-2 border-line pl-3">
+        <span className="flex flex-wrap items-center gap-1.5 border-l border-line pl-2">
           {RAGAS_METRICS.map((m) => (
             <Chip
               key={m}
@@ -195,7 +202,7 @@ export function EvalOptions({ metrics, setMetrics }: { metrics: string[]; setMet
               onClick={() => setMetrics((cur) => (cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m]))}
             />
           ))}
-        </div>
+        </span>
       )}
     </div>
   );
@@ -476,15 +483,15 @@ export function CopyButton({ text }: { text: string }) {
 export function TraceValueBox({ row }: { row: RagasResultRow }) {
   if (!row.trace_value) return null;
   return (
-    <div className="min-w-0">
-      <div className="flex items-center gap-2">
-        <p className="eyebrow">
-          {row.trace_var_nm || '중간 변수'}
-        </p>
-        <span className="text-[11px] text-muted">— 채점 대상</span>
-        <CopyButton text={row.trace_value} />
+    <div className="min-w-0 overflow-hidden rounded-sm border border-line bg-surface">
+      <div className="flex items-center gap-1.5 border-b border-line bg-surface-2 px-3 py-1.5">
+        <PaneLabel tone="left">채점 대상</PaneLabel>
+        <span className="truncate rounded-sm border border-line px-1 py-px font-mono text-[10px] text-muted">
+          {row.trace_var_nm || 'trace'}
+        </span>
+        <span className="ml-auto"><CopyButton text={row.trace_value} /></span>
       </div>
-      <pre className="mt-0.5 max-h-72 overflow-auto rounded-sm border border-line bg-surface-2/50 px-2.5 py-2 text-xs leading-relaxed text-ink">
+      <pre className="max-h-72 overflow-auto px-3 py-2.5 font-mono text-xs leading-relaxed text-ink">
         {prettyJson(row.trace_value)}
       </pre>
     </div>
@@ -670,24 +677,23 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
               )}
             </button>
             {!isClosed && (
-              <div className={cn('px-4 pb-3.5 pl-10', !!r.ground_truth && 'grid gap-4 sm:grid-cols-2')}>
-                {r.ground_truth && (
+              <div className="space-y-3 px-4 pb-3.5 pl-10">
+                {/* 기대 정답이 있으면 채점 대상 바로 옆에 놓고 다른 곳만 칠한다 —
+                    O/X 를 눈으로 다시 검산하지 않아도 된다. 정답이 없는 실행은
+                    비교할 짝이 없으니 채점 대상만 보여준다. */}
+                {r.ground_truth ? <MatchDiff row={r} /> : <TraceValueBox row={r} />}
+                {/* 답변이 곧 채점 대상이면 위 왼쪽 칸이 이미 그것이다. 중간 변수를
+                    채점했거나 호출이 실패했을 때만 따로 편다. */}
+                {(!r.ground_truth || r.trace_value || !!r.error_msg) && (
                   <div className="min-w-0">
-                    <p className="eyebrow">Ground truth</p>
-                    <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-ink">{r.ground_truth}</p>
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="eyebrow">답변</p>
+                      <ElapsedTag ms={r.elapsed_ms} />
+                    </div>
+                    <div className="mt-0.5"><AnswerBox text={r.answer} error={r.error_msg} /></div>
                   </div>
                 )}
-                <TraceValueBox row={r} />
-                <div className={cn('min-w-0', r.trace_value && r.ground_truth && 'sm:col-span-2')}>
-                  <div className="flex items-baseline justify-between gap-2">
-                    <p className="eyebrow">
-                      답변{r.trace_value && <span className="ml-1.5 font-normal normal-case tracking-normal">· 채점 대상 아님</span>}
-                    </p>
-                    <ElapsedTag ms={r.elapsed_ms} />
-                  </div>
-                  <div className="mt-0.5"><AnswerBox text={r.answer} error={r.error_msg} /></div>
-                  {showScores && <div className="mt-3"><ScoreBars row={r} cancelled={cancelled} /></div>}
-                </div>
+                {showScores && <ScoreBars row={r} cancelled={cancelled} />}
               </div>
             )}
           </div>
@@ -889,40 +895,15 @@ export function useAgentDefaults(): AgentDefaults | null {
   return d;
 }
 
-/** The value a field falls back to, printed under it. Data, not an explanation:
- * the box is empty, and this is what goes out in its place. */
-export function DefaultHint({ value }: { value: string | null }) {
-  return (
-    <span className="mt-1 block truncate font-mono text-caption-mono text-muted-soft">
-      기본값 {value || '없음'}
-    </span>
-  );
-}
-
 /**
- * 직접 입력으로 나가는 요청 body 그대로. 폼에서 채우는 건 `message` 하나뿐이고
- * 나머지 네 키는 서버가 붙인다 — 형식을 확인하러 README 를 열지 않도록 입력창
- * 밑에 그대로 적어 둔다. 원본은 `lib/services/externalAgent.ts` 의 buildPayload.
+ * 직접 입력 칸이 처음 들고 있는 메시지.
+ *
+ * 폼이 채우는 건 요청 body 의 `message` 하나뿐이고 나머지 키는 서버가 붙인다
+ * (`lib/services/externalAgent.ts` 의 buildPayload). 그 형식을 적어 두는 대신
+ * 실제로 보낼 수 있는 한 줄을 넣어 둔다 — 그대로 눌러도 호출이 되고, 무엇을
+ * 적는 자리인지도 같이 답한다.
  */
-export function PayloadFormat({ userId }: { userId?: string | null }) {
-  const defaults = useAgentDefaults();
-  const uid = userId || defaults?.userId || '<사번>';
-  const body = [
-    '{',
-    '  "message": "↑ 위에 입력한 메시지",',
-    `  "user_id": "${uid}",`,
-    '  "session_id": "",',
-    '  "chat_type": "default",',
-    '  "session_system_prompt": "{CUBE_CHANNEL_ID, CUBE_CHANNEL_NM, CUBE_USER_ID, CUBE_USER_NM, TRACE_ID}"',
-    '}',
-  ].join('\n');
-  return (
-    <div className="rounded-sm border border-line bg-surface-2 px-3 py-2">
-      <span className="eyebrow mb-1 block">POST body</span>
-      <pre className="overflow-x-auto whitespace-pre font-mono text-caption-mono leading-relaxed text-muted">{body}</pre>
-    </div>
-  );
-}
+export const SAMPLE_MESSAGE = '!@#ActionNode#@! 5EASJ50_C AQ 취소';
 
 /**
  * Settings changed — pull the shared lists again so a run screen that is already

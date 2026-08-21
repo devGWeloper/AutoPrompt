@@ -22,7 +22,6 @@ import {
 } from '@/lib/types';
 import {
   DatasetSelect,
-  DefaultHint,
   EndpointSelect,
   InlineDivider,
   InlineField,
@@ -39,7 +38,7 @@ import {
   ElapsedTag,
   AnswerBox,
   PendingHint,
-  PayloadFormat,
+  SAMPLE_MESSAGE,
   errText,
   fmt3,
   RunProgress,
@@ -89,8 +88,8 @@ function directScoresRow(res: DirectResult): RagasResultRow | null {
 
 /** Credentials that only apply to a manual call — a dataset run reaches the
  * agent through the run's SSE stream, which carries the endpoint id and nothing
- * else. Each box prints the value it falls back to when left empty: the key
- * comes from the selected API's first header (masked), the id from config. */
+ * else. Each box holds its fallback as the placeholder: the key comes from the
+ * selected API's first header (masked), the id from config. */
 function AuthOverrides({
   authKey, setAuthKey, userId, setUserId, endpoint, defaults,
 }: {
@@ -104,13 +103,22 @@ function AuthOverrides({
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <div className="min-w-0">
         <label className="mb-1 block eyebrow">Auth Key</label>
-        <Input value={authKey} onChange={(e) => setAuthKey(e.target.value)} placeholder="—" className="w-full text-sm" />
-        <DefaultHint value={header ? `${header.name}: ${header.value}` : null} />
+        <Input
+          value={authKey}
+          onChange={(e) => setAuthKey(e.target.value)}
+          placeholder={header ? `${header.name}: ${header.value}` : '—'}
+          title={header ? `${header.name}: ${header.value}` : undefined}
+          className="w-full text-sm"
+        />
       </div>
       <div className="min-w-0">
         <label className="mb-1 block eyebrow">User ID</label>
-        <Input value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="—" className="w-full text-sm" />
-        <DefaultHint value={defaults?.userId ?? null} />
+        <Input
+          value={userId}
+          onChange={(e) => setUserId(e.target.value)}
+          placeholder={defaults?.userId ?? '—'}
+          className="w-full text-sm"
+        />
       </div>
     </div>
   );
@@ -171,7 +179,7 @@ export default function SingleRunPanel() {
   const resumedRef = useRef(false);
   const wsRef = useRef<EventSource | null>(null);
   // Manual (raw single message) state.
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(SAMPLE_MESSAGE);
   const [expected, setExpected] = useState("");
   const [authKey, setAuthKey] = useState('');
   const [userId, setUserId] = useState('');
@@ -377,12 +385,6 @@ export default function SingleRunPanel() {
 
           <InlineField label="채점">
             <ScoreToggle on={scoreOn} onChange={setScoreOn} />
-            {scoreOn && (
-              <>
-                <EvalOptions metrics={metrics} setMetrics={setMetrics} />
-                {metrics.length === 0 && <span className="text-caption text-bad">하나 이상</span>}
-              </>
-            )}
           </InlineField>
 
           <div className="ml-auto flex shrink-0 items-center gap-2.5">
@@ -405,8 +407,18 @@ export default function SingleRunPanel() {
           </div>
         </div>
 
+        {/* 지표는 입력·실행과 같은 줄을 두고 다투다 두 줄로 밀려나 있었다. 모델
+            표와 같은 자리 — 경계선 아래 한 줄 — 를 주면 왼쪽에서 오른쪽으로 한 번에 읽힌다. */}
+        {scoreOn && (
+          <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-2.5">
+            <InlineField label="지표">
+              <EvalOptions metrics={metrics} setMetrics={setMetrics} />
+            </InlineField>
+            {metrics.length === 0 && <span className="text-caption text-bad">하나 이상 고르세요</span>}
+          </div>
+        )}
+
         {source === 'manual' && (
-          <>
           <div className="mt-2.5 grid gap-2.5 border-t border-line pt-2.5 sm:grid-cols-2">
             <Textarea
               value={message}
@@ -426,9 +438,6 @@ export default function SingleRunPanel() {
               />
             )}
           </div>
-          {/* 형식을 묻지 않아도 되게, 이 입력이 실제로 나가는 모양을 그대로 둔다. */}
-          <div className="mt-2.5"><PayloadFormat userId={userId || null} /></div>
-          </>
         )}
 
         

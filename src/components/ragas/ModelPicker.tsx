@@ -70,11 +70,17 @@ export function useModelRoles(): { roles: ModelRole[]; setRoles: (next: ModelRol
   return { roles, setRoles: publishRoles };
 }
 
-/** Every registered role, with nothing pinned. Which model a role runs is
- * decided per test, so a run form opens empty and an untouched box means the
- * agent's own config — the same thing the empty box says. */
+/** Every registered role, holding the default saved for it in PTX_MODEL_MAS.
+ * The form opens on the values a run would actually use, so the boxes answer
+ * "which model" instead of asking it; emptying one hands that role back to the
+ * agent's own config. */
 export function draftsFromRoles(roles: ModelRole[]): ModelDrafts {
-  return Object.fromEntries(roles.map((r) => [r.role_cd, { model: '', temperature: '' }]));
+  return Object.fromEntries(
+    roles.map((r) => [
+      r.role_cd,
+      { model: r.model_nm ?? '', temperature: r.temperature === null ? '' : String(r.temperature) },
+    ]),
+  );
 }
 
 const pinned = (d: ModelDraft) => d.model.trim() !== '' || d.temperature.trim() !== '';
@@ -118,9 +124,9 @@ function pinText(drafts: ModelDrafts): string {
     .filter(([, d]) => pinned(d))
     .map(([role, d]) => {
       const t = d.temperature.trim();
-      return `${role}=${d.model.trim() || '기본값'}${t ? ` (t${t})` : ''}`;
+      return `${role}=${d.model.trim() || 'As-is'}${t ? ` (t${t})` : ''}`;
     });
-  return parts.length ? parts.join(' · ') : '에이전트 config 기본값';
+  return parts.length ? parts.join(' · ') : '—';
 }
 
 const sameDrafts = (a: ModelDrafts, b: ModelDrafts) =>
@@ -142,8 +148,8 @@ export function ModelPicker({
   const catalogAll = useLlmModels();
   const catalog = useMemo(() => catalogAll.filter((m) => m.is_active === 'Y'), [catalogAll]);
   const catalogMissing = (v: string) => v !== '' && !catalog.some((o) => o.llm_nm === v);
-  const blank = useMemo(() => draftsFromRoles(roles), [roles]);
-  const dirty = columns.some((c) => !sameDrafts(c.drafts, blank));
+  const saved = useMemo(() => draftsFromRoles(roles), [roles]);
+  const dirty = columns.some((c) => !sameDrafts(c.drafts, saved));
   // Two columns holding the same thing is the ordinary case (both pre-filled
   // from the same defaults), and saying it once is shorter and clearer than saying it
   // twice — the point of the line is whether the sides differ.
@@ -231,7 +237,7 @@ export function ModelPicker({
                           'hover:border-line-strong focus:border-ink focus:shadow-ring focus:outline-none',
                           catalogMissing(cells[i].model) ? 'border-warn' : 'border-line',
                         )}
-                        title={cells[i].model || 'config 기본값'}
+                        title={cells[i].model || undefined}
                       >
                         <option value="">—</option>
                         {catalogMissing(cells[i].model) && <option value={cells[i].model}>{cells[i].model}</option>}
@@ -256,11 +262,11 @@ export function ModelPicker({
             {dirty && (
               <button
                 type="button"
-                title="모두 비우기"
+                title="기본값으로 되돌리기"
                 onClick={() => columns.forEach((c) => c.onChange(draftsFromRoles(roles)))}
                 className="shrink-0 text-caption text-muted transition-colors hover:text-ink"
               >
-                ↺ 비우기
+                ↺ 되돌리기
               </button>
             )}
             <SettingsLink label="설정" />

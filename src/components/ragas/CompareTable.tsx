@@ -13,9 +13,77 @@ import {
   type RagasRunDetail,
 } from '@/lib/types';
 import {
-  AnswerBox, caseMean, Chevron, CollapseAllStrip, ElapsedTag, fmt3, fmtElapsed, OxBadge,
-  PendingHint, ScoredPreview, sideLabel, TraceValueBox,
+  AnswerBox, caseMean, Chevron, CollapseAllStrip, CopyButton, ElapsedTag, fmt3, fmtElapsed,
+  OxBadge, PendingHint, ScoredPreview, sideLabel, TraceValueBox,
 } from './shared';
+import { DiffAgainst, PaneLabel } from './MatchDiff';
+
+/** The expected answer, once, above both sides — it is the same text for A and
+ * B, and repeating it under each would push the two answers apart. */
+function GroundTruthBox({ text }: { text: string }) {
+  return (
+    <div className="mb-3 overflow-hidden rounded-sm border border-line bg-surface">
+      <div className="flex items-center gap-1.5 border-b border-line bg-surface-2 px-3 py-1.5">
+        <PaneLabel tone="right">기대 정답</PaneLabel>
+        <span className="ml-auto"><CopyButton text={text} /></span>
+      </div>
+      <div className="max-h-48 overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 text-sm leading-relaxed text-ink">
+        {text}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One side of a case. With an expected answer present, the side shows what it
+ * was judged on with the parts that differ from it marked, so the two sides can
+ * be read against the same yardstick instead of against each other by eye.
+ */
+function SideBox({
+  label, tone, row, gt,
+}: {
+  label: string;
+  tone: 'neutral' | 'accent';
+  row?: RagasResultRow;
+  gt: string | null;
+}) {
+  const scored = row?.trace_value ?? row?.answer ?? null;
+  const diffable = gt !== null && scored !== null;
+  return (
+    <div className="min-w-0 rounded-sm border border-line bg-surface-2 p-3">
+      <div className="flex items-center gap-2">
+        <Badge tone={tone}>{label}</Badge>
+        {row?.exact_match != null && <OxBadge value={row.exact_match} />}
+        <span className="ml-auto"><ElapsedTag ms={row?.elapsed_ms} /></span>
+      </div>
+      {diffable ? (
+        <>
+          {row?.trace_value && (
+            <div className="mt-2 flex items-center gap-1.5">
+              <PaneLabel tone="left">채점 대상</PaneLabel>
+              <span className="truncate rounded-sm border border-line px-1 py-px font-mono text-[10px] text-muted">
+                {row.trace_var_nm || 'trace'}
+              </span>
+            </div>
+          )}
+          <DiffAgainst className="mt-2" text={scored} expected={gt} unwrapBody={!row?.trace_value} />
+          {/* 중간 변수를 채점한 경우에만 답변이 따로 있다 — 아니면 위가 곧 답변이다. */}
+          {row?.trace_value && (
+            <>
+              <p className="mt-3 eyebrow">답변</p>
+              <div className="mt-0.5"><AnswerBox text={row?.answer} error={row?.error_msg} /></div>
+            </>
+          )}
+        </>
+      ) : (
+        <>
+          {row?.trace_value && <div className="mt-2"><TraceValueBox row={row} /></div>}
+          <div className="mt-2"><AnswerBox text={row?.answer} error={row?.error_msg} /></div>
+        </>
+      )}
+    </div>
+  );
+}
 
 /** Both sides' response times on one line, in the same A · B shape the score
  * badges use. Shown for unscored runs too — speed is a comparison of its own,
@@ -310,24 +378,10 @@ export function CaseCompareTable({
             </button>
             {!isClosed && (
               <div className="px-4 pb-3.5 pl-10">
-                {gt && <p className="mb-3 whitespace-pre-wrap text-xs text-muted"><span className="font-medium">Ground truth ·</span> {gt}</p>}
+                {gt && <GroundTruthBox text={gt} />}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="rounded-sm border border-line bg-surface-2 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <Badge tone="neutral">A · {sideLabel(labelA)}</Badge>
-                      <ElapsedTag ms={a?.elapsed_ms} />
-                    </div>
-                    {a?.trace_value && <div className="mt-2"><TraceValueBox row={a} /></div>}
-                    <div className="mt-2"><AnswerBox text={a?.answer} error={a?.error_msg} /></div>
-                  </div>
-                  <div className="rounded-sm border border-line bg-surface-2 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <Badge tone="accent">B · {sideLabel(labelB)}</Badge>
-                      <ElapsedTag ms={b?.elapsed_ms} />
-                    </div>
-                    {b?.trace_value && <div className="mt-2"><TraceValueBox row={b} /></div>}
-                    <div className="mt-2"><AnswerBox text={b?.answer} error={b?.error_msg} /></div>
-                  </div>
+                  <SideBox label={`A · ${sideLabel(labelA)}`} tone="neutral" row={a} gt={gt} />
+                  <SideBox label={`B · ${sideLabel(labelB)}`} tone="accent" row={b} gt={gt} />
                 </div>
                 {showScores && <CaseScoreBars a={a} b={b} cancelled={cancelled} />}
               </div>

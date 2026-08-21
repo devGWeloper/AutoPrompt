@@ -31,7 +31,7 @@ import {
   PROMPT_TARGET_ENABLED,
   ScoreToggle,
   PendingHint,
-  PayloadFormat,
+  SAMPLE_MESSAGE,
   RunProgress,
   SegToggle,
   StatusPill,
@@ -87,11 +87,11 @@ function manualDetail(side: ManualSide, question: string, groundTruth: string | 
 }
 
 /** How one side of a model comparison is named in the result badges: the first
- * pinned model. An unpinned side runs the agent's own config, which is a real
- * thing to compare against and so is said out loud rather than left blank. */
+ * pinned model. An unpinned side runs the agent's own config — a real thing to
+ * compare against, and the same word the 대상 rail uses for it. */
 function modelLabel(drafts: ModelDrafts): string {
   const hit = Object.values(drafts).find((d) => d.model.trim() !== '');
-  return hit?.model.trim() || 'config 기본값';
+  return hit?.model.trim() || 'As-is';
 }
 
 export default function ComparePanel() {
@@ -139,7 +139,7 @@ export default function ComparePanel() {
   const modelErr = mode === 'model' ? modelDraftError(modelsA, modelsB) : null;
   // Dataset vs one typed message — the same input axis the Single tab offers.
   const [source, setSource] = useState<'dataset' | 'manual'>('dataset');
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState(SAMPLE_MESSAGE);
   const [expected, setExpected] = useState('');
   const [callStatus, setCallStatus] = useState<'idle' | 'running' | 'done' | 'failed'>('idle');
   // The question/ground truth are snapshotted with the answers: editing the
@@ -401,12 +401,6 @@ export default function ComparePanel() {
 
           <InlineField label="채점">
             <ScoreToggle on={scoreOn} onChange={setScoreOn} />
-            {scoreOn && (
-              <>
-                <EvalOptions metrics={metrics} setMetrics={setMetrics} />
-                {metrics.length === 0 && <span className="text-caption text-bad">하나 이상</span>}
-              </>
-            )}
           </InlineField>
 
           <div className="ml-auto flex shrink-0 items-center gap-2.5">
@@ -429,8 +423,18 @@ export default function ComparePanel() {
           </div>
         </div>
 
+        {/* 지표는 입력·실행과 같은 줄을 두고 다투다 두 줄로 밀려나 있었다. 모델
+            표와 같은 자리 — 경계선 아래 한 줄 — 를 주면 왼쪽에서 오른쪽으로 한 번에 읽힌다. */}
+        {scoreOn && (
+          <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-2.5">
+            <InlineField label="지표">
+              <EvalOptions metrics={metrics} setMetrics={setMetrics} />
+            </InlineField>
+            {metrics.length === 0 && <span className="text-caption text-bad">하나 이상 고르세요</span>}
+          </div>
+        )}
+
         {source === 'manual' && (
-          <>
           <div className="mt-2.5 grid gap-2.5 border-t border-line pt-2.5 sm:grid-cols-2">
             <Textarea
               value={message}
@@ -450,9 +454,6 @@ export default function ComparePanel() {
               />
             )}
           </div>
-          {/* 형식을 묻지 않아도 되게, 이 입력이 실제로 나가는 모양을 그대로 둔다. */}
-          <div className="mt-2.5"><PayloadFormat /></div>
-          </>
         )}
       </Card>
 

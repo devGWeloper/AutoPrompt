@@ -98,3 +98,49 @@ export function exactMatchScore(
   const m = exactMatch(answer, expected, opts);
   return m === null ? null : m ? 1 : 0;
 }
+
+/** The two texts to put side by side on the result screen, in the form the
+ * verdict was decided from. */
+export interface ComparePair {
+  left: string;
+  right: string;
+  /** Both sides were JSON and are shown re-formatted (keys sorted, indented) —
+   * the form that was actually compared, so key order and indentation cannot
+   * look like a difference when the verdict says they are not. */
+  json: boolean;
+}
+
+/** Canonical JSON re-expanded for reading. Falls back to the compact form if it
+ * somehow does not parse back. */
+function pretty(canon: string): string {
+  try {
+    return JSON.stringify(JSON.parse(canon), null, 2);
+  } catch {
+    return canon;
+  }
+}
+
+/**
+ * The two operands of :func:`exactMatch`, as text to display.
+ *
+ * Plain text is handed back untouched — whitespace is the only thing
+ * normalization would strip, and the diff ignores whitespace anyway, so the
+ * screen can show the answer as it was written. JSON is shown canonicalised,
+ * which is both what was compared and easier to read than one long line.
+ */
+export function comparablePair(
+  answer: string | null | undefined,
+  expected: string | null | undefined,
+  opts: MatchOpts = {},
+): ComparePair {
+  const raw = { left: answer ?? "", right: expected ?? "" };
+  const unwrap = opts.unwrapBody !== false;
+  const a = sideOf(raw.left, unwrap);
+  const e = sideOf(raw.right, unwrap);
+  if (a.value === undefined || e.value === undefined) return { ...raw, json: false };
+  // A JSON payload whose body is just a string is prose, not a structure.
+  if (typeof a.value === "string" && typeof e.value === "string") {
+    return { left: a.value, right: e.value, json: false };
+  }
+  return { left: pretty(canonical(a.value)), right: pretty(canonical(e.value)), json: true };
+}
