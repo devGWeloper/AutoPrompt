@@ -147,13 +147,15 @@ function StatusFoot() {
   );
 }
 
+/** The mark is the X of the name, set as a letter. Drawn as two thin strokes it
+ * read as a plain black square — an empty placeholder rather than a logo. */
 function BrandMark() {
   return (
-    <span aria-hidden className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-primary">
-      <svg viewBox="0 0 24 24" fill="none" width="16" height="16">
-        <path d="M7 7 L17 17" stroke="#fff" strokeOpacity="0.45" strokeWidth="2.6" strokeLinecap="round" />
-        <path d="M17 7 L7 17" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" />
-      </svg>
+    <span
+      aria-hidden
+      className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-primary text-[17px] font-semibold leading-none text-primary-fg"
+    >
+      X
     </span>
   );
 }

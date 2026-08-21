@@ -22,7 +22,7 @@ import {
 import { CaseCompareTable, CompareVerdict } from './CompareTable';
 import {
   DatasetSelect,
-  EndpointToggle,
+  EndpointSelect,
   InlineDivider,
   InlineField,
   ErrBox,
@@ -349,16 +349,16 @@ export default function ComparePanel() {
             // 두 사이드가 각각 등록된 API 하나씩. 프롬프트·모델은 그대로 둔다.
             <>
               <InlineField label="A">
-                <EndpointToggle endpoints={endpoints} value={epA} onChange={setEpA} />
+                <EndpointSelect endpoints={endpoints} value={epA} onChange={setEpA} />
               </InlineField>
               <InlineField label="B">
-                <EndpointToggle endpoints={endpoints} value={epB} onChange={setEpB} />
+                <EndpointSelect endpoints={endpoints} value={epB} onChange={setEpB} />
               </InlineField>
               {epA != null && epA === epB && <span className="text-caption text-bad">A ≠ B</span>}
             </>
           ) : (
             <InlineField label="API">
-              <EndpointToggle endpoints={endpoints} value={epA} onChange={setEpA} />
+              <EndpointSelect endpoints={endpoints} value={epA} onChange={setEpA} />
               {mode === 'version' && (
                 <>
                   <Select value={nodeNm ?? ''} onChange={(e) => setNodeNm(e.target.value)} className="h-9 w-40">

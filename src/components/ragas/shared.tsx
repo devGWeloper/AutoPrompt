@@ -800,10 +800,10 @@ export function SettingsLink({ label }: { label: string }) {
   );
 }
 
-/** Pick the API this run calls, as a segmented chip row — the same shape as the
- * other run settings, so the whole form reads as one strip of choices rather
- * than a dropdown among toggles. */
-export function EndpointToggle({
+/** Pick the API this run calls. A dropdown rather than a chip row: the address
+ * belongs to the choice, so it rides inside the list instead of sitting beside
+ * it as a second line of text. */
+export function EndpointSelect({
   endpoints,
   value,
   onChange,
@@ -815,29 +815,23 @@ export function EndpointToggle({
   className?: string;
 }) {
   if (!endpoints.length) return <SettingsLink label="설정에서 API 등록" />;
+  const picked = endpoints.find((e) => e.endpoint_id === value);
   return (
-    <div
-      className={cn(
-        'inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-md border border-line bg-surface p-0.5',
-        className,
-      )}
+    <Select
+      value={value ?? ""}
+      onChange={(e) => onChange(Number(e.target.value))}
+      title={picked?.endpoint_url}
+      className={cn("h-9 w-64 text-xs", className)}
     >
+      <option value="" disabled>
+        API 선택
+      </option>
       {endpoints.map((e) => (
-        <button
-          key={e.endpoint_id}
-          type="button"
-          onClick={() => onChange(e.endpoint_id)}
-          title={e.endpoint_url}
-          aria-pressed={value === e.endpoint_id}
-          className={cn(
-            'shrink-0 rounded-sm px-3 py-1 text-[13px] font-medium tracking-[-0.16px] transition-colors',
-            value === e.endpoint_id ? 'bg-primary text-primary-fg' : 'text-muted hover:bg-surface-3 hover:text-ink',
-          )}
-        >
-          {e.endpoint_nm}
-        </button>
+        <option key={e.endpoint_id} value={e.endpoint_id}>
+          {e.endpoint_nm} · {e.endpoint_url}
+        </option>
       ))}
-    </div>
+    </Select>
   );
 }
 

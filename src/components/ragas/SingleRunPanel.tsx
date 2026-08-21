@@ -23,7 +23,7 @@ import {
 import {
   DatasetSelect,
   DefaultHint,
-  EndpointToggle,
+  EndpointSelect,
   InlineDivider,
   InlineField,
   ErrBox,
@@ -313,14 +313,7 @@ export default function SingleRunPanel() {
       <Card className="px-4 py-3">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
           <InlineField label="API">
-            <EndpointToggle endpoints={endpoints} value={endpointId} onChange={setEndpointId} />
-            {/* 고른 API 가 실제로 어느 주소인지 — 이름만으로는 알 수 없다. */}
-            <span
-              className="min-w-0 max-w-[22rem] truncate font-mono text-caption-mono text-muted-soft"
-              title={endpoints.find((e) => e.endpoint_id === endpointId)?.endpoint_url}
-            >
-              {endpoints.find((e) => e.endpoint_id === endpointId)?.endpoint_url}
-            </span>
+            <EndpointSelect endpoints={endpoints} value={endpointId} onChange={setEndpointId} />
           </InlineField>
 
           <InlineDivider />

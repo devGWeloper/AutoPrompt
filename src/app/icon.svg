@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
   <rect width="64" height="64" rx="12" fill="#080808"/>
-  <g fill="none" stroke="#ffffff" stroke-width="7" stroke-linecap="round">
-    <!-- the same X as the top bar: one stroke solid, one at the track's opacity -->
-    <path d="M20 20 L44 44" stroke-opacity="0.45"/>
-    <path d="M44 20 L20 44"/>
+  <!-- the X of the name, heavy enough to read at favicon size -->
+  <g fill="none" stroke="#ffffff" stroke-width="9" stroke-linecap="round">
+    <path d="M21 21 L43 43"/>
+    <path d="M43 21 L21 43"/>
   </g>
 </svg>
