@@ -26,9 +26,9 @@ import {
   InlineDivider,
   InlineField,
   ErrBox,
-  EvalOptions,
   PROMPT_TARGET_BLOCKED_HINT,
   PROMPT_TARGET_ENABLED,
+  EvalOptions,
   ScoreToggle,
   PendingHint,
   SAMPLE_MESSAGE,
@@ -184,7 +184,9 @@ export default function ComparePanel() {
   const scoreReady = !scoreOn || metrics.length > 0;
   const canRun = targetReady && scoreReady && !modelErr && !!datasetId && status !== 'running';
   const canCall = targetReady && scoreReady && !modelErr && !!message.trim() && callStatus !== 'running';
-  const exactOn = scoreOn && metrics.includes(EXACT_MATCH);
+  // 기대 정답이 쓰이는 곳은 정답 일치만이 아니다 — RAGAS 의 answer_correctness ·
+  // context_recall 도 이 값으로 채점하므로, 채점을 켠 실행이면 늘 받는다.
+  const wantsExpected = scoreOn;
   const verLabel = (id: number | null) => (mode === 'version' ? versions.find((v) => v.prompt_id === id)?.version_no ?? '' : '');
   // What each side is actually varying — that is what the result badges should
   // name. Model mode's sides differ only by model, so the model name is the label.
@@ -293,7 +295,7 @@ export default function ComparePanel() {
     if (!canCall) return;
     setCallError(null); setAb(null); setCallStatus('running');
     setRunLabels(curLabels());
-    const gt = exactOn ? expected.trim() || null : null;
+    const gt = wantsExpected ? expected.trim() || null : null;
     // Each side pins exactly the axis under test and nothing else: its own API in
     // endpoint mode, a version in version mode, models in model mode. Everything
     // that is not the axis calls the same API on both sides.
@@ -397,12 +399,6 @@ export default function ComparePanel() {
             {source === 'dataset' && <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />}
           </InlineField>
 
-          <InlineDivider />
-
-          <InlineField label="채점">
-            <ScoreToggle on={scoreOn} onChange={setScoreOn} />
-          </InlineField>
-
           <div className="ml-auto flex shrink-0 items-center gap-2.5">
             <StatusPill status={source === 'dataset' ? status : callStatus} />
             {modelErr && <span className="text-caption text-bad">{modelErr}</span>}
@@ -423,16 +419,19 @@ export default function ComparePanel() {
           </div>
         </div>
 
-        {/* 지표는 입력·실행과 같은 줄을 두고 다투다 두 줄로 밀려나 있었다. 모델
-            표와 같은 자리 — 경계선 아래 한 줄 — 를 주면 왼쪽에서 오른쪽으로 한 번에 읽힌다. */}
-        {scoreOn && (
-          <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-2.5">
-            <InlineField label="지표">
-              <EvalOptions metrics={metrics} setMetrics={setMetrics} />
-            </InlineField>
-            {metrics.length === 0 && <span className="text-caption text-bad">하나 이상 고르세요</span>}
-          </div>
-        )}
+        {/* 채점은 자기 줄을 쓴다 — 지표가 켜지고 꺼질 때마다 위 줄이 접혀서 실행
+            버튼까지 밀려 내려가던 자리다. */}
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line pt-2.5">
+          <InlineField label="채점">
+            <ScoreToggle on={scoreOn} onChange={setScoreOn} />
+            {scoreOn && (
+              <>
+                <EvalOptions metrics={metrics} setMetrics={setMetrics} />
+                {metrics.length === 0 && <span className="text-caption text-bad">하나 이상</span>}
+              </>
+            )}
+          </InlineField>
+        </div>
 
         {source === 'manual' && (
           <div className="mt-2.5 grid gap-2.5 border-t border-line pt-2.5 sm:grid-cols-2">
@@ -443,7 +442,7 @@ export default function ComparePanel() {
               placeholder="메시지 * (A · B 공통)"
               className="w-full text-sm"
             />
-            {exactOn && (
+            {wantsExpected && (
               <Textarea
                 value={expected}
                 onChange={(e) => setExpected(e.target.value)}

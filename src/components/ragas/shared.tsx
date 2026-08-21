@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Select } from '@/components/ui/Field';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -104,7 +104,8 @@ export function usePromptNodes() {
 
 // ---- small shared controls -------------------------------------------------
 
-/** '채점' master switch, shared by every run mode. */
+/** '채점' master switch, shared by every run mode. 라벨은 바로 앞 InlineField 가
+ * 이미 달고 있어서 스위치는 상태만 보인다. */
 export function ScoreToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
     <button
@@ -134,25 +135,49 @@ export function ScoreToggle({ on, onChange }: { on: boolean; onChange: (v: boole
   );
 }
 
-function Chip({
-  label, on, onClick, title, strong,
-}: { label: string; on: boolean; onClick: () => void; title?: string; strong?: boolean }) {
+/**
+ * 하나의 지표 선택. 버튼이 아니라 체크박스인 이유는 이게 '누르는 동작'이 아니라
+ * '고르는 목록'이기 때문이다 — 눌린 버튼과 안 눌린 버튼을 색으로 구별하는 대신,
+ * 체크 표시가 무엇이 켜져 있는지 한눈에 답한다.
+ */
+function Check({
+  label, checked, indeterminate, onChange, title, strong,
+}: {
+  label: string;
+  checked: boolean;
+  /** RAGAS 묶음이 일부만 선택된 상태. */
+  indeterminate?: boolean;
+  onChange: () => void;
+  title?: string;
+  strong?: boolean;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  // indeterminate 는 속성이 아니라 프로퍼티라 JSX 로는 설정할 수 없다.
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = !!indeterminate;
+  }, [indeterminate]);
   return (
-    <button
-      type="button"
+    <label
       title={title}
-      aria-pressed={on}
-      onClick={onClick}
-      className={cn(
-        'inline-flex items-center whitespace-nowrap rounded-sm border px-2.5 py-1 transition-colors',
-        strong ? 'text-xs font-semibold' : 'text-[11px] font-medium',
-        on
-          ? 'border-accent/30 bg-accent-soft text-accent'
-          : 'border-line bg-surface text-muted hover:border-line-strong hover:text-ink',
-      )}
+      className="inline-flex cursor-pointer select-none items-center gap-1.5 whitespace-nowrap"
     >
-      {label}
-    </button>
+      <input
+        ref={ref}
+        type="checkbox"
+        checked={checked}
+        onChange={onChange}
+        className="h-3.5 w-3.5 shrink-0 cursor-pointer accent-accent"
+      />
+      <span
+        className={cn(
+          'transition-colors',
+          strong ? 'text-xs font-semibold' : 'text-[11px] font-medium',
+          checked || indeterminate ? 'text-ink' : 'text-muted',
+        )}
+      >
+        {label}
+      </span>
+    </label>
   );
 }
 
@@ -161,29 +186,32 @@ function Chip({
  * RAGAS on selects all five metrics and reveals them for individual picking;
  * turning it off (or deselecting all five) hides them again.
  *
- * One line, read left to right: the two group chips first, then the five RAGAS
- * metrics behind a hairline that ties them to the group they belong to. Stacking
- * them as a second wrapped row inside the run form made the row taller and the
- * grouping had to be guessed from indentation.
+ * 채점 스위치 바로 옆, 실행 조건 줄에 그대로 선다 — 켠 다음 무엇을 잴지가 이어지는
+ * 한 문장이라 떨어뜨려 놓으면 스위치만 켜고 지나치게 된다. RAGAS 상자는 다섯 중
+ * 일부만 켜져 있으면 indeterminate 라, 요약과 실제 선택이 어긋나 보이지 않는다.
  */
 export function EvalOptions({ metrics, setMetrics }: { metrics: string[]; setMetrics: (f: (cur: string[]) => string[]) => void }) {
   const exactOn = metrics.includes(EXACT_MATCH);
-  const ragasOn = RAGAS_METRICS.some((m) => metrics.includes(m));
+  const chosen = RAGAS_METRICS.filter((m) => metrics.includes(m));
+  const allRagas = chosen.length === RAGAS_METRICS.length;
+  const ragasOn = chosen.length > 0;
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-      <Chip
+    <div className="flex min-w-0 flex-wrap items-center gap-x-3.5 gap-y-2">
+      <Check
         strong
         label={METRIC_LABELS[EXACT_MATCH]}
         title={METRIC_DESCRIPTIONS[EXACT_MATCH]}
-        on={exactOn}
-        onClick={() => setMetrics((cur) => (exactOn ? cur.filter((x) => x !== EXACT_MATCH) : [...cur, EXACT_MATCH]))}
+        checked={exactOn}
+        onChange={() => setMetrics((cur) => (exactOn ? cur.filter((x) => x !== EXACT_MATCH) : [...cur, EXACT_MATCH]))}
       />
-      <Chip
+      <InlineDivider />
+      <Check
         strong
         label="RAGAS"
         title="심판 LLM 으로 채점하는 다섯 지표"
-        on={ragasOn}
-        onClick={() =>
+        checked={allRagas}
+        indeterminate={ragasOn && !allRagas}
+        onChange={() =>
           setMetrics((cur) =>
             ragasOn
               ? cur.filter((x) => !RAGAS_METRICS.includes(x as (typeof RAGAS_METRICS)[number]))
@@ -192,14 +220,14 @@ export function EvalOptions({ metrics, setMetrics }: { metrics: string[]; setMet
         }
       />
       {ragasOn && (
-        <span className="flex flex-wrap items-center gap-1.5 border-l border-line pl-2">
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-2 border-l border-line pl-3">
           {RAGAS_METRICS.map((m) => (
-            <Chip
+            <Check
               key={m}
               label={METRIC_LABELS[m]}
               title={METRIC_DESCRIPTIONS[m]}
-              on={metrics.includes(m)}
-              onClick={() => setMetrics((cur) => (cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m]))}
+              checked={metrics.includes(m)}
+              onChange={() => setMetrics((cur) => (cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m]))}
             />
           ))}
         </span>
@@ -321,7 +349,7 @@ export function SegToggle<T extends string>({ value, onChange, options }: { valu
           key={o.id}
           onClick={() => onChange(o.id)}
           disabled={o.disabled}
-          title={o.disabled ? o.hint : undefined}
+          title={o.hint}
           className={cn(
             'rounded-sm px-3.5 py-1.5 text-sm font-medium transition-colors',
             value === o.id ? 'bg-primary text-primary-fg' : 'text-muted hover:text-ink',
