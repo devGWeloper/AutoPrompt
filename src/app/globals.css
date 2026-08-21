@@ -3,21 +3,48 @@
 @tailwind utilities;
 
 /* Semantic design tokens as RGB channels so Tailwind's `/<alpha>` modifier works
-   (e.g. bg-accent/10). Palette mirrors the inview app's neutral enterprise tone. */
+   (e.g. bg-accent/10). Palette follows the Webflow design language: a generous
+   white canvas, a near-black #080808 primary carrying every CTA / heading /
+   wordmark, hairline #d8d8d8 chrome, and a five-stop chromatic accent system
+   (purple / pink / blue / orange / green) used as surface fills — never as
+   button backgrounds. */
 :root {
-  --bg: 244 245 247;        /* #f4f5f7 — app background */
-  --surface: 255 255 255;   /* white    — cards/panels */
-  --surface-2: 250 251 252; /* #fafbfc — recessed strips (table heads, statusbar) */
-  --surface-3: 240 242 245; /* #f0f2f5 — deeper recess (segmented tracks, hovers) */
-  --line: 225 228 232;      /* #e1e4e8 — hairline borders */
-  --line-strong: 208 212 218; /* #d0d4da — control borders (inputs, buttons) */
-  --ink: 31 35 40;          /* #1f2328 — primary text */
-  --muted: 107 114 128;     /* #6b7280 — secondary text */
-  --accent: 37 99 235;      /* #2563eb — inview blue accent */
+  --bg: 255 255 255;        /* #ffffff — the canvas; the page is white */
+  --surface: 255 255 255;   /* white    — cards/panels (hairline is the chrome) */
+  --surface-2: 247 247 247; /* #f7f7f7 — recessed strips (table heads, statusbar) */
+  --surface-3: 240 240 240; /* #f0f0f0 — deeper recess (segmented tracks, hovers) */
+  --line: 216 216 216;      /* #d8d8d8 — hairline borders */
+  --line-strong: 190 190 190; /* #bebebe — control borders (inputs, buttons) */
+
+  --primary: 8 8 8;         /* #080808 — near-black: every primary CTA */
+  --primary-fg: 255 255 255;/* text on primary */
+
+  --ink: 8 8 8;             /* #080808 — headings and default ink */
+  --ink-strong: 34 34 34;   /* #222222 — near-black emphasis */
+  --body: 54 54 54;         /* #363636 — body paragraphs */
+  --muted: 90 90 90;        /* #5a5a5a — mid-emphasis secondary text */
+  --mute-soft: 171 171 171; /* #ababab — placeholders, fine print */
+
+  --accent: 20 110 245;     /* #146ef5 — info blue (badges, links, live state) */
   --accent-fg: 255 255 255; /* text on accent */
-  --accent-soft: 232 239 255; /* #e8efff — soft accent wash */
-  --ok: 6 118 71;           /* #067647 — pass / healthy */
-  --bad: 180 35 24;         /* #b42318 — fail / error */
+  --accent-deep: 0 106 204; /* #006acc — emphasis links */
+  --accent-soft: 235 242 254; /* soft blue wash */
+
+  /* five-stop chromatic category palette — surface fills, not actions */
+  --chroma-purple: 122 61 255; /* #7a3dff */
+  --chroma-pink: 237 82 203;   /* #ed52cb */
+  --chroma-blue: 59 137 255;   /* #3b89ff */
+  --chroma-orange: 255 107 0;  /* #ff6b00 */
+  --chroma-green: 0 215 34;    /* #00d722 */
+
+  /* semantic — `*-vivid` is the brand's full-saturation stop (fills, dots),
+     the base is the darkened stop of the same hue that stays legible as text. */
+  --ok: 0 122 24;           /* deeper stop of #00d722 */
+  --ok-vivid: 0 215 34;     /* #00d722 */
+  --warn: 146 94 0;         /* deeper stop of #ffae13 */
+  --warn-vivid: 255 174 19; /* #ffae13 */
+  --bad: 238 29 54;         /* #ee1d36 */
+  --bad-vivid: 238 29 54;
 }
 
 html, body, #__next { height: 100%; }
@@ -26,19 +53,48 @@ body {
   color: rgb(var(--ink));
   font-size: 15px;
   line-height: 1.6;
+  /* the brand's negative tracking runs through body copy too */
+  letter-spacing: -0.15px;
+  font-feature-settings: 'ss01';
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
-::selection { background: rgb(var(--accent) / 0.18); }
+/* Weight ceiling is 600 — the brand is confident, never loud. Tailwind's
+   `font-bold` (700) is remapped rather than hunted down call site by call site. */
+.font-bold { font-weight: 600; }
+
+h1, h2, h3, h4 { letter-spacing: -0.2px; }
+
+::selection { background: rgb(var(--ink) / 0.14); }
+
+@layer components {
+  /* The brand's signature section label: uppercase, positive tracking. */
+  .eyebrow {
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: rgb(var(--muted));
+  }
+  .eyebrow-lg {
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 19.5px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: rgb(var(--muted));
+  }
+}
 
 /* interactive elements ease by default for a softer feel */
 button, a, input, select, textarea { transition-duration: 120ms; }
 
-/* subtle enterprise scrollbar (webkit) */
+/* hairline scrollbar in the brand's neutral greys (webkit) */
 *::-webkit-scrollbar { width: 10px; height: 10px; }
 *::-webkit-scrollbar-thumb {
-  background: #d5d9df; border-radius: 10px;
+  background: #d8d8d8; border-radius: 9999px;
   border: 2px solid transparent; background-clip: padding-box;
 }
-*::-webkit-scrollbar-thumb:hover { background: #b9bfc7; background-clip: padding-box; }
+*::-webkit-scrollbar-thumb:hover { background: #ababab; background-clip: padding-box; }
