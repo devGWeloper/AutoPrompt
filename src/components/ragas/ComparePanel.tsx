@@ -31,6 +31,7 @@ import {
   PROMPT_TARGET_ENABLED,
   ScoreToggle,
   PendingHint,
+  PayloadFormat,
   RunProgress,
   SegToggle,
   StatusPill,
@@ -429,6 +430,7 @@ export default function ComparePanel() {
         </div>
 
         {source === 'manual' && (
+          <>
           <div className="mt-2.5 grid gap-2.5 border-t border-line pt-2.5 sm:grid-cols-2">
             <Textarea
               value={message}
@@ -448,6 +450,9 @@ export default function ComparePanel() {
               />
             )}
           </div>
+          {/* 형식을 묻지 않아도 되게, 이 입력이 실제로 나가는 모양을 그대로 둔다. */}
+          <div className="mt-2.5"><PayloadFormat /></div>
+          </>
         )}
       </Card>
 

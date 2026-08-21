@@ -901,6 +901,31 @@ export function DefaultHint({ value }: { value: string | null }) {
 }
 
 /**
+ * 직접 입력으로 나가는 요청 body 그대로. 폼에서 채우는 건 `message` 하나뿐이고
+ * 나머지 네 키는 서버가 붙인다 — 형식을 확인하러 README 를 열지 않도록 입력창
+ * 밑에 그대로 적어 둔다. 원본은 `lib/services/externalAgent.ts` 의 buildPayload.
+ */
+export function PayloadFormat({ userId }: { userId?: string | null }) {
+  const defaults = useAgentDefaults();
+  const uid = userId || defaults?.userId || '<사번>';
+  const body = [
+    '{',
+    '  "message": "↑ 위에 입력한 메시지",',
+    `  "user_id": "${uid}",`,
+    '  "session_id": "",',
+    '  "chat_type": "default",',
+    '  "session_system_prompt": "{CUBE_CHANNEL_ID, CUBE_CHANNEL_NM, CUBE_USER_ID, CUBE_USER_NM, TRACE_ID}"',
+    '}',
+  ].join('\n');
+  return (
+    <div className="rounded-sm border border-line bg-surface-2 px-3 py-2">
+      <span className="eyebrow mb-1 block">POST body</span>
+      <pre className="overflow-x-auto whitespace-pre font-mono text-caption-mono leading-relaxed text-muted">{body}</pre>
+    </div>
+  );
+}
+
+/**
  * Settings changed — pull the shared lists again so a run screen that is already
  * mounted offers what was just registered. The caches above live for the life of
  * the tab, so without this a newly added model only appears after a full reload.

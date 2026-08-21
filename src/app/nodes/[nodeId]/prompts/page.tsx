@@ -7,6 +7,7 @@ import Modal from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Input, Textarea } from '@/components/ui/Field';
+import { ModelSelect } from '@/components/ui/ModelSelect';
 import { Tabs } from '@/components/ui/Tabs';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -270,12 +271,7 @@ function EditorTab({
           <span className="text-sm font-medium text-ink">Model</span>
           <span className="text-xs text-muted">Saved with the version</span>
         </div>
-        <Input
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          placeholder="e.g. claude-sonnet-4-6"
-          className="w-full font-mono"
-        />
+        <ModelSelect value={model} onChange={setModel} className="w-full" />
       </div>
       <PromptField
         label="System prompt"
@@ -498,7 +494,7 @@ function NewVersionModal({
       {err && <div className="mb-3 rounded-sm border border-bad/20 bg-bad/5 px-3 py-2 text-xs text-bad">{err}</div>}
       <label className="mb-3 block">
         <span className="text-sm font-medium text-ink">Model</span>
-        <Input value={model} onChange={(e) => setModel(e.target.value)} placeholder="e.g. claude-sonnet-4-6" className="mt-1 w-full font-mono" />
+        <ModelSelect value={model} onChange={setModel} className="mt-1 w-full" />
       </label>
       <label className="mb-3 block">
         <span className="text-sm font-medium text-ink">System prompt</span>
