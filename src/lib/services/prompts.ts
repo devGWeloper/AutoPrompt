@@ -210,7 +210,7 @@ export async function updateVersionPrompt(
       {
         sp: args.system_prompt ?? "",
         up: args.user_prompt ?? "",
-        modelnm: args.model_nm ?? null,
+        model: args.model_nm ?? null,
         cs: args.change_summary || null,
         cr: args.change_reason || null,
         id: promptId,
