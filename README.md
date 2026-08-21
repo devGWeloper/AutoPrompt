@@ -1,4 +1,4 @@
-# ScoreX — Prompt Management & Flow RAGAS
+# TestX — Prompt Management & Flow RAGAS
 
 > DB 테이블 접두사 `PTX_*`는 이전 이름(Prompt Trace Explorer)에서 온 것으로, 스키마 호환을 위해 그대로 둔다.
 

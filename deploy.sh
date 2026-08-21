@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-#  deploy.sh — ScoreX 자동 배포 스크립트
+#  deploy.sh — TestX 자동 배포 스크립트
 #  사용법:
 #    ./deploy.sh           # 기본: prd
 #    ./deploy.sh dev       # dev 브랜치(main) 배포
