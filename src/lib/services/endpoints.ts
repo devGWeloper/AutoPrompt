@@ -125,8 +125,8 @@ export async function createEndpoint(payload: EndpointInput, actor: string): Pro
       conn,
       oracle,
       `INSERT INTO PTX_ENDPOINT_MAS (ENDPOINT_NM, ENDPOINT_URL, HEADER_CTN, DESC_CTN, ACTIVE_YN, USER_ID)
-       VALUES (:nm, :u, :hdr, :desc, :active, :actor) RETURNING ENDPOINT_ID INTO :out_id`,
-      { nm, u, hdr, desc, active, actor },
+       VALUES (:nm, :u, :hdr, :descr, :active, :actor) RETURNING ENDPOINT_ID INTO :out_id`,
+      { nm, u, hdr, descr: desc, active, actor },
     );
     await writeAudit(conn, {
       targetTable: "PTX_ENDPOINT_MAS",
@@ -161,10 +161,10 @@ export async function updateEndpoint(
 
     await conn.execute(
       `UPDATE PTX_ENDPOINT_MAS
-          SET ENDPOINT_NM = :nm, ENDPOINT_URL = :u, HEADER_CTN = :hdr, DESC_CTN = :desc,
+          SET ENDPOINT_NM = :nm, ENDPOINT_URL = :u, HEADER_CTN = :hdr, DESC_CTN = :descr,
               ACTIVE_YN = :active, USER_ID = :actor, UPDATE_TM = SYSTIMESTAMP
         WHERE ENDPOINT_ID = :id`,
-      { nm, u, hdr, desc, active, actor, id },
+      { nm, u, hdr, descr: desc, active, actor, id },
     );
     await writeAudit(conn, {
       targetTable: "PTX_ENDPOINT_MAS",
@@ -194,4 +194,20 @@ export async function deleteEndpoint(id: number, actor: string): Promise<Endpoin
     });
     return fetchAll(conn);
   }, { commit: true });
+}
+
+/** Header values are credentials. The run screens only need to know *which*
+ * header carries the key and roughly which key it is, so the value is masked on
+ * the way out; the settings editor is the one place that gets it in full. */
+function maskValue(v: string): string {
+  const s = v ?? "";
+  if (!s) return "";
+  return s.length <= 8 ? "••••" : `••••${s.slice(-4)}`;
+}
+
+export function maskEndpointHeaders(list: Endpoint[]): Endpoint[] {
+  return list.map((e) => ({
+    ...e,
+    headers: e.headers.map((h) => ({ name: h.name, value: maskValue(h.value) })),
+  }));
 }

@@ -47,8 +47,8 @@ export async function createLlmModel(payload: LlmModelInput, actor: string): Pro
       conn,
       oracle,
       `INSERT INTO PTX_LLM_MAS (LLM_NM, DESC_CTN, ACTIVE_YN, USER_ID)
-       VALUES (:nm, :desc, :active, :actor) RETURNING LLM_ID INTO :out_id`,
-      { nm, desc, active, actor },
+       VALUES (:nm, :descr, :active, :actor) RETURNING LLM_ID INTO :out_id`,
+      { nm, descr: desc, active, actor },
     );
     await writeAudit(conn, {
       targetTable: "PTX_LLM_MAS",
@@ -79,10 +79,10 @@ export async function updateLlmModel(
 
     await conn.execute(
       `UPDATE PTX_LLM_MAS
-          SET LLM_NM = :nm, DESC_CTN = :desc, ACTIVE_YN = :active,
+          SET LLM_NM = :nm, DESC_CTN = :descr, ACTIVE_YN = :active,
               USER_ID = :actor, UPDATE_TM = SYSTIMESTAMP
         WHERE LLM_ID = :id`,
-      { nm, desc, active, actor, id },
+      { nm, descr: desc, active, actor, id },
     );
     await writeAudit(conn, {
       targetTable: "PTX_LLM_MAS",

@@ -18,9 +18,11 @@ import {
   type RagasResultRow,
   type RagasRunDetail,
   type RunWsMessage,
+  type Endpoint,
 } from '@/lib/types';
 import {
   DatasetSelect,
+  DefaultHint,
   EndpointToggle,
   InlineDivider,
   InlineField,
@@ -42,10 +44,12 @@ import {
   RunProgress,
   scoredMetrics,
   upsertResult,
+  useAgentDefaults,
   useEndpoints,
   useFlowDatasets,
   usePromptNodes,
 } from './shared';
+import type { AgentDefaults } from './shared';
 import {
   ModelPicker,
   draftsFromRoles,
@@ -83,23 +87,29 @@ function directScoresRow(res: DirectResult): RagasResultRow | null {
 }
 
 /** Credentials that only apply to a manual call — a dataset run reaches the
- * agent through the run's SSE stream, which carries the base URL and nothing
- * else. Left blank, the server's configured values are used. */
+ * agent through the run's SSE stream, which carries the endpoint id and nothing
+ * else. Each box prints the value it falls back to when left empty: the key
+ * comes from the selected API's first header (masked), the id from config. */
 function AuthOverrides({
-  authKey, setAuthKey, userId, setUserId,
+  authKey, setAuthKey, userId, setUserId, endpoint, defaults,
 }: {
   authKey: string; setAuthKey: (v: string) => void;
   userId: string; setUserId: (v: string) => void;
+  endpoint: Endpoint | undefined;
+  defaults: AgentDefaults | null;
 }) {
+  const header = endpoint?.headers[0];
   return (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-      <div>
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="min-w-0">
         <label className="mb-1 block eyebrow">Auth Key</label>
-        <Input value={authKey} onChange={(e) => setAuthKey(e.target.value)} placeholder="—" title="비우면 등록된 API 의 첫 헤더 값" className="w-full text-sm" />
+        <Input value={authKey} onChange={(e) => setAuthKey(e.target.value)} placeholder="—" className="w-full text-sm" />
+        <DefaultHint value={header ? `${header.name}: ${header.value}` : null} />
       </div>
-      <div>
+      <div className="min-w-0">
         <label className="mb-1 block eyebrow">User ID</label>
-        <Input value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="—" title="비우면 config.yml 의 agent.userId" className="w-full text-sm" />
+        <Input value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="—" className="w-full text-sm" />
+        <DefaultHint value={defaults?.userId ?? null} />
       </div>
     </div>
   );
@@ -122,6 +132,7 @@ export default function SingleRunPanel() {
   // 어느 API 를 부를지. 설정에 등록된 것 중에서만 고른다 — 목록이 하나뿐이면
   // 고를 것도 없으므로 그것으로 열린다.
   const endpoints = useEndpoints();
+  const agentDefaults = useAgentDefaults();
   const [endpointId, setEndpointId] = useState<number | null>(null);
   useEffect(() => {
     setEndpointId((cur) => (cur != null && endpoints.some((e) => e.endpoint_id === cur) ? cur : endpoints[0]?.endpoint_id ?? null));
@@ -303,6 +314,13 @@ export default function SingleRunPanel() {
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
           <InlineField label="API">
             <EndpointToggle endpoints={endpoints} value={endpointId} onChange={setEndpointId} />
+            {/* 고른 API 가 실제로 어느 주소인지 — 이름만으로는 알 수 없다. */}
+            <span
+              className="min-w-0 max-w-[22rem] truncate font-mono text-caption-mono text-muted-soft"
+              title={endpoints.find((e) => e.endpoint_id === endpointId)?.endpoint_url}
+            >
+              {endpoints.find((e) => e.endpoint_id === endpointId)?.endpoint_url}
+            </span>
           </InlineField>
 
           <InlineDivider />
@@ -420,7 +438,14 @@ export default function SingleRunPanel() {
             the endpoint through its own stream. */}
         {target === 'endpoint' && source === 'manual' && showAdvanced && (
           <div className="py-3">
-            <AuthOverrides authKey={authKey} setAuthKey={setAuthKey} userId={userId} setUserId={setUserId} />
+            <AuthOverrides
+              authKey={authKey}
+              setAuthKey={setAuthKey}
+              userId={userId}
+              setUserId={setUserId}
+              endpoint={endpoints.find((e) => e.endpoint_id === endpointId)}
+              defaults={agentDefaults}
+            />
           </div>
         )}
       </Card>

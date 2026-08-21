@@ -864,3 +864,44 @@ export function InlineField({
 export function InlineDivider() {
   return <span aria-hidden className="h-5 w-px shrink-0 bg-line" />;
 }
+
+/** What a call falls back to when the run form leaves a box empty — read from
+ * the server's config so the form can show the value instead of describing it. */
+export interface AgentDefaults {
+  runMode: string;
+  userId: string;
+  timeoutSec: number;
+}
+
+let agentDefaults: AgentDefaults | null = null;
+const agentDefaultSubs = new Set<(next: AgentDefaults | null) => void>();
+
+export function useAgentDefaults(): AgentDefaults | null {
+  const [d, setD] = useState<AgentDefaults | null>(agentDefaults);
+  useEffect(() => {
+    agentDefaultSubs.add(setD);
+    if (agentDefaults === null) {
+      fetch('/api/health', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j: { agent?: AgentDefaults } | null) => {
+          agentDefaults = j?.agent ?? null;
+          for (const fn of agentDefaultSubs) fn(agentDefaults);
+        })
+        .catch(() => {});
+    }
+    return () => {
+      agentDefaultSubs.delete(setD);
+    };
+  }, []);
+  return d;
+}
+
+/** The value a field falls back to, printed under it. Data, not an explanation:
+ * the box is empty, and this is what goes out in its place. */
+export function DefaultHint({ value }: { value: string | null }) {
+  return (
+    <span className="mt-1 block truncate font-mono text-caption-mono text-muted-soft">
+      기본값 {value || '없음'}
+    </span>
+  );
+}

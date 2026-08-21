@@ -1,4 +1,11 @@
-import { getAppEnv, getEmbeddingConfig, getLlmConfig, getRagasEngineMode, resolveRagasEngine } from "@/lib/config";
+import {
+  getAgentConfig,
+  getAppEnv,
+  getEmbeddingConfig,
+  getLlmConfig,
+  getRagasEngineMode,
+  resolveRagasEngine,
+} from "@/lib/config";
 import { dbConfigured } from "@/lib/db";
 import { ok } from "@/lib/route-utils";
 
@@ -10,10 +17,18 @@ export async function GET() {
   // it without shell access — hence endpoint/model are echoed back (never keys).
   const llm = getLlmConfig();
   const emb = getEmbeddingConfig();
+  const agent = getAgentConfig();
   return ok({
     status: "ok",
     env: getAppEnv(),
     dbConnected: dbConfigured(),
+    // What a call falls back to when the run form leaves a box empty. The
+    // employee number is not a credential; the headers are, and they are not here.
+    agent: {
+      runMode: agent.runMode,
+      userId: agent.userId,
+      timeoutSec: Math.round(agent.timeoutMs / 1000),
+    },
     ragas: {
       mode: getRagasEngineMode(),
       engine: resolveRagasEngine(),
