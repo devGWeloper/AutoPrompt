@@ -2,7 +2,7 @@ import { readConn, withConn } from "@/lib/db";
 import type { OracleConnection } from "@/lib/db";
 import { badRequest, conflict, notFound } from "@/lib/http";
 import { MODEL_COLS, insertReturningId, mapModelRole } from "@/lib/db/rows";
-import type { ModelRole, ModelRoleCreate, ModelRoleUpdate, ModelSelection } from "@/lib/types";
+import type { ModelRole, ModelRoleCreate, ModelSelection } from "@/lib/types";
 import { writeAudit } from "./audit";
 
 // PTX_MODEL_MAS holds one row per LLM role the external agent defines in its
@@ -104,14 +104,6 @@ function text(v: string | null | undefined, max: number, label: string): string 
   return s;
 }
 
-function temperature(v: number | null | undefined, role: string): number | null {
-  if (v === null || v === undefined) return null;
-  if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 2) {
-    throw badRequest(`${role} 의 temperature 는 0 과 2 사이 숫자여야 합니다`);
-  }
-  return v;
-}
-
 /** Role names are join keys, not prose: no spaces, and short enough for the
  * column. The agent's enum values are plain identifiers. */
 const ROLE_RE = /^[A-Za-z0-9_.-]+$/;
@@ -176,52 +168,6 @@ export async function deleteModelRole(role: string, actor: string): Promise<Mode
       after: null,
       createdBy: actor,
     });
-    return fetchAll(conn);
-  }, { commit: true });
-}
-
-/**
- * Save the editable fields of the given roles. Each item carries all three
- * fields — a missing one is stored as NULL, so the client sends the whole row.
- * One transaction: either every role in the batch lands or none does.
- */
-export async function updateModelRoles(items: ModelRoleUpdate[], actor: string): Promise<ModelRole[]> {
-  if (!items.length) throw badRequest("변경할 항목이 없습니다");
-
-  return withConn(async (conn) => {
-    const byRole = new Map((await fetchAll(conn)).map((m) => [m.role_cd, m]));
-
-    for (const item of items) {
-      const role = (item.role_cd ?? "").trim();
-      const before = byRole.get(role);
-      if (!before) throw notFound(`등록되지 않은 role 입니다: ${role || "(빈 값)"}`);
-
-      const model = text(item.model_nm, 200, `${role} 의 모델명`);
-      const descr = text(item.description, 500, `${role} 의 메모`);
-      const temp = temperature(item.temperature, role);
-
-      await conn.execute(
-        `UPDATE PTX_MODEL_MAS
-            SET MODEL_NM = :model, TEMPERATURE = :temp, DESC_CTN = :descr,
-                USER_ID = :actor, UPDATE_TM = SYSTIMESTAMP
-          WHERE ROLE_CD = :role`,
-        { model, temp, descr, actor, role },
-      );
-      await writeAudit(conn, {
-        targetTable: "PTX_MODEL_MAS",
-        targetId: before.model_id,
-        action: "UPDATE",
-        before: {
-          role_cd: role,
-          model_nm: before.model_nm,
-          temperature: before.temperature,
-          description: before.description,
-        },
-        after: { role_cd: role, model_nm: model, temperature: temp, description: descr },
-        createdBy: actor,
-      });
-    }
-
     return fetchAll(conn);
   }, { commit: true });
 }

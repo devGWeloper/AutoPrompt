@@ -11,7 +11,7 @@ import { Table, TBody, THead, TD, TH, TR } from '@/components/ui/Table';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { SHELL } from '@/lib/layout';
-import { MODEL_ROLE_NOTES, type Endpoint, type EndpointHeader, type LlmModel, type ModelRole, type ModelRoleUpdate } from '@/lib/types';
+import { MODEL_ROLE_NOTES, type Endpoint, type EndpointHeader, type LlmModel, type ModelRole } from '@/lib/types';
 import { errText, PencilIcon, TrashIcon, useArmed } from '@/components/ragas/shared';
 
 /**
@@ -385,46 +385,22 @@ function ModelsSection({ list, setList }: { list: LlmModel[]; setList: (next: Ll
   );
 }
 
-// ---- role defaults ---------------------------------------------------------
+// ---- roles ----------------------------------------------------------------
 
 const ROLE_RE = /^[A-Za-z0-9_.-]+$/;
 
-interface RoleDraft {
-  model_nm: string;
-  temperature: string;
-}
-
-const toDraft = (m: ModelRole): RoleDraft => ({
-  model_nm: m.model_nm ?? '',
-  temperature: m.temperature === null ? '' : String(m.temperature),
-});
-
-const sameDraft = (a: RoleDraft, b: RoleDraft) =>
-  a.model_nm === b.model_nm && a.temperature === b.temperature;
-
-function RolesSection({
-  roles,
-  setRoles,
-  models,
-}: {
-  roles: ModelRole[];
-  setRoles: (next: ModelRole[]) => void;
-  models: LlmModel[];
-}) {
-  const [drafts, setDrafts] = useState<Record<string, RoleDraft>>({});
-  const [newRole, setNewRole] = useState('');
+/**
+ * Which roles exist — nothing more. What model a role runs is a property of one
+ * test, not a setting: it is chosen in the run form, where it is visible next to
+ * the run it applies to.
+ */
+function RolesSection({ roles, setRoles }: { roles: ModelRole[]; setRoles: (next: ModelRole[]) => void }) {
+  const [newRole, setNewRole] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    setDrafts(Object.fromEntries(roles.map((m) => [m.role_cd, toDraft(m)])));
-  }, [roles]);
-
-  const options = useMemo(() => models.filter((m) => m.is_active === 'Y'), [models]);
-  const dirty = roles.filter((m) => drafts[m.role_cd] && !sameDraft(drafts[m.role_cd], toDraft(m)));
-
   const name = newRole.trim();
-  const canAdd = name !== '' && ROLE_RE.test(name) && !roles.some((m) => m.role_cd === name) && !busy;
+  const canAdd = name !== "" && ROLE_RE.test(name) && !roles.some((m) => m.role_cd === name) && !busy;
 
   const run = async (fn: () => Promise<ModelRole[]>) => {
     setBusy(true);
@@ -438,99 +414,42 @@ function RolesSection({
     }
   };
 
-  async function save() {
-    const items: ModelRoleUpdate[] = dirty.map((m) => {
-      const d = drafts[m.role_cd];
-      const t = d.temperature.trim();
-      return {
-        role_cd: m.role_cd,
-        model_nm: d.model_nm || null,
-        temperature: t === '' ? null : Number(t),
-        description: m.description,
-      };
-    });
-    if (items.length) await run(() => api.put<ModelRole[]>('/models', { items }));
-  }
+  const add = () => {
+    if (!canAdd) return;
+    run(() => api.post<ModelRole[]>("/models", { role_cd: name }));
+    setNewRole("");
+  };
 
   return (
-    <Section
-      title="Role 기본값"
-      count={roles.length}
-      action={
-        <Button size="sm" onClick={save} disabled={!dirty.length || busy}>
-          저장{dirty.length ? ` (${dirty.length})` : ''}
-        </Button>
-      }
-    >
+    <Section title="Role" count={roles.length}>
       <ErrLine msg={err} />
+      <div className="flex items-center gap-2 border-b border-line px-5 py-3">
+        <Input
+          value={newRole}
+          onChange={(e) => setNewRole(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && add()}
+          placeholder="llm"
+          className="h-9 w-48 font-mono text-xs"
+        />
+        <Button size="sm" onClick={add} disabled={!canAdd}>+ 추가</Button>
+      </div>
       {roles.length === 0 ? (
         <Empty>—</Empty>
       ) : (
         <ul className="divide-y divide-line">
-          {roles.map((m) => {
-            const d = drafts[m.role_cd] ?? { model_nm: '', temperature: '' };
-            // A model saved earlier and since removed from the catalog would
-            // vanish from the list silently, so it stays as its own option.
-            const missing = d.model_nm !== '' && !options.some((o) => o.llm_nm === d.model_nm);
-            return (
-              <li key={m.role_cd} className="grid grid-cols-[minmax(96px,140px)_minmax(0,1fr)_72px_auto] items-center gap-3 px-5 py-2.5">
-                <span className="truncate font-mono text-body-sm text-ink" title={MODEL_ROLE_NOTES[m.role_cd]}>
-                  {m.role_cd}
-                </span>
-                <select
-                  value={d.model_nm}
-                  onChange={(e) => setDrafts((cur) => ({ ...cur, [m.role_cd]: { ...cur[m.role_cd], model_nm: e.target.value } }))}
-                  className={cn(
-                    'h-9 w-full rounded-sm border bg-surface px-2 font-mono text-xs text-ink transition',
-                    'hover:border-line-strong focus:border-ink focus:shadow-ring focus:outline-none',
-                    missing ? 'border-warn' : 'border-line',
-                  )}
-                >
-                  <option value="">—</option>
-                  {missing && <option value={d.model_nm}>{d.model_nm}</option>}
-                  {options.map((o) => (
-                    <option key={o.llm_id} value={o.llm_nm}>{o.llm_nm}</option>
-                  ))}
-                </select>
-                <Input
-                  value={d.temperature}
-                  onChange={(e) => setDrafts((cur) => ({ ...cur, [m.role_cd]: { ...cur[m.role_cd], temperature: e.target.value } }))}
-                  inputMode="decimal"
-                  placeholder="t"
-                  title="temperature (0 – 2)"
-                  className="h-9 w-full text-center font-mono text-xs"
-                />
-                <DeleteBtn title="role 삭제" onConfirm={() => run(() => api.del<ModelRole[]>(`/models/${encodeURIComponent(m.role_cd)}`))} />
-              </li>
-            );
-          })}
+          {roles.map((m) => (
+            <li key={m.role_cd} className="flex items-center gap-3 px-5 py-2.5">
+              <span className="min-w-0 flex-1 truncate font-mono text-body-sm text-ink" title={MODEL_ROLE_NOTES[m.role_cd]}>
+                {m.role_cd}
+              </span>
+              <DeleteBtn
+                title="role 삭제"
+                onConfirm={() => run(() => api.del<ModelRole[]>(`/models/${encodeURIComponent(m.role_cd)}`))}
+              />
+            </li>
+          ))}
         </ul>
       )}
-      <div className="flex items-center gap-2 border-t border-line px-5 py-3">
-        <Input
-          value={newRole}
-          onChange={(e) => setNewRole(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && canAdd) {
-              run(() => api.post<ModelRole[]>('/models', { role_cd: name }));
-              setNewRole('');
-            }
-          }}
-          placeholder="role"
-          className="h-9 w-48 font-mono text-xs"
-        />
-        <Button
-          size="sm"
-          variant="secondary"
-          disabled={!canAdd}
-          onClick={() => {
-            run(() => api.post<ModelRole[]>('/models', { role_cd: name }));
-            setNewRole('');
-          }}
-        >
-          + role
-        </Button>
-      </div>
     </Section>
   );
 }
@@ -557,7 +476,7 @@ export default function SettingsPage() {
         <div className="flex flex-col gap-5">
           <EndpointsSection list={endpoints} setList={setEndpoints} />
           <ModelsSection list={models} setList={setModels} />
-          <RolesSection roles={roles} setRoles={setRoles} models={models} />
+          <RolesSection roles={roles} setRoles={setRoles} />
         </div>
       </div>
     </AppShell>

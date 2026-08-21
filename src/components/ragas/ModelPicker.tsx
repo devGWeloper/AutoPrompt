@@ -70,13 +70,11 @@ export function useModelRoles(): { roles: ModelRole[]; setRoles: (next: ModelRol
   return { roles, setRoles: publishRoles };
 }
 
+/** Every registered role, with nothing pinned. Which model a role runs is
+ * decided per test, so a run form opens empty and an untouched box means the
+ * agent's own config — the same thing the empty box says. */
 export function draftsFromRoles(roles: ModelRole[]): ModelDrafts {
-  return Object.fromEntries(
-    roles.map((r) => [
-      r.role_cd,
-      { model: r.model_nm ?? '', temperature: r.temperature === null ? '' : String(r.temperature) },
-    ]),
-  );
+  return Object.fromEntries(roles.map((r) => [r.role_cd, { model: '', temperature: '' }]));
 }
 
 const pinned = (d: ModelDraft) => d.model.trim() !== '' || d.temperature.trim() !== '';
@@ -144,8 +142,8 @@ export function ModelPicker({
   const catalogAll = useLlmModels();
   const catalog = useMemo(() => catalogAll.filter((m) => m.is_active === 'Y'), [catalogAll]);
   const catalogMissing = (v: string) => v !== '' && !catalog.some((o) => o.llm_nm === v);
-  const saved = useMemo(() => draftsFromRoles(roles), [roles]);
-  const dirty = columns.some((c) => !sameDrafts(c.drafts, saved));
+  const blank = useMemo(() => draftsFromRoles(roles), [roles]);
+  const dirty = columns.some((c) => !sameDrafts(c.drafts, blank));
   // Two columns holding the same thing is the ordinary case (both pre-filled
   // from the same defaults), and saying it once is shorter and clearer than saying it
   // twice — the point of the line is whether the sides differ.
@@ -258,11 +256,11 @@ export function ModelPicker({
             {dirty && (
               <button
                 type="button"
-                title="저장된 기본값으로 되돌리기"
+                title="모두 비우기"
                 onClick={() => columns.forEach((c) => c.onChange(draftsFromRoles(roles)))}
                 className="shrink-0 text-caption text-muted transition-colors hover:text-ink"
               >
-                ↺ 기본값
+                ↺ 비우기
               </button>
             )}
             <SettingsLink label="설정" />

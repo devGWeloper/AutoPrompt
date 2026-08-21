@@ -160,12 +160,6 @@ export interface ModelRoleCreate {
 
 /** One row of a save. Every editable field is sent whether or not it changed —
  * an omitted field is stored as NULL, not left alone. */
-export interface ModelRoleUpdate {
-  role_cd: string;
-  model_nm?: string | null;
-  temperature?: number | null;
-  description?: string | null;
-}
 
 /** What one role runs for one execution. A null/absent field is not a pin — the
  * agent keeps whatever its own config says for it. */
