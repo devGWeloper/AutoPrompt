@@ -154,9 +154,10 @@ function BrandMark() {
   return (
     <svg aria-hidden width="32" height="32" viewBox="0 0 32 32" className="shrink-0">
       <rect width="32" height="32" rx="8" fill="#080808" />
-      <g stroke="#ffffff" strokeWidth="3.4" strokeLinecap="round">
-        <path d="M11 11 L21 21" />
-        <path d="M21 11 L11 21" />
+      {/* 가로보다 세로가 긴 X — 정사각형 대각선 두 개는 문자가 아니라 표식으로 읽힌다. */}
+      <g stroke="#ffffff" strokeWidth="3.2" strokeLinecap="round">
+        <path d="M12 9 L20 23" />
+        <path d="M20 9 L12 23" />
       </g>
     </svg>
   );

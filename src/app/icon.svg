@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
   <rect width="64" height="64" rx="12" fill="#080808"/>
-  <!-- the X of the name, heavy enough to read at favicon size -->
-  <g fill="none" stroke="#ffffff" stroke-width="9" stroke-linecap="round">
-    <path d="M21 21 L43 43"/>
-    <path d="M43 21 L21 43"/>
+  <!-- 문자 X 비율: 가로보다 세로가 길다 -->
+  <g fill="none" stroke="#ffffff" stroke-width="8" stroke-linecap="round">
+    <path d="M24 17 L40 47"/>
+    <path d="M40 17 L24 47"/>
   </g>
 </svg>

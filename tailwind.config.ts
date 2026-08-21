@@ -8,57 +8,32 @@ const config: Config = {
   content: ['./src/**/*.{ts,tsx}'],
   theme: {
     extend: {
+      // Plain hex, not CSS custom properties: `rgb(var(--x) / <alpha-value>)` is
+      // Color 4 syntax that older browsers drop wholesale, which left the app
+      // with no fills at all there (see globals.css).
       colors: {
-        bg: 'rgb(var(--bg) / <alpha-value>)',
-        surface: {
-          DEFAULT: 'rgb(var(--surface) / <alpha-value>)',
-          2: 'rgb(var(--surface-2) / <alpha-value>)',
-          3: 'rgb(var(--surface-3) / <alpha-value>)',
-        },
-        line: {
-          DEFAULT: 'rgb(var(--line) / <alpha-value>)',
-          strong: 'rgb(var(--line-strong) / <alpha-value>)',
-        },
+        bg: "#f9f9f9",
+        surface: { DEFAULT: "#ffffff", 2: "#f5f5f5", 3: "#ececec" },
+        line: { DEFAULT: "#d8d8d8", strong: "#bebebe" },
         // near-black: every primary CTA, heading and wordmark
-        primary: {
-          DEFAULT: 'rgb(var(--primary) / <alpha-value>)',
-          fg: 'rgb(var(--primary-fg) / <alpha-value>)',
-        },
-        ink: {
-          DEFAULT: 'rgb(var(--ink) / <alpha-value>)',
-          strong: 'rgb(var(--ink-strong) / <alpha-value>)',
-        },
-        body: 'rgb(var(--body) / <alpha-value>)',
-        muted: {
-          DEFAULT: 'rgb(var(--muted) / <alpha-value>)',
-          soft: 'rgb(var(--mute-soft) / <alpha-value>)',
-        },
-        accent: {
-          DEFAULT: 'rgb(var(--accent) / <alpha-value>)',
-          fg: 'rgb(var(--accent-fg) / <alpha-value>)',
-          deep: 'rgb(var(--accent-deep) / <alpha-value>)',
-          soft: 'rgb(var(--accent-soft) / <alpha-value>)',
-        },
+        primary: { DEFAULT: "#080808", fg: "#ffffff" },
+        ink: { DEFAULT: "#080808", strong: "#222222" },
+        body: "#363636",
+        muted: { DEFAULT: "#5a5a5a", soft: "#ababab" },
+        accent: { DEFAULT: "#146ef5", fg: "#ffffff", deep: "#006acc", soft: "#ebf2fe" },
         // five-stop chromatic category palette — surface fills only
         chroma: {
-          purple: 'rgb(var(--chroma-purple) / <alpha-value>)',
-          pink: 'rgb(var(--chroma-pink) / <alpha-value>)',
-          blue: 'rgb(var(--chroma-blue) / <alpha-value>)',
-          orange: 'rgb(var(--chroma-orange) / <alpha-value>)',
-          green: 'rgb(var(--chroma-green) / <alpha-value>)',
+          purple: "#7a3dff",
+          pink: "#ed52cb",
+          blue: "#3b89ff",
+          orange: "#ff6b00",
+          green: "#00d722",
         },
-        ok: {
-          DEFAULT: 'rgb(var(--ok) / <alpha-value>)',
-          vivid: 'rgb(var(--ok-vivid) / <alpha-value>)',
-        },
-        warn: {
-          DEFAULT: 'rgb(var(--warn) / <alpha-value>)',
-          vivid: 'rgb(var(--warn-vivid) / <alpha-value>)',
-        },
-        bad: {
-          DEFAULT: 'rgb(var(--bad) / <alpha-value>)',
-          vivid: 'rgb(var(--bad-vivid) / <alpha-value>)',
-        },
+        // `vivid` is the brand's full-saturation stop (fills, dots); the base is
+        // the darkened stop of the same hue that stays legible as text.
+        ok: { DEFAULT: "#007a18", vivid: "#00d722" },
+        warn: { DEFAULT: "#925e00", vivid: "#ffae13" },
+        bad: { DEFAULT: "#ee1d36", vivid: "#ee1d36" },
       },
       fontFamily: {
         // WF Visual Sans is proprietary; Inter is the documented substitute and
@@ -96,7 +71,7 @@ const config: Config = {
         caption: ['12.8px', { lineHeight: '15.36px', fontWeight: '550' }],
         'caption-mono': ['12px', { lineHeight: '18px' }],
       },
-      borderColor: { DEFAULT: 'rgb(var(--line) / <alpha-value>)' },
+      borderColor: { DEFAULT: "#d8d8d8" },
       // Tight, engineered geometry: 4px for buttons / badges / inputs, 8px for
       // cards. Pill is reserved for circular icon containers and meters, so the
       // scale collapses onto those two stops.
@@ -125,6 +100,19 @@ const config: Config = {
         seg: '0 1px 2px rgba(8,8,8,0.10)',
       },
     },
+  },
+  // Tailwind wraps every colour utility in `rgb(R G B / var(--tw-*-opacity))`,
+  // which is Color 4 syntax even when the palette is hex — an older browser drops
+  // the whole declaration and the fill never lands. Turning the opacity plugins
+  // off emits plain `background-color: #080808`; the `/alpha` modifier keeps
+  // working (bg-bad/5 still compiles), it just is not what solid fills go through.
+  corePlugins: {
+    backgroundOpacity: false,
+    textOpacity: false,
+    borderOpacity: false,
+    divideOpacity: false,
+    placeholderOpacity: false,
+    ringOpacity: false,
   },
   plugins: [],
 };
