@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input, Textarea } from '@/components/ui/Field';
@@ -38,21 +38,27 @@ function parseCaseInput(raw: string): Parsed {
   }
 }
 
+// TYPE_CD's column default. A case that was never categorised carries it, so it
+// is the one value the UI reads as "no category": no chip, no filter entry.
+const DEFAULT_CAT = 'NORMAL';
+
 /** Editable form state for one case. */
 interface Fields {
   question: string;
   contexts: string; // one per line
   groundTruth: string;
+  category: string; // TYPE_CD; '' in the form means DEFAULT_CAT
 }
 
-const EMPTY: Fields = { question: '', contexts: '', groundTruth: '' };
+const EMPTY: Fields = { question: '', contexts: '', groundTruth: '', category: '' };
 
-function toFields(p: Parsed, expected: string | null): Fields {
+function toFields(p: Parsed, expected: string | null, caseType: string): Fields {
   return {
     question: p.question,
     contexts: p.contexts.join('\n'),
     // parseCase prefers input_data.ground_truth and falls back to EXPECT_CTN.
     groundTruth: p.groundTruth ?? expected ?? '',
+    category: caseType === DEFAULT_CAT ? '' : caseType,
   };
 }
 
@@ -66,7 +72,11 @@ function toPayload(f: Fields, rest: Record<string, unknown> = {}) {
   else delete input.ground_truth;
   // Both columns are written: EXPECT_CTN is what an unparseable input_data falls
   // back to, and it is the column the CSV round-trip carries.
-  return { input_data: JSON.stringify(input), expected_output: gt || null };
+  return {
+    input_data: JSON.stringify(input),
+    expected_output: gt || null,
+    case_type: f.category.trim() || DEFAULT_CAT,
+  };
 }
 
 // ---- CSV round-trip --------------------------------------------------------
@@ -99,9 +109,12 @@ function download(filename: string, text: string) {
 const LABEL = 'mb-1 block eyebrow';
 
 function FieldsEditor({
-  value, onChange, autoFocus,
-}: { value: Fields; onChange: (f: Fields) => void; autoFocus?: boolean }) {
+  value, onChange, autoFocus, categories,
+}: { value: Fields; onChange: (f: Fields) => void; autoFocus?: boolean; categories: string[] }) {
   const set = (patch: Partial<Fields>) => onChange({ ...value, ...patch });
+  // A datalist rather than a select: the categories are whatever this dataset
+  // already uses, and a new one is made by typing it — nothing to administer.
+  const listId = useId();
   return (
     <div className="space-y-2.5">
       <div>
@@ -139,7 +152,40 @@ function FieldsEditor({
           />
         </div>
       </div>
+      <div>
+        <label className={LABEL}>분류</label>
+        <Input
+          value={value.category}
+          onChange={(e) => set({ category: e.target.value })}
+          list={listId}
+          placeholder="미분류"
+          className="h-9 w-48 text-sm"
+        />
+        <datalist id={listId}>
+          {categories.map((c) => <option key={c} value={c} />)}
+        </datalist>
+      </div>
     </div>
+  );
+}
+
+/** Filter chip for the category strip. Quiet until selected, when it takes the
+ * same surface the dataset list gives its selected row. */
+function CatChip({
+  label, count, on, onClick,
+}: { label: string; count: number; on: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-[11px] transition-colors',
+        on ? 'bg-surface-3 font-medium text-ink' : 'text-muted hover:bg-surface-2',
+      )}
+    >
+      <span className="max-w-[10rem] truncate">{label}</span>
+      <span className="font-mono tabular-nums text-muted-soft">{count}</span>
+    </button>
   );
 }
 
@@ -208,6 +254,7 @@ export default function DatasetsPanel() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const [query, setQuery] = useState('');
+  const [catFilter, setCatFilter] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState<Fields>(EMPTY);
   const [editId, setEditId] = useState<number | null>(null);
@@ -231,16 +278,42 @@ export default function DatasetsPanel() {
   }, [selDataset]);
   useEffect(loadCases, [loadCases]);
   // Leaving a dataset drops whatever was half-edited in the previous one.
-  useEffect(() => { setEditId(null); setAdding(false); setDraft(EMPTY); setQuery(''); setNotice(null); }, [selDataset]);
+  useEffect(() => {
+    setEditId(null); setAdding(false); setDraft(EMPTY); setQuery(''); setCatFilter(null); setNotice(null);
+  }, [selDataset]);
+
+  // Categories are read off the cases themselves, so one that arrived through a
+  // CSV import appears here without being registered anywhere first. DEFAULT_CAT
+  // sorts last: it is the leftover pile, not a category someone chose.
+  const cats = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const c of cases) {
+      const k = c.case_type || DEFAULT_CAT;
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .sort(([a], [b]) =>
+        a === DEFAULT_CAT ? 1 : b === DEFAULT_CAT ? -1 : a.localeCompare(b))
+      .map(([name, count]) => ({ name, count }));
+  }, [cases]);
+  const catNames = useMemo(() => cats.map((c) => c.name).filter((n) => n !== DEFAULT_CAT), [cats]);
+
+  // Renaming the last case out of a category would otherwise leave the filter
+  // pointing at a category that no longer exists, i.e. an empty list with no
+  // visible reason.
+  useEffect(() => {
+    if (catFilter !== null && !cats.some((c) => c.name === catFilter)) setCatFilter(null);
+  }, [cats, catFilter]);
 
   const rows = useMemo(() => {
     const parsed = cases.map((c) => ({ c, p: parseCaseInput(c.input_data) }));
     const q = query.trim().toLowerCase();
-    if (!q) return parsed;
+    const inCat = (c: TestCase) => catFilter === null || (c.case_type || DEFAULT_CAT) === catFilter;
     return parsed.filter(({ c, p }) =>
-      p.question.toLowerCase().includes(q) ||
-      (p.groundTruth ?? c.expected_output ?? '').toLowerCase().includes(q));
-  }, [cases, query]);
+      inCat(c) && (!q ||
+        p.question.toLowerCase().includes(q) ||
+        (p.groundTruth ?? c.expected_output ?? '').toLowerCase().includes(q)));
+  }, [cases, query, catFilter]);
 
   const noGt = cases.filter((c) => {
     const p = parseCaseInput(c.input_data);
@@ -278,7 +351,9 @@ export default function DatasetsPanel() {
   const addCase = () => guard(async () => {
     if (selDataset == null || !draft.question.trim()) return;
     await api.post(`/datasets/${selDataset}/cases`, toPayload(draft));
-    setDraft(EMPTY);
+    // Cases go in as runs of the same category, so the category is the one field
+    // that survives the reset.
+    setDraft({ ...EMPTY, category: draft.category });
     loadCases();
     reload(); // dataset list shows case counts
   });
@@ -303,14 +378,14 @@ export default function DatasetsPanel() {
   /** Copy a case into the add form — building near-identical cases is the common
    * way these datasets grow, and retyping the whole payload is the slow part. */
   function duplicate(c: TestCase) {
-    setDraft(toFields(parseCaseInput(c.input_data), c.expected_output));
+    setDraft(toFields(parseCaseInput(c.input_data), c.expected_output, c.case_type));
     setAdding(true);
     setEditId(null);
   }
 
   function openEdit(c: TestCase) {
     setEditId((cur) => (cur === c.case_id ? null : c.case_id));
-    setEdit(toFields(parseCaseInput(c.input_data), c.expected_output));
+    setEdit(toFields(parseCaseInput(c.input_data), c.expected_output, c.case_type));
   }
 
   const importCsv = (file: File) => guard(async () => {
@@ -481,11 +556,39 @@ export default function DatasetsPanel() {
                   <Button
                     variant={adding ? 'secondary' : 'primary'}
                     size="sm"
-                    onClick={() => { setAdding((v) => !v); setEditId(null); }}
+                    onClick={() => {
+                      // Opening the form under an active filter adds to that
+                      // category — otherwise the new case is filtered out of the
+                      // list the instant it is created.
+                      if (!adding && catFilter !== null && catFilter !== DEFAULT_CAT && !draft.category) {
+                        setDraft((d) => ({ ...d, category: catFilter }));
+                      }
+                      setAdding((v) => !v);
+                      setEditId(null);
+                    }}
                   >
                     {adding ? '닫기' : '케이스 추가'}
                   </Button>
                 </div>
+                {/* Only when the dataset actually has more than one category —
+                    a strip reading "전체 · 미분류" would be pure furniture. */}
+                {cats.length > 1 && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1">
+                    <CatChip
+                      label="전체" count={cases.length}
+                      on={catFilter === null} onClick={() => setCatFilter(null)}
+                    />
+                    {cats.map((c) => (
+                      <CatChip
+                        key={c.name}
+                        label={c.name === DEFAULT_CAT ? '미분류' : c.name}
+                        count={c.count}
+                        on={catFilter === c.name}
+                        onClick={() => setCatFilter((cur) => (cur === c.name ? null : c.name))}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
 
               {notice && (
@@ -497,7 +600,7 @@ export default function DatasetsPanel() {
 
               {adding && (
                 <div className="border-b border-line bg-surface-2/40 px-4 py-3.5">
-                  <FieldsEditor value={draft} onChange={setDraft} autoFocus />
+                  <FieldsEditor value={draft} onChange={setDraft} autoFocus categories={catNames} />
                   <div className="mt-3 flex items-center justify-end gap-2">
                     <Button variant="ghost" size="sm" onClick={() => { setDraft(EMPTY); setAdding(false); }}>취소</Button>
                     <Button variant="secondary" size="sm" disabled={!draft.question.trim() || busy} onClick={addCase}>추가</Button>
@@ -533,10 +636,15 @@ export default function DatasetsPanel() {
                               ? <span className="mt-0.5 min-w-0 flex-1 truncate text-xs text-muted">{oneLine(gt)}</span>
                               : <span className="mt-0.5 shrink-0 text-[11px] text-muted">정답 없음</span>
                           )}
+                          {c.case_type !== DEFAULT_CAT && (
+                            <span className="mt-0.5 shrink-0 rounded-sm bg-surface-2 px-1.5 py-px text-[11px] text-muted">
+                              {c.case_type}
+                            </span>
+                          )}
                         </button>
                         {open && (
                           <div className="px-4 pb-3.5 pl-12">
-                            <FieldsEditor value={edit} onChange={setEdit} />
+                            <FieldsEditor value={edit} onChange={setEdit} categories={catNames} />
                             <div className="mt-3 flex items-center gap-2">
                               <Button variant="ghost" size="sm" onClick={() => duplicate(c)}>복제</Button>
                               <DeleteButton label="삭제" onConfirm={() => delCase(c.case_id)} />
