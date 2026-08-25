@@ -1,6 +1,6 @@
-import { getAgentConfig, getFlowBaseUrl, getFlowHeaders } from "@/lib/config";
+import { getAgentConfig, getCallTimeoutMs, getFlowBaseUrl, getFlowHeaders } from "@/lib/config";
 import type { EndpointHeader } from "@/lib/types";
-import { ApiError, badGateway, errorText } from "@/lib/http";
+import { ApiError, badGateway, errorText, fetchWithTimeout } from "@/lib/http";
 import { logger } from "@/lib/logger";
 
 // Session context sent as ``session_system_prompt`` (a STRING that is a stringified
@@ -218,7 +218,7 @@ function buildPayload(
 /** Read per call rather than captured at module load: the config is reloadable
  * and a run should honour the value in effect when it starts. */
 function callTimeoutMs(): number {
-  return getAgentConfig().timeoutMs;
+  return getCallTimeoutMs();
 }
 
 async function post(
@@ -227,18 +227,10 @@ async function post(
   headers: Record<string, string>,
   timeoutMs = callTimeoutMs(),
 ): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timer);
-  }
+  // fetchWithTimeout, not fetch: it puts connect/headers/body under this same
+  // deadline. Plain fetch would give up on the connect after Node's own 10s and
+  // report a network error long before the configured limit.
+  return fetchWithTimeout(url, { method: "POST", headers, body: JSON.stringify(body) }, timeoutMs);
 }
 
 /** Node hides the real reason a fetch died inside `error.cause.code`; the surface
@@ -250,11 +242,31 @@ const NET_CODES: Record<string, string> = {
   ECONNRESET: "연결이 상대 쪽에서 끊겼습니다",
   ETIMEDOUT: "연결 시간이 초과되었습니다",
   EHOSTUNREACH: "호스트에 도달할 수 없습니다 — 네트워크·방화벽을 확인하세요",
+  ENETUNREACH: "네트워크에 도달할 수 없습니다 — 라우팅·VPN을 확인하세요",
+  // undici's own timers. They now use the configured limit too, so hitting one
+  // means the wait really was that long — say which stage gave up.
+  UND_ERR_CONNECT_TIMEOUT: "접속(TCP 연결) 시간이 초과되었습니다 — 호스트·포트·방화벽을 확인하세요",
+  UND_ERR_HEADERS_TIMEOUT: "응답 헤더가 오지 않아 시간이 초과되었습니다",
+  UND_ERR_BODY_TIMEOUT: "응답 본문이 끊겨 시간이 초과되었습니다",
+  UND_ERR_SOCKET: "연결이 예기치 않게 끊겼습니다",
   EPROTO: "프로토콜이 맞지 않습니다 — http/https를 확인하세요",
   CERT_HAS_EXPIRED: "서버 인증서가 만료되었습니다",
   DEPTH_ZERO_SELF_SIGNED_CERT: "자체 서명 인증서라 TLS 검증에 실패했습니다",
   UNABLE_TO_VERIFY_LEAF_SIGNATURE: "인증서 체인을 검증할 수 없습니다",
 };
+
+/** The wire-level code Node buries under `fetch failed`. It sits one level down
+ * in `cause`, except when both IPv4 and IPv6 were tried — then `cause` is an
+ * AggregateError and the codes are one level further in. */
+function netCode(e: unknown): string | null {
+  const cause = (e as { cause?: unknown }).cause;
+  const c = cause as { code?: unknown; errors?: { code?: unknown }[] } | undefined;
+  if (typeof c?.code === "string") return c.code;
+  for (const sub of c?.errors ?? []) {
+    if (typeof sub?.code === "string") return sub.code;
+  }
+  return null;
+}
 
 /** One actionable sentence for whatever went wrong on the wire. */
 function describeCallError(e: unknown): string {
@@ -264,8 +276,8 @@ function describeCallError(e: unknown): string {
     if (e.name === "AbortError" || e.name === "TimeoutError") {
       return `응답 시간 초과 (${Math.round(callTimeoutMs() / 1000)}초) — 엔드포인트가 제때 응답하지 않았습니다`;
     }
-    const code = (e as { cause?: { code?: unknown } }).cause?.code;
-    if (typeof code === "string") return `${NET_CODES[code] ?? "네트워크 오류"} (${code})`;
+    const code = netCode(e);
+    if (code) return `${NET_CODES[code] ?? "네트워크 오류"} (${code})`;
     return e.message || String(e);
   }
   return String(e);

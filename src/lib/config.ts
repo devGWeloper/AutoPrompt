@@ -224,6 +224,13 @@ export function getAgentConfig(): AgentConfig {
   return loadConfig().agent;
 }
 
+/** The one wire timeout every outbound call gets — chat endpoint, judge LLM and
+ * embeddings alike: `agent.timeoutSec`, 90s by default. Node's own fetch timers
+ * are lined up with it in `fetchWithTimeout` (lib/http.ts). */
+export function getCallTimeoutMs(): number {
+  return loadConfig().agent.timeoutMs;
+}
+
 /** The endpoint a run talks to. Anything that does not name a side gets A —
  * A *is* the default, so there is no separate shared URL to fall back to. */
 export function getFlowSide(side?: "a" | "b" | null): AgentSideConfig {

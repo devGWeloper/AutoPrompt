@@ -22,13 +22,13 @@ import urllib.request
 def get_active_prompts(base_url: str) -> dict:
     """Return {node_nm: active_prompt_payload} for the current flow."""
     url = f"{base_url.rstrip('/')}/api/v1/active-prompts"
-    with urllib.request.urlopen(url, timeout=30) as resp:  # noqa: S310 - trusted internal host
+    with urllib.request.urlopen(url, timeout=90) as resp:  # noqa: S310 - trusted internal host
         return json.loads(resp.read().decode("utf-8"))
 
 
 def get_active_prompt(base_url: str, node_nm: str) -> dict:
     url = f"{base_url.rstrip('/')}/api/v1/nodes/by-name/{node_nm}/active-prompt"
-    with urllib.request.urlopen(url, timeout=30) as resp:  # noqa: S310
+    with urllib.request.urlopen(url, timeout=90) as resp:  # noqa: S310
         return json.loads(resp.read().decode("utf-8"))
 
 

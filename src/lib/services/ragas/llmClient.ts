@@ -1,4 +1,5 @@
-import { getEmbeddingConfig, getLlmConfig } from "@/lib/config";
+import { getCallTimeoutMs, getEmbeddingConfig, getLlmConfig } from "@/lib/config";
+import { fetchWithTimeout } from "@/lib/http";
 
 // Minimal OpenAI-compatible client for the RAGAS judge LLM + embeddings.
 // Endpoints are the base URL (e.g. http://host/v1); this appends the standard
@@ -10,21 +11,27 @@ interface ChatMessage {
   content: string;
 }
 
-async function postJson(url: string, apiKey: string, body: unknown, timeoutMs = 90000): Promise<unknown> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+/** The judge LLM and the embedding model wait exactly as long as an agent call
+ * does — one `agent.timeoutSec` for every outbound request. */
+async function postJson(url: string, apiKey: string, body: unknown, timeoutMs = getCallTimeoutMs()): Promise<unknown> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  let resp: Response;
   try {
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-    const resp = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal: controller.signal });
-    if (!resp.ok) {
-      const text = await resp.text().catch(() => "");
-      throw new Error(`HTTP ${resp.status} ${text.slice(0, 300)}`);
+    resp = await fetchWithTimeout(url, { method: "POST", headers, body: JSON.stringify(body) }, timeoutMs);
+  } catch (e) {
+    // The abort is ours; a bare "This operation was aborted" names nothing.
+    const name = e instanceof Error ? e.name : "";
+    if (name === "AbortError" || name === "TimeoutError") {
+      throw new Error(`응답 시간 초과 (${Math.round(timeoutMs / 1000)}초) — ${url}`);
     }
-    return await resp.json();
-  } finally {
-    clearTimeout(timer);
+    throw e;
   }
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(`HTTP ${resp.status} ${text.slice(0, 300)}`);
+  }
+  return await resp.json();
 }
 
 /** Join a configured base URL with an OpenAI path. `fetch` needs an absolute URL:
