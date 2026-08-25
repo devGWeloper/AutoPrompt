@@ -135,7 +135,6 @@ function FieldsEditor({
             onChange={(e) => set({ groundTruth: e.target.value })}
             rows={4}
             placeholder="기대 답변"
-            title="JSON 도 그대로 붙여넣으면 됩니다"
             className="w-full font-mono text-xs"
           />
         </div>
@@ -439,7 +438,6 @@ export default function DatasetsPanel() {
                   {noGt > 0 && (
                     <span
                       className="shrink-0 rounded-sm bg-surface-2 px-1.5 py-px text-[11px] text-muted"
-                      title="정답이 없는 케이스는 정답 일치로 채점되지 않습니다"
                     >
                       정답 없음 {noGt}
                     </span>

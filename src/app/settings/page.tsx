@@ -11,7 +11,7 @@ import { Table, TBody, THead, TD, TH, TR } from '@/components/ui/Table';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { SHELL } from '@/lib/layout';
-import { MODEL_ROLE_NOTES, type Endpoint, type EndpointHeader, type LlmModel, type ModelRole } from '@/lib/types';
+import { type Endpoint, type EndpointHeader, type LlmModel, type ModelRole } from '@/lib/types';
 import { errText, PencilIcon, refreshEndpoints, setLlmCatalog, TrashIcon, useArmed } from '@/components/ragas/shared';
 import { setRoleCatalog } from '@/components/ragas/ModelPicker';
 
@@ -89,13 +89,13 @@ function DeleteBtn({ onConfirm, title }: { onConfirm: () => void; title: string 
 }
 
 /** On/off as a switch — the state is the control, with no line explaining it. */
-function Toggle({ on, onChange, title }: { on: boolean; onChange: (v: boolean) => void; title: string }) {
+function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={on}
-      title={title}
+      aria-label={label}
       onClick={() => onChange(!on)}
       className={cn(
         'relative h-4 w-7 shrink-0 rounded-full border transition-colors',
@@ -277,7 +277,7 @@ function EndpointsSection({
                 <TD className="align-middle">
                   <Toggle
                     on={e.is_active === 'Y'}
-                    title={e.is_active === 'Y' ? '실행에서 선택 가능' : '실행에서 숨김'}
+                    label={e.is_active === 'Y' ? '실행에서 선택 가능' : '실행에서 숨김'}
                     onChange={(v) =>
                       run(() =>
                         api.put<Endpoint[]>(`/endpoints/${e.endpoint_id}`, {
@@ -434,7 +434,7 @@ function RolesSection({ roles, setRoles }: { roles: ModelRole[]; setRoles: (next
         <ul className="divide-y divide-line">
           {roles.map((m) => (
             <li key={m.role_cd} className="flex items-center gap-3 px-5 py-2.5">
-              <span className="min-w-0 flex-1 truncate font-mono text-body-sm text-ink" title={MODEL_ROLE_NOTES[m.role_cd]}>
+              <span className="min-w-0 flex-1 truncate font-mono text-body-sm text-ink">
                 {m.role_cd}
               </span>
               <DeleteBtn

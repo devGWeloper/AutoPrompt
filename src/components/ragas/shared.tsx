@@ -9,7 +9,6 @@ import {
   EXACT_MATCH,
   RAGAS_METRICS,
   METRIC_LABELS,
-  METRIC_DESCRIPTIONS,
   type RagasMetric,
   type Dataset,
   type Endpoint,
@@ -114,7 +113,6 @@ export function ScoreToggle({ on, onChange }: { on: boolean; onChange: (v: boole
       aria-checked={on}
       onClick={() => onChange(!on)}
       aria-label="채점"
-      title={on ? '채점 끄기' : '채점 켜기'}
       className="group inline-flex items-center whitespace-nowrap"
     >
       <span
@@ -141,14 +139,13 @@ export function ScoreToggle({ on, onChange }: { on: boolean; onChange: (v: boole
  * 체크 표시가 무엇이 켜져 있는지 한눈에 답한다.
  */
 function Check({
-  label, checked, indeterminate, onChange, title, strong,
+  label, checked, indeterminate, onChange, strong,
 }: {
   label: string;
   checked: boolean;
   /** RAGAS 묶음이 일부만 선택된 상태. */
   indeterminate?: boolean;
   onChange: () => void;
-  title?: string;
   strong?: boolean;
 }) {
   const ref = useRef<HTMLInputElement>(null);
@@ -158,7 +155,6 @@ function Check({
   }, [indeterminate]);
   return (
     <label
-      title={title}
       className="inline-flex cursor-pointer select-none items-center gap-1.5 whitespace-nowrap"
     >
       <input
@@ -200,7 +196,6 @@ export function EvalOptions({ metrics, setMetrics }: { metrics: string[]; setMet
       <Check
         strong
         label={METRIC_LABELS[EXACT_MATCH]}
-        title={METRIC_DESCRIPTIONS[EXACT_MATCH]}
         checked={exactOn}
         onChange={() => setMetrics((cur) => (exactOn ? cur.filter((x) => x !== EXACT_MATCH) : [...cur, EXACT_MATCH]))}
       />
@@ -208,7 +203,6 @@ export function EvalOptions({ metrics, setMetrics }: { metrics: string[]; setMet
       <Check
         strong
         label="RAGAS"
-        title="심판 LLM 으로 채점하는 다섯 지표"
         checked={allRagas}
         indeterminate={ragasOn && !allRagas}
         onChange={() =>
@@ -225,7 +219,6 @@ export function EvalOptions({ metrics, setMetrics }: { metrics: string[]; setMet
             <Check
               key={m}
               label={METRIC_LABELS[m]}
-              title={METRIC_DESCRIPTIONS[m]}
               checked={metrics.includes(m)}
               onChange={() => setMetrics((cur) => (cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m]))}
             />
@@ -338,10 +331,7 @@ export function VersionSelect({ versions, value, onChange, placeholder, classNam
  */
 export const PROMPT_TARGET_ENABLED = false;
 
-/** 막아둔 선택지에 붙는 안내 — 왜 못 고르는지 없이 회색으로만 두면 고장으로 읽힌다. */
-export const PROMPT_TARGET_BLOCKED_HINT = '프롬프트 버전 대상 실행은 현재 준비 중입니다.';
-
-export function SegToggle<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: { id: T; label: string; disabled?: boolean; hint?: string }[] }) {
+export function SegToggle<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: { id: T; label: string; disabled?: boolean }[] }) {
   return (
     <div className="inline-flex rounded-md border border-line bg-surface p-0.5">
       {options.map((o) => (
@@ -349,7 +339,6 @@ export function SegToggle<T extends string>({ value, onChange, options }: { valu
           key={o.id}
           onClick={() => onChange(o.id)}
           disabled={o.disabled}
-          title={o.hint}
           className={cn(
             'rounded-sm px-3.5 py-1.5 text-sm font-medium transition-colors',
             value === o.id ? 'bg-primary text-primary-fg' : 'text-muted hover:text-ink',
@@ -581,7 +570,6 @@ export function ElapsedTag({ ms, className }: { ms: number | null | undefined; c
   if (text === null) return null;
   return (
     <span
-      title="응답 시간 (채점 시간 제외)"
       className={cn('shrink-0 font-mono text-[11px] tabular-nums text-muted', className)}
     >
       {text}
@@ -617,7 +605,7 @@ export function ScoreBars({ row, cancelled }: { row: RagasResultRow; cancelled?:
           if (m === EXACT_MATCH) {
             return (
               <li key={m} className="flex items-center gap-3">
-                <span className="truncate text-[11px] text-muted" title={METRIC_DESCRIPTIONS[m]}>{METRIC_LABELS[m]}</span>
+                <span className="truncate text-[11px] text-muted">{METRIC_LABELS[m]}</span>
                 <OxBadge value={v} />
               </li>
             );
@@ -625,7 +613,7 @@ export function ScoreBars({ row, cancelled }: { row: RagasResultRow; cancelled?:
           const pct = v != null ? Math.max(0, Math.min(1, v)) * 100 : 0;
           return (
             <li key={m} className="grid grid-cols-[minmax(92px,auto)_1fr_auto] items-center gap-3">
-              <span className="truncate text-[11px] text-muted" title={METRIC_DESCRIPTIONS[m]}>{METRIC_LABELS[m]}</span>
+              <span className="truncate text-[11px] text-muted">{METRIC_LABELS[m]}</span>
               <div className="relative h-2 overflow-hidden rounded-full bg-surface-3">
                 <span className="absolute inset-y-0 left-0 rounded-full bg-accent" style={{ width: pct + '%' }} />
               </div>

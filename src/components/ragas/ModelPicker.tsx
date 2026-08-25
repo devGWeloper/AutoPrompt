@@ -221,7 +221,6 @@ export function ModelPicker({
                 >
                   <span
                     className={cn('truncate font-mono text-xs', differs ? 'font-semibold text-ink' : 'text-muted')}
-                    title={r.description ?? undefined}
                   >
                     {r.role_cd}
                   </span>
@@ -262,7 +261,6 @@ export function ModelPicker({
             {dirty && (
               <button
                 type="button"
-                title="기본값으로 되돌리기"
                 onClick={() => columns.forEach((c) => c.onChange(draftsFromRoles(roles)))}
                 className="shrink-0 text-caption text-muted transition-colors hover:text-ink"
               >

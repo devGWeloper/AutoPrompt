@@ -130,19 +130,17 @@ function StatusFoot() {
     <div className="flex items-center gap-3 border-t border-line px-4 py-3 text-caption">
       <span
         className={cn('inline-flex items-center gap-1.5', prd ? 'text-warn' : 'text-muted')}
-        title={`환경 ${health.env}`}
       >
         <span className={cn('h-1.5 w-1.5 rounded-full', prd ? 'bg-chroma-orange' : 'bg-accent')} />
         <span className="uppercase tracking-[0.6px]">{health.env}</span>
       </span>
       <span
         className={cn('inline-flex items-center gap-1.5', db ? 'text-muted' : 'text-muted-soft')}
-        title={db ? 'Oracle DB 연결됨' : 'DB 미연결'}
       >
         <span className={cn("h-1.5 w-1.5 rounded-full", db ? "bg-ok-vivid" : "bg-muted-soft")} />
         DB
       </span>
-      <span className="ml-auto font-mono text-caption-mono text-muted-soft" title="앱 버전">v{pkg.version}</span>
+      <span className="ml-auto font-mono text-caption-mono text-muted-soft">v{pkg.version}</span>
     </div>
   );
 }

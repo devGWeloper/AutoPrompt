@@ -4,7 +4,7 @@ import type { ButtonHTMLAttributes } from 'react';
 import { cn } from '@/lib/cn';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
-type Size = 'sm' | 'md';
+type Size = 'sm' | 'md' | 'lg';
 
 const base =
   // 4px radius, weight 500 — the brand's tight, engineered button geometry.
@@ -25,6 +25,9 @@ const variants: Record<Variant, string> = {
 const sizes: Record<Size, string> = {
   sm: 'h-8 px-3.5 text-[13px]',
   md: 'h-9 px-5 text-sm',
+  // 카드 하나에 하나뿐인 주 동작(실행/호출)용. 같은 줄의 셀렉트·토글이 모두
+  // h-9 라서, 한 단계 큰 이 크기만으로 어디를 눌러야 하는지가 먼저 읽힌다.
+  lg: 'h-10 px-6 text-[15px]',
 };
 
 export function Button({

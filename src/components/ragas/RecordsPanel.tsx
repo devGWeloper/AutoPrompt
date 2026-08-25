@@ -144,12 +144,12 @@ function RowActionsCell({ csvHref, onDelete }: { csvHref: string; onDelete: () =
 /** Sortable column header: sortable columns always show a
  * faint ↕ affordance; the active sort darkens to ink with a solid ▲/▼. */
 function SortTH({
-  k, label, sort, onSort, className, title,
+  k, label, sort, onSort, className,
 }: {
   k: RunSortKey; label: string;
   sort: { key: RunSortKey; dir: 'asc' | 'desc' };
   onSort: (k: RunSortKey) => void;
-  className?: string; title?: string;
+  className?: string;
 }) {
   const active = sort.key === k;
   return (
@@ -157,7 +157,6 @@ function SortTH({
       <button
         type="button"
         onClick={() => onSort(k)}
-        title={title}
         className={cn('inline-flex items-center gap-1 transition-colors', active ? 'text-ink' : 'hover:text-ink')}
       >
         {label}
@@ -354,7 +353,7 @@ export default function RecordsPanel() {
             <TR>
               <TH className="w-6 px-2" />
               <TH>실행</TH><TH>유형</TH><TH>상태</TH><TH>데이터셋</TH><TH>엔진</TH>
-              <SortTH k="avg" label="점수" sort={sort} onSort={toggleSort} title="RAGAS 지표 평균 / 정답 일치율 (정렬은 RAGAS 평균 기준)" />
+              <SortTH k="avg" label="점수" sort={sort} onSort={toggleSort} />
               <SortTH k="created" label="생성일시" sort={sort} onSort={toggleSort} />
               <TH className="w-16" />
             </TR>

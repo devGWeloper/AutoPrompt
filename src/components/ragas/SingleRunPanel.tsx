@@ -26,7 +26,6 @@ import {
   InlineDivider,
   InlineField,
   ErrBox,
-  PROMPT_TARGET_BLOCKED_HINT,
   PROMPT_TARGET_ENABLED,
   EvalOptions,
   ScoreToggle,
@@ -336,7 +335,7 @@ export default function SingleRunPanel() {
               value={target}
               onChange={setTarget}
               options={[
-                { id: 'prompt', label: '프롬프트', disabled: !PROMPT_TARGET_ENABLED, hint: PROMPT_TARGET_BLOCKED_HINT },
+                { id: 'prompt', label: '프롬프트', disabled: !PROMPT_TARGET_ENABLED },
                 { id: 'endpoint', label: 'As-is' },
                 { id: 'model', label: '모델' },
               ]}
@@ -358,7 +357,6 @@ export default function SingleRunPanel() {
             <button
               type="button"
               onClick={() => setShowAdvanced((v) => !v)}
-              title="이 호출에만 적용되는 인증 값"
               className="rounded-sm border border-line px-2 py-1 text-caption text-muted transition-colors hover:border-line-strong hover:text-ink"
             >
               {showAdvanced ? '인증 −' : '인증 +'}
@@ -383,11 +381,15 @@ export default function SingleRunPanel() {
             {source === 'dataset' && <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />}
           </InlineField>
 
-          <div className="ml-auto flex shrink-0 items-center gap-2.5">
-            <StatusPill status={source === 'dataset' ? status : callStatus} />
-            {modelErr && <span className="text-caption text-bad">{modelErr}</span>}
+          <InlineDivider />
+
+          {/* 실행 버튼은 방금 고른 입력 바로 옆에 선다. 카드 오른쪽 끝으로
+              밀어두면 폼과 버튼 사이가 비어, 조건을 다 채우고도 어디를 눌러야
+              하는지 한 번 더 찾게 된다. */}
+          <div className="flex shrink-0 items-center gap-2.5">
             {source === 'dataset' ? (
               <Button
+                size="lg"
                 variant={status === 'running' ? 'secondary' : 'primary'}
                 className="whitespace-nowrap"
                 disabled={status === 'running' ? cancelling : !canRun}
@@ -396,10 +398,12 @@ export default function SingleRunPanel() {
                 {status === 'running' ? (cancelling ? '취소 중…' : '취소') : '실행'}
               </Button>
             ) : (
-              <Button variant="primary" disabled={!canCall} onClick={call}>
+              <Button size="lg" variant="primary" className="whitespace-nowrap" disabled={!canCall} onClick={call}>
                 {callStatus === 'running' ? '호출 중…' : '호출'}
               </Button>
             )}
+            <StatusPill status={source === 'dataset' ? status : callStatus} />
+            {modelErr && <span className="text-caption text-bad">{modelErr}</span>}
           </div>
         </div>
 
@@ -432,7 +436,6 @@ export default function SingleRunPanel() {
                 onChange={(e) => setExpected(e.target.value)}
                 rows={3}
                 placeholder="기대 정답"
-                title="응답 JSON 의 body 와 비교합니다. 비우면 정답 일치는 채점하지 않습니다."
                 className="w-full text-sm"
               />
             )}

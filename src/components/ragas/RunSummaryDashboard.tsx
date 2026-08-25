@@ -5,7 +5,6 @@ import { cn } from '@/lib/cn';
 import {
   EXACT_MATCH,
   METRIC_LABELS,
-  METRIC_DESCRIPTIONS,
   type RagasRunDetail,
 } from '@/lib/types';
 import { fmt3, OxBadge, runMean, scoredMetrics, sideLabel } from './shared';
@@ -99,7 +98,6 @@ export function SingleRunSummaryDashboard({ detail }: { detail: RagasRunDetail }
               <div>
                 <span
                   className="block truncate text-xs font-medium text-muted cursor-help"
-                  title={METRIC_DESCRIPTIONS[m]}
                 >
                   {METRIC_LABELS[m]}
                 </span>
@@ -250,7 +248,7 @@ export function CompareSummaryDashboard({
           return (
             <div key={m} className="flex flex-col justify-between rounded-md border border-line bg-surface p-4">
               <div>
-                <span className="block truncate text-xs font-semibold text-ink" title={METRIC_DESCRIPTIONS[m]}>
+                <span className="block truncate text-xs font-semibold text-ink">
                   {METRIC_LABELS[m]}
                 </span>
                 <div className="mt-2 flex items-center justify-between text-xs font-mono tabular-nums">

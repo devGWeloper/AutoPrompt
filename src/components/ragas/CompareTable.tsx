@@ -7,7 +7,6 @@ import {
   ALL_METRICS,
   EXACT_MATCH,
   METRIC_LABELS,
-  METRIC_DESCRIPTIONS,
   type RagasMetric,
   type RagasResultRow,
   type RagasRunDetail,
@@ -98,7 +97,7 @@ function ElapsedPair({ a, b }: { a?: RagasResultRow; b?: RagasResultRow }) {
   const aWins = both && a!.elapsed_ms! < b!.elapsed_ms!;
   const bWins = both && b!.elapsed_ms! < a!.elapsed_ms!;
   return (
-    <div className="flex items-center gap-1.5 font-mono text-[11px] tabular-nums text-muted" title="응답 시간 (채점 시간 제외)">
+    <div className="flex items-center gap-1.5 font-mono text-[11px] tabular-nums text-muted">
       <span className="font-sans text-[10px] font-semibold uppercase tracking-[0.6px]">시간</span>
       <span>
         <span className={cn(aWins && 'font-semibold text-ink')}>A {ta ?? '—'}</span>
@@ -169,7 +168,7 @@ function PairedMetricList({ rows }: { rows: MetricRow[] }) {
     <ul className="divide-y divide-line">
       {rows.map(({ m, av, bv, d }) => (
         <li key={m} className="grid grid-cols-[minmax(104px,0.8fr)_2fr_auto] items-center gap-4 px-3.5 py-2.5">
-          <span className="truncate text-sm font-medium text-ink" title={METRIC_DESCRIPTIONS[m]}>{METRIC_LABELS[m]}</span>
+          <span className="truncate text-sm font-medium text-ink">{METRIC_LABELS[m]}</span>
           {/* 정답 일치 is a per-case verdict — O/X reads better than a 0/1 bar. */}
           {m === EXACT_MATCH ? (
             <div className="flex flex-col gap-1.5">
