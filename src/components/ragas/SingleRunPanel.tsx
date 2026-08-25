@@ -339,19 +339,20 @@ export default function SingleRunPanel() {
               onChange={setTarget}
               options={[
                 {
+                  id: 'endpoint',
+                  // 'As-is' 였던 자리. 아무것도 바꾸지 않은 실행이자 이 폼의
+                  // 기본값이라, 이름은 그 사실만 말하고 맨 앞에 선다. 무슨
+                  // 실행이 되는지는 툴팁이 말한다.
+                  label: 'Default',
+                  title: '프롬프트도 모델도 건드리지 않고, 지금 설정 그대로 실행합니다',
+                },
+                { id: 'model', label: 'Model', title: 'role 별 모델을 바꿔서 실행합니다' },
+                {
                   id: 'prompt',
-                  label: '프롬프트',
+                  label: 'Prompt',
                   title: '고른 프롬프트 버전을 활성화한 뒤 실행합니다',
                   disabled: !PROMPT_TARGET_ENABLED,
                 },
-                {
-                  id: 'endpoint',
-                  label: '변경 없음',
-                  // 'As-is' 였던 자리. 무엇을 바꾸지 않는다는 건지가 이름만으로는
-                  // 서지 않아서, 고르는 순간 무슨 실행이 되는지를 이름으로 옮겼다.
-                  title: '프롬프트도 모델도 바꾸지 않고 지금 설정 그대로 실행합니다 — 비교의 기준값',
-                },
-                { id: 'model', label: '모델', title: 'role 별 모델을 바꿔서 실행합니다' },
               ]}
             />
             {target === 'prompt' && (

@@ -346,9 +346,9 @@ export default function ComparePanel() {
               value={mode}
               onChange={setMode}
               options={[
-                { id: 'version', label: '프롬프트', disabled: !PROMPT_TARGET_ENABLED },
                 { id: 'endpoint', label: 'API' },
-                { id: 'model', label: '모델' },
+                { id: 'model', label: 'Model' },
+                { id: 'version', label: 'Prompt', disabled: !PROMPT_TARGET_ENABLED },
               ]}
             />
           </InlineField>
