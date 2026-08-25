@@ -253,7 +253,7 @@ function EndpointsSection({
 
   return (
     <Section
-      title="API 엔드포인트"
+      title="Agent"
       count={list.length}
       action={<Button size="sm" onClick={() => setEditing(null)}>+ 추가</Button>}
     >

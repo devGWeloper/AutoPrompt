@@ -696,7 +696,7 @@ function RagasRunDetailView({ ragasId }: { ragasId: number }) {
   useEffect(() => { api.get<RagasRunDetail>(`/ragas-runs/${ragasId}`).then(setDetail).catch(() => setDetail(null)); }, [ragasId]);
   if (!detail) return <div className="p-4 text-xs text-muted">불러오는 중…</div>;
 
-  const verLabel = detail.version_no != null ? `v${detail.version_no}` : (detail.prompt_id ? `ID ${detail.prompt_id}` : '엔드포인트');
+  const verLabel = detail.version_no != null ? `v${detail.version_no}` : (detail.prompt_id ? `ID ${detail.prompt_id}` : 'Agent');
 
   return (
     <div className="space-y-4">

@@ -232,7 +232,7 @@ export function EvalOptions({ metrics, setMetrics }: { metrics: string[]; setMet
 
 /** A/B side label: the prompt version when one was chosen, otherwise the side is
  * identified by its own endpoint (A/B across two endpoints). */
-export const sideLabel = (label: string) => (label ? `v${label}` : '엔드포인트');
+export const sideLabel = (label: string) => (label ? `v${label}` : 'Agent');
 
 // ---- run progress ----------------------------------------------------------
 

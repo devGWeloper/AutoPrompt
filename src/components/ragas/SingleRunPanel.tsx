@@ -318,7 +318,7 @@ export default function SingleRunPanel() {
     // run header reads as "testing the model" rather than "testing the endpoint".
     if (target === 'model') return '모델';
     // No version = nothing was swapped; the endpoint itself is what ran.
-    if (!id) return '엔드포인트';
+    if (!id) return 'Agent';
     const found = versions.find((v) => v.prompt_id === id);
     return found ? `v${found.version_no}` : `ID ${id}`;
   };
@@ -344,7 +344,7 @@ export default function SingleRunPanel() {
                   // 기본값이라, 이름은 그 사실만 말하고 맨 앞에 선다. 무슨
                   // 실행이 되는지는 툴팁이 말한다.
                   label: 'Default',
-                  title: '프롬프트도 모델도 건드리지 않고, 지금 설정 그대로 실행합니다',
+                  title: '프롬프트도 모델도 건드리지 않고, 고른 Agent 를 지금 상태 그대로 호출합니다',
                 },
                 { id: 'model', label: 'Model', title: 'role 별 모델을 바꿔서 실행합니다' },
                 {
@@ -370,7 +370,7 @@ export default function SingleRunPanel() {
 
           <InlineDivider />
 
-          <InlineField label="API">
+          <InlineField label="Agent">
             <EndpointSelect endpoints={endpoints} value={endpointId} onChange={setEndpointId} />
           </InlineField>
 

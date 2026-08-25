@@ -346,7 +346,7 @@ export default function ComparePanel() {
               value={mode}
               onChange={setMode}
               options={[
-                { id: 'endpoint', label: 'API' },
+                { id: 'endpoint', label: 'Default' },
                 { id: 'model', label: 'Model' },
                 { id: 'version', label: 'Prompt', disabled: !PROMPT_TARGET_ENABLED },
               ]}
@@ -367,7 +367,7 @@ export default function ComparePanel() {
               {epA != null && epA === epB && <span className="text-caption text-bad">A ≠ B</span>}
             </>
           ) : (
-            <InlineField label="API">
+            <InlineField label="Agent">
               <EndpointSelect endpoints={endpoints} value={epA} onChange={setEpA} />
               {mode === 'version' && (
                 <>
