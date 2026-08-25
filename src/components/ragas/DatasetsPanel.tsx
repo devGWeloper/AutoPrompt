@@ -1,13 +1,16 @@
 'use client';
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { Input, Textarea } from '@/components/ui/Field';
+import { Input, Select, Textarea } from '@/components/ui/Field';
 import { cn } from '@/lib/cn';
 import { api } from '@/lib/api';
 import type { CsvUploadResult, TestCase } from '@/lib/types';
-import { Chevron, EmptyState, ErrBox, errText, oneLine, PencilIcon, TrashIcon, useArmed, useFlowDatasets } from './shared';
+import {
+  Chevron, EmptyState, ErrBox, errText, oneLine, PencilIcon, SettingsLink, TrashIcon, useArmed,
+  useCaseTypes, useFlowDatasets,
+} from './shared';
 
 // A case's payload is the JSON in INPUT_CTN. The editor exposes the three fields
 // the evaluation actually reads (see services/ragas.ts parseCase) and carries any
@@ -112,9 +115,6 @@ function FieldsEditor({
   value, onChange, autoFocus, categories,
 }: { value: Fields; onChange: (f: Fields) => void; autoFocus?: boolean; categories: string[] }) {
   const set = (patch: Partial<Fields>) => onChange({ ...value, ...patch });
-  // A datalist rather than a select: the categories are whatever this dataset
-  // already uses, and a new one is made by typing it — nothing to administer.
-  const listId = useId();
   return (
     <div className="space-y-2.5">
       <div>
@@ -153,17 +153,24 @@ function FieldsEditor({
         </div>
       </div>
       <div>
-        <label className={LABEL}>분류</label>
-        <Input
+        <div className="mb-1 flex items-center gap-2">
+          <span className="eyebrow">분류</span>
+          {categories.length === 0 && <SettingsLink label="분류 등록" />}
+        </div>
+        <Select
           value={value.category}
           onChange={(e) => set({ category: e.target.value })}
-          list={listId}
-          placeholder="미분류"
           className="h-9 w-48 text-sm"
-        />
-        <datalist id={listId}>
-          {categories.map((c) => <option key={c} value={c} />)}
-        </datalist>
+        >
+          <option value="">미분류</option>
+          {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+          {/* A category dropped from the registry after cases were filed under it
+              stays selectable here, so saving such a case does not silently
+              re-file it under whatever option happens to come first. */}
+          {value.category !== '' && !categories.includes(value.category) && (
+            <option value={value.category}>{value.category} (목록에 없음)</option>
+          )}
+        </Select>
       </div>
     </div>
   );
@@ -245,6 +252,10 @@ function IconDelete({ title, onConfirm }: { title: string; onConfirm: () => void
 
 export default function DatasetsPanel() {
   const { datasets, reload } = useFlowDatasets();
+  // What a case may be filed under is settled on the settings page; hidden
+  // entries stay out of the picker but keep working on cases that already use
+  // them (see FieldsEditor).
+  const caseTypes = useCaseTypes();
   const [selDataset, setSelDataset] = useState<number | null>(null);
   const [cases, setCases] = useState<TestCase[]>([]);
   const [loading, setLoading] = useState(false);
@@ -296,7 +307,10 @@ export default function DatasetsPanel() {
         a === DEFAULT_CAT ? 1 : b === DEFAULT_CAT ? -1 : a.localeCompare(b))
       .map(([name, count]) => ({ name, count }));
   }, [cases]);
-  const catNames = useMemo(() => cats.map((c) => c.name).filter((n) => n !== DEFAULT_CAT), [cats]);
+  const catOptions = useMemo(
+    () => caseTypes.filter((t) => t.is_active === 'Y').map((t) => t.type_cd),
+    [caseTypes],
+  );
 
   // Renaming the last case out of a category would otherwise leave the filter
   // pointing at a category that no longer exists, i.e. an empty list with no
@@ -600,7 +614,7 @@ export default function DatasetsPanel() {
 
               {adding && (
                 <div className="border-b border-line bg-surface-2/40 px-4 py-3.5">
-                  <FieldsEditor value={draft} onChange={setDraft} autoFocus categories={catNames} />
+                  <FieldsEditor value={draft} onChange={setDraft} autoFocus categories={catOptions} />
                   <div className="mt-3 flex items-center justify-end gap-2">
                     <Button variant="ghost" size="sm" onClick={() => { setDraft(EMPTY); setAdding(false); }}>취소</Button>
                     <Button variant="secondary" size="sm" disabled={!draft.question.trim() || busy} onClick={addCase}>추가</Button>
@@ -644,7 +658,7 @@ export default function DatasetsPanel() {
                         </button>
                         {open && (
                           <div className="px-4 pb-3.5 pl-12">
-                            <FieldsEditor value={edit} onChange={setEdit} categories={catNames} />
+                            <FieldsEditor value={edit} onChange={setEdit} categories={catOptions} />
                             <div className="mt-3 flex items-center gap-2">
                               <Button variant="ghost" size="sm" onClick={() => duplicate(c)}>복제</Button>
                               <DeleteButton label="삭제" onConfirm={() => delCase(c.case_id)} />

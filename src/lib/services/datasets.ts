@@ -289,8 +289,16 @@ export async function importCsv(datasetId: number, fileText: string, createdBy: 
   let created = 0;
   let skipped = 0;
   const errors: string[] = [];
+  // Categories are picked from a list in the UI, but a CSV can carry anything.
+  // Such a row is still imported — the file is the user's data, not ours to drop —
+  // and the category it named is reported back instead.
+  const unknownCats = new Set<string>();
 
   await withConn(async (conn) => {
+    const known = new Set(
+      (((await conn.execute(`SELECT TYPE_CD FROM PTX_CASETYPE_MAS`)).rows ?? []) as Record<string, unknown>[])
+        .map((t) => String(t.TYPE_CD)),
+    );
     for (let r = 1; r < rows.length; r++) {
       const cells = rows[r];
       const get = (name: string) => {
@@ -303,6 +311,8 @@ export async function importCsv(datasetId: number, fileText: string, createdBy: 
         errors.push(`row ${r + 1}: empty input_json`);
         continue;
       }
+      const caseType = get("case_type") || "NORMAL";
+      if (caseType !== "NORMAL" && !known.has(caseType)) unknownCats.add(caseType);
       await conn.execute(
         `INSERT INTO PTX_DATASET_DET (DATASET_ID, INPUT_CTN, EXPECT_CTN, CRITERIA_CTN, TYPE_CD, USER_ID)
          VALUES (:did, :input, :expected, :crit, :ctype, :cby)`,
@@ -311,7 +321,7 @@ export async function importCsv(datasetId: number, fileText: string, createdBy: 
           input: inputData,
           expected: get("expected_output") || null,
           crit: get("eval_criteria") || null,
-          ctype: get("case_type") || "NORMAL",
+          ctype: caseType,
           cby: createdBy,
         },
       );
@@ -322,10 +332,14 @@ export async function importCsv(datasetId: number, fileText: string, createdBy: 
       targetId: datasetId,
       action: "UPDATE",
       before: null,
-      after: { csv_import: { created, skipped } },
+      after: { csv_import: { created, skipped, unknown_case_types: [...unknownCats] } },
       createdBy,
     });
   }, { commit: true });
+
+  if (unknownCats.size) {
+    errors.push(`미등록 분류: ${[...unknownCats].join(", ")} — 설정에서 추가하세요`);
+  }
 
   return { created, skipped, errors };
 }

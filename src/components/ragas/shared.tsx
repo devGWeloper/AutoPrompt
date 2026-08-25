@@ -10,6 +10,7 @@ import {
   RAGAS_METRICS,
   METRIC_LABELS,
   type RagasMetric,
+  type CaseType,
   type Dataset,
   type Endpoint,
   type LlmModel,
@@ -938,4 +939,36 @@ export function refreshEndpoints(): void {
  * rather than re-fetched. */
 export function setLlmCatalog(next: LlmModel[]): void {
   publishLlms(next);
+}
+
+// ---- case category registry ------------------------------------------------
+
+/** The categories a case may be filed under, as registered on the settings page.
+ * Shared like the lists above, and for the same reason. */
+let caseTypeCache: CaseType[] | null = null;
+const caseTypeSubs = new Set<(next: CaseType[]) => void>();
+
+function publishCaseTypes(next: CaseType[]): void {
+  caseTypeCache = next;
+  for (const fn of caseTypeSubs) fn(next);
+}
+
+export function useCaseTypes(): CaseType[] {
+  const [list, setList] = useState<CaseType[]>(caseTypeCache ?? []);
+  useEffect(() => {
+    caseTypeSubs.add(setList);
+    if (caseTypeCache === null) {
+      api.get<CaseType[]>('/case-types').then(publishCaseTypes).catch(() => publishCaseTypes([]));
+    } else {
+      setList(caseTypeCache);
+    }
+    return () => {
+      caseTypeSubs.delete(setList);
+    };
+  }, []);
+  return list;
+}
+
+export function setCaseTypeCatalog(next: CaseType[]): void {
+  publishCaseTypes(next);
 }

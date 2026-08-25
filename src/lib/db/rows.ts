@@ -6,6 +6,7 @@ import { DIRECT_SINK_NM } from "@/lib/types";
 import type {
   ActivePrompt,
   AuditLog,
+  CaseType,
   Dataset,
   Endpoint,
   EndpointHeader,
@@ -359,6 +360,16 @@ export const ENDPOINT_COLS = [
   tsCol("CRT_TM"),
 ].join(", ");
 
+export const CASETYPE_COLS = [
+  "TYPE_ID",
+  "TYPE_CD",
+  "DESC_CTN",
+  "ACTIVE_YN",
+  "USER_ID",
+  tsCol("UPDATE_TM"),
+  tsCol("CRT_TM"),
+].join(", ");
+
 export const LLM_COLS = [
   "LLM_ID",
   "LLM_NM",
@@ -392,6 +403,19 @@ export function mapEndpoint(r: Row): Endpoint {
     endpoint_url: String(r.ENDPOINT_URL),
     headers: parseHeaders(r.HEADER_CTN),
     description: str(r.DESC_CTN),
+    is_active: r.ACTIVE_YN === "N" ? "N" : "Y",
+    updated_by: String(r.USER_ID),
+    updated_dt: str(r.UPDATE_TM),
+    created_dt: String(r.CRT_TM),
+  };
+}
+
+export function mapCaseType(r: Row): CaseType {
+  return {
+    type_id: num(r.TYPE_ID)!,
+    type_cd: String(r.TYPE_CD),
+    description: str(r.DESC_CTN),
+    case_count: num(r.CASE_CNT) ?? 0,
     is_active: r.ACTIVE_YN === "N" ? "N" : "Y",
     updated_by: String(r.USER_ID),
     updated_dt: str(r.UPDATE_TM),

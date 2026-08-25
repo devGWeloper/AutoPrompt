@@ -512,3 +512,22 @@ export interface LlmModelInput {
   description?: string | null;
   is_active?: "Y" | "N";
 }
+
+/** One entry of the case-category list — PTX_DATASET_DET.TYPE_CD picks from it. */
+export interface CaseType {
+  type_id: number;
+  type_cd: string;
+  description: string | null;
+  /** Cases currently carrying this category — what a delete would strand. */
+  case_count: number;
+  is_active: "Y" | "N";
+  updated_by: string;
+  updated_dt: string | null;
+  created_dt: string;
+}
+
+export interface CaseTypeInput {
+  type_cd: string;
+  description?: string | null;
+  is_active?: "Y" | "N";
+}
