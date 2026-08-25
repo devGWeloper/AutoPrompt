@@ -10,8 +10,8 @@ import {
   RAGAS_METRICS,
   METRIC_LABELS,
   type RagasMetric,
-  type CaseType,
   type Dataset,
+  type DatasetCategory,
   type Endpoint,
   type LlmModel,
   type FlowCurrent,
@@ -314,7 +314,61 @@ export function DatasetSelect({ datasets, value, onChange }: { datasets: Dataset
   );
 }
 
-export function VersionSelect({ versions, value, onChange, placeholder, className }: { versions: PromptVersionSummary[]; value: number | null; onChange: (id: number) => void; placeholder: string; className?: string }) {
+/**
+ * One dataset's folders, with how many cases each holds. Fetched per selection
+ * rather than carried on the dataset list: it is only ever needed for the one
+ * dataset in front of you, and it has to be right at the moment a run starts.
+ *
+ * `reload` is what the dataset screen calls after making, renaming or removing a
+ * folder — the same list drives the sidebar and the run picker.
+ */
+export function useDatasetCategories(datasetId: number | null) {
+  const [cats, setCats] = useState<DatasetCategory[]>([]);
+  const [seq, setSeq] = useState(0);
+  useEffect(() => {
+    if (datasetId == null) { setCats([]); return; }
+    let alive = true;
+    const done = (next: DatasetCategory[]) => { if (alive) setCats(next); };
+    api.get<DatasetCategory[]>(`/datasets/${datasetId}/case-types`).then(done).catch(() => done([]));
+    return () => { alive = false; };
+  }, [datasetId, seq]);
+  const reload = useCallback(() => setSeq((n) => n + 1), []);
+  return { cats, setCats, reload };
+}
+
+/** TYPE_CD's column default is what the UI calls 폴더 없음. */
+export const UNFILED = 'NORMAL';
+export const folderLabel = (t: string) => (t === UNFILED ? '폴더 없음' : t);
+
+/** Narrow a run to one folder of the chosen dataset. null = the whole dataset.
+ *
+ * Absent while the dataset has only one group: a picker whose choices are 전체
+ * and the single group it contains is two ways to say the same run. */
+export function CategorySelect({
+  cats, value, onChange,
+}: { cats: DatasetCategory[]; value: string | null; onChange: (v: string | null) => void }) {
+  if (cats.length < 2) return null;
+  const total = cats.reduce((n, c) => n + c.case_count, 0);
+  return (
+    <Select
+      value={value ?? ''}
+      onChange={(e) => onChange(e.target.value || null)}
+      className="w-40"
+      title="이 폴더의 케이스만 실행합니다"
+    >
+      <option value="">전체 ({total})</option>
+      {cats.map((c) => (
+        <option key={c.type_cd} value={c.type_cd} disabled={c.case_count === 0}>
+          {folderLabel(c.type_cd)} ({c.case_count})
+        </option>
+      ))}
+    </Select>
+  );
+}
+
+export function VersionSelect({
+  versions, value, onChange, placeholder, className,
+}: { versions: PromptVersionSummary[]; value: number | null; onChange: (id: number) => void; placeholder: string; className?: string }) {
   return (
     <Select value={value ?? ''} onChange={(e) => onChange(Number(e.target.value))} className={cn('w-36', className)}>
       <option value="" disabled>{placeholder}</option>
@@ -332,7 +386,7 @@ export function VersionSelect({ versions, value, onChange, placeholder, classNam
  */
 export const PROMPT_TARGET_ENABLED = false;
 
-export function SegToggle<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: { id: T; label: string; disabled?: boolean }[] }) {
+export function SegToggle<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: { id: T; label: string; title?: string; disabled?: boolean }[] }) {
   return (
     <div className="inline-flex rounded-md border border-line bg-surface p-0.5">
       {options.map((o) => (
@@ -340,6 +394,7 @@ export function SegToggle<T extends string>({ value, onChange, options }: { valu
           key={o.id}
           onClick={() => onChange(o.id)}
           disabled={o.disabled}
+          title={o.title}
           className={cn(
             'rounded-sm px-3.5 py-1.5 text-sm font-medium transition-colors',
             value === o.id ? 'bg-primary text-primary-fg' : 'text-muted hover:text-ink',
@@ -939,36 +994,4 @@ export function refreshEndpoints(): void {
  * rather than re-fetched. */
 export function setLlmCatalog(next: LlmModel[]): void {
   publishLlms(next);
-}
-
-// ---- case category registry ------------------------------------------------
-
-/** The categories a case may be filed under, as registered on the settings page.
- * Shared like the lists above, and for the same reason. */
-let caseTypeCache: CaseType[] | null = null;
-const caseTypeSubs = new Set<(next: CaseType[]) => void>();
-
-function publishCaseTypes(next: CaseType[]): void {
-  caseTypeCache = next;
-  for (const fn of caseTypeSubs) fn(next);
-}
-
-export function useCaseTypes(): CaseType[] {
-  const [list, setList] = useState<CaseType[]>(caseTypeCache ?? []);
-  useEffect(() => {
-    caseTypeSubs.add(setList);
-    if (caseTypeCache === null) {
-      api.get<CaseType[]>('/case-types').then(publishCaseTypes).catch(() => publishCaseTypes([]));
-    } else {
-      setList(caseTypeCache);
-    }
-    return () => {
-      caseTypeSubs.delete(setList);
-    };
-  }, []);
-  return list;
-}
-
-export function setCaseTypeCatalog(next: CaseType[]): void {
-  publishCaseTypes(next);
 }

@@ -314,6 +314,9 @@ export interface RagasRunOut {
   node_nm: string | null;
   version_no: string | null;
   dataset_id: number;
+  /** The folder this run was narrowed to; null = the whole dataset. A
+   * snapshot like dataset_nm — it keeps its meaning after a rename. */
+  case_type: string | null;
   status: string;
   engine: string | null; // 'direct' marks a raw external-API call (no scoring)
   metrics: string | null;
@@ -346,6 +349,7 @@ export interface RagasRunSummary {
   node_nm: string | null;
   version_no: string | null;
   dataset_nm: string | null;
+  case_type: string | null;
   first_question: string | null;
   is_manual: boolean;
   status: string;
@@ -365,6 +369,8 @@ export interface RagasRunSummary {
 
 export interface FlowRagasRequest {
   dataset_id: number;
+  /** Run only the cases in this folder. Absent/null = the whole dataset. */
+  case_type?: string | null;
   metrics?: string[];
   node_nm?: string | null;
   prompt_id?: number | null;
@@ -382,6 +388,9 @@ export interface FlowRagasRequest {
  * same value. Both start out pre-filled from the saved role defaults. */
 export interface FlowRagasAbRequest {
   dataset_id: number;
+  /** Both sides run the same folder — an A/B across different case sets
+   * would not be a comparison. */
+  case_type?: string | null;
   node_nm?: string | null;
   prompt_id_a?: number | null;
   prompt_id_b?: number | null;
@@ -513,21 +522,20 @@ export interface LlmModelInput {
   is_active?: "Y" | "N";
 }
 
-/** One entry of the case-category list — PTX_DATASET_DET.TYPE_CD picks from it. */
-export interface CaseType {
-  type_id: number;
+/**
+ * One folder of a dataset: a named group of that dataset's cases. Folders
+ * belong to the dataset — two datasets may both have a 요약 folder and the two
+ * have nothing to do with each other. A case says which folder it is in
+ * through PTX_DATASET_DET.TYPE_CD.
+ */
+export interface DatasetCategory {
+  /** null = not a registered folder: either the reserved NORMAL (폴더 없음) or
+   * a value that arrived on a case (CSV import) without a folder to match. */
+  type_id: number | null;
   type_cd: string;
-  description: string | null;
-  /** Cases currently carrying this category — what a delete would strand. */
   case_count: number;
-  is_active: "Y" | "N";
-  updated_by: string;
-  updated_dt: string | null;
-  created_dt: string;
 }
 
 export interface CaseTypeInput {
   type_cd: string;
-  description?: string | null;
-  is_active?: "Y" | "N";
 }

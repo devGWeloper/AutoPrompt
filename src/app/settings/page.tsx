@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import AppShell from '@/components/ui/AppShell';
 import PageHeader from '@/components/ui/PageHeader';
 import Modal from '@/components/ui/Modal';
@@ -11,10 +11,8 @@ import { Table, TBody, THead, TD, TH, TR } from '@/components/ui/Table';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { SHELL } from '@/lib/layout';
-import { type CaseType, type Endpoint, type EndpointHeader, type LlmModel, type ModelRole } from '@/lib/types';
-import {
-  errText, PencilIcon, refreshEndpoints, setCaseTypeCatalog, setLlmCatalog, TrashIcon, useArmed,
-} from '@/components/ragas/shared';
+import { type Endpoint, type EndpointHeader, type LlmModel, type ModelRole } from '@/lib/types';
+import { errText, PencilIcon, refreshEndpoints, setLlmCatalog, TrashIcon, useArmed } from '@/components/ragas/shared';
 import { setRoleCatalog } from '@/components/ragas/ModelPicker';
 
 /**
@@ -451,140 +449,17 @@ function RolesSection({ roles, setRoles }: { roles: ModelRole[]; setRoles: (next
   );
 }
 
-// ---- case categories -------------------------------------------------------
-
-/**
- * The categories a dataset case may be filed under. Cases point at these by name
- * and nothing in the schema ties the two together, so a rename moves the cases
- * with it and a delete leaves them stranded — which is what the case count on
- * each row is here to warn about.
- */
-function CaseTypesSection({ list, setList }: { list: CaseType[]; setList: (next: CaseType[]) => void }) {
-  const [draft, setDraft] = useState('');
-  const [editId, setEditId] = useState<number | null>(null);
-  const [editVal, setEditVal] = useState('');
-  const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  // Escape must not commit the rename that the resulting blur would save.
-  const cancelEdit = useRef(false);
-
-  const name = draft.trim();
-  const canAdd = name !== '' && !list.some((t) => t.type_cd === name) && !busy;
-
-  const run = async (fn: () => Promise<CaseType[]>) => {
-    setBusy(true);
-    setErr(null);
-    try {
-      setList(await fn());
-    } catch (e) {
-      setErr(errText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // PUT replaces the row, so the fields this section does not edit are sent back
-  // as they came.
-  const body = (t: CaseType, patch: Partial<CaseType>) => ({
-    type_cd: patch.type_cd ?? t.type_cd,
-    description: t.description,
-    is_active: patch.is_active ?? t.is_active,
-  });
-
-  function add() {
-    if (!canAdd) return;
-    run(() => api.post<CaseType[]>('/case-types', { type_cd: name }));
-    setDraft('');
-  }
-
-  function commitRename(t: CaseType) {
-    const next = editVal.trim();
-    setEditId(null);
-    if (!next || next === t.type_cd) return;
-    run(() => api.put<CaseType[]>(`/case-types/${t.type_id}`, body(t, { type_cd: next })));
-  }
-
-  return (
-    <Section title="케이스 분류" count={list.length}>
-      <ErrLine msg={err} />
-      <div className="flex items-center gap-2 border-b border-line px-5 py-3">
-        <Input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && add()}
-          placeholder="요약"
-          className="h-9 w-48 text-body-sm"
-        />
-        <Button size="sm" onClick={add} disabled={!canAdd}>+ 추가</Button>
-      </div>
-      {list.length === 0 ? (
-        <Empty>—</Empty>
-      ) : (
-        <ul className="divide-y divide-line">
-          {list.map((t) => (
-            <li key={t.type_id} className="flex items-center gap-3 px-5 py-2.5">
-              <Toggle
-                on={t.is_active === 'Y'}
-                label={t.is_active === 'Y' ? '케이스에서 선택 가능' : '케이스에서 숨김'}
-                onChange={(v) =>
-                  run(() =>
-                    api.put<CaseType[]>(`/case-types/${t.type_id}`, body(t, { is_active: v ? 'Y' : 'N' })),
-                  )
-                }
-              />
-              {editId === t.type_id ? (
-                <Input
-                  autoFocus
-                  value={editVal}
-                  onChange={(e) => setEditVal(e.target.value)}
-                  onKeyDown={(e) => {
-                    // Both keys leave the field; onBlur is the single commit point.
-                    if (e.key === 'Escape') cancelEdit.current = true;
-                    if (e.key === 'Enter' || e.key === 'Escape') e.currentTarget.blur();
-                  }}
-                  onBlur={() => {
-                    if (cancelEdit.current) { cancelEdit.current = false; setEditId(null); return; }
-                    commitRename(t);
-                  }}
-                  className="h-8 w-48 text-body-sm"
-                />
-              ) : (
-                <span className="min-w-0 flex-1 truncate text-body-sm text-ink">{t.type_cd}</span>
-              )}
-              <span className="shrink-0 font-mono text-caption-mono text-muted-soft" title="이 분류가 붙은 케이스 수">
-                {t.case_count}
-              </span>
-              <IconBtn
-                title="이름 변경 — 이 분류의 케이스도 같이 옮겨집니다"
-                onClick={() => { setEditId(t.type_id); setEditVal(t.type_cd); }}
-              >
-                <PencilIcon />
-              </IconBtn>
-              <DeleteBtn
-                title={t.case_count > 0 ? `삭제 — 케이스 ${t.case_count}건이 목록에 없는 분류로 남습니다` : '삭제'}
-                onConfirm={() => run(() => api.del<CaseType[]>(`/case-types/${t.type_id}`))}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
-    </Section>
-  );
-}
-
 // ---- page ------------------------------------------------------------------
 
 export default function SettingsPage() {
   const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
   const [models, setModels] = useState<LlmModel[]>([]);
   const [roles, setRoles] = useState<ModelRole[]>([]);
-  const [caseTypes, setCaseTypes] = useState<CaseType[]>([]);
 
   const load = useCallback(() => {
     api.get<Endpoint[]>('/endpoints').then(setEndpoints).catch(() => setEndpoints([]));
     api.get<LlmModel[]>('/llms').then(setModels).catch(() => setModels([]));
     api.get<ModelRole[]>('/models').then(setRoles).catch(() => setRoles([]));
-    api.get<CaseType[]>('/case-types').then(setCaseTypes).catch(() => setCaseTypes([]));
   }, []);
 
   useEffect(load, [load]);
@@ -606,10 +481,6 @@ export default function SettingsPage() {
     setRoles(next);
     setRoleCatalog(next);
   }, []);
-  const saveCaseTypes = useCallback((next: CaseType[]) => {
-    setCaseTypes(next);
-    setCaseTypeCatalog(next);
-  }, []);
 
   return (
     <AppShell section="settings">
@@ -619,7 +490,6 @@ export default function SettingsPage() {
           <EndpointsSection list={endpoints} setList={saveEndpoints} />
           <ModelsSection list={models} setList={saveModels} />
           <RolesSection roles={roles} setRoles={saveRoles} />
-          <CaseTypesSection list={caseTypes} setList={saveCaseTypes} />
         </div>
       </div>
     </AppShell>

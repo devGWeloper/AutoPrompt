@@ -6,7 +6,6 @@ import { DIRECT_SINK_NM } from "@/lib/types";
 import type {
   ActivePrompt,
   AuditLog,
-  CaseType,
   Dataset,
   Endpoint,
   EndpointHeader,
@@ -126,6 +125,7 @@ export const RUN_COLS = [
   "AB_GROUP_ID",
   "DATASET_ID",
   "DATASET_NM",
+  "TYPE_CD",
   "STATUS_CD",
   "ENGINE_CD",
   "METRIC_CTN",
@@ -263,6 +263,7 @@ export function mapRagasRun(r: Row): RagasRunOut {
     node_nm: null,
     version_no: null,
     dataset_id: num(r.DATASET_ID)!,
+    case_type: str(r.TYPE_CD),
     status: String(r.STATUS_CD),
     engine: str(r.ENGINE_CD),
     metrics: str(r.METRIC_CTN),
@@ -294,6 +295,7 @@ export function mapRagasRunSummary(r: Row): RagasRunSummary {
     // DATASET_NM is a snapshot on the run itself (survives dataset deletion);
     // FIRST_QUESTION only comes from listRuns' SELECT.
     dataset_nm: str(r.DATASET_NM),
+    case_type: run.case_type,
     first_question: str(r.FIRST_QUESTION),
     is_manual: str(r.DATASET_NM) === DIRECT_SINK_NM,
     status: run.status,
@@ -360,16 +362,6 @@ export const ENDPOINT_COLS = [
   tsCol("CRT_TM"),
 ].join(", ");
 
-export const CASETYPE_COLS = [
-  "TYPE_ID",
-  "TYPE_CD",
-  "DESC_CTN",
-  "ACTIVE_YN",
-  "USER_ID",
-  tsCol("UPDATE_TM"),
-  tsCol("CRT_TM"),
-].join(", ");
-
 export const LLM_COLS = [
   "LLM_ID",
   "LLM_NM",
@@ -403,19 +395,6 @@ export function mapEndpoint(r: Row): Endpoint {
     endpoint_url: String(r.ENDPOINT_URL),
     headers: parseHeaders(r.HEADER_CTN),
     description: str(r.DESC_CTN),
-    is_active: r.ACTIVE_YN === "N" ? "N" : "Y",
-    updated_by: String(r.USER_ID),
-    updated_dt: str(r.UPDATE_TM),
-    created_dt: String(r.CRT_TM),
-  };
-}
-
-export function mapCaseType(r: Row): CaseType {
-  return {
-    type_id: num(r.TYPE_ID)!,
-    type_cd: String(r.TYPE_CD),
-    description: str(r.DESC_CTN),
-    case_count: num(r.CASE_CNT) ?? 0,
     is_active: r.ACTIVE_YN === "N" ? "N" : "Y",
     updated_by: String(r.USER_ID),
     updated_dt: str(r.UPDATE_TM),

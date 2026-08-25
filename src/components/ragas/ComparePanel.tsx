@@ -21,6 +21,7 @@ import {
 } from '@/lib/types';
 import { CaseCompareTable, CompareVerdict } from './CompareTable';
 import {
+  CategorySelect,
   DatasetSelect,
   EndpointSelect,
   InlineDivider,
@@ -39,6 +40,7 @@ import {
   sideLabel,
   upsertResult,
   useEndpoints,
+  useDatasetCategories,
   useFlowDatasets,
   usePromptNodes,
 } from './shared';
@@ -101,6 +103,11 @@ export default function ComparePanel() {
   const [verA, setVerA] = useState<number | null>(null);
   const [verB, setVerB] = useState<number | null>(null);
   const [datasetId, setDatasetId] = useState<number | null>(null);
+  // One category for both sides — an A/B over two different case sets is
+  // not a comparison. null = the whole dataset.
+  const [caseType, setCaseType] = useState<string | null>(null);
+  const { cats: folders } = useDatasetCategories(datasetId);
+  useEffect(() => { setCaseType(null); }, [datasetId]);
   // One model set per side, used only when 모델 is the axis under test. Both
   // start from the same saved defaults, so a fresh model comparison begins from
   // a known baseline and you change just the side you want to move.
@@ -265,6 +272,7 @@ export default function ComparePanel() {
     try {
       const r = await api.post<{ ragas_run_a_id: number; ragas_run_b_id: number }>('/flow/test/ragas/ab', {
         dataset_id: datasetId,
+        case_type: caseType,
         node_nm: byVersion ? nodeNm : null,
         prompt_id_a: byVersion ? verA : null,
         prompt_id_b: byVersion ? verB : null,
@@ -395,7 +403,12 @@ export default function ComparePanel() {
               onChange={setSource}
               options={[{ id: 'dataset', label: '데이터셋' }, { id: 'manual', label: '직접 입력' }]}
             />
-            {source === 'dataset' && <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />}
+            {source === 'dataset' && (
+              <>
+                <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />
+                <CategorySelect cats={folders} value={caseType} onChange={setCaseType} />
+              </>
+            )}
           </InlineField>
 
           <InlineDivider />

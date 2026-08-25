@@ -1,6 +1,6 @@
 import { readConn, withConn } from "@/lib/db";
 import type { OracleConnection, OracleModule } from "@/lib/db";
-import { ApiError, errorText, notFound } from "@/lib/http";
+import { ApiError, badRequest, errorText, notFound } from "@/lib/http";
 import { METRIC_COLS, RUN_COLS, insertReturningId, mapRagasRun } from "@/lib/db/rows";
 import { ALL_METRICS, DIRECT_SINK_NM, EXACT_MATCH, SYSTEM_USER } from "@/lib/types";
 import type {
@@ -98,10 +98,35 @@ async function promptNode(conn: OracleConnection, promptId: number): Promise<str
   return rows.length ? String(rows[0].NODE_NM) : null;
 }
 
+/**
+ * Settle which folder a run covers. null = the whole dataset.
+ *
+ * An empty folder is refused rather than started: a run over zero cases
+ * finishes instantly with no rows and every score null, which reads in the
+ * records list exactly like a run that failed.
+ */
+async function runCaseType(
+  conn: OracleConnection,
+  datasetId: number,
+  requested: string | null | undefined,
+): Promise<string | null> {
+  const ct = (requested ?? "").trim();
+  if (!ct) return null;
+  const res = await conn.execute(
+    `SELECT COUNT(*) AS N FROM PTX_DATASET_DET
+      WHERE DATASET_ID = :id AND NVL(TYPE_CD, 'NORMAL') = :ct`,
+    { id: datasetId, ct },
+  );
+  const n = Number(((res.rows ?? []) as Record<string, unknown>[])[0]?.N ?? 0);
+  if (n === 0) throw badRequest(`'${ct}' 폴더에 케이스가 없습니다`);
+  return ct;
+}
+
 // ---- create runs ----
 
 export async function createFlowRagasRun(args: {
   datasetId: number;
+  caseType?: string | null;
   metrics: string[];
   nodeNm?: string | null;
   promptId?: number | null;
@@ -110,6 +135,7 @@ export async function createFlowRagasRun(args: {
 }): Promise<RagasRunOut> {
   await requireDataset(args.datasetId);
   return withConn(async (conn, oracle) => {
+    const caseType = await runCaseType(conn, args.datasetId, args.caseType);
     if (args.promptId != null) {
       const nm = await promptNode(conn, args.promptId);
       if (nm === null || (args.nodeNm != null && nm !== args.nodeNm)) {
@@ -122,12 +148,13 @@ export async function createFlowRagasRun(args: {
     const id = await insertReturningId(
       conn,
       oracle,
-      `INSERT INTO PTX_RUN_MAS (PROMPT_ID, DATASET_ID, DATASET_NM, STATUS_CD, METRIC_CTN, MODEL_CTN, USER_ID)
+      `INSERT INTO PTX_RUN_MAS (PROMPT_ID, DATASET_ID, DATASET_NM, TYPE_CD, STATUS_CD, METRIC_CTN, MODEL_CTN, USER_ID)
        VALUES (:pid, :did, (SELECT DATASET_NM FROM PTX_DATASET_MAS WHERE DATASET_ID = :did),
-               'PENDING', :metrics, :models, :cby) RETURNING RUN_ID INTO :out_id`,
+               :ctype, 'PENDING', :metrics, :models, :cby) RETURNING RUN_ID INTO :out_id`,
       {
         pid: args.promptId ?? null,
         did: args.datasetId,
+        ctype: caseType,
         metrics: JSON.stringify(chosen),
         models: await runModels(conn, args.models),
         cby: SYSTEM_USER,
@@ -139,6 +166,7 @@ export async function createFlowRagasRun(args: {
 
 export async function createFlowRagasAbRun(args: {
   datasetId: number;
+  caseType?: string | null;
   nodeNm?: string | null;
   promptIdA?: number | null;
   promptIdB?: number | null;
@@ -149,6 +177,9 @@ export async function createFlowRagasAbRun(args: {
 }): Promise<{ ragas_run_a_id: number; ragas_run_b_id: number }> {
   await requireDataset(args.datasetId);
   return withConn(async (conn, oracle) => {
+    // Both sides get the same category — an A/B over two different case
+    // sets would not be a comparison.
+    const caseType = await runCaseType(conn, args.datasetId, args.caseType);
     // Prompt versions are optional: an A/B may instead pin each side to its own
     // endpoint (base_url passed on the run's stream), in which case there is no
     // version to swap and PROMPT_ID stays null.
@@ -172,10 +203,13 @@ export async function createFlowRagasAbRun(args: {
       const id = await insertReturningId(
         conn,
         oracle,
-        `INSERT INTO PTX_RUN_MAS (PROMPT_ID, DATASET_ID, DATASET_NM, STATUS_CD, METRIC_CTN, MODEL_CTN, USER_ID)
+        `INSERT INTO PTX_RUN_MAS (PROMPT_ID, DATASET_ID, DATASET_NM, TYPE_CD, STATUS_CD, METRIC_CTN, MODEL_CTN, USER_ID)
          VALUES (:pid, :did, (SELECT DATASET_NM FROM PTX_DATASET_MAS WHERE DATASET_ID = :did),
-                 'PENDING', :metrics, :models, :cby) RETURNING RUN_ID INTO :out_id`,
-        { pid, did: args.datasetId, metrics: JSON.stringify(chosen), models, cby: SYSTEM_USER },
+                 :ctype, 'PENDING', :metrics, :models, :cby) RETURNING RUN_ID INTO :out_id`,
+        {
+          pid, did: args.datasetId, ctype: caseType,
+          metrics: JSON.stringify(chosen), models, cby: SYSTEM_USER,
+        },
       );
       ids.push(id);
     }
@@ -451,10 +485,18 @@ interface CaseRow {
   expected_output: string | null;
 }
 
-async function loadCases(conn: OracleConnection, datasetId: number): Promise<CaseRow[]> {
+/** caseType null = the whole dataset. NVL: rows predating the category default
+ * can hold NULL, and those are 미분류 like any other uncategorised case. */
+async function loadCases(
+  conn: OracleConnection,
+  datasetId: number,
+  caseType: string | null,
+): Promise<CaseRow[]> {
   const res = await conn.execute(
-    `SELECT CASE_ID, INPUT_CTN, EXPECT_CTN FROM PTX_DATASET_DET WHERE DATASET_ID = :id ORDER BY CASE_ID ASC`,
-    { id: datasetId },
+    `SELECT CASE_ID, INPUT_CTN, EXPECT_CTN FROM PTX_DATASET_DET
+      WHERE DATASET_ID = :id${caseType ? " AND NVL(TYPE_CD, 'NORMAL') = :ct" : ''}
+      ORDER BY CASE_ID ASC`,
+    caseType ? { id: datasetId, ct: caseType } : { id: datasetId },
   );
   return ((res.rows ?? []) as Record<string, unknown>[]).map((r) => ({
     case_id: Number(r.CASE_ID),
@@ -573,7 +615,7 @@ async function setupRun(
     score ? { eng: llm.length ? engine : EXACT_ENGINE, id: runId } : { id: runId },
   );
   await conn.commit();
-  const cases = await loadCases(conn, run.dataset_id);
+  const cases = await loadCases(conn, run.dataset_id, run.case_type);
   emit({ event: "RUNNING", run_id: runId, total: cases.length, metrics });
 
   // No prompt version on the run (A/B pinned to two endpoints) → nothing to swap:

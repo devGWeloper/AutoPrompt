@@ -58,6 +58,20 @@ const RUNS_PAGE_SIZE = 20; // rows per Records page
 /** Status badge: soft tint + dot + text at the brand's 4px radius.
  * FAILED red (wins in mixed pair states like DONE/FAILED), DONE green,
  * everything else (RUNNING/CANCELLED…) muted. */
+/** TYPE_CD 의 컬럼 기본값은 '폴더 없음' 을 뜻한다 — 화면에서는 그렇게 읽힌다. */
+function catLabel(t: string): string {
+  return t === 'NORMAL' ? '폴더 없음' : t;
+}
+
+/** 데이터셋 이름, 그리고 이 실행이 좁힌 폴더. 폴더가 없으면 이름만 — 전체를
+ * 돌린 실행이다. 이 두 줄이 붙어 있어야 기록에서 모수가 다른 실행끼리
+ * 점수를 잘못 나란히 놓는 일이 없다. */
+function datasetLabel(r: RagasRunSummary): string {
+  if (r.is_manual) return '—';
+  const nm = r.dataset_nm ?? '—';
+  return r.case_type ? `${nm} · ${catLabel(r.case_type)}` : nm;
+}
+
 function StatusText({ s }: { s: string }) {
   const tone = s.includes('FAILED') ? 'bad' : s.includes('DONE') ? 'ok' : 'neutral';
   return <Badge tone={tone} dot>{s}</Badge>;
@@ -285,6 +299,7 @@ export default function RecordsPanel() {
         r.node_nm,
         r.version_no != null ? `v${r.version_no}` : null,
         r.dataset_nm,
+        r.case_type,
         r.first_question,
         `#${r.ragas_run_id}`,
         // Searchable by model name: "이 모델로 돌린 실행만" is the main reason to
@@ -399,8 +414,8 @@ export default function RecordsPanel() {
                     </TD>
                     <TD><TypeText t="single" /></TD>
                     <TD><StatusText s={r.status} /></TD>
-                    <TD className="text-xs text-muted" title={r.is_manual ? undefined : r.dataset_nm ?? undefined}>
-                      <div className="max-w-[11rem] truncate">{r.is_manual ? '—' : (r.dataset_nm ?? '—')}</div>
+                    <TD className="text-xs text-muted" title={r.is_manual ? undefined : datasetLabel(r)}>
+                      <div className="max-w-[11rem] truncate">{datasetLabel(r)}</div>
                     </TD>
                     <TD className="text-xs text-muted">{r.engine === 'direct' ? '—' : (r.engine ?? '—')}</TD>
                     <AvgCell mean={mean} ex={r.exact_match != null ? Number(r.exact_match) : null} />
@@ -447,8 +462,8 @@ export default function RecordsPanel() {
                   </TD>
                   <TD><TypeText t="compare" /></TD>
                   <TD><StatusText s={stat} /></TD>
-                  <TD className="text-xs text-muted" title={g.a.is_manual ? undefined : g.a.dataset_nm ?? undefined}>
-                    <div className="max-w-[11rem] truncate">{g.a.is_manual ? '—' : (g.a.dataset_nm ?? '—')}</div>
+                  <TD className="text-xs text-muted" title={g.a.is_manual ? undefined : datasetLabel(g.a)}>
+                    <div className="max-w-[11rem] truncate">{datasetLabel(g.a)}</div>
                   </TD>
                   <TD className="text-xs text-muted">{g.b.engine ?? '—'}</TD>
                   <AvgCell
@@ -692,6 +707,9 @@ function RagasRunDetailView({ ragasId }: { ragasId: number }) {
           <Badge tone={detail.status === 'FAILED' ? 'bad' : 'neutral'} dot>{detail.status}</Badge>
           {detail.node_nm && <span className="font-medium text-ink">{detail.node_nm}</span>}
           <Badge tone="neutral">{verLabel}</Badge>
+          {/* 폴더가 붙어 있으면 이 실행의 모수는 데이터셋 전체가 아니다.
+              그걸 모르고 다른 실행과 점수를 나란히 놓으면 비교가 어긋난다. */}
+          {detail.case_type && <Badge tone="neutral">폴더 {catLabel(detail.case_type)}</Badge>}
           <span className="ml-auto flex items-center gap-2">
             <ModelStamp text={formatModelSnapshot(detail.model_snapshot)} />
             <span>Engine {detail.engine ?? '—'}</span>

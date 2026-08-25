@@ -289,14 +289,16 @@ export async function importCsv(datasetId: number, fileText: string, createdBy: 
   let created = 0;
   let skipped = 0;
   const errors: string[] = [];
-  // Categories are picked from a list in the UI, but a CSV can carry anything.
-  // Such a row is still imported — the file is the user's data, not ours to drop —
-  // and the category it named is reported back instead.
+  // A case is filed into one of the dataset's folders in the UI, but a CSV can
+  // carry any value. Such a row is still imported — the file is the user's data,
+  // not ours to drop — and the names it used are reported back instead.
   const unknownCats = new Set<string>();
 
   await withConn(async (conn) => {
     const known = new Set(
-      (((await conn.execute(`SELECT TYPE_CD FROM PTX_CASETYPE_MAS`)).rows ?? []) as Record<string, unknown>[])
+      (((await conn.execute(`SELECT TYPE_CD FROM PTX_CASETYPE_MAS WHERE DATASET_ID = :did`, {
+        did: datasetId,
+      })).rows ?? []) as Record<string, unknown>[])
         .map((t) => String(t.TYPE_CD)),
     );
     for (let r = 1; r < rows.length; r++) {
@@ -338,7 +340,7 @@ export async function importCsv(datasetId: number, fileText: string, createdBy: 
   }, { commit: true });
 
   if (unknownCats.size) {
-    errors.push(`미등록 분류: ${[...unknownCats].join(", ")} — 설정에서 추가하세요`);
+    errors.push(`폴더에 없는 값: ${[...unknownCats].join(", ")} — 같은 이름의 폴더를 만들면 이 케이스들이 들어갑니다`);
   }
 
   return { created, skipped, errors };

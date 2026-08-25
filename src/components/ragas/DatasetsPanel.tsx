@@ -1,15 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input, Select, Textarea } from '@/components/ui/Field';
 import { cn } from '@/lib/cn';
 import { api } from '@/lib/api';
-import type { CsvUploadResult, TestCase } from '@/lib/types';
+import type { CsvUploadResult, DatasetCategory, TestCase } from '@/lib/types';
 import {
-  Chevron, EmptyState, ErrBox, errText, oneLine, PencilIcon, SettingsLink, TrashIcon, useArmed,
-  useCaseTypes, useFlowDatasets,
+  Chevron, EmptyState, ErrBox, errText, folderLabel, oneLine, PencilIcon, TrashIcon, UNFILED,
+  useArmed, useDatasetCategories, useFlowDatasets,
 } from './shared';
 
 // A case's payload is the JSON in INPUT_CTN. The editor exposes the three fields
@@ -41,16 +41,13 @@ function parseCaseInput(raw: string): Parsed {
   }
 }
 
-// TYPE_CD's column default. A case that was never categorised carries it, so it
-// is the one value the UI reads as "no category": no chip, no filter entry.
-const DEFAULT_CAT = 'NORMAL';
 
 /** Editable form state for one case. */
 interface Fields {
   question: string;
   contexts: string; // one per line
   groundTruth: string;
-  category: string; // TYPE_CD; '' in the form means DEFAULT_CAT
+  category: string; // TYPE_CD; '' in the form means UNFILED
 }
 
 const EMPTY: Fields = { question: '', contexts: '', groundTruth: '', category: '' };
@@ -61,7 +58,7 @@ function toFields(p: Parsed, expected: string | null, caseType: string): Fields 
     contexts: p.contexts.join('\n'),
     // parseCase prefers input_data.ground_truth and falls back to EXPECT_CTN.
     groundTruth: p.groundTruth ?? expected ?? '',
-    category: caseType === DEFAULT_CAT ? '' : caseType,
+    category: caseType === UNFILED ? '' : caseType,
   };
 }
 
@@ -78,7 +75,7 @@ function toPayload(f: Fields, rest: Record<string, unknown> = {}) {
   return {
     input_data: JSON.stringify(input),
     expected_output: gt || null,
-    case_type: f.category.trim() || DEFAULT_CAT,
+    case_type: f.category.trim() || UNFILED,
   };
 }
 
@@ -110,6 +107,20 @@ function download(filename: string, text: string) {
 // ---- small pieces ----------------------------------------------------------
 
 const LABEL = 'mb-1 block eyebrow';
+
+// Folder rows sit a step in from their dataset and read one size quieter —
+// the tree's shape is the indent, not a box or a connector line.
+const FOLDER_ROW =
+  'flex w-full items-center gap-2 rounded-sm py-1.5 pl-7 pr-2.5 text-left text-[13px] transition-colors';
+const FOLDER_ON = 'bg-surface-3 font-medium text-ink';
+const FOLDER_OFF = 'text-muted hover:bg-surface-2 hover:text-ink';
+const DEL_FOLDER_TITLE = '폴더 삭제 — 케이스는 폴더 없음 으로 남습니다';
+
+/** A value that is on cases but has no folder: a CSV brought it in. Making a
+ * folder of that name adopts those cases, which is why it is listed at all. */
+function strayTitle(c: DatasetCategory): string | undefined {
+  return c.type_id === null && c.type_cd !== UNFILED ? '폴더로 등록되지 않은 값' : undefined;
+}
 
 function FieldsEditor({
   value, onChange, autoFocus, categories,
@@ -154,15 +165,14 @@ function FieldsEditor({
       </div>
       <div>
         <div className="mb-1 flex items-center gap-2">
-          <span className="eyebrow">분류</span>
-          {categories.length === 0 && <SettingsLink label="분류 등록" />}
+          <span className="eyebrow">폴더</span>
         </div>
         <Select
           value={value.category}
           onChange={(e) => set({ category: e.target.value })}
           className="h-9 w-48 text-sm"
         >
-          <option value="">미분류</option>
+          <option value="">폴더 없음</option>
           {categories.map((c) => <option key={c} value={c}>{c}</option>)}
           {/* A category dropped from the registry after cases were filed under it
               stays selectable here, so saving such a case does not silently
@@ -173,26 +183,6 @@ function FieldsEditor({
         </Select>
       </div>
     </div>
-  );
-}
-
-/** Filter chip for the category strip. Quiet until selected, when it takes the
- * same surface the dataset list gives its selected row. */
-function CatChip({
-  label, count, on, onClick,
-}: { label: string; count: number; on: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-[11px] transition-colors',
-        on ? 'bg-surface-3 font-medium text-ink' : 'text-muted hover:bg-surface-2',
-      )}
-    >
-      <span className="max-w-[10rem] truncate">{label}</span>
-      <span className="font-mono tabular-nums text-muted-soft">{count}</span>
-    </button>
   );
 }
 
@@ -252,11 +242,15 @@ function IconDelete({ title, onConfirm }: { title: string; onConfirm: () => void
 
 export default function DatasetsPanel() {
   const { datasets, reload } = useFlowDatasets();
-  // What a case may be filed under is settled on the settings page; hidden
-  // entries stay out of the picker but keep working on cases that already use
-  // them (see FieldsEditor).
-  const caseTypes = useCaseTypes();
   const [selDataset, setSelDataset] = useState<number | null>(null);
+  // The selected dataset's folders, with case counts. The sidebar renders them
+  // and every folder edit replaces the list with what the server returns.
+  const { cats, setCats, reload: reloadCats } = useDatasetCategories(selDataset);
+  // Which folder the case list is showing. null = the whole dataset.
+  const [folder, setFolder] = useState<string | null>(null);
+  const [newFolder, setNewFolder] = useState<string | null>(null);
+  const [folderEditId, setFolderEditId] = useState<number | null>(null);
+  const [folderVal, setFolderVal] = useState('');
   const [cases, setCases] = useState<TestCase[]>([]);
   const [loading, setLoading] = useState(false);
   const [newName, setNewName] = useState('');
@@ -265,7 +259,6 @@ export default function DatasetsPanel() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const [query, setQuery] = useState('');
-  const [catFilter, setCatFilter] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState<Fields>(EMPTY);
   const [editId, setEditId] = useState<number | null>(null);
@@ -276,6 +269,7 @@ export default function DatasetsPanel() {
   const fileRef = useRef<HTMLInputElement | null>(null);
   // Escape must not commit the rename that the resulting blur would otherwise save.
   const cancelRename = useRef(false);
+  const cancelFolder = useRef(false);
 
   const selected = datasets.find((d) => d.dataset_id === selDataset) ?? null;
 
@@ -288,48 +282,40 @@ export default function DatasetsPanel() {
       .finally(() => setLoading(false));
   }, [selDataset]);
   useEffect(loadCases, [loadCases]);
-  // Leaving a dataset drops whatever was half-edited in the previous one.
+  // Leaving a dataset drops whatever was half-edited in the previous one, and
+  // the folder with it — a folder name means nothing in the next dataset.
   useEffect(() => {
-    setEditId(null); setAdding(false); setDraft(EMPTY); setQuery(''); setCatFilter(null); setNotice(null);
+    setEditId(null); setAdding(false); setDraft(EMPTY); setQuery(''); setNotice(null);
+    setFolder(null); setNewFolder(null); setFolderEditId(null);
   }, [selDataset]);
 
-  // Categories are read off the cases themselves, so one that arrived through a
-  // CSV import appears here without being registered anywhere first. DEFAULT_CAT
-  // sorts last: it is the leftover pile, not a category someone chose.
-  const cats = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const c of cases) {
-      const k = c.case_type || DEFAULT_CAT;
-      counts.set(k, (counts.get(k) ?? 0) + 1);
-    }
-    return [...counts.entries()]
-      .sort(([a], [b]) =>
-        a === DEFAULT_CAT ? 1 : b === DEFAULT_CAT ? -1 : a.localeCompare(b))
-      .map(([name, count]) => ({ name, count }));
-  }, [cases]);
-  const catOptions = useMemo(
-    () => caseTypes.filter((t) => t.is_active === 'Y').map((t) => t.type_cd),
-    [caseTypes],
-  );
+  // Only registered folders can be filed into. A value that is on cases but has
+  // no folder (a CSV import) is visible in the sidebar, but it is not something
+  // the case editor should offer as a destination.
+  const folders = useMemo(() => cats.filter((c) => c.type_id !== null), [cats]);
+  const folderNames = useMemo(() => folders.map((c) => c.type_cd), [folders]);
 
-  // Renaming the last case out of a category would otherwise leave the filter
-  // pointing at a category that no longer exists, i.e. an empty list with no
-  // visible reason.
+  // A folder that was just deleted (or emptied and gone) must not leave the list
+  // filtered to nothing with no visible reason.
   useEffect(() => {
-    if (catFilter !== null && !cats.some((c) => c.name === catFilter)) setCatFilter(null);
-  }, [cats, catFilter]);
+    if (folder !== null && !cats.some((c) => c.type_cd === folder)) setFolder(null);
+  }, [cats, folder]);
 
   const rows = useMemo(() => {
     const parsed = cases.map((c) => ({ c, p: parseCaseInput(c.input_data) }));
     const q = query.trim().toLowerCase();
-    const inCat = (c: TestCase) => catFilter === null || (c.case_type || DEFAULT_CAT) === catFilter;
+    const inFolder = (c: TestCase) => folder === null || (c.case_type || UNFILED) === folder;
     return parsed.filter(({ c, p }) =>
-      inCat(c) && (!q ||
+      inFolder(c) && (!q ||
         p.question.toLowerCase().includes(q) ||
         (p.groundTruth ?? c.expected_output ?? '').toLowerCase().includes(q)));
-  }, [cases, query, catFilter]);
+  }, [cases, query, folder]);
 
-  const noGt = cases.filter((c) => {
+  const inFolder = useMemo(
+    () => (folder === null ? cases : cases.filter((c) => (c.case_type || UNFILED) === folder)),
+    [cases, folder],
+  );
+  const noGt = inFolder.filter((c) => {
     const p = parseCaseInput(c.input_data);
     return !(p.groundTruth ?? c.expected_output ?? '').trim();
   }).length;
@@ -338,6 +324,31 @@ export default function DatasetsPanel() {
     setBusy(true); setError(null);
     try { await fn(); } catch (e) { setError(errText(e)); } finally { setBusy(false); }
   }
+
+  // ---- folders ----
+
+  const addFolder = () => guard(async () => {
+    const nm = (newFolder ?? '').trim();
+    setNewFolder(null);
+    if (selDataset == null || !nm) return;
+    setCats(await api.post<DatasetCategory[]>(`/datasets/${selDataset}/case-types`, { type_cd: nm }));
+    loadCases();
+  });
+
+  const renameFolder = (typeId: number) => guard(async () => {
+    const nm = folderVal.trim();
+    setFolderEditId(null);
+    if (selDataset == null || !nm) return;
+    setCats(await api.put<DatasetCategory[]>(`/datasets/${selDataset}/case-types/${typeId}`, { type_cd: nm }));
+    // The cases moved with the folder, so their own labels are stale too.
+    loadCases();
+  });
+
+  const delFolder = (typeId: number) => guard(async () => {
+    if (selDataset == null) return;
+    setCats(await api.del<DatasetCategory[]>(`/datasets/${selDataset}/case-types/${typeId}`));
+    loadCases();
+  });
 
   const createDataset = () => guard(async () => {
     if (!newName.trim()) return;
@@ -365,10 +376,11 @@ export default function DatasetsPanel() {
   const addCase = () => guard(async () => {
     if (selDataset == null || !draft.question.trim()) return;
     await api.post(`/datasets/${selDataset}/cases`, toPayload(draft));
-    // Cases go in as runs of the same category, so the category is the one field
+    // Cases go in as runs into the same folder, so the folder is the one field
     // that survives the reset.
     setDraft({ ...EMPTY, category: draft.category });
     loadCases();
+    reloadCats();
     reload(); // dataset list shows case counts
   });
 
@@ -379,6 +391,7 @@ export default function DatasetsPanel() {
     await api.put(`/datasets/${selDataset}/cases/${id}`, toPayload(edit, rest));
     setEditId(null);
     loadCases();
+    reloadCats(); // the case may have been moved to another folder
   });
 
   const delCase = (id: number) => guard(async () => {
@@ -386,6 +399,7 @@ export default function DatasetsPanel() {
     await api.del(`/datasets/${selDataset}/cases/${id}`);
     if (editId === id) setEditId(null);
     loadCases();
+    reloadCats();
     reload();
   });
 
@@ -413,6 +427,7 @@ export default function DatasetsPanel() {
       (res.errors.length ? ` · ${res.errors.slice(0, 3).join(' / ')}` : ''),
     );
     loadCases();
+    reloadCats();
     reload();
   });
 
@@ -478,31 +493,129 @@ export default function DatasetsPanel() {
                 );
               }
               return (
-                <li key={d.dataset_id} className="group relative">
-                  <button
-                    onClick={() => setSelDataset(d.dataset_id)}
-                    className={cn(
-                      'flex w-full items-center gap-2 rounded-sm py-2 pl-2 pr-2.5 text-left text-sm transition-colors',
-                      on ? 'bg-surface-3 font-medium text-ink' : 'text-ink hover:bg-surface-2',
-                    )}
-                  >
-                    {/* A hairline marker instead of a box per row — the list reads
-                        as one list, and only the selected row draws a line. */}
-                    <span aria-hidden className={cn('h-4 w-0.5 shrink-0', on ? 'bg-primary' : 'bg-transparent')} />
-                    <span className="min-w-0 flex-1 truncate">{d.dataset_nm}</span>
-                    <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted group-hover:invisible">
-                      {d.case_count ?? '—'}
+                <Fragment key={d.dataset_id}>
+                  <li className="group relative">
+                    <button
+                      onClick={() => setSelDataset(d.dataset_id)}
+                      className={cn(
+                        'flex w-full items-center gap-2 rounded-sm py-2 pl-2 pr-2.5 text-left text-sm transition-colors',
+                        on ? 'bg-surface-3 font-medium text-ink' : 'text-ink hover:bg-surface-2',
+                      )}
+                    >
+                      {/* A hairline marker instead of a box per row — the list reads
+                          as one list, and only the selected row draws a line. */}
+                      <span aria-hidden className={cn('h-4 w-0.5 shrink-0', on ? 'bg-primary' : 'bg-transparent')} />
+                      <span className="min-w-0 flex-1 truncate">{d.dataset_nm}</span>
+                      <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted group-hover:invisible">
+                        {d.case_count ?? '—'}
+                      </span>
+                    </button>
+                    {/* Row actions take the count's place on hover rather than
+                        covering the name with an opaque strip. */}
+                    <span className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 group-hover:flex group-focus-within:flex">
+                      <IconBtn title="이름 변경" onClick={() => { setRenameId(d.dataset_id); setRenameVal(d.dataset_nm); }}>
+                        <PencilIcon />
+                      </IconBtn>
+                      <IconDelete title="데이터셋 삭제" onConfirm={() => delDataset(d.dataset_id)} />
                     </span>
-                  </button>
-                  {/* Row actions take the count's place on hover rather than
-                      covering the name with an opaque strip. */}
-                  <span className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 group-hover:flex group-focus-within:flex">
-                    <IconBtn title="이름 변경" onClick={() => { setRenameId(d.dataset_id); setRenameVal(d.dataset_nm); }}>
-                      <PencilIcon />
-                    </IconBtn>
-                    <IconDelete title="데이터셋 삭제" onConfirm={() => delDataset(d.dataset_id)} />
-                  </span>
-                </li>
+                  </li>
+
+                  {/* The selected dataset opens into its folders. Only one
+                      dataset is ever open, so there is no expand control to hunt
+                      for and no way to end up looking at two trees at once. */}
+                  {on && (
+                    <>
+                      <li>
+                        <button
+                          onClick={() => setFolder(null)}
+                          className={cn(FOLDER_ROW, folder === null ? FOLDER_ON : FOLDER_OFF)}
+                        >
+                          <span className="min-w-0 flex-1 truncate">전체</span>
+                          <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-soft">
+                            {cases.length}
+                          </span>
+                        </button>
+                      </li>
+
+                      {cats.map((c) =>
+                        folderEditId != null && folderEditId === c.type_id ? (
+                          <li key={c.type_cd} className="py-1 pl-7 pr-1.5">
+                            <Input
+                              autoFocus
+                              value={folderVal}
+                              onChange={(e) => setFolderVal(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Escape') cancelFolder.current = true;
+                                if (e.key === 'Enter' || e.key === 'Escape') e.currentTarget.blur();
+                              }}
+                              onBlur={() => {
+                                if (cancelFolder.current) { cancelFolder.current = false; setFolderEditId(null); return; }
+                                renameFolder(c.type_id!);
+                              }}
+                              className="h-8 w-full text-sm"
+                            />
+                          </li>
+                        ) : (
+                          <li key={c.type_cd} className="group relative">
+                            <button
+                              onClick={() => setFolder(c.type_cd)}
+                              className={cn(FOLDER_ROW, folder === c.type_cd ? FOLDER_ON : FOLDER_OFF)}
+                              title={strayTitle(c)}
+                            >
+                              <span className="min-w-0 flex-1 truncate">{folderLabel(c.type_cd)}</span>
+                              <span
+                                className={cn(
+                                  'shrink-0 font-mono text-[11px] tabular-nums text-muted-soft',
+                                  c.type_id !== null && 'group-hover:invisible',
+                                )}
+                              >
+                                {c.case_count}
+                              </span>
+                            </button>
+                            {c.type_id !== null && (
+                              <span className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 group-hover:flex group-focus-within:flex">
+                                <IconBtn
+                                  title="폴더 이름 변경"
+                                  onClick={() => { setFolderEditId(c.type_id!); setFolderVal(c.type_cd); }}
+                                >
+                                  <PencilIcon />
+                                </IconBtn>
+                                <IconDelete title={DEL_FOLDER_TITLE} onConfirm={() => delFolder(c.type_id!)} />
+                              </span>
+                            )}
+                          </li>
+                        ),
+                      )}
+
+                      <li>
+                        {newFolder === null ? (
+                          <button
+                            type="button"
+                            onClick={() => setNewFolder('')}
+                            className={cn(FOLDER_ROW, 'text-muted-soft hover:bg-surface-2 hover:text-ink')}
+                          >
+                            + 폴더
+                          </button>
+                        ) : (
+                          <div className="py-1 pl-7 pr-1.5">
+                            <Input
+                              autoFocus
+                              value={newFolder}
+                              onChange={(e) => setNewFolder(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') addFolder();
+                                if (e.key === 'Escape') setNewFolder(null);
+                              }}
+                              onBlur={() => setNewFolder(null)}
+                              placeholder="이름 입력 후 Enter"
+                              className="h-8 w-full text-sm"
+                            />
+                          </div>
+                        )}
+                      </li>
+                    </>
+                  )}
+                </Fragment>
               );
             })}
             {datasets.length === 0 && !creating && (
@@ -522,8 +635,15 @@ export default function DatasetsPanel() {
                   unpredictably and read as a pile rather than as a heading. */}
               <div className="border-b border-line px-4 py-3">
                 <div className="flex items-baseline gap-2">
-                  <h3 className="min-w-0 truncate text-sm font-semibold text-ink">{selected.dataset_nm}</h3>
-                  <span className="shrink-0 text-xs text-muted">케이스 {cases.length}</span>
+                  <h3 className="min-w-0 truncate text-sm font-semibold text-ink">
+                    {selected.dataset_nm}
+                    {folder !== null && (
+                      <span className="font-normal text-muted"> / {folderLabel(folder)}</span>
+                    )}
+                  </h3>
+                  <span className="shrink-0 text-xs text-muted">
+                    케이스 {inFolder.length}
+                  </span>
                   {noGt > 0 && (
                     <span
                       className="shrink-0 rounded-sm bg-surface-2 px-1.5 py-px text-[11px] text-muted"
@@ -574,8 +694,8 @@ export default function DatasetsPanel() {
                       // Opening the form under an active filter adds to that
                       // category — otherwise the new case is filtered out of the
                       // list the instant it is created.
-                      if (!adding && catFilter !== null && catFilter !== DEFAULT_CAT && !draft.category) {
-                        setDraft((d) => ({ ...d, category: catFilter }));
+                      if (!adding && folder !== null && folder !== UNFILED && !draft.category) {
+                        setDraft((d) => ({ ...d, category: folder }));
                       }
                       setAdding((v) => !v);
                       setEditId(null);
@@ -584,25 +704,6 @@ export default function DatasetsPanel() {
                     {adding ? '닫기' : '케이스 추가'}
                   </Button>
                 </div>
-                {/* Only when the dataset actually has more than one category —
-                    a strip reading "전체 · 미분류" would be pure furniture. */}
-                {cats.length > 1 && (
-                  <div className="mt-2 flex flex-wrap items-center gap-1">
-                    <CatChip
-                      label="전체" count={cases.length}
-                      on={catFilter === null} onClick={() => setCatFilter(null)}
-                    />
-                    {cats.map((c) => (
-                      <CatChip
-                        key={c.name}
-                        label={c.name === DEFAULT_CAT ? '미분류' : c.name}
-                        count={c.count}
-                        on={catFilter === c.name}
-                        onClick={() => setCatFilter((cur) => (cur === c.name ? null : c.name))}
-                      />
-                    ))}
-                  </div>
-                )}
               </div>
 
               {notice && (
@@ -614,7 +715,7 @@ export default function DatasetsPanel() {
 
               {adding && (
                 <div className="border-b border-line bg-surface-2/40 px-4 py-3.5">
-                  <FieldsEditor value={draft} onChange={setDraft} autoFocus categories={catOptions} />
+                  <FieldsEditor value={draft} onChange={setDraft} autoFocus categories={folderNames} />
                   <div className="mt-3 flex items-center justify-end gap-2">
                     <Button variant="ghost" size="sm" onClick={() => { setDraft(EMPTY); setAdding(false); }}>취소</Button>
                     <Button variant="secondary" size="sm" disabled={!draft.question.trim() || busy} onClick={addCase}>추가</Button>
@@ -650,7 +751,7 @@ export default function DatasetsPanel() {
                               ? <span className="mt-0.5 min-w-0 flex-1 truncate text-xs text-muted">{oneLine(gt)}</span>
                               : <span className="mt-0.5 shrink-0 text-[11px] text-muted">정답 없음</span>
                           )}
-                          {c.case_type !== DEFAULT_CAT && (
+                          {folder === null && c.case_type !== UNFILED && (
                             <span className="mt-0.5 shrink-0 rounded-sm bg-surface-2 px-1.5 py-px text-[11px] text-muted">
                               {c.case_type}
                             </span>
@@ -658,7 +759,7 @@ export default function DatasetsPanel() {
                         </button>
                         {open && (
                           <div className="px-4 pb-3.5 pl-12">
-                            <FieldsEditor value={edit} onChange={setEdit} categories={catOptions} />
+                            <FieldsEditor value={edit} onChange={setEdit} categories={folderNames} />
                             <div className="mt-3 flex items-center gap-2">
                               <Button variant="ghost" size="sm" onClick={() => duplicate(c)}>복제</Button>
                               <DeleteButton label="삭제" onConfirm={() => delCase(c.case_id)} />

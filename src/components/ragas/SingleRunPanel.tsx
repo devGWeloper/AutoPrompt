@@ -21,6 +21,7 @@ import {
   type Endpoint,
 } from '@/lib/types';
 import {
+  CategorySelect,
   DatasetSelect,
   EndpointSelect,
   InlineDivider,
@@ -45,6 +46,7 @@ import {
   upsertResult,
   useAgentDefaults,
   useEndpoints,
+  useDatasetCategories,
   useFlowDatasets,
   usePromptNodes,
 } from './shared';
@@ -149,6 +151,11 @@ export default function SingleRunPanel() {
   const [versions, setVersions] = useState<PromptVersionSummary[]>([]);
   const [ver, setVer] = useState<number | null>(null);
   const [datasetId, setDatasetId] = useState<number | null>(null);
+  // Which slice of that dataset runs. null = all of it. Reset with the
+  // dataset — a category name means nothing in the next one.
+  const [caseType, setCaseType] = useState<string | null>(null);
+  const { cats: folders } = useDatasetCategories(datasetId);
+  useEffect(() => { setCaseType(null); }, [datasetId]);
   // Models for this run, pre-filled with the saved role defaults — the boxes are
   // the pin, so what the form shows is what the run stores and the agent reads.
   const { roles } = useModelRoles();
@@ -265,7 +272,7 @@ export default function SingleRunPanel() {
     setRunMeta(meta);
     try {
       const r = await api.post<{ ragas_run_id: number }>('/flow/test/ragas', {
-        dataset_id: datasetId, metrics: scoreOn ? metrics : [], score: scoreOn,
+        dataset_id: datasetId, case_type: caseType, metrics: scoreOn ? metrics : [], score: scoreOn,
         node_nm: byPrompt ? nodeNm : null, prompt_id: byPrompt ? ver : null,
         models: target === 'model' ? toSelection(models) : {},
       });
@@ -322,22 +329,29 @@ export default function SingleRunPanel() {
           한 행을 주면 화면의 절반이 아직 누르지도 않은 폼이 된다. */}
       <Card className="px-4 py-3">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
-          <InlineField label="API">
-            <EndpointSelect endpoints={endpoints} value={endpointId} onChange={setEndpointId} />
-          </InlineField>
-
-          <InlineDivider />
-
           {/* 대상 = 무엇을 바꾸는가. 셋 중 하나만 변인이고 나머지는 손대지
-              않는다 — 그래서 고른 것의 컨트롤만 옆에 나온다. */}
+              않는다 — 그래서 고른 것의 컨트롤만 옆에 나온다. 대상이 API 앞에
+              서는 건 Compare 와 같은 순서라서이기도 하고, 무엇을 시험하는지가
+              정해져야 어느 API 로 부를지가 의미를 갖기 때문이다. */}
           <InlineField label="대상">
             <SegToggle
               value={target}
               onChange={setTarget}
               options={[
-                { id: 'prompt', label: '프롬프트', disabled: !PROMPT_TARGET_ENABLED },
-                { id: 'endpoint', label: 'As-is' },
-                { id: 'model', label: '모델' },
+                {
+                  id: 'prompt',
+                  label: '프롬프트',
+                  title: '고른 프롬프트 버전을 활성화한 뒤 실행합니다',
+                  disabled: !PROMPT_TARGET_ENABLED,
+                },
+                {
+                  id: 'endpoint',
+                  label: '변경 없음',
+                  // 'As-is' 였던 자리. 무엇을 바꾸지 않는다는 건지가 이름만으로는
+                  // 서지 않아서, 고르는 순간 무슨 실행이 되는지를 이름으로 옮겼다.
+                  title: '프롬프트도 모델도 바꾸지 않고 지금 설정 그대로 실행합니다 — 비교의 기준값',
+                },
+                { id: 'model', label: '모델', title: 'role 별 모델을 바꿔서 실행합니다' },
               ]}
             />
             {target === 'prompt' && (
@@ -351,6 +365,12 @@ export default function SingleRunPanel() {
                 <VersionSelect versions={versions} value={ver} onChange={setVer} className="h-9 w-28" placeholder="버전" />
               </>
             )}
+          </InlineField>
+
+          <InlineDivider />
+
+          <InlineField label="API">
+            <EndpointSelect endpoints={endpoints} value={endpointId} onChange={setEndpointId} />
           </InlineField>
 
           {target === 'endpoint' && source === 'manual' && (
@@ -378,7 +398,12 @@ export default function SingleRunPanel() {
               onChange={setSource}
               options={[{ id: 'dataset', label: '데이터셋' }, { id: 'manual', label: '직접 입력' }]}
             />
-            {source === 'dataset' && <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />}
+            {source === 'dataset' && (
+              <>
+                <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />
+                <CategorySelect cats={folders} value={caseType} onChange={setCaseType} />
+              </>
+            )}
           </InlineField>
 
           <InlineDivider />
