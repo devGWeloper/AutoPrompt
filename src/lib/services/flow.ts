@@ -269,6 +269,11 @@ export interface DirectRunResult extends agent.AgentAnswer {
   run_id: number;
   scores: CaseScore | null;
   score_error: string | null;
+  /** Intermediate variable the agent captured for this call, if any. Same
+   * mechanism a dataset run uses: a row in PTX_TRACE_HIS under our TRACE_ID.
+   * null when the node wrote nothing — then the answer is all there is. */
+  trace_var_nm: string | null;
+  trace_value: string | null;
   /** Wall time of the endpoint call, in ms. Scoring is not counted. */
   elapsed_ms: number;
 }
@@ -311,6 +316,9 @@ export async function recordDirectRun(argsIn: DirectRunArgs): Promise<DirectRunR
   const startedAt = Date.now();
   const data = await callForPrompt({ ...args, traceId: callId });
   const elapsedMs = Date.now() - startedAt;
+  // Read before scoring: when the node captured a variable, that is what the
+  // case is judged on, exactly as in a dataset run.
+  const captured = await readConn((conn) => readTraceVar(conn, callId), null);
   // Optional inline scoring — a single case whose ground truth is whatever the
   // caller typed as the expected answer (blank → gt-based metrics stay null).
   const groundTruth = args.expectedOutput?.trim() ? args.expectedOutput : null;
@@ -334,7 +342,11 @@ export async function recordDirectRun(argsIn: DirectRunArgs): Promise<DirectRunR
       scoreErr = errorText(e).slice(0, 1000);
     }
   }
-  const em = metrics.includes(EXACT_MATCH) ? exactMatchScore(data.response, groundTruth) : null;
+  // unwrapBody must stay off for a captured variable — its own `body` key is
+  // real data, not the endpoint envelope.
+  const em = metrics.includes(EXACT_MATCH)
+    ? exactMatchScore(captured ? captured.ctn : data.response, groundTruth, { unwrapBody: !captured })
+    : null;
   const dec = (m: LlmMetric) => (scores ? toScore(scores[m] ?? null) : null);
   const runId = await withConn(async (conn, oracle) => {
     const sinkId = await directSinkDatasetId(conn, oracle);
@@ -365,12 +377,17 @@ export async function recordDirectRun(argsIn: DirectRunArgs): Promise<DirectRunR
     );
     await conn.execute(
       `INSERT INTO PTX_RUN_DET (RUN_ID, CASE_ID, QUESTION_CTN, ANSWER_CTN, CNTX_CTN, TRUTH_CTN, ERROR_CTN, ELAPSED_MS,
+                                    TRACE_ID, TRACE_VAR_NM, TRACE_CTN,
                                     EXACT_VAL, FAITH_VAL, ANS_RELEVANCY_VAL, CNTX_PRECISION_VAL, CNTX_RECALL_VAL, ANS_CORRECTNESS_VAL)
-       VALUES (:rid, NULL, :q, :a, :ctx, :gt, :err, :el, :em, :f, :ar, :cp, :cr, :ac)`,
+       VALUES (:rid, NULL, :q, :a, :ctx, :gt, :err, :el, :tid, :tvar, :tctn, :em, :f, :ar, :cp, :cr, :ac)`,
       {
         rid: runId,
         q: args.message,
         a: data.response,
+        tid: callId,
+        tvar: captured?.varNm ?? null,
+        // Snapshot — PTX_TRACE_HIS gets purged on retention, run records do not.
+        tctn: captured?.ctn ?? null,
         ctx: JSON.stringify(data.docs),
         gt: groundTruth,
         err: scoreErr,
@@ -393,9 +410,13 @@ export async function recordDirectRun(argsIn: DirectRunArgs): Promise<DirectRunR
   }, { commit: true });
   // score_error rides back with the answer: the call succeeded, so failing
   // silently here would show a blank score block with no reason.
-  if (!metrics.length) return { ...data, run_id: runId, elapsed_ms: elapsedMs, scores: null, score_error: null };
+  const trace = { trace_var_nm: captured?.varNm ?? null, trace_value: captured?.ctn ?? null };
+  if (!metrics.length) {
+    return { ...data, ...trace, run_id: runId, elapsed_ms: elapsedMs, scores: null, score_error: null };
+  }
   return {
     ...data,
+    ...trace,
     run_id: runId,
     elapsed_ms: elapsedMs,
     scores: { ...(scores ?? {}), ...(metrics.includes(EXACT_MATCH) ? { exact_match: em } : {}) },

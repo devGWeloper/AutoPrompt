@@ -427,6 +427,10 @@ export interface DirectTestRequest {
 export interface DirectTestOut {
   response: string;
   docs: string[];
+  /** Intermediate variable captured for this call — null when the node wrote
+   * none. When present it is what 정답 일치 was decided on. */
+  trace_var_nm?: string | null;
+  trace_value?: string | null;
   raw: Record<string, unknown> | unknown[] | string;
   scores?: Partial<Record<RagasMetric, number | null>> | null;
   /** The call succeeded but the scorer did not — a separate failure from an

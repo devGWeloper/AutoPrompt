@@ -25,6 +25,8 @@ export async function POST(req: Request) {
     return ok({
       response: data.response,
       docs: data.docs,
+      trace_var_nm: data.trace_var_nm,
+      trace_value: data.trace_value,
       raw: data.raw ?? "",
       scores: data.scores,
       score_error: data.score_error,

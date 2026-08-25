@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { Input, Select, Textarea } from '@/components/ui/Field';
+import { Select, Textarea } from '@/components/ui/Field';
 import { api } from '@/lib/api';
 import { clearActiveRun, readActiveRun, saveActiveRun, type ActiveSingleRun } from '@/lib/activeRun';
 import { connectRagasRunStream as connectRagasRunWs } from '@/lib/sse-client';
@@ -18,7 +18,6 @@ import {
   type RagasResultRow,
   type RagasRunDetail,
   type RunWsMessage,
-  type Endpoint,
 } from '@/lib/types';
 import {
   CategorySelect,
@@ -32,6 +31,7 @@ import {
   ScoreToggle,
   SegToggle,
   StatusPill,
+  TraceTag,
   VersionSelect,
   CaseTable,
   ScoreBars,
@@ -44,13 +44,11 @@ import {
   RunProgress,
   scoredMetrics,
   upsertResult,
-  useAgentDefaults,
   useEndpoints,
   useDatasetCategories,
   useFlowDatasets,
   usePromptNodes,
 } from './shared';
-import type { AgentDefaults } from './shared';
 import {
   ModelPicker,
   draftsFromRoles,
@@ -71,6 +69,10 @@ type DirectResult = {
   score_error: string | null;
   /** How long the endpoint took, in ms. Scoring time is not in it. */
   elapsed_ms: number;
+  /** Variable the node captured mid-flow, when it captured one. It is what
+   * 정답 일치 was decided on, so it is shown next to the answer. */
+  trace_var_nm: string | null;
+  trace_value: string | null;
 };
 
 /** Adapt a manual call's inline scores to the RagasResultRow shape ScoreBars renders. */
@@ -83,46 +85,11 @@ function directScoresRow(res: DirectResult): RagasResultRow | null {
     ragas_result_id: 0, ragas_run_id: 0, case_id: null, question: '',
     answer: res.response, contexts: null, ground_truth: null, error_msg: null,
     elapsed_ms: res.elapsed_ms,
+    // Carried through so the score block previews what was judged, not the
+    // answer it was not judged on.
+    trace_var_nm: res.trace_var_nm, trace_value: res.trace_value,
     ...metricVals,
   } as RagasResultRow;
-}
-
-/** Credentials that only apply to a manual call — a dataset run reaches the
- * agent through the run's SSE stream, which carries the endpoint id and nothing
- * else. Each box holds its fallback as the placeholder: the key comes from the
- * selected API's first header (masked), the id from config. */
-function AuthOverrides({
-  authKey, setAuthKey, userId, setUserId, endpoint, defaults,
-}: {
-  authKey: string; setAuthKey: (v: string) => void;
-  userId: string; setUserId: (v: string) => void;
-  endpoint: Endpoint | undefined;
-  defaults: AgentDefaults | null;
-}) {
-  const header = endpoint?.headers[0];
-  return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      <div className="min-w-0">
-        <label className="mb-1 block eyebrow">Auth Key</label>
-        <Input
-          value={authKey}
-          onChange={(e) => setAuthKey(e.target.value)}
-          placeholder={header ? `${header.name}: ${header.value}` : '—'}
-          title={header ? `${header.name}: ${header.value}` : undefined}
-          className="w-full text-sm"
-        />
-      </div>
-      <div className="min-w-0">
-        <label className="mb-1 block eyebrow">User ID</label>
-        <Input
-          value={userId}
-          onChange={(e) => setUserId(e.target.value)}
-          placeholder={defaults?.userId ?? '—'}
-          className="w-full text-sm"
-        />
-      </div>
-    </div>
-  );
 }
 
 /** Single tab. Three questions, asked in the same order as the Compare tab:
@@ -142,7 +109,6 @@ export default function SingleRunPanel() {
   // 어느 API 를 부를지. 설정에 등록된 것 중에서만 고른다 — 목록이 하나뿐이면
   // 고를 것도 없으므로 그것으로 열린다.
   const endpoints = useEndpoints();
-  const agentDefaults = useAgentDefaults();
   const [endpointId, setEndpointId] = useState<number | null>(null);
   useEffect(() => {
     setEndpointId((cur) => (cur != null && endpoints.some((e) => e.endpoint_id === cur) ? cur : endpoints[0]?.endpoint_id ?? null));
@@ -187,9 +153,7 @@ export default function SingleRunPanel() {
   // Manual (raw single message) state.
   const [message, setMessage] = useState(SAMPLE_MESSAGE);
   const [expected, setExpected] = useState("");
-  const [authKey, setAuthKey] = useState('');
-  const [userId, setUserId] = useState('');
-  const [showAdvanced, setShowAdvanced] = useState(false);
+
   const [showRaw, setShowRaw] = useState(false);
   const [callStatus, setCallStatus] = useState<'idle' | 'running' | 'done' | 'failed'>('idle');
   const [callResult, setCallResult] = useState<DirectResult | null>(null);
@@ -302,8 +266,6 @@ export default function SingleRunPanel() {
         // models are overridden; never more than one at a time.
         prompt_id: byPrompt ? ver : null,
         endpoint_id: endpointId,
-        auth_key: authKey.trim() || null,
-        user_id: userId.trim() || null,
         score: scoreOn,
         metrics: scoreOn ? metrics : undefined,
         expected_output: wantsExpected ? expected.trim() || null : null,
@@ -374,15 +336,6 @@ export default function SingleRunPanel() {
             <EndpointSelect endpoints={endpoints} value={endpointId} onChange={setEndpointId} />
           </InlineField>
 
-          {target === 'endpoint' && source === 'manual' && (
-            <button
-              type="button"
-              onClick={() => setShowAdvanced((v) => !v)}
-              className="rounded-sm border border-line px-2 py-1 text-caption text-muted transition-colors hover:border-line-strong hover:text-ink"
-            >
-              {showAdvanced ? '인증 −' : '인증 +'}
-            </button>
-          )}
         </div>
 
         {/* 모델 대상일 때만 role 표가 열린다 — 다른 대상에서는 실행에 쓰이지도 않는다. */}
@@ -469,20 +422,6 @@ export default function SingleRunPanel() {
         )}
 
         
-        {/* Auth overrides ride on the direct call only — a dataset run reaches
-            the endpoint through its own stream. */}
-        {target === 'endpoint' && source === 'manual' && showAdvanced && (
-          <div className="py-3">
-            <AuthOverrides
-              authKey={authKey}
-              setAuthKey={setAuthKey}
-              userId={userId}
-              setUserId={setUserId}
-              endpoint={endpoints.find((e) => e.endpoint_id === endpointId)}
-              defaults={agentDefaults}
-            />
-          </div>
-        )}
       </Card>
 
       {source === 'manual' ? (
@@ -502,6 +441,18 @@ export default function SingleRunPanel() {
               </div>
               <div className="p-4">
                 <AnswerBox text={callResult.response} />
+                {/* 응답에 실리지 않는 중간 변수를 노드가 남겼을 때만 나온다.
+                    정답 일치는 답변이 아니라 이 값으로 매겨진다. */}
+                {callResult.trace_value && (
+                  <div className="mt-4 border-t border-line pt-3">
+                    <p className="mb-1.5 flex items-center gap-1.5 eyebrow">
+                      중간 변수 <TraceTag name={callResult.trace_var_nm} />
+                    </p>
+                    <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-sm border border-line bg-surface-2 p-3 text-xs text-ink">
+                      {callResult.trace_value}
+                    </pre>
+                  </div>
+                )}
                 {callResult.score_error && (
                   <p className="mt-4 rounded-sm border border-bad/20 bg-bad/5 px-3 py-2 text-xs text-bad">
                     채점 실패 — {callResult.score_error}
