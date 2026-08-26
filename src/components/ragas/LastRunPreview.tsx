@@ -8,7 +8,7 @@ import { cn } from '@/lib/cn';
 import type { RagasRunDetail, RagasRunSummary } from '@/lib/types';
 import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import { CaseCompareTable } from './CompareTable';
-import { CaseTable, EmptyState, fmtDt, scoredMetrics, sideLabel } from './shared';
+import { CaseTable, EmptyState, fmtDt, runTargetLabel, scoredMetrics, sideLabel } from './shared';
 
 /**
  * The most recent finished run of this kind, on the run screen while nothing is
@@ -67,7 +67,7 @@ function Chevron({ open }: { open: boolean }) {
 /** What the run was aimed at, in the same words the run header uses. */
 function targetLabel(r: RagasRunSummary): string {
   if (r.node_nm) return `${r.node_nm} · ${r.version_no ? `v${r.version_no}` : '—'}`;
-  return '엔드포인트';
+  return runTargetLabel(r);
 }
 
 export default function LastRunPreview({ kind }: { kind: Kind }) {

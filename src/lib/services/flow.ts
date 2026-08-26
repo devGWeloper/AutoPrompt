@@ -300,7 +300,7 @@ export async function recordDirectRun(argsIn: DirectRunArgs): Promise<DirectRunR
   // once here rather than re-read at each layer below.
   const picked = await resolveEndpoint(argsIn.endpointId);
   if (argsIn.endpointId != null && !picked) {
-    throw notFound(`등록되지 않은 엔드포인트입니다: ${argsIn.endpointId}`);
+    throw notFound(`등록되지 않은 API입니다: ${argsIn.endpointId}`);
   }
   const args: DirectRunArgs = picked
     ? { ...argsIn, baseUrl: picked.url, headers: picked.headers }

@@ -13,7 +13,8 @@ import type { RagasRunDetail, RagasRunSummary } from '@/lib/types';
 import { CaseCompareTable } from './CompareTable';
 import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import {
-  CaseTable, DownloadIcon, fmt2, fmt3, fmtDt, runMean, scoredMetrics, SegToggle, sideLabel, TrashIcon,
+  CaseTable, DownloadIcon, fmt2, fmt3, fmtDt, runMean, runTargetLabel, scoredMetrics, SegToggle, sideLabel,
+  TrashIcon,
 } from './shared';
 
 const API_BASE = '/api';
@@ -399,11 +400,11 @@ export default function RecordsPanel() {
                         </div>
                       ) : (
                         <div className="truncate text-sm font-medium text-ink">
-                          {/* No node means no version was swapped — the endpoint
-                              answered as it stood. That is a target, not a blank. */}
+                          {/* 노드가 없으면 버전을 바꾸지 않은 실행이다 — 그래도
+                              대상은 있으므로, 실행 폼이 쓰는 이름으로 적는다. */}
                           {r.node_nm
                             ? <>{r.node_nm} <span className="text-muted font-normal">· v{r.version_no ?? '—'}</span></>
-                            : '엔드포인트'}
+                            : runTargetLabel(r)}
                         </div>
                       )}
                       <RunSubline
@@ -451,7 +452,7 @@ export default function RecordsPanel() {
                       <div className="truncate text-sm font-medium text-ink">
                         {g.a.node_nm
                           ? <>{g.a.node_nm} <span className="text-muted font-normal">· v{g.a.version_no ?? '—'} vs v{g.b.version_no ?? '—'}</span></>
-                          : <>엔드포인트 <span className="text-muted font-normal">· A vs B</span></>}
+                          : <>{runTargetLabel(g.a)} <span className="text-muted font-normal">· A vs B</span></>}
                       </div>
                     )}
                     <RunSubline
@@ -696,7 +697,7 @@ function RagasRunDetailView({ ragasId }: { ragasId: number }) {
   useEffect(() => { api.get<RagasRunDetail>(`/ragas-runs/${ragasId}`).then(setDetail).catch(() => setDetail(null)); }, [ragasId]);
   if (!detail) return <div className="p-4 text-xs text-muted">불러오는 중…</div>;
 
-  const verLabel = detail.version_no != null ? `v${detail.version_no}` : (detail.prompt_id ? `ID ${detail.prompt_id}` : 'Agent');
+  const verLabel = detail.version_no != null ? `v${detail.version_no}` : (detail.prompt_id ? `ID ${detail.prompt_id}` : runTargetLabel(detail));
 
   return (
     <div className="space-y-4">

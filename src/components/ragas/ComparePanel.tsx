@@ -202,8 +202,8 @@ export default function ComparePanel() {
       : [verLabel(verA), verLabel(verB)];
   const labA = runLabels?.[0] ?? curLabels()[0];
   const labB = runLabels?.[1] ?? curLabels()[1];
-  // `sideLabel` reads a label as a prompt version ("v3") or, when blank, as the
-  // endpoint — neither of which describes a model-mode side.
+  // `sideLabel` reads a label as a prompt version ("v3") or, when blank, as
+  // Default — neither of which describes a model-mode side.
   const dispLabel = (label: string) => (mode === 'model' ? label : sideLabel(label));
 
   const waitDone = (

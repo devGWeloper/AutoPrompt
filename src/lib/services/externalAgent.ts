@@ -146,7 +146,7 @@ async function parseChatResponse(resp: Response): Promise<AgentAnswer> {
       const detail =
         e.data === undefined || e.data === null ? "" : ` ${JSON.stringify(e.data)}`;
       throw new Error(
-        `엔드포인트 오류${code ? ` ${code}` : ""} — ${String(e.message ?? "")}${detail}`,
+        `API 오류${code ? ` ${code}` : ""} — ${String(e.message ?? "")}${detail}`,
       );
     }
     // Some endpoints wrap the payload in `result`; score what is inside it.
@@ -274,7 +274,7 @@ function describeCallError(e: unknown): string {
   if (e instanceof Error) {
     // The abort is ours: `post` fires it when the timeout elapses.
     if (e.name === "AbortError" || e.name === "TimeoutError") {
-      return `응답 시간 초과 (${Math.round(callTimeoutMs() / 1000)}초) — 엔드포인트가 제때 응답하지 않았습니다`;
+      return `응답 시간 초과 (${Math.round(callTimeoutMs() / 1000)}초) — API가 제때 응답하지 않았습니다`;
     }
     const code = netCode(e);
     if (code) return `${NET_CODES[code] ?? "네트워크 오류"} (${code})`;

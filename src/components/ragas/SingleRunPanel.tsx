@@ -276,11 +276,11 @@ export default function SingleRunPanel() {
   }
 
   const verLabel = (id: number | null) => {
-    // Model target: same as-is call as endpoint, but flagged separately so the
-    // run header reads as "testing the model" rather than "testing the endpoint".
-    if (target === 'model') return '모델';
-    // No version = nothing was swapped; the endpoint itself is what ran.
-    if (!id) return 'Agent';
+    // 모델 대상은 버전을 바꾸지 않는다는 점에서 Default 와 같은 호출이지만,
+    // 헤더가 "모델을 시험한 실행"으로 읽히도록 따로 이름을 단다.
+    if (target === 'model') return 'Model';
+    // 버전이 없으면 바꾼 것이 없다 — 대상 토글과 같은 이름으로 적는다.
+    if (!id) return 'Default';
     const found = versions.find((v) => v.prompt_id === id);
     return found ? `v${found.version_no}` : `ID ${id}`;
   };

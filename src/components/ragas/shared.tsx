@@ -230,9 +230,16 @@ export function EvalOptions({ metrics, setMetrics }: { metrics: string[]; setMet
   );
 }
 
-/** A/B side label: the prompt version when one was chosen, otherwise the side is
- * identified by its own endpoint (A/B across two endpoints). */
-export const sideLabel = (label: string) => (label ? `v${label}` : 'Agent');
+/** A/B 사이드 이름: 버전을 고른 실행이면 그 버전, 아니면 바꾼 것이 없다는 뜻이라
+ * 대상 토글과 같은 이름으로 적는다. */
+export const sideLabel = (label: string) => (label ? `v${label}` : 'Default');
+
+/** 이 실행이 무엇을 바꿔서 돌았는지 — 실행 폼의 대상 토글이 쓰는 이름 그대로.
+ * 프롬프트 버전을 올린 실행은 노드·버전으로 따로 적히므로 여기서 가르는 것은
+ * 나머지 둘이다: 모델을 고정했으면 Model, 아무것도 바꾸지 않았으면 Default. */
+export function runTargetLabel(r: { model_snapshot: string | null }): 'Model' | 'Default' {
+  return r.model_snapshot ? 'Model' : 'Default';
+}
 
 // ---- run progress ----------------------------------------------------------
 

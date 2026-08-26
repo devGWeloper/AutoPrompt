@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 function endpointId(raw: string): number {
   const id = Number(raw);
-  if (!Number.isInteger(id)) throw badRequest("잘못된 엔드포인트 id 입니다");
+  if (!Number.isInteger(id)) throw badRequest("잘못된 API id입니다");
   return id;
 }
 

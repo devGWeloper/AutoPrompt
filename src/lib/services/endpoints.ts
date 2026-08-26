@@ -154,7 +154,7 @@ export async function updateEndpoint(
   return withConn(async (conn) => {
     const all = await fetchAll(conn);
     const before = all.find((e) => e.endpoint_id === id);
-    if (!before) throw notFound(`등록되지 않은 엔드포인트입니다: ${id}`);
+    if (!before) throw notFound(`등록되지 않은 API입니다: ${id}`);
     if (all.some((e) => e.endpoint_nm === nm && e.endpoint_id !== id)) {
       throw conflict(`이미 있는 이름입니다: ${nm}`);
     }
@@ -181,7 +181,7 @@ export async function updateEndpoint(
 export async function deleteEndpoint(id: number, actor: string): Promise<Endpoint[]> {
   return withConn(async (conn) => {
     const before = (await fetchAll(conn)).find((e) => e.endpoint_id === id);
-    if (!before) throw notFound(`등록되지 않은 엔드포인트입니다: ${id}`);
+    if (!before) throw notFound(`등록되지 않은 API입니다: ${id}`);
 
     await conn.execute(`DELETE FROM PTX_ENDPOINT_MAS WHERE ENDPOINT_ID = :id`, { id });
     await writeAudit(conn, {
