@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Select } from '@/components/ui/Field';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { parseModelSnapshot } from '@/lib/modelSnapshot';
 import {
   ALL_METRICS,
   EXACT_MATCH,
@@ -239,6 +240,21 @@ export const sideLabel = (label: string) => (label ? `v${label}` : 'Default');
  * 나머지 둘이다: 모델을 고정했으면 Model, 아무것도 바꾸지 않았으면 Default. */
 export function runTargetLabel(r: { model_snapshot: string | null }): 'Model' | 'Default' {
   return r.model_snapshot ? 'Model' : 'Default';
+}
+
+/** 같은 이름에 무엇을 바꿨는지까지 붙인, 목록에 적히는 제목. 대상이 Model 인
+ * 실행들은 이름만으로는 서로 구별되지 않는데, 그 실행에서 유일하게 다른 값이
+ * 모델명이라 그것이 곧 제목의 나머지 절반이 된다. 역할이 여럿이면 첫 모델과
+ * 나머지 개수까지만 — 전체 조합은 아래 서브라인이 이미 적고 있다. */
+export function runTargetTitle(r: { model_snapshot: string | null }): string {
+  const base = runTargetLabel(r);
+  if (base !== 'Model') return base;
+  const parsed = parseModelSnapshot(r.model_snapshot);
+  const names = Array.from(
+    new Set(Object.values(parsed ?? {}).map((e) => e.model).filter((m): m is string => !!m)),
+  );
+  if (!names.length) return base;
+  return `Model · ${names[0]}${names.length > 1 ? ` 외 ${names.length - 1}` : ''}`;
 }
 
 // ---- run progress ----------------------------------------------------------

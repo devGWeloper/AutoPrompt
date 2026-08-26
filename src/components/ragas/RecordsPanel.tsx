@@ -13,8 +13,8 @@ import type { RagasRunDetail, RagasRunSummary } from '@/lib/types';
 import { CaseCompareTable } from './CompareTable';
 import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import {
-  CaseTable, DownloadIcon, fmt2, fmt3, fmtDt, runMean, runTargetLabel, scoredMetrics, SegToggle, sideLabel,
-  TrashIcon,
+  CaseTable, DownloadIcon, fmt2, fmt3, fmtDt, runMean, runTargetLabel, runTargetTitle, scoredMetrics, SegToggle,
+  sideLabel, TrashIcon,
 } from './shared';
 
 const API_BASE = '/api';
@@ -68,7 +68,9 @@ function catLabel(t: string): string {
  * 돌린 실행이다. 이 두 줄이 붙어 있어야 기록에서 모수가 다른 실행끼리
  * 점수를 잘못 나란히 놓는 일이 없다. */
 function datasetLabel(r: RagasRunSummary): string {
-  if (r.is_manual) return '—';
+  // 직접 실행의 데이터셋은 화면에 없는 sink 다 — 이름 대신 무엇으로 돌렸는지를
+  // 적는다. 그래야 제목은 대상만 말하고, 입력 종류는 이 칸이 답한다.
+  if (r.is_manual) return '직접 입력';
   const nm = r.dataset_nm ?? '—';
   return r.case_type ? `${nm} · ${catLabel(r.case_type)}` : nm;
 }
@@ -92,7 +94,8 @@ function TypeText({ t }: { t: Exclude<RunTypeFilter, 'all'> }) {
 /** Second line of the 실행 cell: the run id(s), then a glimpse of what went in.
  * The first case's question is the cheapest thing that tells two runs of the same
  * version apart at a glance, and it already rides along in the list payload.
- * Omitted for manual runs — there the question *is* the first line. */
+ * 직접 실행의 질문도 여기 실린다 — 제목 줄은 대상만 말하기로 했으므로, 그
+ * 실행을 알아보게 하는 문장은 이 줄이 유일하게 담는 곳이다. */
 function RunSubline({
   ids,
   question,
@@ -303,6 +306,9 @@ export default function RecordsPanel() {
         r.case_type,
         r.first_question,
         `#${r.ragas_run_id}`,
+        // 화면에 적힌 그대로 — 'Default', 'Model · qwen3', '직접 입력'.
+        runTargetTitle(r),
+        datasetLabel(r),
         // Searchable by model name: "이 모델로 돌린 실행만" is the main reason to
         // come back to this list after a model change.
         formatModelSnapshot(r.model_snapshot),
@@ -394,28 +400,24 @@ export default function RecordsPanel() {
                       </span>
                     </TD>
                     <TD className="max-w-[20rem]">
-                      {r.is_manual ? (
-                        <div className="truncate text-sm font-medium text-ink" title={r.first_question ?? undefined}>
-                          {r.first_question ?? '—'}
-                        </div>
-                      ) : (
-                        <div className="truncate text-sm font-medium text-ink">
-                          {/* 노드가 없으면 버전을 바꾸지 않은 실행이다 — 그래도
-                              대상은 있으므로, 실행 폼이 쓰는 이름으로 적는다. */}
-                          {r.node_nm
-                            ? <>{r.node_nm} <span className="text-muted font-normal">· v{r.version_no ?? '—'}</span></>
-                            : runTargetLabel(r)}
-                        </div>
-                      )}
+                      {/* 제목은 예외 없이 '무엇을 시험했나' 하나만 말한다. 노드가
+                          없으면 버전을 바꾸지 않은 실행이고, 그때도 대상은 있다.
+                          어떤 질문이었는지는 아래 서브라인이 받는다 — 직접 실행만
+                          질문을 제목에 올리면 목록의 규칙이 행마다 달라진다. */}
+                      <div className="truncate text-sm font-medium text-ink">
+                        {r.node_nm
+                          ? <>{r.node_nm} <span className="text-muted font-normal">· v{r.version_no ?? '—'}</span></>
+                          : runTargetTitle(r)}
+                      </div>
                       <RunSubline
                         ids={`#${r.ragas_run_id}`}
-                        question={r.is_manual ? null : r.first_question}
+                        question={r.first_question}
                         modelText={formatModelSnapshot(r.model_snapshot)}
                       />
                     </TD>
                     <TD><TypeText t="single" /></TD>
                     <TD><StatusText s={r.status} /></TD>
-                    <TD className="text-xs text-muted" title={r.is_manual ? undefined : datasetLabel(r)}>
+                    <TD className="text-xs text-muted" title={datasetLabel(r)}>
                       <div className="max-w-[11rem] truncate">{datasetLabel(r)}</div>
                     </TD>
                     <TD className="text-xs text-muted">{r.engine === 'direct' ? '—' : (r.engine ?? '—')}</TD>
@@ -442,28 +444,21 @@ export default function RecordsPanel() {
                     </span>
                   </TD>
                   <TD className="max-w-[20rem]">
-                    {/* A manual pair has no dataset to name it by — the message is
-                        its identity, same as a manual single run. */}
-                    {g.a.is_manual ? (
-                      <div className="truncate text-sm font-medium text-ink" title={g.a.first_question ?? undefined}>
-                        {g.a.first_question ?? '—'}
-                      </div>
-                    ) : (
-                      <div className="truncate text-sm font-medium text-ink">
-                        {g.a.node_nm
-                          ? <>{g.a.node_nm} <span className="text-muted font-normal">· v{g.a.version_no ?? '—'} vs v{g.b.version_no ?? '—'}</span></>
-                          : <>{runTargetLabel(g.a)} <span className="text-muted font-normal">· A vs B</span></>}
-                      </div>
-                    )}
+                    {/* Single 행과 같은 규칙: 제목은 대상, 질문은 서브라인. */}
+                    <div className="truncate text-sm font-medium text-ink">
+                      {g.a.node_nm
+                        ? <>{g.a.node_nm} <span className="text-muted font-normal">· v{g.a.version_no ?? '—'} vs v{g.b.version_no ?? '—'}</span></>
+                        : <>{runTargetTitle(g.a)} <span className="text-muted font-normal">· A vs B</span></>}
+                    </div>
                     <RunSubline
                       ids={`#${g.a.ragas_run_id}/#${g.b.ragas_run_id}`}
-                      question={g.a.is_manual ? null : g.a.first_question}
+                      question={g.a.first_question}
                       modelText={formatModelPair(g.a.model_snapshot, g.b.model_snapshot)}
                     />
                   </TD>
                   <TD><TypeText t="compare" /></TD>
                   <TD><StatusText s={stat} /></TD>
-                  <TD className="text-xs text-muted" title={g.a.is_manual ? undefined : datasetLabel(g.a)}>
+                  <TD className="text-xs text-muted" title={datasetLabel(g.a)}>
                     <div className="max-w-[11rem] truncate">{datasetLabel(g.a)}</div>
                   </TD>
                   <TD className="text-xs text-muted">{g.b.engine ?? '—'}</TD>

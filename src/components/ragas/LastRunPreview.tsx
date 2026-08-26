@@ -8,7 +8,7 @@ import { cn } from '@/lib/cn';
 import type { RagasRunDetail, RagasRunSummary } from '@/lib/types';
 import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import { CaseCompareTable } from './CompareTable';
-import { CaseTable, EmptyState, fmtDt, runTargetLabel, scoredMetrics, sideLabel } from './shared';
+import { CaseTable, EmptyState, fmtDt, runTargetTitle, scoredMetrics, sideLabel } from './shared';
 
 /**
  * The most recent finished run of this kind, on the run screen while nothing is
@@ -64,10 +64,11 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
-/** What the run was aimed at, in the same words the run header uses. */
+/** What the run was aimed at, in the same words the run header uses — and the
+ * same words the Records list uses, direct runs included. */
 function targetLabel(r: RagasRunSummary): string {
   if (r.node_nm) return `${r.node_nm} · ${r.version_no ? `v${r.version_no}` : '—'}`;
-  return runTargetLabel(r);
+  return runTargetTitle(r);
 }
 
 export default function LastRunPreview({ kind }: { kind: Kind }) {
@@ -132,14 +133,14 @@ export default function LastRunPreview({ kind }: { kind: Kind }) {
           <h3 className="mr-1 text-sm font-semibold text-ink">Results Detail</h3>
           <Badge tone={head.status === 'DONE' ? 'ok' : 'neutral'} dot>{head.status}</Badge>
           <span className="truncate text-body-sm text-ink">
-            {pick.kind === 'compare'
-              ? `${sideLabel(labelA)} vs ${sideLabel(labelB)}`
-              : head.is_manual
-              ? head.first_question ?? '—'
-              : targetLabel(head)}
+            {pick.kind === 'compare' ? `${sideLabel(labelA)} vs ${sideLabel(labelB)}` : targetLabel(head)}
           </span>
-          {head.dataset_nm && !head.is_manual && (
-            <span className="truncate font-mono text-caption-mono text-muted">{head.dataset_nm}</span>
+          {/* 직접 실행은 화면에 없는 sink 데이터셋으로 기록된다 — 목록과 같이
+              입력 종류를 적는다. 무엇을 물었는지는 바로 아래 표가 말한다. */}
+          {(head.is_manual || head.dataset_nm) && (
+            <span className="truncate font-mono text-caption-mono text-muted">
+              {head.is_manual ? '직접 입력' : head.dataset_nm}
+            </span>
           )}
           <span className="ml-auto shrink-0 font-mono text-caption-mono text-muted-soft" title={head.created_dt}>
             {fmtDt(head.created_dt)}
