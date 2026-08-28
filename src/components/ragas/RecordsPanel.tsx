@@ -13,8 +13,8 @@ import type { RagasRunDetail, RagasRunSummary } from '@/lib/types';
 import { CaseCompareTable } from './CompareTable';
 import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import {
-  CaseTable, DownloadIcon, fmt2, fmt3, fmtDt, runMean, runTargetLabel, runTargetTitle, scoredMetrics, SegToggle,
-  sideLabel, TrashIcon,
+  CaseTable, DownloadIcon, fmt2, fmt3, fmtDt, hasTextSelection, runMean, runTargetLabel, runTargetTitle,
+  scoredMetrics, SegToggle, sideLabel, TrashIcon,
 } from './shared';
 
 const API_BASE = '/api';
@@ -392,7 +392,7 @@ export default function RecordsPanel() {
                   <TR
                     key={key}
                     className={cn('cursor-pointer transition-colors hover:bg-surface-2/70', isSelected && 'bg-surface-3 hover:bg-surface-3')}
-                    onClick={() => setSelectedKey(isSelected ? null : key)}
+                    onClick={() => { if (!hasTextSelection()) setSelectedKey(isSelected ? null : key); }}
                   >
                     <TD className="px-2 text-center text-muted">
                       <span className={cn('text-xs font-bold transition-transform inline-block', isSelected ? 'text-ink translate-x-0.5' : 'opacity-40')}>
@@ -436,7 +436,7 @@ export default function RecordsPanel() {
                 <TR
                   key={key}
                   className={cn('cursor-pointer transition-colors hover:bg-surface-2/70', isSelected && 'bg-surface-3 hover:bg-surface-3')}
-                  onClick={() => setSelectedKey(isSelected ? null : key)}
+                  onClick={() => { if (!hasTextSelection()) setSelectedKey(isSelected ? null : key); }}
                 >
                   <TD className="px-2 text-center text-muted">
                     <span className={cn('text-xs font-bold transition-transform inline-block', isSelected ? 'text-ink translate-x-0.5' : 'opacity-40')}>

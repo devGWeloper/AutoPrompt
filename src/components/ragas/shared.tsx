@@ -607,6 +607,45 @@ export function Chevron({ open, className }: { open: boolean; className?: string
 }
 
 /** 'Collapse all / Expand all' strip shown above case lists with >1 case. */
+/** 글자를 끌어 고른 뒤 손을 떼면 브라우저는 그 동작도 클릭으로 센다 — 그대로
+ * 두면 질문을 복사하려던 드래그가 방금 펼친 케이스를 도로 접는다. 고른 글자가
+ * 남아 있는 클릭은 접기/펴기로 치지 않는다. */
+export function hasTextSelection(): boolean {
+  if (typeof window === 'undefined') return false;
+  const sel = window.getSelection();
+  return !!sel && !sel.isCollapsed && sel.toString().trim().length > 0;
+}
+
+/** 케이스 블록의 머리 줄. `<button>` 이 아니라 role=button 인 div 인 까닭은
+ * 브라우저가 버튼 안의 글자를 드래그로 고르지 못하게 막기 때문이다 — 여기 실린
+ * 질문은 읽는 것만큼이나 복사해 가는 대상이다. 키보드 조작은 Enter/Space 로
+ * 그대로 남긴다. */
+export function DisclosureHeader({
+  open, onToggle, children,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-expanded={open}
+      onClick={() => { if (!hasTextSelection()) onToggle(); }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); }
+      }}
+      className={cn(
+        'flex w-full cursor-pointer items-start gap-2 px-4 py-3 text-left transition-colors hover:bg-surface-2/60',
+        'focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40',
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
 export function CollapseAllStrip({ allClosed, onToggle }: { allClosed: boolean; onToggle: () => void }) {
   return (
     <div className="flex justify-end bg-surface-2/60 px-4 py-1.5">
@@ -736,15 +775,18 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
         const mean = caseMean(r);
         return (
           <div key={r.ragas_result_id}>
-            <button
-              type="button"
-              onClick={() => toggle(r.ragas_result_id)}
-              className="flex w-full items-start gap-2 px-4 py-3 text-left transition-colors hover:bg-surface-2/60"
-            >
+            <DisclosureHeader open={!isClosed} onToggle={() => toggle(r.ragas_result_id)}>
               <Chevron open={!isClosed} className="mt-1" />
               <span className={cn('min-w-0 flex-1 text-sm text-ink', isClosed ? 'truncate' : 'whitespace-pre-wrap break-words font-medium')}>
                 {r.question ?? '—'}
               </span>
+              {/* 펼친 케이스의 질문은 그대로 다시 쓰이는 문장이다 — 끌어서 고를
+                  수도 있고, 긴 질문은 이 버튼 하나로 통째로 가져간다. */}
+              {!isClosed && r.question && (
+                <span className="mt-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                  <CopyButton text={r.question} />
+                </span>
+              )}
               {isClosed && <ScoredPreview row={r} className="mt-0.5 min-w-0 flex-1" />}
               {isClosed && <ElapsedTag ms={r.elapsed_ms} className="mt-0.5" />}
               {isClosed && showScores && (
@@ -770,7 +812,7 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
                   )}
                 </span>
               )}
-            </button>
+            </DisclosureHeader>
             {!isClosed && (
               <div className="space-y-3 px-4 pb-3.5 pl-10">
                 {/* 기대 정답이 있으면 채점 대상 바로 옆에 놓고 다른 곳만 칠한다 —

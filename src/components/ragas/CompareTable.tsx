@@ -12,7 +12,7 @@ import {
   type RagasRunDetail,
 } from '@/lib/types';
 import {
-  AnswerBox, caseMean, Chevron, CollapseAllStrip, CopyButton, ElapsedTag, fmt3, fmtElapsed,
+  AnswerBox, caseMean, Chevron, CollapseAllStrip, CopyButton, DisclosureHeader, ElapsedTag, fmt3, fmtElapsed,
   OxBadge, PendingHint, ScoredPreview, sideLabel, TraceValueBox,
 } from './shared';
 import { DiffAgainst, PaneLabel } from './MatchDiff';
@@ -305,15 +305,16 @@ export function CaseCompareTable({
 
         return (
           <div key={key}>
-            <button
-              type="button"
-              onClick={() => toggle(key)}
-              className="flex w-full items-start gap-2 px-4 py-3 text-left transition-colors hover:bg-surface-2/60"
-            >
+            <DisclosureHeader open={!isClosed} onToggle={() => toggle(key)}>
               <Chevron open={!isClosed} className="mt-1" />
               <span className={cn('min-w-0 flex-1 text-sm text-ink', isClosed ? 'truncate' : 'whitespace-pre-wrap break-words font-medium')}>
                 {q}
               </span>
+              {!isClosed && q !== '—' && (
+                <span className="mt-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                  <CopyButton text={q} />
+                </span>
+              )}
               {isClosed && (a || b) && (
                 <span className="mt-0.5 flex min-w-0 flex-[2] items-baseline gap-2.5 text-xs text-muted">
                   <span className="flex min-w-0 flex-1 items-baseline gap-1">
@@ -374,7 +375,7 @@ export function CaseCompareTable({
                   )}
                 </div>
               )}
-            </button>
+            </DisclosureHeader>
             {!isClosed && (
               <div className="px-4 pb-3.5 pl-10">
                 {gt && <GroundTruthBox text={gt} />}
