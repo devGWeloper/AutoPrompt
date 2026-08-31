@@ -60,6 +60,6 @@ export function formatModelPair(
   const differing = roles.filter((r) => entryText(a[r]) !== entryText(b[r]));
   if (!differing.length) return formatModelSnapshot(aRaw);
   return differing
-    .map((r) => `${r}: A=${entryText(a[r]) ?? "기본값"} → B=${entryText(b[r]) ?? "기본값"}`)
+    .map((r) => `${r}: A=${entryText(a[r]) ?? "기본값"} vs B=${entryText(b[r]) ?? "기본값"}`)
     .join(" · ");
 }

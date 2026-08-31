@@ -75,16 +75,36 @@ function TypeText({ t }: { t: Exclude<RunTypeFilter, 'all'> }) {
   );
 }
 
-/** 대상 칸의 첫 줄 — 이 실행에서 시험한 것 하나. 한 덩어리라 굵기도 하나다.
- * 무엇으로 쟀는지는 옆 데이터 칸이 받는다: 같은 노드로 여러 번 돌린 기록이
- * 세로로 맞아떨어져야 눈이 그 열을 건너뛰고 갈리는 열로 갈 수 있다. */
-function SubjectLine({ text, hint }: { text: string; hint?: string | null }) {
-  // hint 는 대상이 엔드포인트일 때의 전체 URL — 이름만 적힌 줄에 마우스를 올리면
-  // 실제로 어디로 보냈는지가 나온다.
+/** 실행 번호. 맨 왼쪽 자기 열에 선다 — 대상 칸에 얹어 두면 제목이 매번 번호부터
+ * 시작해서, 정작 읽어야 할 이름이 오른쪽으로 밀린다. A/B 는 두 건이라 둘 다. */
+function RunIdCell({ ids }: { ids: string }) {
   return (
-    <div className="truncate text-sm font-medium text-ink" title={hint ?? text}>
-      {text}
-    </div>
+    <TD className="whitespace-nowrap font-mono text-[11px] text-muted-soft">{ids}</TD>
+  );
+}
+
+/** 대상 칸 두 줄. 위는 **어디로 보냈나**(등록 API 이름, 없으면 host), 아래는
+ * **무엇을 바꿔서 보냈나**(프롬프트 버전 · 고정한 모델 · A/B 라면 갈린 축).
+ *
+ * 아래 줄이 비어 있으면 아무것도 바꾸지 않고 그 API 를 그대로 부른 실행이다 —
+ * 그 비어 있음 자체가 읽히는 값이라, 자리를 채우는 말을 따로 두지 않는다. */
+function TargetCell({
+  api, apiHint, change, changeHint,
+}: {
+  api: string;
+  apiHint: string | null;
+  change: string | null;
+  changeHint: string | null;
+}) {
+  return (
+    <TD className="max-w-[20rem]">
+      <div className="truncate text-sm font-medium text-ink" title={apiHint ?? api}>{api}</div>
+      {change && (
+        <div className="mt-0.5 truncate text-[11px] text-muted" title={changeHint ?? change}>
+          {change}
+        </div>
+      )}
+    </TD>
   );
 }
 
@@ -108,39 +128,6 @@ function ScopeCell({ text, count }: { text: string | null; count: string | null 
   );
 }
 
-/** Second line of the 대상 cell: the run id(s), then a glimpse of what went in.
- * The first case's question is the cheapest thing that tells two runs of the same
- * version apart at a glance, and it already rides along in the list payload.
- * 직접 실행만 예외로 질문을 안 받는다 — 그쪽은 옆 데이터 칸이 이미 질문을 적고
- * 있어서, 여기 또 적으면 같은 문장이 나란히 두 번 선다. */
-function RunSubline({
-  ids,
-  question,
-  modelText,
-}: {
-  ids: string;
-  question?: string | null;
-  // The models this run went out under, already formatted (a pair for A/B, one
-  // snapshot for a single). Without it two runs of the same dataset and version
-  // look identical even when the model differed — which is the whole comparison.
-  modelText?: string | null;
-}) {
-  const q = question?.trim();
-  const m = modelText;
-  return (
-    <div className="min-w-0">
-      <div className="flex min-w-0 items-baseline gap-1.5 font-mono text-[11px] text-muted">
-        <span className="shrink-0">{ids}</span>
-        {q && <span className="truncate font-sans text-muted/75" title={q}>· {q}</span>}
-      </div>
-      {m && (
-        <div className="mt-0.5 truncate font-mono text-[11px] text-muted/75" title={m}>
-          {m}
-        </div>
-      )}
-    </div>
-  );
-}
 
 /** Which models this run went out under. Absent when nothing was pinned — that
  * run used the agent's own config, and saying so on every old record would be
@@ -401,7 +388,8 @@ export default function RecordsPanel() {
             <TR>
               <TH className="w-6 px-2" />
               {/* 대상과 데이터를 두 칸으로 나눠 둔다. 한 줄에 이어 붙이면 행마다
-                  길이가 달라져, 같은 노드로 여러 번 돌린 기록이 세로로 안 맞는다. */}
+                  길이가 달라져, 같은 API 로 여러 번 돌린 기록이 세로로 안 맞는다. */}
+              <TH className="w-14">#</TH>
               <TH>대상</TH><TH>데이터</TH><TH>유형</TH><TH>상태</TH><TH>엔진</TH>
               <SortTH k="avg" label="점수" sort={sort} onSort={toggleSort} />
               <SortTH k="created" label="생성일시" sort={sort} onSort={toggleSort} />
@@ -428,17 +416,13 @@ export default function RecordsPanel() {
                         ›
                       </span>
                     </TD>
-                    <TD className="max-w-[20rem]">
-                      {/* 서브라인은 대상 칸이 못 담는 것만 받는다: 실행 번호, 역할별
-                          모델 조합, 그리고 첫 질문 — 다만 직접 실행의 질문은 옆 데이터
-                          칸에 이미 서 있으므로 여기서 다시 적지 않는다. */}
-                      <SubjectLine text={single.subject} hint={single.subjectHint} />
-                      <RunSubline
-                        ids={`#${r.ragas_run_id}`}
-                        question={r.is_manual ? null : r.first_question}
-                        modelText={runModelDetail(r.model_snapshot)}
-                      />
-                    </TD>
+                    <RunIdCell ids={String(r.ragas_run_id)} />
+                    <TargetCell
+                      api={single.api}
+                      apiHint={single.apiHint}
+                      change={single.change}
+                      changeHint={runModelDetail(r.model_snapshot)}
+                    />
                     <ScopeCell text={single.scope} count={single.count} />
                     <TD><TypeText t="single" /></TD>
                     <TD><StatusText s={r.status} /></TD>
@@ -470,17 +454,15 @@ export default function RecordsPanel() {
                       ›
                     </span>
                   </TD>
-                  <TD className="max-w-[20rem]">
-                    {/* Single 행과 같은 규칙. 다른 건 대상 칸뿐이다 — 두 사이드가
-                        갈린 값을 화살표로 적어서, 이 실행이 무엇과 무엇을 견준
-                        것인지가 그 한 줄에서 바로 읽힌다. */}
-                    <SubjectLine text={pair.subject} hint={pair.subjectHint} />
-                    <RunSubline
-                      ids={`#${g.a.ragas_run_id}/#${g.b.ragas_run_id}`}
-                      question={g.a.is_manual ? null : g.a.first_question}
-                      modelText={formatModelPair(g.a.model_snapshot, g.b.model_snapshot)}
-                    />
-                  </TD>
+                  <RunIdCell ids={`${g.a.ragas_run_id}/${g.b.ragas_run_id}`} />
+                  {/* Single 행과 같은 규칙. A/B 는 두 사이드가 갈린 값만 화살표로
+                      적혀서, 무엇과 무엇을 견준 것인지가 그 자리에서 읽힌다. */}
+                  <TargetCell
+                    api={pair.api}
+                    apiHint={pair.apiHint}
+                    change={pair.change}
+                    changeHint={pair.changeHint}
+                  />
                   <ScopeCell text={pair.scope} count={pair.count} />
                   <TD><TypeText t="compare" /></TD>
                   <TD><StatusText s={stat} /></TD>
@@ -501,7 +483,7 @@ export default function RecordsPanel() {
               );
             })}
             {groups.length === 0 && (
-              <TR><TD colSpan={9} className="py-10 text-center text-sm text-muted">
+              <TR><TD colSpan={10} className="py-10 text-center text-sm text-muted">
                 {ragas.length === 0 ? '실행 기록이 없습니다' : '검색 결과 없음'}
               </TD></TR>
             )}

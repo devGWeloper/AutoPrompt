@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Select } from '@/components/ui/Field';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import { formatModelSnapshot, parseModelSnapshot } from '@/lib/modelSnapshot';
+import { formatModelPair, formatModelSnapshot, parseModelSnapshot } from '@/lib/modelSnapshot';
 import {
   ALL_METRICS,
   EXACT_MATCH,
@@ -329,22 +329,26 @@ const QUESTION_MAX = 22;
 export const UNSCORED_LABEL = '채점 없음';
 
 /**
- * 실행 한 건을 목록에 적는 두 조각 — 기록 표의 `대상` 칸과 `데이터` 칸이다.
+ * 실행 한 건을 목록에 적는 조각들 — 기록 표의 `#` · `대상` · `데이터` 칸이다.
  *
- *   대상                     데이터
- *   고객상담 라우팅 v3        고객상담셋/요약 5건
- *   고객상담 라우팅 v2 → v3   고객상담셋/요약 5건
- *   gpt-4o-mini → gpt-4o     고객상담셋/전체 24건
- *   직접 입력                "환불 규정이…"
+ *   #    대상                        데이터
+ *   44   운영 Agent                  고객상담셋/전체 24건
+ *   41   운영 Agent                  고객상담셋/요약  5건
+ *        고객상담 라우팅 v3
+ *   40   운영 Agent                  고객상담셋/요약  5건
+ *        고객상담 라우팅 v3 · gpt-4o
+ *   42   운영 Agent vs 스테이징 Agent   고객상담셋/요약  5건
  *
- * 한 줄로 이어 붙이지 않고 둘로 나눈 건 표라서다. 같은 노드로 스무 번을 돌려도
- * 대상 칸이 세로로 맞아떨어지면 눈은 그 열을 통째로 건너뛰고 갈리는 열로 간다.
- * 한 줄이면 행마다 길이가 달라져 그 정렬이 깨진다.
+ * 제목 자리는 **어디로 보냈나** 하나가 쓴다. 모든 실행이 어떤 API 를 부르고,
+ * 그게 이 표에서 가장 굵은 사실이다. 그 아래 작은 글씨는 **무엇을 바꿔서
+ * 보냈나** — 프롬프트 버전, 고정한 모델, A/B 라면 갈린 축. 아무것도 바꾸지
+ * 않은 실행은 그 줄이 비고, 그 비어 있음이 곧 '설정 그대로 불렀다'는 뜻이다.
  *
- * - **대상**: 이 실행에서 시험한 것. 버전을 올렸으면 노드와 버전, A/B 면 갈린
- *   축 자체(`v2 → v3`, `gpt-4o-mini → gpt-4o`), 아무것도 바꾸지 않았으면 실행
- *   폼의 대상 토글과 같은 이름인 `Default`.
- * - **데이터**: 무엇으로 쟀나. 데이터셋·폴더·건수, 직접 실행이면 물어본 문장.
+ * - **api**: 등록 목록에서 고른 API 의 이름, 직접 URL 이면 host. 엔드포인트를
+ *   기록하기 전에 돌았던 실행은 남은 값이 없어 `—` 다.
+ * - **change**: 이 실행이 기본과 달랐던 점. 없으면 null.
+ * - **scope / count**: 무엇으로 쟀나. 데이터셋·폴더와 건수, 직접 실행이면 물어본
+ *   문장. 건수를 따로 두는 건 칸이 좁을 때 그것부터 잘리면 안 되기 때문이다.
  * - **unscored**: 채점하지 않은 실행(METRIC_CTN='[]'). 열을 따로 두지 않는다 —
  *   점수 칸이 빈 이유를 대는 값이라 그 칸에서 '채점 없음'으로 선다.
  *
@@ -355,58 +359,48 @@ export function runTitleParts(
   r: RunTitleFields,
   b?: RunTitleFields | null,
 ): {
-  subject: string;
-  /** 대상 줄에 마우스를 올렸을 때 나올 전체 주소. 대상이 곧 엔드포인트인 실행에만
-   * 있다 — 목록에는 이름(또는 host)만 서고, 전체 URL 은 여기서 확인한다. */
-  subjectHint: string | null;
+  api: string;
+  /** 제목에 마우스를 올렸을 때 나올 전체 주소. 목록에는 이름(또는 host)만 선다. */
+  apiHint: string | null;
+  change: string | null;
+  /** change 줄의 툴팁 — 역할이 여럿이면 조합 전체가 여기 들어간다. */
+  changeHint: string | null;
   scope: string | null;
   count: string | null;
   unscored: boolean;
 } {
-  // ---- 변인
+  // ---- 제목: 어디로 보냈나
+  const ea = endpointText(r);
+  const eb = b ? endpointText(b) : null;
+  let api: string;
+  let apiHint: string | null;
+  if (b && ea && eb && ea !== eb) {
+    // 양쪽이 다른 API 를 부른 A/B — 그 대비가 곧 이 실행이다.
+    api = `${ea} vs ${eb}`;
+    apiHint = [r.endpoint_url, b.endpoint_url].filter(Boolean).join(' vs ') || null;
+  } else {
+    api = ea ?? '—';
+    apiHint = r.endpoint_url;
+  }
+
+  // ---- 그 아래: 무엇을 바꿔서 보냈나
   const ma = modelText(r.model_snapshot);
   const mb = b ? modelText(b.model_snapshot) : null;
-  // 두 사이드의 모델이 갈렸을 때만. 모델도 버전도 같은 A/B 는 등록된 Agent 끼리의
-  // 비교라 제목에 적을 값이 없고, 그때 남는 축은 사이드 이름뿐이다.
-  const modelArrow = b && ma !== mb ? `${ma ?? '기본값'} → ${mb ?? '기본값'}` : null;
-
-  // 한 건짜리 실행에서 모델을 고정했으면 그것도 시험한 축이라 대상에 적는다.
-  // 버전을 그대로 두고 모델만 바꿔 돌린 두 실행은 이게 없으면 대상도 데이터도
-  // 똑같아 보인다 — A/B 는 화살표로 크게 적으면서 한 건은 숨길 이유가 없다.
-  // 고정하지 않은 실행에는 붙을 값이 없어서 대부분의 행은 그대로다.
-  const pin = !b && ma ? ` · ${ma}` : '';
-
-  let subject: string;
-  let subjectHint: string | null = null;
-  if (r.is_manual) {
-    subject = b ? `직접 입력 · ${modelArrow ?? 'A vs B'}` : `직접 입력${pin}`;
-  } else if (r.node_nm) {
+  const modelPair = b && ma !== mb ? `${ma ?? '기본값'} vs ${mb ?? '기본값'}` : null;
+  const bits: string[] = [];
+  if (r.node_nm) {
     const va = `v${r.version_no ?? '—'}`;
     const vb = b ? `v${b.version_no ?? '—'}` : null;
-    // 버전이 갈린 A/B 는 그게 시험한 축이라 화살표가 버전에 붙고, 버전을 양쪽
-    // 똑같이 두고 모델만 바꾼 A/B 는 화살표가 모델로 내려간다.
-    if (!b) subject = `${r.node_nm} ${va}${pin}`;
-    else if (vb !== va) subject = `${r.node_nm} ${va} → ${vb}`;
-    else subject = `${r.node_nm} ${va} · ${modelArrow ?? 'A vs B'}`;
-  } else if (b) {
-    // 프롬프트도 모델도 안 건드린 A/B 는 등록된 API 끼리의 비교다. 그러니 갈린
-    // 축은 엔드포인트고, 그 둘의 이름이 곧 제목이다.
-    const ea = endpointText(r);
-    const eb = endpointText(b);
-    if (!modelArrow && ea && eb && ea !== eb) {
-      subject = `${ea} → ${eb}`;
-      subjectHint = [r.endpoint_url, b.endpoint_url].filter(Boolean).join(' → ') || null;
-    } else {
-      subject = modelArrow ?? 'Default · A vs B';
-    }
-  } else {
-    // 아무것도 바꾸지 않은 실행에 남는 유일한 변인이 '어디로 보냈나'다. 예전에는
-    // 이 자리가 전부 'Default' 라, 서로 다른 Agent 를 부른 실행들이 한 글자도
-    // 다르지 않았다. 엔드포인트를 기록하기 전의 실행은 여전히 'Default' 다.
-    const ep = ma ? null : endpointText(r);
-    subject = ma ? `Model · ${ma}` : ep ?? 'Default';
-    if (ep) subjectHint = r.endpoint_url;
+    // 버전이 갈린 A/B 는 vs 가 버전에 붙고, 버전을 양쪽 똑같이 두고 모델만
+    // 바꾼 A/B 는 vs 가 모델로 내려간다.
+    bits.push(`${r.node_nm} ${vb && vb !== va ? `${va} vs ${vb}` : va}`);
   }
+  if (modelPair) bits.push(modelPair);
+  else if (!b && ma) bits.push(ma);
+  const change = bits.length ? bits.join(' · ') : null;
+  const changeHint = b
+    ? formatModelPair(r.model_snapshot, b.model_snapshot)
+    : formatModelSnapshot(r.model_snapshot);
 
   // ---- 모수
   let scope: string | null;
@@ -416,7 +410,7 @@ export function runTitleParts(
     scope = q ? `"${q.length > QUESTION_MAX ? `${q.slice(0, QUESTION_MAX)}…` : q}"` : null;
   } else {
     // 데이터셋과 폴더는 슬래시로 붙인다. 띄어쓰기만으로 두면 '고객상담셋 요약'이
-    // 한 낱말처럼 읽혀서, 슬롯을 가르는 가운뎃점과 급이 헷갈린다.
+    // 한 낱말처럼 읽혀서, 조각을 가르는 가운뎃점과 급이 헷갈린다.
     scope = `${r.dataset_nm ?? '—'}/${runFolder(r.case_type)}`;
     // 건수는 따로 돌려준다. 한 문자열로 붙여 두면 칸이 좁을 때 오른쪽 끝인
     // 건수부터 잘려 나가는데, 모수가 5건인지 24건인지는 잘려선 안 되는 값이다.
@@ -434,13 +428,13 @@ export function runTitleParts(
     }
   })();
 
-  return { subject, subjectHint, scope, count, unscored };
+  return { api, apiHint, change, changeHint, scope, count, unscored };
 }
 
 /** 한 줄로 이어붙인 것 — 검색이 쓴다. 화면에 이렇게 서는 자리는 없다. */
 export function runTitle(r: RunTitleFields, b?: RunTitleFields | null): string {
-  const { subject, scope, count, unscored } = runTitleParts(r, b);
-  return [subject, scope, count, unscored ? UNSCORED_LABEL : null].filter(Boolean).join(' · ');
+  const { api, change, scope, count, unscored } = runTitleParts(r, b);
+  return [api, change, scope, count, unscored ? UNSCORED_LABEL : null].filter(Boolean).join(' · ');
 }
 
 // ---- run progress ----------------------------------------------------------
