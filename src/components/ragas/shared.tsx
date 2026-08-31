@@ -332,6 +332,10 @@ export const UNSCORED_LABEL = '채점 없음';
  * 이 말로 채워진다 — 실행 폼의 대상 토글에 있는 이름과 같은 말이다. */
 export const DEFAULT_LABEL = 'default';
 
+/** 데이터셋 없이 질문 하나로 부른 실행. 데이터 칸에서 데이터셋 이름이 설 자리에
+ * 대신 선다 — 그 실행의 데이터셋은 화면에 없는 sink 라 이름을 적을 수 없다. */
+export const DIRECT_LABEL = '직접 입력';
+
 /**
  * 실행 한 건을 목록에 적는 조각들 — 기록 표의 `#` · `대상` · `데이터` 칸이다.
  *
@@ -341,15 +345,15 @@ export const DEFAULT_LABEL = 'default';
  *   41      운영 Agent                   고객상담셋/요약  5건
  *           고객상담 라우팅 v3
  *   40      운영 Agent                   고객상담셋/요약  5건
- *           고객상담 라우팅 v3 · model-gpt-4o
+ *           고객상담 라우팅 v3 · model: gpt-4o
  *   42/43   운영 Agent vs 스테이징 Agent   고객상담셋/요약  5건
  *           default
  *   35/36   운영 Agent                   고객상담셋/전체 24건
- *           model-gpt-4o-mini vs gpt-4o
+ *           model: gpt-4o-mini vs gpt-4o
  *
  * 제목 자리는 **어디로 보냈나** 하나가 쓴다. 모든 실행이 어떤 API 를 부르고,
  * 그게 이 표에서 가장 굵은 사실이다. 그 아래 작은 글씨는 **무엇을 바꿔서
- * 보냈나** — 프롬프트 버전, `model-` 을 단 고정 모델, A/B 라면 갈린 축.
+ * 보냈나** — 프롬프트 버전, `model:` 을 단 고정 모델, A/B 라면 갈린 축.
  *
  * - **api**: 등록 목록에서 고른 API 의 이름, 직접 URL 이면 host. 엔드포인트를
  *   기록하기 전에 돌았던 실행은 남은 값이 없어 `—` 다.
@@ -392,13 +396,13 @@ export function runTitleParts(
 
   // ---- 그 아래: 무엇을 바꿔서 보냈나
   //
-  // 모델은 `model-` 을 앞에 달아 둔다. 모델명만 적어 두면 그게 모델인지 버전인지
+  // 모델은 `model:` 을 앞에 달아 둔다. 모델명만 적어 두면 그게 모델인지 버전인지
   // 노드 이름인지가 그 줄만 봐서는 안 갈린다. A/B 는 갈린 쪽만 vs 로 잇고, 양쪽이
-  // 공유하는 앞부분(노드 이름, `model-`)은 한 번만 적는다 — 버전 A/B 가 이미
+  // 공유하는 앞부분(노드 이름, `model:`)은 한 번만 적는다 — 버전 A/B 가 이미
   // `고객상담 라우팅 v2 vs v3` 로 그렇게 적고 있다.
   const ma = modelText(r.model_snapshot);
   const mb = b ? modelText(b.model_snapshot) : null;
-  const modelPair = b && ma !== mb ? `model-${ma ?? '기본값'} vs ${mb ?? '기본값'}` : null;
+  const modelPair = b && ma !== mb ? `model: ${ma ?? '기본값'} vs ${mb ?? '기본값'}` : null;
   const bits: string[] = [];
   if (r.node_nm) {
     const va = `v${r.version_no ?? '—'}`;
@@ -408,7 +412,7 @@ export function runTitleParts(
     bits.push(`${r.node_nm} ${vb && vb !== va ? `${va} vs ${vb}` : va}`);
   }
   if (modelPair) bits.push(modelPair);
-  else if (!b && ma) bits.push(`model-${ma}`);
+  else if (!b && ma) bits.push(`model: ${ma}`);
   // 바꾼 게 하나도 없으면 빈 줄로 두지 않고 그렇다고 적는다 — 실행 폼의 대상
   // 토글에 있는 이름 그대로라, 무엇을 골라 돌린 실행인지가 기록에서도 같은 말로
   // 읽힌다.
@@ -421,8 +425,12 @@ export function runTitleParts(
   let scope: string | null;
   let count: string | null = null;
   if (r.is_manual) {
+    // 데이터셋 실행의 `데이터셋/폴더` 와 같은 꼴로 적는다 — 앞은 어느 묶음에서
+    // 왔나, 뒤는 그 안의 어디냐. 직접 실행에서 그 '어디'에 해당하는 건 물어본
+    // 문장이다. 같은 자리에 같은 모양으로 서야 두 종류의 실행이 한 열에서 읽힌다.
     const q = r.first_question?.trim();
-    scope = q ? `"${q.length > QUESTION_MAX ? `${q.slice(0, QUESTION_MAX)}…` : q}"` : null;
+    const asked = q ? `"${q.length > QUESTION_MAX ? `${q.slice(0, QUESTION_MAX)}…` : q}"` : null;
+    scope = asked ? `${DIRECT_LABEL}/${asked}` : DIRECT_LABEL;
   } else {
     // 데이터셋과 폴더는 슬래시로 붙인다. 띄어쓰기만으로 두면 '고객상담셋 요약'이
     // 한 낱말처럼 읽혀서, 조각을 가르는 가운뎃점과 급이 헷갈린다.
