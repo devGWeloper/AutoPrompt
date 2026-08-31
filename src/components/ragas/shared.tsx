@@ -297,25 +297,37 @@ function modelText(snapshot: string | null): string | null {
 
 const QUESTION_MAX = 22;
 
+/** 채점하지 않은 실행의 점수 칸. '—'(점수가 안 나옴)와 다른 말이라 따로 적는다 —
+ * 실행 폼의 '채점' 스위치를 끄고 돌렸다는 뜻이다. */
+export const UNSCORED_LABEL = '채점 없음';
+
 /**
- * 목록에 적히는 제목. 슬롯 셋이고, 채울 값이 없는 슬롯은 조용히 빠진다.
+ * 실행 한 건을 목록에 적는 두 조각 — 기록 표의 `대상` 칸과 `데이터` 칸이다.
  *
- *   변인 · 모수 · 조건
- *   고객상담 라우팅 v3 · 고객상담셋 요약 5건 · 답변만
+ *   대상                     데이터
+ *   고객상담 라우팅 v3        고객상담셋/요약 5건
+ *   고객상담 라우팅 v2 → v3   고객상담셋/요약 5건
+ *   gpt-4o-mini → gpt-4o     고객상담셋/전체 24건
+ *   직접 입력                "환불 규정이…"
  *
- * - **변인**: 이 실행에서 시험한 것. 버전을 올렸으면 노드와 버전, A/B 면 갈린
+ * 한 줄로 이어 붙이지 않고 둘로 나눈 건 표라서다. 같은 노드로 스무 번을 돌려도
+ * 대상 칸이 세로로 맞아떨어지면 눈은 그 열을 통째로 건너뛰고 갈리는 열로 간다.
+ * 한 줄이면 행마다 길이가 달라져 그 정렬이 깨진다.
+ *
+ * - **대상**: 이 실행에서 시험한 것. 버전을 올렸으면 노드와 버전, A/B 면 갈린
  *   축 자체(`v2 → v3`, `gpt-4o-mini → gpt-4o`), 아무것도 바꾸지 않았으면 실행
  *   폼의 대상 토글과 같은 이름인 `Default`.
- * - **모수**: 무엇으로 쟀나. 데이터셋·폴더·건수, 직접 실행이면 물어본 문장.
- * - **조건**: 기본과 다른 채점 방식만. 지금은 `답변만`(METRIC_CTN='[]') 하나다.
+ * - **데이터**: 무엇으로 쟀나. 데이터셋·폴더·건수, 직접 실행이면 물어본 문장.
+ * - **unscored**: 채점하지 않은 실행(METRIC_CTN='[]'). 열을 따로 두지 않는다 —
+ *   점수 칸이 빈 이유를 대는 값이라 그 칸에서 '채점 없음'으로 선다.
  *
- * `b` 가 있으면 A/B 한 쌍의 제목이다 — 두 사이드에서 갈린 값만 화살표로 적고,
- * 같은 값은 한 번만 적는다. 그 차이가 곧 그 실행에서 시험한 것이라서다.
+ * `b` 가 있으면 A/B 한 쌍이다 — 두 사이드에서 갈린 값만 화살표로 적고, 같은
+ * 값은 한 번만 적는다. 그 차이가 곧 그 실행에서 시험한 것이라서다.
  */
 export function runTitleParts(
   r: RunTitleFields,
   b?: RunTitleFields | null,
-): { subject: string; scope: string | null; condition: string | null } {
+): { subject: string; scope: string | null; unscored: boolean } {
   // ---- 변인
   const ma = modelText(r.model_snapshot);
   const mb = b ? modelText(b.model_snapshot) : null;
@@ -346,12 +358,13 @@ export function runTitleParts(
     const q = r.first_question?.trim();
     scope = q ? `"${q.length > QUESTION_MAX ? `${q.slice(0, QUESTION_MAX)}…` : q}"` : null;
   } else {
-    const parts = [r.dataset_nm ?? '—', runFolder(r.case_type)];
-    if (r.case_count != null) parts.push(`${r.case_count}건`);
-    scope = parts.join(' ');
+    // 데이터셋과 폴더는 슬래시로 붙인다. 띄어쓰기만으로 두면 '고객상담셋 요약'이
+    // 한 낱말처럼 읽혀서, 슬롯을 가르는 가운뎃점과 급이 헷갈린다.
+    const where = `${r.dataset_nm ?? '—'}/${runFolder(r.case_type)}`;
+    scope = r.case_count != null ? `${where} ${r.case_count}건` : where;
   }
 
-  // ---- 조건
+  // ---- 채점 여부
   const unscored = (() => {
     if (!r.metrics) return false;
     try {
@@ -362,13 +375,13 @@ export function runTitleParts(
     }
   })();
 
-  return { subject, scope, condition: unscored ? '답변만' : null };
+  return { subject, scope, unscored };
 }
 
-/** 한 줄로 이어붙인 제목 — 툴팁과 검색이 쓴다. */
+/** 두 칸을 한 줄로 이어붙인 것 — 검색이 쓴다. 화면에 이렇게 서는 자리는 없다. */
 export function runTitle(r: RunTitleFields, b?: RunTitleFields | null): string {
-  const { subject, scope, condition } = runTitleParts(r, b);
-  return [subject, scope, condition].filter(Boolean).join(' · ');
+  const { subject, scope, unscored } = runTitleParts(r, b);
+  return [subject, scope, unscored ? UNSCORED_LABEL : null].filter(Boolean).join(' · ');
 }
 
 // ---- run progress ----------------------------------------------------------

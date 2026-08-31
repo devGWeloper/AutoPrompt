@@ -14,7 +14,7 @@ import { CaseCompareTable } from './CompareTable';
 import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import {
   CaseTable, DownloadIcon, fmt2, fmt3, fmtDt, folderLabel, hasTextSelection, runMean, runTargetLabel,
-  runTitle, runTitleParts, scoredMetrics, SegToggle, sideLabel, TrashIcon,
+  runTitle, runTitleParts, scoredMetrics, SegToggle, sideLabel, TrashIcon, UNSCORED_LABEL,
 } from './shared';
 
 const API_BASE = '/api';
@@ -75,25 +75,27 @@ function TypeText({ t }: { t: Exclude<RunTypeFilter, 'all'> }) {
   );
 }
 
-/** 제목 한 줄 — 변인 · 모수 · 조건. 변인만 진하게 두고 나머지는 muted 로 내린다.
- * 목록을 훑을 때 눈이 먼저 잡아야 하는 건 '무엇을 바꿔서 돌렸나'이고, 모수와
- * 조건은 그 행에 멈춰 섰을 때 읽는 값이라서다. */
-function RunTitle({ a, b }: { a: RagasRunSummary; b?: RagasRunSummary }) {
-  const { subject, scope, condition } = runTitleParts(a, b);
+/** 대상 칸의 첫 줄 — 이 실행에서 시험한 것 하나. 한 덩어리라 굵기도 하나다.
+ * 무엇으로 쟀는지는 옆 데이터 칸이 받는다: 같은 노드로 여러 번 돌린 기록이
+ * 세로로 맞아떨어져야 눈이 그 열을 건너뛰고 갈리는 열로 갈 수 있다. */
+function SubjectLine({ text }: { text: string }) {
+  return <div className="truncate text-sm font-medium text-ink" title={text}>{text}</div>;
+}
+
+/** 데이터 칸 — 데이터셋/폴더와 건수, 직접 실행이면 물어본 문장. */
+function ScopeCell({ text }: { text: string | null }) {
   return (
-    <div className="truncate text-sm font-medium text-ink" title={runTitle(a, b)}>
-      {subject}
-      {scope && <span className="font-normal text-muted"> · {scope}</span>}
-      {condition && <span className="font-normal text-muted"> · {condition}</span>}
-    </div>
+    <TD className="text-xs text-muted" title={text ?? undefined}>
+      <div className="max-w-[14rem] truncate">{text ?? '—'}</div>
+    </TD>
   );
 }
 
-/** Second line of the 실행 cell: the run id(s), then a glimpse of what went in.
+/** Second line of the 대상 cell: the run id(s), then a glimpse of what went in.
  * The first case's question is the cheapest thing that tells two runs of the same
  * version apart at a glance, and it already rides along in the list payload.
- * 직접 실행만 예외로 질문을 안 받는다 — 그쪽은 제목의 모수 슬롯이 이미 질문을
- * 적고 있어서, 여기 또 적으면 같은 문장이 두 줄 연속으로 선다. */
+ * 직접 실행만 예외로 질문을 안 받는다 — 그쪽은 옆 데이터 칸이 이미 질문을 적고
+ * 있어서, 여기 또 적으면 같은 문장이 나란히 두 번 선다. */
 function RunSubline({
   ids,
   question,
@@ -186,14 +188,24 @@ function SortTH({
 
 const pct = (v: number | null | undefined) => (v != null ? `${Math.round(Number(v) * 100)}%` : '—');
 
+/** 점수가 없을 때 그 자리에 서는 말. 채점을 끄고 돌린 실행과, 채점을 켰는데
+ * 점수가 안 나온 실행(실패·진행 중)은 다른 사건이라 다르게 적는다. */
+function NoScore({ unscored }: { unscored?: boolean }) {
+  return unscored
+    ? <span className="font-sans text-[11px] text-muted-soft">{UNSCORED_LABEL}</span>
+    : <span className="text-muted">—</span>;
+}
+
 /** Score cell — the RAGAS mean and the 정답 일치 rate on separate lines, because
  * a graded mean and a pass rate are different claims about the run. Compare runs
  * show A/B on each line. Either line is omitted when that scorer never ran. */
 function AvgCell({
-  mean, meanA, meanB, ex, exA, exB,
+  mean, meanA, meanB, ex, exA, exB, unscored,
 }: {
   mean?: number | null; meanA?: number | null; meanB?: number | null;
   ex?: number | null; exA?: number | null; exB?: number | null;
+  /** 채점하지 않은 실행 — 빈 점수 칸이 그 이유를 대게 한다. */
+  unscored?: boolean;
 }) {
   if (meanA !== undefined || meanB !== undefined) {
     const delta = meanA != null && meanB != null ? meanB - meanA : null;
@@ -232,7 +244,7 @@ function AvgCell({
               <span className="text-muted font-normal">B <span className="font-semibold text-ink">{pct(exB)}</span></span>
             </div>
           )}
-          {meanA == null && meanB == null && exA == null && exB == null && <span className="text-muted">—</span>}
+          {meanA == null && meanB == null && exA == null && exB == null && <NoScore unscored={unscored} />}
         </div>
       </TD>
     );
@@ -253,7 +265,7 @@ function AvgCell({
             <span className="font-semibold">{pct(ex)}</span>
           </span>
         )}
-        {mean == null && ex == null && <span className="text-muted">—</span>}
+        {mean == null && ex == null && <NoScore unscored={unscored} />}
       </div>
     </TD>
   );
@@ -371,9 +383,9 @@ export default function RecordsPanel() {
           <THead>
             <TR>
               <TH className="w-6 px-2" />
-              {/* 데이터셋 칸은 제목이 이름·폴더·건수를 그대로 적게 되면서 없앴다.
-                  같은 값을 두 번 적으면 제목이 쓸 폭만 줄어든다. */}
-              <TH>실행</TH><TH>유형</TH><TH>상태</TH><TH>엔진</TH>
+              {/* 대상과 데이터를 두 칸으로 나눠 둔다. 한 줄에 이어 붙이면 행마다
+                  길이가 달라져, 같은 노드로 여러 번 돌린 기록이 세로로 안 맞는다. */}
+              <TH>대상</TH><TH>데이터</TH><TH>유형</TH><TH>상태</TH><TH>엔진</TH>
               <SortTH k="avg" label="점수" sort={sort} onSort={toggleSort} />
               <SortTH k="created" label="생성일시" sort={sort} onSort={toggleSort} />
               <TH className="w-16" />
@@ -387,6 +399,7 @@ export default function RecordsPanel() {
               if (g.kind === 'single') {
                 const r = g.run;
                 const mean = runMean(r);
+                const single = runTitleParts(r);
                 return (
                   <TR
                     key={key}
@@ -398,22 +411,26 @@ export default function RecordsPanel() {
                         ›
                       </span>
                     </TD>
-                    <TD className="max-w-[31rem]">
-                      {/* 제목 하나로 '무엇을 · 무엇으로 · 어떻게 쟀나'가 다 선다.
-                          서브라인은 그래서 제목이 못 담는 것만 받는다: 실행 번호,
-                          역할별 모델 조합, 그리고 첫 질문 — 다만 직접 실행의 질문은
-                          이미 제목이 올렸으므로 여기서 다시 적지 않는다. */}
-                      <RunTitle a={r} />
+                    <TD className="max-w-[20rem]">
+                      {/* 서브라인은 대상 칸이 못 담는 것만 받는다: 실행 번호, 역할별
+                          모델 조합, 그리고 첫 질문 — 다만 직접 실행의 질문은 옆 데이터
+                          칸에 이미 서 있으므로 여기서 다시 적지 않는다. */}
+                      <SubjectLine text={single.subject} />
                       <RunSubline
                         ids={`#${r.ragas_run_id}`}
                         question={r.is_manual ? null : r.first_question}
                         modelText={formatModelSnapshot(r.model_snapshot)}
                       />
                     </TD>
+                    <ScopeCell text={single.scope} />
                     <TD><TypeText t="single" /></TD>
                     <TD><StatusText s={r.status} /></TD>
                     <TD className="text-xs text-muted">{r.engine === 'direct' ? '—' : (r.engine ?? '—')}</TD>
-                    <AvgCell mean={mean} ex={r.exact_match != null ? Number(r.exact_match) : null} />
+                    <AvgCell
+                      mean={mean}
+                      ex={r.exact_match != null ? Number(r.exact_match) : null}
+                      unscored={single.unscored}
+                    />
                     <TD className="whitespace-nowrap text-xs text-muted" title={r.created_dt}>{fmtDt(r.created_dt)}</TD>
                     <RowActionsCell
                       csvHref={`${API_BASE}/ragas-runs/${r.ragas_run_id}/export?fmt=csv`}
@@ -424,6 +441,7 @@ export default function RecordsPanel() {
               }
 
               const stat = g.a.status === g.b.status ? g.a.status : `${g.a.status}/${g.b.status}`;
+              const pair = runTitleParts(g.a, g.b);
               return (
                 <TR
                   key={key}
@@ -435,17 +453,18 @@ export default function RecordsPanel() {
                       ›
                     </span>
                   </TD>
-                  <TD className="max-w-[31rem]">
-                    {/* Single 행과 같은 규칙. 다른 건 변인 슬롯뿐이다 — 두 사이드가
+                  <TD className="max-w-[20rem]">
+                    {/* Single 행과 같은 규칙. 다른 건 대상 칸뿐이다 — 두 사이드가
                         갈린 값을 화살표로 적어서, 이 실행이 무엇과 무엇을 견준
-                        것인지가 제목에서 바로 읽힌다. */}
-                    <RunTitle a={g.a} b={g.b} />
+                        것인지가 그 한 줄에서 바로 읽힌다. */}
+                    <SubjectLine text={pair.subject} />
                     <RunSubline
                       ids={`#${g.a.ragas_run_id}/#${g.b.ragas_run_id}`}
                       question={g.a.is_manual ? null : g.a.first_question}
                       modelText={formatModelPair(g.a.model_snapshot, g.b.model_snapshot)}
                     />
                   </TD>
+                  <ScopeCell text={pair.scope} />
                   <TD><TypeText t="compare" /></TD>
                   <TD><StatusText s={stat} /></TD>
                   <TD className="text-xs text-muted">{g.b.engine ?? '—'}</TD>
@@ -454,6 +473,7 @@ export default function RecordsPanel() {
                     meanB={runMean(g.b)}
                     exA={g.a.exact_match != null ? Number(g.a.exact_match) : null}
                     exB={g.b.exact_match != null ? Number(g.b.exact_match) : null}
+                    unscored={pair.unscored}
                   />
                   <TD className="whitespace-nowrap text-xs text-muted" title={g.a.created_dt}>{fmtDt(g.a.created_dt)}</TD>
                   <RowActionsCell
@@ -464,7 +484,7 @@ export default function RecordsPanel() {
               );
             })}
             {groups.length === 0 && (
-              <TR><TD colSpan={8} className="py-10 text-center text-sm text-muted">
+              <TR><TD colSpan={9} className="py-10 text-center text-sm text-muted">
                 {ragas.length === 0 ? '실행 기록이 없습니다' : '검색 결과 없음'}
               </TD></TR>
             )}
