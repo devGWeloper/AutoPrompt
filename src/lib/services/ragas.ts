@@ -198,12 +198,17 @@ export async function listRuns(): Promise<RagasRunSummary[]> {
     // Scalar subqueries (not joins) so RUN_COLS' bare column names stay unambiguous.
     // FIRST_QUESTION labels direct calls in the list (their run has no node/dataset
     // identity) and feeds the client-side search; 200 chars is plenty for both.
+    // CASE_CNT 은 제목의 '5건' — 데이터셋 이름만으로는 폴더 하나만 돌린 실행과
+    // 전체를 돌린 실행이 같아 보인다. 목록 한 번에 두 서브쿼리지만 둘 다 RUN_ID
+    // 인덱스만 타므로 행당 비용은 사실상 같다.
     const res = await conn.execute(
       `SELECT ${RUN_COLS},
               (SELECT DBMS_LOB.SUBSTR(x.QUESTION_CTN, 200, 1) FROM PTX_RUN_DET x
                 WHERE x.RESULT_ID =
                       (SELECT MIN(y.RESULT_ID) FROM PTX_RUN_DET y
-                        WHERE y.RUN_ID = PTX_RUN_MAS.RUN_ID)) AS FIRST_QUESTION
+                        WHERE y.RUN_ID = PTX_RUN_MAS.RUN_ID)) AS FIRST_QUESTION,
+              (SELECT COUNT(*) FROM PTX_RUN_DET z
+                WHERE z.RUN_ID = PTX_RUN_MAS.RUN_ID) AS CASE_CNT
          FROM PTX_RUN_MAS ORDER BY RUN_ID DESC`,
     );
     const rows = (res.rows ?? []) as Record<string, unknown>[];

@@ -257,6 +257,120 @@ export function runTargetTitle(r: { model_snapshot: string | null }): string {
   return `Model · ${names[0]}${names.length > 1 ? ` 외 ${names.length - 1}` : ''}`;
 }
 
+// ---- run title -------------------------------------------------------------
+
+/** 제목이 읽는 실행 한 건. 목록(RagasRunSummary)에 다 들어 있는 값들이고, 여기
+ * 없는 값은 제목에 못 쓴다 — 예를 들어 RAGAS 채점 LLM 은 config.yml 전역값이라
+ * 실행마다 다르지 않고 PTX_RUN_MAS.JUDGE_MODEL_NM 에 적히지도 않는다. */
+export interface RunTitleFields {
+  node_nm: string | null;
+  version_no: string | null;
+  dataset_nm: string | null;
+  case_type: string | null;
+  case_count: number | null;
+  first_question: string | null;
+  is_manual: boolean;
+  model_snapshot: string | null;
+  metrics: string | null;
+}
+
+/** 폴더를 고르지 않은 실행은 TYPE_CD 가 비어 있다 — 데이터셋 전체를 돌렸다는
+ * 말이라, 폴더 칸에 '전체'가 선다. 나머지는 폴더 이름 그대로(folderLabel). */
+function runFolder(caseType: string | null): string {
+  return caseType ? folderLabel(caseType) : '전체';
+}
+
+/** 이 실행에서 고정한 모델들. 역할이 여럿이면 첫 모델과 나머지 개수까지만 —
+ * 전체 조합은 서브라인이 이미 적고 있다. */
+function pinnedModels(snapshot: string | null): string[] {
+  const parsed = parseModelSnapshot(snapshot);
+  return Array.from(
+    new Set(Object.values(parsed ?? {}).map((e) => e.model).filter((m): m is string => !!m)),
+  );
+}
+
+function modelText(snapshot: string | null): string | null {
+  const names = pinnedModels(snapshot);
+  if (!names.length) return null;
+  return `${names[0]}${names.length > 1 ? ` 외 ${names.length - 1}` : ''}`;
+}
+
+const QUESTION_MAX = 22;
+
+/**
+ * 목록에 적히는 제목. 슬롯 셋이고, 채울 값이 없는 슬롯은 조용히 빠진다.
+ *
+ *   변인 · 모수 · 조건
+ *   고객상담 라우팅 v3 · 고객상담셋 요약 5건 · 답변만
+ *
+ * - **변인**: 이 실행에서 시험한 것. 버전을 올렸으면 노드와 버전, A/B 면 갈린
+ *   축 자체(`v2 → v3`, `gpt-4o-mini → gpt-4o`), 아무것도 바꾸지 않았으면 실행
+ *   폼의 대상 토글과 같은 이름인 `Default`.
+ * - **모수**: 무엇으로 쟀나. 데이터셋·폴더·건수, 직접 실행이면 물어본 문장.
+ * - **조건**: 기본과 다른 채점 방식만. 지금은 `답변만`(METRIC_CTN='[]') 하나다.
+ *
+ * `b` 가 있으면 A/B 한 쌍의 제목이다 — 두 사이드에서 갈린 값만 화살표로 적고,
+ * 같은 값은 한 번만 적는다. 그 차이가 곧 그 실행에서 시험한 것이라서다.
+ */
+export function runTitleParts(
+  r: RunTitleFields,
+  b?: RunTitleFields | null,
+): { subject: string; scope: string | null; condition: string | null } {
+  // ---- 변인
+  const ma = modelText(r.model_snapshot);
+  const mb = b ? modelText(b.model_snapshot) : null;
+  // 두 사이드의 모델이 갈렸을 때만. 모델도 버전도 같은 A/B 는 등록된 Agent 끼리의
+  // 비교라 제목에 적을 값이 없고, 그때 남는 축은 사이드 이름뿐이다.
+  const modelArrow = b && ma !== mb ? `${ma ?? '기본값'} → ${mb ?? '기본값'}` : null;
+
+  let subject: string;
+  if (r.is_manual) {
+    subject = b ? `직접 입력 · ${modelArrow ?? 'A vs B'}` : '직접 입력';
+  } else if (r.node_nm) {
+    const va = `v${r.version_no ?? '—'}`;
+    const vb = b ? `v${b.version_no ?? '—'}` : null;
+    // 버전이 갈린 A/B 는 그게 시험한 축이라 화살표가 버전에 붙고, 버전을 양쪽
+    // 똑같이 두고 모델만 바꾼 A/B 는 화살표가 모델로 내려간다.
+    if (!b) subject = `${r.node_nm} ${va}`;
+    else if (vb !== va) subject = `${r.node_nm} ${va} → ${vb}`;
+    else subject = `${r.node_nm} ${va} · ${modelArrow ?? 'A vs B'}`;
+  } else if (b) {
+    subject = modelArrow ?? 'Default · A vs B';
+  } else {
+    subject = ma ? `Model · ${ma}` : 'Default';
+  }
+
+  // ---- 모수
+  let scope: string | null;
+  if (r.is_manual) {
+    const q = r.first_question?.trim();
+    scope = q ? `"${q.length > QUESTION_MAX ? `${q.slice(0, QUESTION_MAX)}…` : q}"` : null;
+  } else {
+    const parts = [r.dataset_nm ?? '—', runFolder(r.case_type)];
+    if (r.case_count != null) parts.push(`${r.case_count}건`);
+    scope = parts.join(' ');
+  }
+
+  // ---- 조건
+  const unscored = (() => {
+    if (!r.metrics) return false;
+    try {
+      const m: unknown = JSON.parse(r.metrics);
+      return Array.isArray(m) && m.length === 0;
+    } catch {
+      return false;
+    }
+  })();
+
+  return { subject, scope, condition: unscored ? '답변만' : null };
+}
+
+/** 한 줄로 이어붙인 제목 — 툴팁과 검색이 쓴다. */
+export function runTitle(r: RunTitleFields, b?: RunTitleFields | null): string {
+  const { subject, scope, condition } = runTitleParts(r, b);
+  return [subject, scope, condition].filter(Boolean).join(' · ');
+}
+
 // ---- run progress ----------------------------------------------------------
 
 /** How far a live run has got, counted from the rows themselves. Answers land in

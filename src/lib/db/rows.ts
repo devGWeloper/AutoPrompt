@@ -296,6 +296,9 @@ export function mapRagasRunSummary(r: Row): RagasRunSummary {
     // FIRST_QUESTION only comes from listRuns' SELECT.
     dataset_nm: str(r.DATASET_NM),
     case_type: run.case_type,
+    // CASE_CNT 도 FIRST_QUESTION 과 같이 listRuns 의 SELECT 에서만 온다.
+    case_count: num(r.CASE_CNT),
+    metrics: run.metrics,
     first_question: str(r.FIRST_QUESTION),
     is_manual: str(r.DATASET_NM) === DIRECT_SINK_NM,
     status: run.status,

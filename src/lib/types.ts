@@ -350,6 +350,11 @@ export interface RagasRunSummary {
   version_no: string | null;
   dataset_nm: string | null;
   case_type: string | null;
+  /** 이 실행이 실제로 돌린 케이스 수. 5건짜리 폴더 실행과 24건짜리 전체 실행이
+   * 제목에서 갈리지 않으면, 나중에 점수를 나란히 놓고 잘못 읽게 된다. */
+  case_count: number | null;
+  /** METRIC_CTN 원문. '[]' 는 채점하지 않은 실행 — 제목의 '답변만'이 이 값이다. */
+  metrics: string | null;
   first_question: string | null;
   is_manual: boolean;
   status: string;

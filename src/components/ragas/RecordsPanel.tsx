@@ -13,8 +13,8 @@ import type { RagasRunDetail, RagasRunSummary } from '@/lib/types';
 import { CaseCompareTable } from './CompareTable';
 import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import {
-  CaseTable, DownloadIcon, fmt2, fmt3, fmtDt, hasTextSelection, runMean, runTargetLabel, runTargetTitle,
-  scoredMetrics, SegToggle, sideLabel, TrashIcon,
+  CaseTable, DownloadIcon, fmt2, fmt3, fmtDt, folderLabel, hasTextSelection, runMean, runTargetLabel,
+  runTitle, runTitleParts, scoredMetrics, SegToggle, sideLabel, TrashIcon,
 } from './shared';
 
 const API_BASE = '/api';
@@ -59,22 +59,6 @@ const RUNS_PAGE_SIZE = 20; // rows per Records page
 /** Status badge: soft tint + dot + text at the brand's 4px radius.
  * FAILED red (wins in mixed pair states like DONE/FAILED), DONE green,
  * everything else (RUNNING/CANCELLED…) muted. */
-/** TYPE_CD 의 컬럼 기본값은 '폴더 없음' 을 뜻한다 — 화면에서는 그렇게 읽힌다. */
-function catLabel(t: string): string {
-  return t === 'NORMAL' ? '폴더 없음' : t;
-}
-
-/** 데이터셋 이름, 그리고 이 실행이 좁힌 폴더. 폴더가 없으면 이름만 — 전체를
- * 돌린 실행이다. 이 두 줄이 붙어 있어야 기록에서 모수가 다른 실행끼리
- * 점수를 잘못 나란히 놓는 일이 없다. */
-function datasetLabel(r: RagasRunSummary): string {
-  // 직접 실행의 데이터셋은 화면에 없는 sink 다 — 이름 대신 무엇으로 돌렸는지를
-  // 적는다. 그래야 제목은 대상만 말하고, 입력 종류는 이 칸이 답한다.
-  if (r.is_manual) return '직접 입력';
-  const nm = r.dataset_nm ?? '—';
-  return r.case_type ? `${nm} · ${catLabel(r.case_type)}` : nm;
-}
-
 function StatusText({ s }: { s: string }) {
   const tone = s.includes('FAILED') ? 'bad' : s.includes('DONE') ? 'ok' : 'neutral';
   return <Badge tone={tone} dot>{s}</Badge>;
@@ -91,11 +75,25 @@ function TypeText({ t }: { t: Exclude<RunTypeFilter, 'all'> }) {
   );
 }
 
+/** 제목 한 줄 — 변인 · 모수 · 조건. 변인만 진하게 두고 나머지는 muted 로 내린다.
+ * 목록을 훑을 때 눈이 먼저 잡아야 하는 건 '무엇을 바꿔서 돌렸나'이고, 모수와
+ * 조건은 그 행에 멈춰 섰을 때 읽는 값이라서다. */
+function RunTitle({ a, b }: { a: RagasRunSummary; b?: RagasRunSummary }) {
+  const { subject, scope, condition } = runTitleParts(a, b);
+  return (
+    <div className="truncate text-sm font-medium text-ink" title={runTitle(a, b)}>
+      {subject}
+      {scope && <span className="font-normal text-muted"> · {scope}</span>}
+      {condition && <span className="font-normal text-muted"> · {condition}</span>}
+    </div>
+  );
+}
+
 /** Second line of the 실행 cell: the run id(s), then a glimpse of what went in.
  * The first case's question is the cheapest thing that tells two runs of the same
  * version apart at a glance, and it already rides along in the list payload.
- * 직접 실행의 질문도 여기 실린다 — 제목 줄은 대상만 말하기로 했으므로, 그
- * 실행을 알아보게 하는 문장은 이 줄이 유일하게 담는 곳이다. */
+ * 직접 실행만 예외로 질문을 안 받는다 — 그쪽은 제목의 모수 슬롯이 이미 질문을
+ * 적고 있어서, 여기 또 적으면 같은 문장이 두 줄 연속으로 선다. */
 function RunSubline({
   ids,
   question,
@@ -306,9 +304,8 @@ export default function RecordsPanel() {
         r.case_type,
         r.first_question,
         `#${r.ragas_run_id}`,
-        // 화면에 적힌 그대로 — 'Default', 'Model · qwen3', '직접 입력'.
-        runTargetTitle(r),
-        datasetLabel(r),
+        // 화면에 적힌 제목 그대로 — 폴더·건수·'답변만'까지 다 검색어가 된다.
+        runTitle(r),
         // Searchable by model name: "이 모델로 돌린 실행만" is the main reason to
         // come back to this list after a model change.
         formatModelSnapshot(r.model_snapshot),
@@ -374,7 +371,9 @@ export default function RecordsPanel() {
           <THead>
             <TR>
               <TH className="w-6 px-2" />
-              <TH>실행</TH><TH>유형</TH><TH>상태</TH><TH>데이터셋</TH><TH>엔진</TH>
+              {/* 데이터셋 칸은 제목이 이름·폴더·건수를 그대로 적게 되면서 없앴다.
+                  같은 값을 두 번 적으면 제목이 쓸 폭만 줄어든다. */}
+              <TH>실행</TH><TH>유형</TH><TH>상태</TH><TH>엔진</TH>
               <SortTH k="avg" label="점수" sort={sort} onSort={toggleSort} />
               <SortTH k="created" label="생성일시" sort={sort} onSort={toggleSort} />
               <TH className="w-16" />
@@ -399,27 +398,20 @@ export default function RecordsPanel() {
                         ›
                       </span>
                     </TD>
-                    <TD className="max-w-[20rem]">
-                      {/* 제목은 예외 없이 '무엇을 시험했나' 하나만 말한다. 노드가
-                          없으면 버전을 바꾸지 않은 실행이고, 그때도 대상은 있다.
-                          어떤 질문이었는지는 아래 서브라인이 받는다 — 직접 실행만
-                          질문을 제목에 올리면 목록의 규칙이 행마다 달라진다. */}
-                      <div className="truncate text-sm font-medium text-ink">
-                        {r.node_nm
-                          ? <>{r.node_nm} <span className="text-muted font-normal">· v{r.version_no ?? '—'}</span></>
-                          : runTargetTitle(r)}
-                      </div>
+                    <TD className="max-w-[31rem]">
+                      {/* 제목 하나로 '무엇을 · 무엇으로 · 어떻게 쟀나'가 다 선다.
+                          서브라인은 그래서 제목이 못 담는 것만 받는다: 실행 번호,
+                          역할별 모델 조합, 그리고 첫 질문 — 다만 직접 실행의 질문은
+                          이미 제목이 올렸으므로 여기서 다시 적지 않는다. */}
+                      <RunTitle a={r} />
                       <RunSubline
                         ids={`#${r.ragas_run_id}`}
-                        question={r.first_question}
+                        question={r.is_manual ? null : r.first_question}
                         modelText={formatModelSnapshot(r.model_snapshot)}
                       />
                     </TD>
                     <TD><TypeText t="single" /></TD>
                     <TD><StatusText s={r.status} /></TD>
-                    <TD className="text-xs text-muted" title={datasetLabel(r)}>
-                      <div className="max-w-[11rem] truncate">{datasetLabel(r)}</div>
-                    </TD>
                     <TD className="text-xs text-muted">{r.engine === 'direct' ? '—' : (r.engine ?? '—')}</TD>
                     <AvgCell mean={mean} ex={r.exact_match != null ? Number(r.exact_match) : null} />
                     <TD className="whitespace-nowrap text-xs text-muted" title={r.created_dt}>{fmtDt(r.created_dt)}</TD>
@@ -443,24 +435,19 @@ export default function RecordsPanel() {
                       ›
                     </span>
                   </TD>
-                  <TD className="max-w-[20rem]">
-                    {/* Single 행과 같은 규칙: 제목은 대상, 질문은 서브라인. */}
-                    <div className="truncate text-sm font-medium text-ink">
-                      {g.a.node_nm
-                        ? <>{g.a.node_nm} <span className="text-muted font-normal">· v{g.a.version_no ?? '—'} vs v{g.b.version_no ?? '—'}</span></>
-                        : <>{runTargetTitle(g.a)} <span className="text-muted font-normal">· A vs B</span></>}
-                    </div>
+                  <TD className="max-w-[31rem]">
+                    {/* Single 행과 같은 규칙. 다른 건 변인 슬롯뿐이다 — 두 사이드가
+                        갈린 값을 화살표로 적어서, 이 실행이 무엇과 무엇을 견준
+                        것인지가 제목에서 바로 읽힌다. */}
+                    <RunTitle a={g.a} b={g.b} />
                     <RunSubline
                       ids={`#${g.a.ragas_run_id}/#${g.b.ragas_run_id}`}
-                      question={g.a.first_question}
+                      question={g.a.is_manual ? null : g.a.first_question}
                       modelText={formatModelPair(g.a.model_snapshot, g.b.model_snapshot)}
                     />
                   </TD>
                   <TD><TypeText t="compare" /></TD>
                   <TD><StatusText s={stat} /></TD>
-                  <TD className="text-xs text-muted" title={datasetLabel(g.a)}>
-                    <div className="max-w-[11rem] truncate">{datasetLabel(g.a)}</div>
-                  </TD>
                   <TD className="text-xs text-muted">{g.b.engine ?? '—'}</TD>
                   <AvgCell
                     meanA={runMean(g.a)}
@@ -477,7 +464,7 @@ export default function RecordsPanel() {
               );
             })}
             {groups.length === 0 && (
-              <TR><TD colSpan={9} className="py-10 text-center text-sm text-muted">
+              <TR><TD colSpan={8} className="py-10 text-center text-sm text-muted">
                 {ragas.length === 0 ? '실행 기록이 없습니다' : '검색 결과 없음'}
               </TD></TR>
             )}
@@ -705,7 +692,7 @@ function RagasRunDetailView({ ragasId }: { ragasId: number }) {
           <Badge tone="neutral">{verLabel}</Badge>
           {/* 폴더가 붙어 있으면 이 실행의 모수는 데이터셋 전체가 아니다.
               그걸 모르고 다른 실행과 점수를 나란히 놓으면 비교가 어긋난다. */}
-          {detail.case_type && <Badge tone="neutral">폴더 {catLabel(detail.case_type)}</Badge>}
+          {detail.case_type && <Badge tone="neutral">폴더 {folderLabel(detail.case_type)}</Badge>}
           <span className="ml-auto flex items-center gap-2">
             <ModelStamp text={formatModelSnapshot(detail.model_snapshot)} />
             <span>Engine {detail.engine ?? '—'}</span>
