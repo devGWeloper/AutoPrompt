@@ -328,32 +328,39 @@ const QUESTION_MAX = 22;
  * 실행 폼의 '채점' 스위치를 끄고 돌렸다는 뜻이다. */
 export const UNSCORED_LABEL = '채점 없음';
 
+/** 프롬프트도 모델도 건드리지 않고 그 API 를 그대로 부른 실행. 대상 칸 아랫줄이
+ * 이 말로 채워진다 — 실행 폼의 대상 토글에 있는 이름과 같은 말이다. */
+export const DEFAULT_LABEL = 'default';
+
 /**
  * 실행 한 건을 목록에 적는 조각들 — 기록 표의 `#` · `대상` · `데이터` 칸이다.
  *
- *   #    대상                        데이터
- *   44   운영 Agent                  고객상담셋/전체 24건
- *   41   운영 Agent                  고객상담셋/요약  5건
- *        고객상담 라우팅 v3
- *   40   운영 Agent                  고객상담셋/요약  5건
- *        고객상담 라우팅 v3 · gpt-4o
- *   42   운영 Agent vs 스테이징 Agent   고객상담셋/요약  5건
+ *   #       대상                         데이터
+ *   44      운영 Agent                   고객상담셋/전체 24건
+ *           default
+ *   41      운영 Agent                   고객상담셋/요약  5건
+ *           고객상담 라우팅 v3
+ *   40      운영 Agent                   고객상담셋/요약  5건
+ *           고객상담 라우팅 v3 · model-gpt-4o
+ *   42/43   운영 Agent vs 스테이징 Agent   고객상담셋/요약  5건
+ *           default
+ *   35/36   운영 Agent                   고객상담셋/전체 24건
+ *           model-gpt-4o-mini vs gpt-4o
  *
  * 제목 자리는 **어디로 보냈나** 하나가 쓴다. 모든 실행이 어떤 API 를 부르고,
  * 그게 이 표에서 가장 굵은 사실이다. 그 아래 작은 글씨는 **무엇을 바꿔서
- * 보냈나** — 프롬프트 버전, 고정한 모델, A/B 라면 갈린 축. 아무것도 바꾸지
- * 않은 실행은 그 줄이 비고, 그 비어 있음이 곧 '설정 그대로 불렀다'는 뜻이다.
+ * 보냈나** — 프롬프트 버전, `model-` 을 단 고정 모델, A/B 라면 갈린 축.
  *
  * - **api**: 등록 목록에서 고른 API 의 이름, 직접 URL 이면 host. 엔드포인트를
  *   기록하기 전에 돌았던 실행은 남은 값이 없어 `—` 다.
- * - **change**: 이 실행이 기본과 달랐던 점. 없으면 null.
+ * - **change**: 이 실행이 기본과 달랐던 점. 바꾼 게 없으면 `default`.
  * - **scope / count**: 무엇으로 쟀나. 데이터셋·폴더와 건수, 직접 실행이면 물어본
  *   문장. 건수를 따로 두는 건 칸이 좁을 때 그것부터 잘리면 안 되기 때문이다.
  * - **unscored**: 채점하지 않은 실행(METRIC_CTN='[]'). 열을 따로 두지 않는다 —
  *   점수 칸이 빈 이유를 대는 값이라 그 칸에서 '채점 없음'으로 선다.
  *
- * `b` 가 있으면 A/B 한 쌍이다 — 두 사이드에서 갈린 값만 화살표로 적고, 같은
- * 값은 한 번만 적는다. 그 차이가 곧 그 실행에서 시험한 것이라서다.
+ * `b` 가 있으면 A/B 한 쌍이다 — 두 사이드에서 갈린 값만 `vs` 로 잇고, 같은 값은
+ * 한 번만 적는다. 그 차이가 곧 그 실행에서 시험한 것이라서다.
  */
 export function runTitleParts(
   r: RunTitleFields,
@@ -362,7 +369,7 @@ export function runTitleParts(
   api: string;
   /** 제목에 마우스를 올렸을 때 나올 전체 주소. 목록에는 이름(또는 host)만 선다. */
   apiHint: string | null;
-  change: string | null;
+  change: string;
   /** change 줄의 툴팁 — 역할이 여럿이면 조합 전체가 여기 들어간다. */
   changeHint: string | null;
   scope: string | null;
@@ -384,9 +391,14 @@ export function runTitleParts(
   }
 
   // ---- 그 아래: 무엇을 바꿔서 보냈나
+  //
+  // 모델은 `model-` 을 앞에 달아 둔다. 모델명만 적어 두면 그게 모델인지 버전인지
+  // 노드 이름인지가 그 줄만 봐서는 안 갈린다. A/B 는 갈린 쪽만 vs 로 잇고, 양쪽이
+  // 공유하는 앞부분(노드 이름, `model-`)은 한 번만 적는다 — 버전 A/B 가 이미
+  // `고객상담 라우팅 v2 vs v3` 로 그렇게 적고 있다.
   const ma = modelText(r.model_snapshot);
   const mb = b ? modelText(b.model_snapshot) : null;
-  const modelPair = b && ma !== mb ? `${ma ?? '기본값'} vs ${mb ?? '기본값'}` : null;
+  const modelPair = b && ma !== mb ? `model-${ma ?? '기본값'} vs ${mb ?? '기본값'}` : null;
   const bits: string[] = [];
   if (r.node_nm) {
     const va = `v${r.version_no ?? '—'}`;
@@ -396,8 +408,11 @@ export function runTitleParts(
     bits.push(`${r.node_nm} ${vb && vb !== va ? `${va} vs ${vb}` : va}`);
   }
   if (modelPair) bits.push(modelPair);
-  else if (!b && ma) bits.push(ma);
-  const change = bits.length ? bits.join(' · ') : null;
+  else if (!b && ma) bits.push(`model-${ma}`);
+  // 바꾼 게 하나도 없으면 빈 줄로 두지 않고 그렇다고 적는다 — 실행 폼의 대상
+  // 토글에 있는 이름 그대로라, 무엇을 골라 돌린 실행인지가 기록에서도 같은 말로
+  // 읽힌다.
+  const change = bits.length ? bits.join(' · ') : DEFAULT_LABEL;
   const changeHint = b
     ? formatModelPair(r.model_snapshot, b.model_snapshot)
     : formatModelSnapshot(r.model_snapshot);

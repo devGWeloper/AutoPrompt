@@ -84,26 +84,23 @@ function RunIdCell({ ids }: { ids: string }) {
 }
 
 /** 대상 칸 두 줄. 위는 **어디로 보냈나**(등록 API 이름, 없으면 host), 아래는
- * **무엇을 바꿔서 보냈나**(프롬프트 버전 · 고정한 모델 · A/B 라면 갈린 축).
- *
- * 아래 줄이 비어 있으면 아무것도 바꾸지 않고 그 API 를 그대로 부른 실행이다 —
- * 그 비어 있음 자체가 읽히는 값이라, 자리를 채우는 말을 따로 두지 않는다. */
+ * **무엇을 바꿔서 보냈나** — 프롬프트 버전, `model-` 을 단 고정 모델, A/B 라면
+ * 갈린 축. 바꾼 게 없으면 그 줄은 `default` 다. 이 줄은 늘 있어서 행 높이가
+ * 일정하고, 그래서 목록을 훑을 때 위아래가 흔들리지 않는다. */
 function TargetCell({
   api, apiHint, change, changeHint,
 }: {
   api: string;
   apiHint: string | null;
-  change: string | null;
+  change: string;
   changeHint: string | null;
 }) {
   return (
     <TD className="max-w-[20rem]">
       <div className="truncate text-sm font-medium text-ink" title={apiHint ?? api}>{api}</div>
-      {change && (
-        <div className="mt-0.5 truncate text-[11px] text-muted" title={changeHint ?? change}>
-          {change}
-        </div>
-      )}
+      <div className="mt-0.5 truncate text-[11px] text-muted" title={changeHint ?? change}>
+        {change}
+      </div>
     </TD>
   );
 }
