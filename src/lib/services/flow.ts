@@ -16,7 +16,7 @@ import type {
 import { exactMatchScore } from "@/lib/exactMatch";
 import { resolveRagasEngine } from "@/lib/config";
 import { requireDataset } from "./datasets";
-import { resolveEndpoint } from "./endpoints";
+import { CONFIG_ENDPOINT_A, CONFIG_ENDPOINT_B, resolveEndpoint } from "./endpoints";
 import { currentModelSnapshot, explicitSnapshot, modelSnapshot } from "./models";
 import { stageCallConfig, writeCallConfig } from "./callConfig";
 import * as agent from "./externalAgent";
@@ -354,8 +354,10 @@ export async function recordDirectRun(argsIn: DirectRunArgs): Promise<DirectRunR
       conn,
       oracle,
       `INSERT INTO PTX_RUN_MAS (PROMPT_ID, DATASET_ID, DATASET_NM, STATUS_CD, ENGINE_CD, METRIC_CTN, MODEL_CTN, USER_ID, START_TM, END_TM,
+                                 ENDPOINT_NM, ENDPOINT_URL,
                                  EXACT_VAL, FAITH_VAL, ANS_RELEVANCY_VAL, CNTX_PRECISION_VAL, CNTX_RECALL_VAL, ANS_CORRECTNESS_VAL)
-       VALUES (:pid, :did, :dnm, 'DONE', :eng, :met, :models, :cby, SYSTIMESTAMP, SYSTIMESTAMP, :em, :f, :ar, :cp, :cr, :ac)
+       VALUES (:pid, :did, :dnm, 'DONE', :eng, :met, :models, :cby, SYSTIMESTAMP, SYSTIMESTAMP,
+               :enm, :eurl, :em, :f, :ar, :cp, :cr, :ac)
        RETURNING RUN_ID INTO :out_id`,
       {
         // Which version answered — a manual call aimed at a version is otherwise
@@ -363,6 +365,9 @@ export async function recordDirectRun(argsIn: DirectRunArgs): Promise<DirectRunR
         pid: args.promptId ?? null,
         did: sinkId,
         dnm: DIRECT_SINK_NM,
+        // 어느 API 로 나갔는지. 등록 목록에서 고른 게 아니면 이름 없이 URL 만 남는다.
+        enm: picked?.name ?? null,
+        eurl: args.baseUrl ?? null,
         eng: engine ?? (metrics.length ? EXACT_ENGINE : DIRECT_ENGINE),
         met: metrics.length ? JSON.stringify(metrics) : "[]",
         models,
@@ -601,6 +606,11 @@ async function setupRun(
   baseUrl: string | null,
   headers: EndpointHeader[] | null,
   side: agent.FlowSide | null,
+  /** 등록 목록에서 고른 API 의 이름. 직접 URL 로 부른 실행에는 없다. */
+  endpointNm: string | null,
+  /** 기록에 남길 주소. 호출 주소를 side 가 정하는 A/B 에서만 baseUrl 과 갈린다 —
+   * 그쪽은 baseUrl 이 null 인 채로 config.yml 의 사이드 URL 로 나가기 때문이다. */
+  endpointUrl?: string | null,
 ): Promise<RunCtx | null> {
   const run = await fetchRun(conn, runId);
   if (!run) return null;
@@ -631,9 +641,17 @@ async function setupRun(
   const engine = resolveRagasEngine();
   // A run scored only by 정답 일치 never touches the judge LLM, so it records
   // ENGINE_CD='exact' rather than claiming RAGAS/FALLBACK.
+  //
+  // 엔드포인트도 여기서 찍는다. 행이 만들어질 때(PENDING)는 아직 어디로 보낼지
+  // 정해지지 않았고 — 그건 실행을 시작하는 쪽이 고른다 — 이 시점에는 정해져 있다.
   await conn.execute(
-    `UPDATE PTX_RUN_MAS SET STATUS_CD = 'RUNNING', START_TM = SYSTIMESTAMP${score ? ", ENGINE_CD = :eng" : ""} WHERE RUN_ID = :id`,
-    score ? { eng: llm.length ? engine : EXACT_ENGINE, id: runId } : { id: runId },
+    `UPDATE PTX_RUN_MAS
+        SET STATUS_CD = 'RUNNING', START_TM = SYSTIMESTAMP,
+            ENDPOINT_NM = :enm, ENDPOINT_URL = :eurl${score ? ", ENGINE_CD = :eng" : ""}
+      WHERE RUN_ID = :id`,
+    score
+      ? { enm: endpointNm, eurl: endpointUrl ?? baseUrl, eng: llm.length ? engine : EXACT_ENGINE, id: runId }
+      : { enm: endpointNm, eurl: endpointUrl ?? baseUrl, id: runId },
   );
   await conn.commit();
   const cases = await loadCases(conn, run.dataset_id, run.case_type);
@@ -907,6 +925,7 @@ export async function executeRun(
         picked?.url ?? opts?.baseUrl ?? null,
         picked?.headers ?? null,
         opts?.side ?? null,
+        picked?.name ?? null,
       );
       if (!ctx) return;
       try {
@@ -1026,8 +1045,19 @@ export async function executeAbRun(aId: number, bId: number, emit: Emit, signal?
     const ctxs: (RunCtx | null)[] = [];
     try {
       const sides: agent.FlowSide[] = ["a", "b"];
+      // 데이터셋 A/B 는 요청에 엔드포인트가 없다 — 두 사이드가 config.yml 의
+      // agent.a / agent.b 를 각각 부른다. 그 둘을 여기서 풀어 두는 건 호출 주소를
+      // 바꾸려는 게 아니라(외부 호출은 지금까지처럼 side 로 정해진다) 실행 행에
+      // 어디로 갔는지를 남기기 위해서다.
+      const cfgSides = await Promise.all([
+        resolveEndpoint(CONFIG_ENDPOINT_A),
+        resolveEndpoint(CONFIG_ENDPOINT_B),
+      ]);
       for (const [i, id] of [aId, bId].entries()) {
-        ctxs.push(await setupRun(conn, oracle, id, emit, null, null, sides[i]));
+        const cfg = cfgSides[i];
+        ctxs.push(
+          await setupRun(conn, oracle, id, emit, null, null, sides[i], cfg?.name ?? null, cfg?.url ?? null),
+        );
       }
       // Phase 1 — answers for A, then B (each under its own active-prompt swap).
       for (const ctx of ctxs) {

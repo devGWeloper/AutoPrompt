@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Select } from '@/components/ui/Field';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import { parseModelSnapshot } from '@/lib/modelSnapshot';
+import { formatModelSnapshot, parseModelSnapshot } from '@/lib/modelSnapshot';
 import {
   ALL_METRICS,
   EXACT_MATCH,
@@ -271,7 +271,23 @@ export interface RunTitleFields {
   first_question: string | null;
   is_manual: boolean;
   model_snapshot: string | null;
+  endpoint_nm: string | null;
+  endpoint_url: string | null;
   metrics: string | null;
+}
+
+/** 이 실행이 부른 API 를 한 조각으로. 등록 목록에서 골랐으면 그 이름이고, 직접
+ * URL 로 불렀으면 host 만 — 목록 한 칸에 전체 URL 을 늘어놓을 수는 없고, 어디로
+ * 갔는지를 가르는 건 host 다. 전체 주소는 셀 툴팁이 들고 있다. */
+function endpointText(r: RunTitleFields): string | null {
+  if (r.endpoint_nm) return r.endpoint_nm;
+  if (!r.endpoint_url) return null;
+  try {
+    return new URL(r.endpoint_url).host;
+  } catch {
+    // 스킴 없이 저장된 값 — 등록 시 막고 있지만, 그때는 적힌 그대로 보여준다.
+    return r.endpoint_url;
+  }
 }
 
 /** 폴더를 고르지 않은 실행은 TYPE_CD 가 비어 있다 — 데이터셋 전체를 돌렸다는
@@ -293,6 +309,17 @@ function modelText(snapshot: string | null): string | null {
   const names = pinnedModels(snapshot);
   if (!names.length) return null;
   return `${names[0]}${names.length > 1 ? ` 외 ${names.length - 1}` : ''}`;
+}
+
+/** 서브라인에 적을 역할별 모델 조합. 역할이 하나뿐이고 temperature 도 안 걸었으면
+ * 대상 줄의 모델 이름이 이미 그 전부라, 여기서는 아무것도 적지 않는다 — 안 그러면
+ * `… · gpt-4o` 바로 아래에 `LLM=gpt-4o` 가 한 번 더 선다. */
+export function runModelDetail(snapshot: string | null): string | null {
+  const parsed = parseModelSnapshot(snapshot);
+  if (!parsed) return null;
+  const entries = Object.values(parsed);
+  if (entries.length === 1 && entries[0].temperature === undefined) return null;
+  return formatModelSnapshot(snapshot);
 }
 
 const QUESTION_MAX = 22;
@@ -327,7 +354,15 @@ export const UNSCORED_LABEL = '채점 없음';
 export function runTitleParts(
   r: RunTitleFields,
   b?: RunTitleFields | null,
-): { subject: string; scope: string | null; unscored: boolean } {
+): {
+  subject: string;
+  /** 대상 줄에 마우스를 올렸을 때 나올 전체 주소. 대상이 곧 엔드포인트인 실행에만
+   * 있다 — 목록에는 이름(또는 host)만 서고, 전체 URL 은 여기서 확인한다. */
+  subjectHint: string | null;
+  scope: string | null;
+  count: string | null;
+  unscored: boolean;
+} {
   // ---- 변인
   const ma = modelText(r.model_snapshot);
   const mb = b ? modelText(b.model_snapshot) : null;
@@ -335,33 +370,57 @@ export function runTitleParts(
   // 비교라 제목에 적을 값이 없고, 그때 남는 축은 사이드 이름뿐이다.
   const modelArrow = b && ma !== mb ? `${ma ?? '기본값'} → ${mb ?? '기본값'}` : null;
 
+  // 한 건짜리 실행에서 모델을 고정했으면 그것도 시험한 축이라 대상에 적는다.
+  // 버전을 그대로 두고 모델만 바꿔 돌린 두 실행은 이게 없으면 대상도 데이터도
+  // 똑같아 보인다 — A/B 는 화살표로 크게 적으면서 한 건은 숨길 이유가 없다.
+  // 고정하지 않은 실행에는 붙을 값이 없어서 대부분의 행은 그대로다.
+  const pin = !b && ma ? ` · ${ma}` : '';
+
   let subject: string;
+  let subjectHint: string | null = null;
   if (r.is_manual) {
-    subject = b ? `직접 입력 · ${modelArrow ?? 'A vs B'}` : '직접 입력';
+    subject = b ? `직접 입력 · ${modelArrow ?? 'A vs B'}` : `직접 입력${pin}`;
   } else if (r.node_nm) {
     const va = `v${r.version_no ?? '—'}`;
     const vb = b ? `v${b.version_no ?? '—'}` : null;
     // 버전이 갈린 A/B 는 그게 시험한 축이라 화살표가 버전에 붙고, 버전을 양쪽
     // 똑같이 두고 모델만 바꾼 A/B 는 화살표가 모델로 내려간다.
-    if (!b) subject = `${r.node_nm} ${va}`;
+    if (!b) subject = `${r.node_nm} ${va}${pin}`;
     else if (vb !== va) subject = `${r.node_nm} ${va} → ${vb}`;
     else subject = `${r.node_nm} ${va} · ${modelArrow ?? 'A vs B'}`;
   } else if (b) {
-    subject = modelArrow ?? 'Default · A vs B';
+    // 프롬프트도 모델도 안 건드린 A/B 는 등록된 API 끼리의 비교다. 그러니 갈린
+    // 축은 엔드포인트고, 그 둘의 이름이 곧 제목이다.
+    const ea = endpointText(r);
+    const eb = endpointText(b);
+    if (!modelArrow && ea && eb && ea !== eb) {
+      subject = `${ea} → ${eb}`;
+      subjectHint = [r.endpoint_url, b.endpoint_url].filter(Boolean).join(' → ') || null;
+    } else {
+      subject = modelArrow ?? 'Default · A vs B';
+    }
   } else {
-    subject = ma ? `Model · ${ma}` : 'Default';
+    // 아무것도 바꾸지 않은 실행에 남는 유일한 변인이 '어디로 보냈나'다. 예전에는
+    // 이 자리가 전부 'Default' 라, 서로 다른 Agent 를 부른 실행들이 한 글자도
+    // 다르지 않았다. 엔드포인트를 기록하기 전의 실행은 여전히 'Default' 다.
+    const ep = ma ? null : endpointText(r);
+    subject = ma ? `Model · ${ma}` : ep ?? 'Default';
+    if (ep) subjectHint = r.endpoint_url;
   }
 
   // ---- 모수
   let scope: string | null;
+  let count: string | null = null;
   if (r.is_manual) {
     const q = r.first_question?.trim();
     scope = q ? `"${q.length > QUESTION_MAX ? `${q.slice(0, QUESTION_MAX)}…` : q}"` : null;
   } else {
     // 데이터셋과 폴더는 슬래시로 붙인다. 띄어쓰기만으로 두면 '고객상담셋 요약'이
     // 한 낱말처럼 읽혀서, 슬롯을 가르는 가운뎃점과 급이 헷갈린다.
-    const where = `${r.dataset_nm ?? '—'}/${runFolder(r.case_type)}`;
-    scope = r.case_count != null ? `${where} ${r.case_count}건` : where;
+    scope = `${r.dataset_nm ?? '—'}/${runFolder(r.case_type)}`;
+    // 건수는 따로 돌려준다. 한 문자열로 붙여 두면 칸이 좁을 때 오른쪽 끝인
+    // 건수부터 잘려 나가는데, 모수가 5건인지 24건인지는 잘려선 안 되는 값이다.
+    count = r.case_count != null ? `${r.case_count}건` : null;
   }
 
   // ---- 채점 여부
@@ -375,13 +434,13 @@ export function runTitleParts(
     }
   })();
 
-  return { subject, scope, unscored };
+  return { subject, subjectHint, scope, count, unscored };
 }
 
-/** 두 칸을 한 줄로 이어붙인 것 — 검색이 쓴다. 화면에 이렇게 서는 자리는 없다. */
+/** 한 줄로 이어붙인 것 — 검색이 쓴다. 화면에 이렇게 서는 자리는 없다. */
 export function runTitle(r: RunTitleFields, b?: RunTitleFields | null): string {
-  const { subject, scope, unscored } = runTitleParts(r, b);
-  return [subject, scope, unscored ? UNSCORED_LABEL : null].filter(Boolean).join(' · ');
+  const { subject, scope, count, unscored } = runTitleParts(r, b);
+  return [subject, scope, count, unscored ? UNSCORED_LABEL : null].filter(Boolean).join(' · ');
 }
 
 // ---- run progress ----------------------------------------------------------

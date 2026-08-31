@@ -83,6 +83,10 @@ CREATE TABLE PTX_RUN_MAS (
     JUDGE_PROVIDER_CD    VARCHAR2(50),
     JUDGE_MODEL_NM       VARCHAR2(100),
     MODEL_CTN            CLOB,
+    -- 이 실행이 부른 API. 등록 목록이 나중에 바뀌어도 지난 실행이 가리키던 곳은
+    -- 그대로여야 하므로 ID 가 아니라 스냅샷으로 남긴다 (DATASET_NM 과 같은 이유).
+    ENDPOINT_NM          VARCHAR2(100),
+    ENDPOINT_URL         VARCHAR2(500),
     METRIC_CTN           CLOB,
     ENGINE_CD            VARCHAR2(20),
     ERROR_CTN            CLOB,

@@ -325,6 +325,12 @@ export interface RagasRunOut {
   /** PTX_MODEL_MAS as it stood when this run started, JSON (see lib/modelSnapshot).
    * null = nothing was pinned, so the agent ran its own config. */
   model_snapshot: string | null;
+  /** 이 실행이 부른 API. 등록 목록에서 고른 것이면 그 이름의 스냅샷 — 등록이
+   * 나중에 바뀌거나 지워져도 지난 실행이 가리키던 곳은 그대로 남는다. 직접 URL 로
+   * 부른 실행에는 이름이 없다. */
+  endpoint_nm: string | null;
+  /** 실제로 호출한 주소. 두 컬럼이 생기기 전의 실행은 둘 다 null 이다. */
+  endpoint_url: string | null;
   exact_match: number | null;
   faithfulness: number | null;
   answer_relevancy: number | null;
@@ -360,6 +366,9 @@ export interface RagasRunSummary {
   status: string;
   engine: string | null;
   model_snapshot: string | null;
+  /** 어느 API 로 보냈나 — 아무것도 바꾸지 않은 실행(Default)을 서로 가르는 값. */
+  endpoint_nm: string | null;
+  endpoint_url: string | null;
   exact_match: number | null;
   faithfulness: number | null;
   answer_relevancy: number | null;

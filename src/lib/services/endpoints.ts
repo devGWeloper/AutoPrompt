@@ -61,14 +61,19 @@ export async function selectableEndpoints(): Promise<Endpoint[]> {
  * which the caller turns into a plain error rather than a silent config call. */
 export async function resolveEndpoint(
   id: number | null | undefined,
-): Promise<{ url: string; headers: EndpointHeader[] } | null> {
+): Promise<{ name: string; url: string; headers: EndpointHeader[] } | null> {
   if (id === null || id === undefined) return null;
   if (id < 0) {
     const e = configEndpoint(id);
-    return e ? { url: e.endpoint_url, headers: e.headers } : null;
+    return e ? { name: e.endpoint_nm, url: e.endpoint_url, headers: e.headers } : null;
   }
   const found = (await listEndpoints()).find((e) => e.endpoint_id === id);
-  return found ? { url: found.endpoint_url, headers: found.headers } : null;
+  // 이름도 같이 나간다 — 실행 행이 이걸 스냅샷으로 적어 두고, 기록 목록이 '어느
+  // API 로 보냈나'를 그 이름으로 말한다. 등록 목록이 나중에 바뀌어도 지난 실행이
+  // 가리키던 곳은 그대로 남아야 한다 (DATASET_NM 과 같은 이유).
+  return found
+    ? { name: found.endpoint_nm, url: found.endpoint_url, headers: found.headers }
+    : null;
 }
 
 function name(v: string | null | undefined): string {

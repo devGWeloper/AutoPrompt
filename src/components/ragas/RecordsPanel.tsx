@@ -14,7 +14,7 @@ import { CaseCompareTable } from './CompareTable';
 import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import {
   CaseTable, DownloadIcon, fmt2, fmt3, fmtDt, folderLabel, hasTextSelection, runMean, runTargetLabel,
-  runTitle, runTitleParts, scoredMetrics, SegToggle, sideLabel, TrashIcon, UNSCORED_LABEL,
+  runModelDetail, runTitle, runTitleParts, scoredMetrics, SegToggle, sideLabel, TrashIcon, UNSCORED_LABEL,
 } from './shared';
 
 const API_BASE = '/api';
@@ -78,15 +78,32 @@ function TypeText({ t }: { t: Exclude<RunTypeFilter, 'all'> }) {
 /** 대상 칸의 첫 줄 — 이 실행에서 시험한 것 하나. 한 덩어리라 굵기도 하나다.
  * 무엇으로 쟀는지는 옆 데이터 칸이 받는다: 같은 노드로 여러 번 돌린 기록이
  * 세로로 맞아떨어져야 눈이 그 열을 건너뛰고 갈리는 열로 갈 수 있다. */
-function SubjectLine({ text }: { text: string }) {
-  return <div className="truncate text-sm font-medium text-ink" title={text}>{text}</div>;
+function SubjectLine({ text, hint }: { text: string; hint?: string | null }) {
+  // hint 는 대상이 엔드포인트일 때의 전체 URL — 이름만 적힌 줄에 마우스를 올리면
+  // 실제로 어디로 보냈는지가 나온다.
+  return (
+    <div className="truncate text-sm font-medium text-ink" title={hint ?? text}>
+      {text}
+    </div>
+  );
 }
 
-/** 데이터 칸 — 데이터셋/폴더와 건수, 직접 실행이면 물어본 문장. */
-function ScopeCell({ text }: { text: string | null }) {
+/** 데이터 칸 — 데이터셋/폴더와 건수, 직접 실행이면 물어본 문장.
+ *
+ * 대상 칸과 같은 크기·같은 굵기다. 무엇을 시험했는지와 무엇으로 쟀는지는 한쪽이
+ * 다른 쪽의 부연이 아니라 나란한 두 사실이고, 5건짜리 폴더와 24건짜리 전체를
+ * 흐린 잔글씨로 적어 두면 그걸 못 보고 점수를 나란히 놓게 된다. 나머지 칸
+ * (유형·상태·엔진·시각)은 muted 로 남아서, 이 둘이 행의 내용이 된다. */
+function ScopeCell({ text, count }: { text: string | null; count: string | null }) {
   return (
-    <TD className="text-xs text-muted" title={text ?? undefined}>
-      <div className="max-w-[14rem] truncate">{text ?? '—'}</div>
+    <TD title={[text, count].filter(Boolean).join(' ') || undefined}>
+      {/* 건수는 shrink-0 이라 절대 안 잘린다. 한 문자열로 붙여 두면 좁은 칸에서
+          오른쪽 끝인 건수부터 사라지는데, 5건짜리 폴더 실행과 24건짜리 전체 실행을
+          가르는 게 바로 그 값이다. 이름이 길면 이름 쪽이 줄어든다. */}
+      <div className="flex max-w-[16rem] items-baseline gap-1.5 text-sm font-medium text-ink">
+        <span className="truncate">{text ?? '—'}</span>
+        {count && <span className="shrink-0">{count}</span>}
+      </div>
     </TD>
   );
 }
@@ -415,14 +432,14 @@ export default function RecordsPanel() {
                       {/* 서브라인은 대상 칸이 못 담는 것만 받는다: 실행 번호, 역할별
                           모델 조합, 그리고 첫 질문 — 다만 직접 실행의 질문은 옆 데이터
                           칸에 이미 서 있으므로 여기서 다시 적지 않는다. */}
-                      <SubjectLine text={single.subject} />
+                      <SubjectLine text={single.subject} hint={single.subjectHint} />
                       <RunSubline
                         ids={`#${r.ragas_run_id}`}
                         question={r.is_manual ? null : r.first_question}
-                        modelText={formatModelSnapshot(r.model_snapshot)}
+                        modelText={runModelDetail(r.model_snapshot)}
                       />
                     </TD>
-                    <ScopeCell text={single.scope} />
+                    <ScopeCell text={single.scope} count={single.count} />
                     <TD><TypeText t="single" /></TD>
                     <TD><StatusText s={r.status} /></TD>
                     <TD className="text-xs text-muted">{r.engine === 'direct' ? '—' : (r.engine ?? '—')}</TD>
@@ -457,14 +474,14 @@ export default function RecordsPanel() {
                     {/* Single 행과 같은 규칙. 다른 건 대상 칸뿐이다 — 두 사이드가
                         갈린 값을 화살표로 적어서, 이 실행이 무엇과 무엇을 견준
                         것인지가 그 한 줄에서 바로 읽힌다. */}
-                    <SubjectLine text={pair.subject} />
+                    <SubjectLine text={pair.subject} hint={pair.subjectHint} />
                     <RunSubline
                       ids={`#${g.a.ragas_run_id}/#${g.b.ragas_run_id}`}
                       question={g.a.is_manual ? null : g.a.first_question}
                       modelText={formatModelPair(g.a.model_snapshot, g.b.model_snapshot)}
                     />
                   </TD>
-                  <ScopeCell text={pair.scope} />
+                  <ScopeCell text={pair.scope} count={pair.count} />
                   <TD><TypeText t="compare" /></TD>
                   <TD><StatusText s={stat} /></TD>
                   <TD className="text-xs text-muted">{g.b.engine ?? '—'}</TD>
@@ -713,6 +730,14 @@ function RagasRunDetailView({ ragasId }: { ragasId: number }) {
           {/* 폴더가 붙어 있으면 이 실행의 모수는 데이터셋 전체가 아니다.
               그걸 모르고 다른 실행과 점수를 나란히 놓으면 비교가 어긋난다. */}
           {detail.case_type && <Badge tone="neutral">폴더 {folderLabel(detail.case_type)}</Badge>}
+          {/* 목록은 이름(또는 host)까지만 적는다 — 전체 주소가 필요한 자리는 여기다. */}
+          {(detail.endpoint_nm || detail.endpoint_url) && (
+            <Badge tone="neutral">
+              <span title={detail.endpoint_url ?? undefined}>
+                API {detail.endpoint_nm ?? detail.endpoint_url}
+              </span>
+            </Badge>
+          )}
           <span className="ml-auto flex items-center gap-2">
             <ModelStamp text={formatModelSnapshot(detail.model_snapshot)} />
             <span>Engine {detail.engine ?? '—'}</span>

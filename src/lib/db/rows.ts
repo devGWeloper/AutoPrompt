@@ -132,6 +132,8 @@ export const RUN_COLS = [
   "JUDGE_PROVIDER_CD",
   "JUDGE_MODEL_NM",
   "MODEL_CTN",
+  "ENDPOINT_NM",
+  "ENDPOINT_URL",
   ...RUN_SCORE_COLS,
   "ERROR_CTN",
   tsCol("START_TM"),
@@ -270,6 +272,10 @@ export function mapRagasRun(r: Row): RagasRunOut {
     judge_provider: str(r.JUDGE_PROVIDER_CD),
     judge_model: str(r.JUDGE_MODEL_NM),
     model_snapshot: str(r.MODEL_CTN),
+    // 이 실행이 부른 API. 등록 목록에서 고른 것이면 이름이, 직접 URL 로 부른
+    // 것이면 URL 만 남는다. 두 컬럼이 생기기 전의 실행은 둘 다 NULL 이다.
+    endpoint_nm: str(r.ENDPOINT_NM),
+    endpoint_url: str(r.ENDPOINT_URL),
     exact_match: num(r.EXACT_VAL),
     faithfulness: num(r.FAITH_VAL),
     answer_relevancy: num(r.ANS_RELEVANCY_VAL),
@@ -304,6 +310,8 @@ export function mapRagasRunSummary(r: Row): RagasRunSummary {
     status: run.status,
     engine: run.engine,
     model_snapshot: run.model_snapshot,
+    endpoint_nm: run.endpoint_nm,
+    endpoint_url: run.endpoint_url,
     exact_match: run.exact_match,
     faithfulness: run.faithfulness,
     answer_relevancy: run.answer_relevancy,
