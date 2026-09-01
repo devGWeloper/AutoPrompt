@@ -45,12 +45,29 @@ export function errorResponse(e: unknown): NextResponse {
 // ── Outbound calls ────────────────────────────────────────────────────────────
 
 /** Node's `fetch` (undici) runs timers of its own that an `AbortController`
- * never sees: the TCP connect gives up after 10s, headers and body after 300s.
- * So an unreachable endpoint died as a bare "네트워크 오류
- * (UND_ERR_CONNECT_TIMEOUT)" in ~10s even though the configured limit is 90s.
- * Handing `fetch` a dispatcher built from the same number lines every one of
- * those timers up with ours, so 90초 really means 90초. */
+ * never sees: headers and body each have their own limit. Handing `fetch` a
+ * dispatcher built from the configured number lines those up with ours, so the
+ * configured limit really is the limit for *waiting on an answer*. */
 const GLOBAL_DISPATCHER = Symbol.for("undici.globalDispatcher.1");
+
+/**
+ * How long to wait for the TCP connection — deliberately NOT the configured
+ * call timeout.
+ *
+ * Opening a socket to a host that is up takes milliseconds on an internal
+ * network; it does not get slower because the answer will. Tying the two
+ * together meant an address that answers nothing was billed the full response
+ * budget: with the limit at 300s undici was no longer the first to give up, so
+ * the kernel's own SYN retries ended each attempt at ~127s. A ten-case run
+ * spent twenty minutes at a door that was never going to open, and the failure
+ * arrived as a bare "fetch failed" indistinguishable from a slow answer.
+ *
+ * Ten seconds is far past any healthy connect and far short of the kernel's
+ * limit, so an unreachable endpoint is reported as one — by name
+ * (UND_ERR_CONNECT_TIMEOUT), in seconds. The wait for the *response* is
+ * untouched and still gets the full `agent.timeoutSec`.
+ */
+const CONNECT_TIMEOUT_MS = 10_000;
 
 type AgentCtor = new (opts: Record<string, unknown>) => object;
 
@@ -86,7 +103,8 @@ async function timeoutDispatcher(timeoutMs: number): Promise<object | undefined>
   const Ctor = await getAgentCtor();
   if (!Ctor) return undefined;
   const agent = new Ctor({
-    connect: { timeout: timeoutMs },
+    // Reaching the host, and waiting for what it says, are different waits.
+    connect: { timeout: CONNECT_TIMEOUT_MS },
     headersTimeout: timeoutMs,
     bodyTimeout: timeoutMs,
   });
@@ -95,13 +113,14 @@ async function timeoutDispatcher(timeoutMs: number): Promise<object | undefined>
 }
 
 /**
- * `fetch` under ONE deadline covering the whole call — DNS + connect, the wait
- * for headers, and the body — instead of the three different limits Node
- * applies by default. Defaults to `agent.timeoutSec` (90s): the single knob for
- * every outbound call (chat endpoint, judge LLM, embeddings).
+ * `fetch` under ONE deadline for the answer — the wait for headers and the body
+ * alike — instead of the separate limits Node applies by default. Defaults to
+ * `agent.timeoutSec`: the single knob for every outbound call (chat endpoint,
+ * judge LLM, embeddings). Reaching the host is NOT under this deadline; it has
+ * its own, far shorter one (`CONNECT_TIMEOUT_MS`).
  *
  * Hitting the deadline rejects with `AbortError`; callers turn that into the
- * "응답 시간 초과 (90초)" message.
+ * "응답 시간 초과" message naming the configured limit.
  */
 export async function fetchWithTimeout(
   url: string,
