@@ -34,7 +34,7 @@ db:                       # PTX_* 테이블이 있는 Oracle 접속. 비우면 D
 agent:                    # flow-level RAGAS 답변 생성용 외부 채팅 엔드포인트
   runMode: "stub"         # stub=결정론적 placeholder / external=실제 엔드포인트 호출
   userId: "pm-test"       # 요청자 사번. 본문의 user_id / CUBE_USER_ID 로 나간다
-  timeoutSec: 300         # 호출 1건의 응답 대기 한도(초). 넘기면 그 케이스만 실패로 기록된다
+  timeoutSec: 90          # 호출 1건의 응답 대기 한도(초). 넘기면 그 케이스만 실패로 기록된다
   a:                      # 기본 엔드포인트. 사이드를 안 고르는 실행은 전부 a 를 쓴다
     url: ""
     headers:              # 그대로 실려 나간다. Content-Type 은 코드가 붙임

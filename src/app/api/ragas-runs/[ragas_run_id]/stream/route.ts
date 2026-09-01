@@ -5,12 +5,8 @@ import { intParam } from "@/lib/route-utils";
 import { errorResponse } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
-// Runs can outlast the default; allow the stream to stay open. This is a whole
-// run, not one call: N cases each allowed `agent.timeoutSec` (300s), so it
-// cannot be derived from that number and must simply be far above it. Inert
-// under `next start` (deploy.sh), which enforces no such limit — it matters
-// only if this ever runs somewhere that reads it.
-export const maxDuration = 3600;
+// Runs can outlast the default; allow the stream to stay open.
+export const maxDuration = 300;
 
 export async function GET(req: NextRequest, { params }: { params: { ragas_run_id: string } }) {
   try {

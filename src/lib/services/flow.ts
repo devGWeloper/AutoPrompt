@@ -724,14 +724,8 @@ async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx,
       elapsedMs = Date.now() - startedAt;
       error = true;
       answer = null;
-      // Whatever came back, as it came back: the endpoint's own error body for a
-      // non-2xx, the raw failure otherwise. Nothing is rewritten into a sentence
-      // of ours — a message invented here describes our guess, not their fault.
       errMsg = errorText(e).slice(0, 1000);
-      // The id we issued and staged under, so a node that committed a variable
-      // before dying is still scorable. Read from the call, not decorated onto
-      // the error — the failure carries no id of its own.
-      traceId = callId;
+      traceId = agent.errorTraceId(e);
     }
     // Some nodes are judged on a variable the response never carries — the agent
     // committed it to PTX_TRACE_HIS under this TRACE_ID. A row existing IS the
