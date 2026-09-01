@@ -47,9 +47,9 @@ export function errorResponse(e: unknown): NextResponse {
 /** Node's `fetch` (undici) runs timers of its own that an `AbortController`
  * never sees: the TCP connect gives up after 10s, headers and body after 300s.
  * So an unreachable endpoint died as a bare "네트워크 오류
- * (UND_ERR_CONNECT_TIMEOUT)" in ~10s even though the configured limit is 90s.
+ * (UND_ERR_CONNECT_TIMEOUT)" in ~10s even though the configured limit is far higher.
  * Handing `fetch` a dispatcher built from the same number lines every one of
- * those timers up with ours, so 90초 really means 90초. */
+ * those timers up with ours, so the configured limit really is the limit. */
 const GLOBAL_DISPATCHER = Symbol.for("undici.globalDispatcher.1");
 
 type AgentCtor = new (opts: Record<string, unknown>) => object;
@@ -97,11 +97,11 @@ async function timeoutDispatcher(timeoutMs: number): Promise<object | undefined>
 /**
  * `fetch` under ONE deadline covering the whole call — DNS + connect, the wait
  * for headers, and the body — instead of the three different limits Node
- * applies by default. Defaults to `agent.timeoutSec` (90s): the single knob for
+ * applies by default. Defaults to `agent.timeoutSec`: the single knob for
  * every outbound call (chat endpoint, judge LLM, embeddings).
  *
  * Hitting the deadline rejects with `AbortError`; callers turn that into the
- * "응답 시간 초과 (90초)" message.
+ * "응답 시간 초과" message naming the configured limit.
  */
 export async function fetchWithTimeout(
   url: string,
