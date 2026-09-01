@@ -144,6 +144,14 @@ function parseSse(text: string): AgentAnswer {
  *
  * `ttftMs` is null when the endpoint does not stream — one JSON body has no
  * first token, and its arrival time IS its completion time.
+ *
+ * "Does not stream" is decided by how the body actually arrived, not by the
+ * Content-Type it claimed. A `text/event-stream` reply that sits silent and
+ * then lands whole — a buffering proxy, or an agent that collects every frame
+ * before writing any — reaches the reader as ONE chunk. The first token and the
+ * last byte are then the same event, and timing them apart produces a TTFT that
+ * merely restates the total (both 75.33s, say) while looking like a
+ * measurement. One chunk therefore reports no TTFT at all.
  */
 async function readBodyTimed(resp: Response, startedAt: number, sse: boolean): Promise<{ text: string; ttftMs: number | null }> {
   if (!resp.body) return { text: await resp.text(), ttftMs: null };
@@ -152,10 +160,12 @@ async function readBodyTimed(resp: Response, startedAt: number, sse: boolean): P
   let text = "";
   let pending = ""; // the tail of the last chunk: possibly half a frame
   let ttftMs: number | null = null;
+  let chunks = 0;
   try {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
+      chunks += 1;
       const chunk = decoder.decode(value, { stream: true });
       text += chunk;
       if (!sse || ttftMs !== null) continue;
@@ -175,7 +185,7 @@ async function readBodyTimed(resp: Response, startedAt: number, sse: boolean): P
     reader.releaseLock();
   }
   text += decoder.decode();
-  return { text, ttftMs };
+  return { text, ttftMs: chunks > 1 ? ttftMs : null };
 }
 
 async function parseChatResponse(resp: Response, startedAt: number): Promise<AgentAnswer> {
