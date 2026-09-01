@@ -13,7 +13,7 @@ import {
 } from '@/lib/types';
 import {
   AnswerBox, caseMean, Chevron, CollapseAllStrip, CopyButton, DisclosureHeader, ElapsedTag, fmt3, fmtElapsed,
-  OxBadge, PendingHint, ScoredPreview, sideLabel, TraceValueBox,
+  compareSideLabel, OxBadge, PendingHint, ScoredPreview, TraceValueBox,
 } from './shared';
 import { DiffAgainst, PaneLabel } from './MatchDiff';
 
@@ -39,19 +39,33 @@ function GroundTruthBox({ text }: { text: string }) {
  * be read against the same yardstick instead of against each other by eye.
  */
 function SideBox({
-  label, tone, row, gt,
+  side, label, tone, row, gt, settled,
 }: {
+  side: 'A' | 'B';
   label: string;
   tone: 'neutral' | 'accent';
   row?: RagasResultRow;
   gt: string | null;
+  settled?: boolean;
 }) {
   const scored = row?.trace_value ?? row?.answer ?? null;
   const diffable = gt !== null && scored !== null;
   return (
-    <div className="min-w-0 rounded-sm border border-line bg-surface-2 p-3">
+    // The two panels sit side by side and otherwise look identical, so the side
+    // is carried by the edge of the box as well as by the badge — at a glance
+    // the eye finds the rail, not a two-letter word inside a sentence.
+    <div
+      className={cn(
+        'min-w-0 rounded-sm border border-line border-l-2 bg-surface-2 p-3',
+        tone === 'accent' ? 'border-l-accent' : 'border-l-muted/50',
+      )}
+    >
       <div className="flex items-center gap-2">
-        <Badge tone={tone}>{label}</Badge>
+        <Badge tone={tone}>
+          <span className="font-mono font-semibold">{side}</span>
+          <span className="text-muted-soft">·</span>
+          <span className="truncate">{label}</span>
+        </Badge>
         {row?.exact_match != null && <OxBadge value={row.exact_match} />}
         <span className="ml-auto"><ElapsedTag ms={row?.elapsed_ms} ttft={row?.ttft_ms} /></span>
       </div>
@@ -70,14 +84,14 @@ function SideBox({
           {row?.trace_value && (
             <>
               <p className="mt-3 eyebrow">답변</p>
-              <div className="mt-0.5"><AnswerBox text={row?.answer} error={row?.error_msg} /></div>
+              <div className="mt-0.5"><AnswerBox text={row?.answer} error={row?.error_msg} settled={settled} /></div>
             </>
           )}
         </>
       ) : (
         <>
           {row?.trace_value && <div className="mt-2"><TraceValueBox row={row} /></div>}
-          <div className="mt-2"><AnswerBox text={row?.answer} error={row?.error_msg} /></div>
+          <div className="mt-2"><AnswerBox text={row?.answer} error={row?.error_msg} settled={settled} /></div>
         </>
       )}
     </div>
@@ -241,22 +255,37 @@ function PairedMetricList({ rows }: { rows: MetricRow[] }) {
   );
 }
 
-function CaseScoreBars({ a, b, cancelled }: { a?: RagasResultRow; b?: RagasResultRow; cancelled?: boolean }) {
+function CaseScoreBars({
+  a,
+  b,
+  cancelled,
+  settled,
+}: {
+  a?: RagasResultRow;
+  b?: RagasResultRow;
+  cancelled?: boolean;
+  /** Both runs have reached a terminal state — see `ScoreBars`. */
+  settled?: boolean;
+}) {
   const rows = buildMetricRows(a, b);
   const scored = rows.some((r) => r.av != null || r.bv != null);
 
   if (!scored) {
-    // Stopped before this case was judged — nothing is still on its way.
-    if (cancelled && ![a, b].some((r) => r?.error_msg)) {
-      return (
-        <div className="mt-3 overflow-hidden rounded-sm border border-line bg-surface p-3 text-center text-[11px] text-muted">
-          실행 취소 — 채점하지 않음
-        </div>
-      );
-    }
     // An answer that arrived but has an error carries the scorer's failure — say
     // so rather than leaving the panel on '채점 중…' for the rest of the session.
     const failed = [a, b].filter((r) => r?.answer != null && r?.error_msg).map((r) => r!.error_msg!);
+    // With nothing wrong recorded, only the runs' status can say whether a score
+    // is still on its way. Inferring it from the rows left a finished A/B — a
+    // stopped one, a failed one, or a pair of empty answers — waiting forever.
+    const why = failed.length
+      ? `채점 실패 — ${failed[0]}`
+      : !settled
+        ? '채점 중…'
+        : cancelled
+          ? '실행 취소 — 채점하지 않음'
+          : [a, b].every((r) => r?.answer == null && !r?.error_msg)
+            ? '양쪽 답변이 비어 있음 — 채점하지 않음'
+            : '채점되지 않음';
     return (
       <div
         className={cn(
@@ -264,7 +293,7 @@ function CaseScoreBars({ a, b, cancelled }: { a?: RagasResultRow; b?: RagasResul
           failed.length ? 'text-bad' : 'text-muted',
         )}
       >
-        {failed.length ? `채점 실패 — ${failed[0]}` : '채점 중…'}
+        {why}
       </div>
     );
   }
@@ -298,8 +327,12 @@ export function CaseCompareTable({
 }: {
   detailA: RagasRunDetail;
   detailB: RagasRunDetail;
-  labelA: string;
-  labelB: string;
+  /** Display-ready side name. Omit it and the run itself is asked — which is the
+   * right answer for a saved run, and the only one that works for a model
+   * comparison (no version to read). Passed in only where the detail is
+   * synthesised and carries no run fields: a live stream, a manual call. */
+  labelA?: string;
+  labelB?: string;
   scored?: boolean;
   defaultAllOpen?: boolean;
 }) {
@@ -310,6 +343,13 @@ export function CaseCompareTable({
   // ran without scoring (METRICS='[]'); live streaming passes `scored` directly.
   // Same rule as the single-run table: a stopped pair keeps what it scored.
   const cancelled = detailA.status === 'CANCELLED' || detailB.status === 'CANCELLED';
+  // Settled only once BOTH sides are done — while one is still running the pair
+  // genuinely has scores on the way, and saying otherwise would be premature.
+  const settled = [detailA.status, detailB.status].every(
+    (s) => !['PENDING', 'RUNNING', 'CANCELLING'].includes(s),
+  );
+  const nameA = labelA ?? compareSideLabel(detailA);
+  const nameB = labelB ?? compareSideLabel(detailB);
   const showScores = scored ?? (detailA.metrics !== '[]' && detailB.metrics !== '[]');
   const keys = ids.map((cid) => String(cid));
   const [opened, setOpened] = useState<Set<string>>(() =>
@@ -403,7 +443,7 @@ export function CaseCompareTable({
                       {a?.exact_match == null && b?.exact_match == null && aMean == null && bMean == null && (
                         (a?.error_msg || b?.error_msg)
                           ? <span className="text-[11px] text-bad" title={a?.error_msg ?? b?.error_msg ?? undefined}>오류</span>
-                          : <span className="text-[11px] text-muted">{cancelled ? '채점 안 함' : '채점 중…'}</span>
+                          : <span className="text-[11px] text-muted">{!settled ? '채점 중…' : cancelled ? '채점 안 함' : '점수 없음'}</span>
                       )}
                     </>
                   )}
@@ -414,10 +454,10 @@ export function CaseCompareTable({
               <div className="px-4 pb-3.5 pl-10">
                 {gt && <GroundTruthBox text={gt} />}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <SideBox label={`A · ${sideLabel(labelA)}`} tone="neutral" row={a} gt={gt} />
-                  <SideBox label={`B · ${sideLabel(labelB)}`} tone="accent" row={b} gt={gt} />
+                  <SideBox side="A" label={nameA} tone="neutral" row={a} gt={gt} settled={settled} />
+                  <SideBox side="B" label={nameB} tone="accent" row={b} gt={gt} settled={settled} />
                 </div>
-                {showScores && <CaseScoreBars a={a} b={b} cancelled={cancelled} />}
+                {showScores && <CaseScoreBars a={a} b={b} cancelled={cancelled} settled={settled} />}
               </div>
             )}
           </div>

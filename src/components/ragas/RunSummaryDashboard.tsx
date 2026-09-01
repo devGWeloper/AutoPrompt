@@ -7,7 +7,7 @@ import {
   METRIC_LABELS,
   type RagasRunDetail,
 } from '@/lib/types';
-import { fmt3, OxBadge, runMean, scoredMetrics, sideLabel } from './shared';
+import { compareSideLabel, fmt3, OxBadge, runMean, scoredMetrics } from './shared';
 
 // Card grid width follows the card count so a 정답 일치 only run doesn't leave
 // four empty columns.
@@ -134,9 +134,13 @@ export function CompareSummaryDashboard({
 }: {
   detailA: RagasRunDetail;
   detailB: RagasRunDetail;
-  labelA: string;
-  labelB: string;
+  /** Display-ready side name; omitted, the run says what it varied. The old
+   * wording hard-coded "Version", which a model comparison never was. */
+  labelA?: string;
+  labelB?: string;
 }) {
+  const nameA = labelA ?? compareSideLabel(detailA);
+  const nameB = labelB ?? compareSideLabel(detailB);
   const meanA = runMean(detailA);
   const meanB = runMean(detailB);
   const shownPair = Array.from(new Set([...scoredMetrics(detailA), ...scoredMetrics(detailB)]));
@@ -162,7 +166,7 @@ export function CompareSummaryDashboard({
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Badge tone="neutral">Version A ({sideLabel(labelA)})</Badge>
+              <Badge tone="neutral">A · {nameA}</Badge>
               {winner === 'A' && <Badge tone="accent">🏆 Winner</Badge>}
             </div>
             <ScoreBadge score={meanA} />
@@ -195,7 +199,7 @@ export function CompareSummaryDashboard({
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Badge tone="accent">Version B ({sideLabel(labelB)})</Badge>
+              <Badge tone="accent">B · {nameB}</Badge>
               {winner === 'B' && <Badge tone="accent">🏆 Winner</Badge>}
             </div>
             <div className="flex items-center gap-2">

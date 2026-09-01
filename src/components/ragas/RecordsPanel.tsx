@@ -14,7 +14,7 @@ import { CaseCompareTable } from './CompareTable';
 import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import {
   CaseTable, DownloadIcon, fmt2, fmt3, fmtDt, folderLabel, hasTextSelection, runMean, runTargetLabel,
-  runModelDetail, runTitle, runTitleParts, scoredMetrics, SegToggle, sideLabel, TrashIcon, UNSCORED_LABEL,
+  compareSideLabel, runModelDetail, runTitle, runTitleParts, scoredMetrics, SegToggle, TrashIcon, UNSCORED_LABEL,
 } from './shared';
 
 const API_BASE = '/api';
@@ -614,12 +614,7 @@ function RecordDetailDrawer({
           {isSingle ? (
             <RagasRunDetailView ragasId={group.run.ragas_run_id} />
           ) : (
-            <AbCompareView
-              aId={group.a.ragas_run_id}
-              bId={group.b.ragas_run_id}
-              labelA={group.a.version_no != null ? String(group.a.version_no) : ''}
-              labelB={group.b.version_no != null ? String(group.b.version_no) : ''}
-            />
+            <AbCompareView aId={group.a.ragas_run_id} bId={group.b.ragas_run_id} />
           )}
         </div>
       </aside>
@@ -659,7 +654,7 @@ function RunsPager({
   );
 }
 
-function AbCompareView({ aId, bId, labelA, labelB }: { aId: number; bId: number; labelA: string; labelB: string }) {
+function AbCompareView({ aId, bId }: { aId: number; bId: number }) {
   const [a, setA] = useState<RagasRunDetail | null>(null);
   const [b, setB] = useState<RagasRunDetail | null>(null);
   useEffect(() => {
@@ -669,21 +664,21 @@ function AbCompareView({ aId, bId, labelA, labelB }: { aId: number; bId: number;
   if (!a || !b) return <div className="p-4 text-xs text-muted">불러오는 중…</div>;
   return (
     <div className="space-y-4">
-      <CompareSummaryDashboard detailA={a} detailB={b} labelA={labelA} labelB={labelB} />
+      <CompareSummaryDashboard detailA={a} detailB={b} />
       <div className="overflow-hidden rounded-sm border border-line bg-surface">
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
           <h3 className="mr-1 text-sm font-semibold text-ink">Compare Detail</h3>
           {a.node_nm && <span className="font-medium text-ink">{a.node_nm}</span>}
-          <Badge tone="neutral">A · {sideLabel(labelA)}</Badge>
+          <Badge tone="neutral">A · {compareSideLabel(a)}</Badge>
           <span>vs</span>
-          <Badge tone="accent">B · {sideLabel(labelB)}</Badge>
+          <Badge tone="accent">B · {compareSideLabel(b)}</Badge>
           <span className="ml-auto flex items-center gap-2">
             <ModelStamp text={formatModelPair(a.model_snapshot, b.model_snapshot)} />
             <span>Engine {a.engine ?? '—'}</span>
           </span>
         </div>
         <div className="p-4">
-          <CaseCompareTable detailA={a} detailB={b} labelA={labelA} labelB={labelB} defaultAllOpen={false} />
+          <CaseCompareTable detailA={a} detailB={b} defaultAllOpen={false} />
         </div>
       </div>
     </div>

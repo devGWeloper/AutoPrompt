@@ -498,7 +498,7 @@ export default function ComparePanel() {
                   <CaseCompareTable
                     detailA={manualDetail(ab.a, ab.question, ab.gt)}
                     detailB={manualDetail(ab.b, ab.question, ab.gt)}
-                    labelA={labA} labelB={labB}
+                    labelA={dispLabel(labA)} labelB={dispLabel(labB)}
                     scored={scoreOn}
                     defaultAllOpen
                   />
@@ -543,7 +543,7 @@ export default function ComparePanel() {
                   <CaseCompareTable
                     detailA={{ results: liveA } as RagasRunDetail}
                     detailB={{ results: liveB } as RagasRunDetail}
-                    labelA={labA} labelB={labB}
+                    labelA={dispLabel(labA)} labelB={dispLabel(labB)}
                     scored={scoreOn}
                   />
                 </div>
@@ -557,8 +557,8 @@ export default function ComparePanel() {
           <CompareSummaryDashboard
             detailA={detailA}
             detailB={detailB}
-            labelA={labA}
-            labelB={labB}
+            labelA={dispLabel(labA)}
+            labelB={dispLabel(labB)}
           />
           <Card>
             <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
@@ -574,7 +574,7 @@ export default function ComparePanel() {
             </div>
             <div className="p-4">
               <div className="overflow-hidden rounded-sm border border-line bg-surface">
-                <CaseCompareTable detailA={detailA} detailB={detailB} labelA={labA} labelB={labB} />
+                <CaseCompareTable detailA={detailA} detailB={detailB} labelA={dispLabel(labA)} labelB={dispLabel(labB)} />
               </div>
             </div>
           </Card>

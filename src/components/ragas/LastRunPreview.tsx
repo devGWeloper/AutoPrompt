@@ -8,7 +8,7 @@ import { cn } from '@/lib/cn';
 import type { RagasRunDetail, RagasRunSummary } from '@/lib/types';
 import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import { CaseCompareTable } from './CompareTable';
-import { CaseTable, EmptyState, fmtDt, runTargetTitle, scoredMetrics, sideLabel } from './shared';
+import { CaseTable, compareSideLabel, EmptyState, fmtDt, runTargetTitle, scoredMetrics } from './shared';
 
 /**
  * The most recent finished run of this kind, on the run screen while nothing is
@@ -106,8 +106,6 @@ export default function LastRunPreview({ kind }: { kind: Kind }) {
   }
 
   const head = pick.kind === 'single' ? pick.run : pick.a;
-  const labelA = pick.kind === 'compare' ? pick.a.version_no ?? '' : '';
-  const labelB = pick.kind === 'compare' ? pick.b.version_no ?? '' : '';
   const paired = pick.kind === 'compare' && detailB !== null;
   const ready = detailA !== null && (pick.kind === 'single' || paired);
 
@@ -115,7 +113,7 @@ export default function LastRunPreview({ kind }: { kind: Kind }) {
     <div className="space-y-4">
       {open && ready && detailA && (
         paired && detailB ? (
-          <CompareSummaryDashboard detailA={detailA} detailB={detailB} labelA={labelA} labelB={labelB} />
+          <CompareSummaryDashboard detailA={detailA} detailB={detailB} />
         ) : (
           scoredMetrics(detailA).length > 0 && <SingleRunSummaryDashboard detail={detailA} />
         )
@@ -133,7 +131,7 @@ export default function LastRunPreview({ kind }: { kind: Kind }) {
           <h3 className="mr-1 text-sm font-semibold text-ink">Results Detail</h3>
           <Badge tone={head.status === 'DONE' ? 'ok' : 'neutral'} dot>{head.status}</Badge>
           <span className="truncate text-body-sm text-ink">
-            {pick.kind === 'compare' ? `${sideLabel(labelA)} vs ${sideLabel(labelB)}` : targetLabel(head)}
+            {pick.kind === 'compare' ? `${compareSideLabel(pick.a)} vs ${compareSideLabel(pick.b)}` : targetLabel(head)}
           </span>
           {/* 직접 실행은 화면에 없는 sink 데이터셋으로 기록된다 — 목록과 같이
               입력 종류를 적는다. 무엇을 물었는지는 바로 아래 표가 말한다. */}
@@ -154,13 +152,7 @@ export default function LastRunPreview({ kind }: { kind: Kind }) {
             ) : (
               <div className="overflow-hidden rounded-sm border border-line bg-surface">
                 {paired && detailB ? (
-                  <CaseCompareTable
-                    detailA={detailA}
-                    detailB={detailB}
-                    labelA={labelA}
-                    labelB={labelB}
-                    defaultAllOpen={false}
-                  />
+                  <CaseCompareTable detailA={detailA} detailB={detailB} defaultAllOpen={false} />
                 ) : (
                   <CaseTable detail={detailA} defaultAllOpen={false} />
                 )}

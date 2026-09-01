@@ -235,6 +235,30 @@ export function EvalOptions({ metrics, setMetrics }: { metrics: string[]; setMet
  * 대상 토글과 같은 이름으로 적는다. */
 export const sideLabel = (label: string) => (label ? `v${label}` : 'Default');
 
+/**
+ * 이 사이드가 상대와 무엇이 달라서 이 자리에 있는지 — 한 조각으로 적은 이름.
+ *
+ * 버전 비교는 버전이, 모델 비교는 모델이 다르다. 그런데 모델 비교에는 프롬프트
+ * 버전이 아예 없어서, 버전만 읽던 이전 방식은 A·B 양쪽을 똑같이 'Default' 로
+ * 적어 놓았다 — 두 사이드를 가르라고 있는 라벨이 둘을 구별하지 못했다.
+ * 모델은 실행이 스탬프한 MODEL_CTN 에 그대로 남아 있으므로 여기서 꺼내 쓴다.
+ */
+export function compareSideLabel(run: {
+  version_no?: string | null;
+  model_snapshot?: string | null;
+}): string {
+  const v = (run.version_no ?? '').trim();
+  if (v) return `v${v}`;
+  const models = parseModelSnapshot(run.model_snapshot);
+  if (models) {
+    // 여러 role 을 고정했어도 이름은 하나여야 한다 — 나머지는 아래 ModelStamp 가
+    // 전부 적는다. 실제로 모델이 박힌 첫 role 이 그 사이드를 대표한다.
+    const pinned = Object.values(models).find((e) => (e.model ?? '').trim() !== '');
+    if (pinned?.model) return pinned.model.trim();
+  }
+  return 'Default';
+}
+
 /** 이 실행이 무엇을 바꿔서 돌았는지 — 실행 폼의 대상 토글이 쓰는 이름 그대로.
  * 프롬프트 버전을 올린 실행은 노드·버전으로 따로 적히므로 여기서 가르는 것은
  * 나머지 둘이다: 모델을 고정했으면 Model, 아무것도 바꾸지 않았으면 Default. */
@@ -706,8 +730,25 @@ export function PendingHint({ label = '응답 대기 중…', className }: { lab
 }
 
 // Bounded, scrollable answer box.
-export function AnswerBox({ text, error }: { text?: string | null; error?: string | null }) {
-  if (text == null) return error ? <p className="text-sm text-bad">{error}</p> : <PendingHint />;
+export function AnswerBox({
+  text,
+  error,
+  settled,
+}: {
+  text?: string | null;
+  error?: string | null;
+  /** The run is over. An absent answer is then the final answer — an empty one —
+   * not something still arriving, and '대기 중' would be waiting on nothing.
+   * Omitted by callers with no run behind them (a manual call in flight). */
+  settled?: boolean;
+}) {
+  if (text == null) {
+    if (error) return <p className="text-sm text-bad">{error}</p>;
+    // 200 with an empty body reaches here: the endpoint answered and said
+    // nothing. Worth stating plainly — it is a result, and a suspicious one.
+    if (settled) return <p className="text-sm text-muted">답변이 비어 있습니다</p>;
+    return <PendingHint />;
+  }
   return (
     <div className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words pr-1 text-sm leading-relaxed text-ink">
       {text}
@@ -930,24 +971,43 @@ export function ElapsedTag({
   );
 }
 
-export function ScoreBars({ row, cancelled }: { row: RagasResultRow; cancelled?: boolean }) {
+export function ScoreBars({
+  row,
+  cancelled,
+  settled,
+}: {
+  row: RagasResultRow;
+  cancelled?: boolean;
+  /** The run has reached a terminal state — nothing more is coming for this
+   * case. Without it an empty row is indistinguishable from one still being
+   * worked on, which is how a finished run ends up claiming '채점 중…'. */
+  settled?: boolean;
+}) {
   const shown = scoredMetrics(row);
   if (!shown.length) {
-    // A stopped run never reaches this case's scoring, so '채점 중…' would wait
-    // for something that is never coming.
-    if (cancelled && row.answer != null && !row.error_msg) {
-      return <span className="text-[11px] text-muted">실행 취소 — 채점하지 않음</span>;
+    // The scorer's own failure — an answer arrived and the message is about
+    // judging it. Said first: it is the only case here with something to report.
+    if (row.answer != null && row.error_msg) {
+      return <span className="text-[11px] text-bad">채점 실패 — {row.error_msg}</span>;
     }
-    // ERROR_CTN carries both kinds of failure, told apart by whether the answer
-    // arrived: without one the call itself died (and AnswerBox already says so);
-    // with one, the message is the scorer's. Anything else is still in flight —
-    // but a failed scorer is NOT, so it must never sit on '채점 중…' forever.
-    if (row.answer == null) {
-      return <span className="text-[11px] text-muted">{row.error_msg ? '답변 실패 — 채점하지 않음' : '채점 중…'}</span>;
+    // A failed call. AnswerBox already prints the message, so this line only has
+    // to say why there is no score.
+    if (row.error_msg) {
+      return <span className="text-[11px] text-muted">답변 실패 — 채점하지 않음</span>;
     }
-    return row.error_msg
-      ? <span className="text-[11px] text-bad">채점 실패 — {row.error_msg}</span>
-      : <span className="text-[11px] text-muted">채점 중…</span>;
+    // Nothing wrong was recorded, so whether a score is still coming depends
+    // entirely on whether the run is still going. Guessing from the row alone —
+    // as this used to — leaves a finished run sitting on '채점 중…' forever.
+    if (!settled) return <span className="text-[11px] text-muted">채점 중…</span>;
+    if (cancelled) return <span className="text-[11px] text-muted">실행 취소 — 채점하지 않음</span>;
+    // A call that came back 200 with nothing in it. It is not an error anyone
+    // reported, and it is not a pending score — it is an empty answer, which is
+    // its own finding and the one thing the old wording hid.
+    return (
+      <span className="text-[11px] text-muted">
+        {row.answer == null ? '답변이 비어 있음 — 채점하지 않음' : '채점되지 않음'}
+      </span>
+    );
   }
   return (
     <div className="overflow-hidden rounded-sm border border-line bg-surface p-3">
@@ -992,6 +1052,10 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
   // A cancelled run keeps whatever it scored before the stop, so its cases are
   // shown with scores like any other run — the ones that never got there say so.
   const cancelled = detail.status === 'CANCELLED';
+  // Whether anything is still on its way is the run's business, not the row's.
+  // FAILED belongs here as much as DONE: a run that died mid-way is just as
+  // finished, and reading only CANCELLED left those rows waiting forever.
+  const settled = !['PENDING', 'RUNNING', 'CANCELLING'].includes(detail.status);
   const showScores = scored ?? (detail.engine !== 'direct' && detail.metrics !== '[]');
   const ids = detail.results.map((r) => r.ragas_result_id);
   const [opened, setOpened] = useState<Set<number>>(() =>
@@ -1038,7 +1102,7 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
                   {r.exact_match == null && mean == null && (
                     r.error_msg
                       ? <span className="text-[11px] text-bad" title={r.error_msg}>오류</span>
-                      : <span className="text-[11px] text-muted">{cancelled ? '채점 안 함' : '채점 중…'}</span>
+                      : <span className="text-[11px] text-muted">{!settled ? '채점 중…' : cancelled ? '채점 안 함' : '점수 없음'}</span>
                   )}
                   {/* A row that scored *something* can still have a failed metric
                       behind it — the badge above would otherwise read as success. */}
@@ -1062,10 +1126,10 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
                       <p className="eyebrow">답변</p>
                       <ElapsedTag ms={r.elapsed_ms} ttft={r.ttft_ms} />
                     </div>
-                    <div className="mt-0.5"><AnswerBox text={r.answer} error={r.error_msg} /></div>
+                    <div className="mt-0.5"><AnswerBox text={r.answer} error={r.error_msg} settled={settled} /></div>
                   </div>
                 )}
-                {showScores && <ScoreBars row={r} cancelled={cancelled} />}
+                {showScores && <ScoreBars row={r} cancelled={cancelled} settled={settled} />}
               </div>
             )}
           </div>
