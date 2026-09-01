@@ -126,6 +126,10 @@ CREATE TABLE PTX_RUN_DET (
     -- 에이전트 호출 1건에 걸린 시간(ms). 채점 시간은 빠져 있고, 타임아웃으로
     -- 끊긴 케이스에도 끊길 때까지의 시간이 남는다.
     ELAPSED_MS           NUMBER,
+    -- 요청 → 답변의 첫 토큰 도착까지(ms). ELAPSED_MS 와 달리 생성 시간이 빠져
+    -- 있어 큐 대기 + prefill 만 남는다. 스트리밍(text/event-stream) 응답에만
+    -- 값이 있고, 한 덩어리로 답하는 엔드포인트에서는 NULL 이다.
+    TTFT_MS              NUMBER,
     CRT_TM               TIMESTAMP DEFAULT SYSTIMESTAMP,
     CONSTRAINT FK_PTX_RUN_DET_MAS FOREIGN KEY (RUN_ID)
         REFERENCES PTX_RUN_MAS(RUN_ID) ON DELETE CASCADE,

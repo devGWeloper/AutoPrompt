@@ -21,6 +21,7 @@ const out = (r: DirectRunResult) => ({
   scores: r.scores,
   score_error: r.score_error,
   elapsed_ms: r.elapsed_ms,
+  ttft_ms: r.ttft_ms,
 });
 
 export async function POST(req: Request) {

@@ -60,6 +60,8 @@ type ManualSide = {
   scores: Partial<Record<RagasMetric, number | null>> | null;
   score_error: string | null;
   elapsed_ms: number;
+  /** Request → first token, in ms. null unless the endpoint streamed. */
+  ttft_ms: number | null;
 };
 
 /** Wrap one manual answer as the single-case run detail `CaseCompareTable`
@@ -82,6 +84,7 @@ function manualDetail(side: ManualSide, question: string, groundTruth: string | 
     trace_var_nm: null,
     trace_value: null,
     elapsed_ms: side.elapsed_ms,
+    ttft_ms: side.ttft_ms,
     ...metricVals,
   } as RagasResultRow;
   return { status: 'DONE', results: [row] } as RagasRunDetail;

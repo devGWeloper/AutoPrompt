@@ -884,16 +884,48 @@ export function fmtElapsed(ms: number | null | undefined): string | null {
   return `${(ms / 1000).toFixed(1)}초`;
 }
 
-/** How long the endpoint took to answer this case. Deliberately quiet — it is
- * context for the answer, not a verdict, so it never competes with the score. */
-export function ElapsedTag({ ms, className }: { ms: number | null | undefined; className?: string }) {
+/** TTFT sits well under a second often enough that the one decimal used for
+ * totals would round 0.18 and 0.24 to the same 0.2 — and the gap between those
+ * two is exactly what a congestion reading is made of. */
+export function fmtTtft(ms: number | null | undefined): string | null {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return null;
+  return `${(ms / 1000).toFixed(2)}초`;
+}
+
+/**
+ * How long the endpoint took on this case: first token, then the whole answer.
+ *
+ * The two are different measurements, so neither replaces the other. The total
+ * carries generation time and therefore moves with how long the answer ran; the
+ * first-token time stops before any of that and holds the queue wait. Only a
+ * streaming endpoint has the first number — without it this renders exactly as
+ * it always did, a single total.
+ */
+export function ElapsedTag({
+  ms,
+  ttft,
+  className,
+}: {
+  ms: number | null | undefined;
+  ttft?: number | null;
+  className?: string;
+}) {
   const text = fmtElapsed(ms);
-  if (text === null) return null;
+  const first = fmtTtft(ttft);
+  if (text === null && first === null) return null;
   return (
     <span
       className={cn('shrink-0 font-mono text-[11px] tabular-nums text-muted', className)}
+      title={first !== null ? `첫 토큰 ${first} · 전체 ${text ?? '—'}` : undefined}
     >
-      {text}
+      {first !== null && (
+        <>
+          <span className="font-sans text-[9px] font-semibold uppercase tracking-[0.6px] text-muted-soft">TTFT</span>
+          <span className="ml-1 text-ink">{first}</span>
+          <span className="mx-1 text-muted-soft">·</span>
+        </>
+      )}
+      {text ?? '—'}
     </span>
   );
 }
@@ -991,7 +1023,7 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
                 </span>
               )}
               {isClosed && <ScoredPreview row={r} className="mt-0.5 min-w-0 flex-1" />}
-              {isClosed && <ElapsedTag ms={r.elapsed_ms} className="mt-0.5" />}
+              {isClosed && <ElapsedTag ms={r.elapsed_ms} ttft={r.ttft_ms} className="mt-0.5" />}
               {isClosed && showScores && (
                 <span className="flex shrink-0 items-center gap-2">
                   {/* O/X and the RAGAS mean stand on their own — a verdict and a
@@ -1028,7 +1060,7 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
                   <div className="min-w-0">
                     <div className="flex items-baseline justify-between gap-2">
                       <p className="eyebrow">답변</p>
-                      <ElapsedTag ms={r.elapsed_ms} />
+                      <ElapsedTag ms={r.elapsed_ms} ttft={r.ttft_ms} />
                     </div>
                     <div className="mt-0.5"><AnswerBox text={r.answer} error={r.error_msg} /></div>
                   </div>

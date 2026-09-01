@@ -2,6 +2,7 @@
 // rows as objects with UPPERCASE column keys (see db.ts outFormat); CLOBs come
 // back as strings and timestamps are TO_CHAR'd to ISO strings in the SELECTs.
 
+import { hasColumn } from "@/lib/db/optionalColumn";
 import { DIRECT_SINK_NM } from "@/lib/types";
 import type {
   ActivePrompt,
@@ -156,6 +157,19 @@ export const RESULT_COLS = [
   "TRACE_CTN",
   "ELAPSED_MS",
 ].join(", ");
+
+/**
+ * RESULT_COLS plus TTFT_MS where the database has it.
+ *
+ * The column arrives by migration (`sql/migrate_ttft_ms.sql`), and naming it in
+ * a SELECT against a database without it fails the whole query with ORA-00904.
+ * Reading the catalogue once (cached per process) keeps every screen working on
+ * both, with TTFT simply absent until the migration runs — `num(undefined)` is
+ * null, so `mapRagasResult` needs no branch of its own.
+ */
+export async function resultCols(conn: OracleConnection): Promise<string> {
+  return (await hasColumn(conn, "PTX_RUN_DET", "TTFT_MS")) ? `${RESULT_COLS}, TTFT_MS` : RESULT_COLS;
+}
 
 export const MODEL_COLS = [
   "MODEL_ID",
@@ -345,6 +359,9 @@ export function mapRagasResult(r: Row): RagasResultRow {
     trace_value: str(r.TRACE_CTN),
     // null on rows written before the column existed — the UI just shows nothing.
     elapsed_ms: num(r.ELAPSED_MS),
+    // Also null when the endpoint did not stream this call: no first token, so
+    // nothing to time. Absent entirely until the migration runs.
+    ttft_ms: num(r.TTFT_MS),
   };
 }
 

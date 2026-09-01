@@ -13,7 +13,7 @@ import {
 } from '@/lib/types';
 import {
   AnswerBox, caseMean, Chevron, CollapseAllStrip, CopyButton, DisclosureHeader, ElapsedTag, fmt3, fmtElapsed,
-  OxBadge, PendingHint, ScoredPreview, sideLabel, TraceValueBox,
+  fmtTtft, OxBadge, PendingHint, ScoredPreview, sideLabel, TraceValueBox,
 } from './shared';
 import { DiffAgainst, PaneLabel } from './MatchDiff';
 
@@ -53,7 +53,7 @@ function SideBox({
       <div className="flex items-center gap-2">
         <Badge tone={tone}>{label}</Badge>
         {row?.exact_match != null && <OxBadge value={row.exact_match} />}
-        <span className="ml-auto"><ElapsedTag ms={row?.elapsed_ms} /></span>
+        <span className="ml-auto"><ElapsedTag ms={row?.elapsed_ms} ttft={row?.ttft_ms} /></span>
       </div>
       {diffable ? (
         <>
@@ -84,26 +84,60 @@ function SideBox({
   );
 }
 
-/** Both sides' response times on one line, in the same A · B shape the score
- * badges use. Shown for unscored runs too — speed is a comparison of its own,
- * and on an A/B it is often the only difference the two endpoints have. */
-function ElapsedPair({ a, b }: { a?: RagasResultRow; b?: RagasResultRow }) {
-  const ta = fmtElapsed(a?.elapsed_ms);
-  const tb = fmtElapsed(b?.elapsed_ms);
+/** One timing measure across both sides, in the same A · B shape the score
+ * badges use. Faster is inked — but only when both sides have a number, or the
+ * ink would mark a lone value as if it had beaten something. */
+function TimingPair({
+  label,
+  title,
+  va,
+  vb,
+  fmt,
+}: {
+  label: string;
+  title?: string;
+  va: number | null | undefined;
+  vb: number | null | undefined;
+  fmt: (v: number | null | undefined) => string | null;
+}) {
+  const ta = fmt(va);
+  const tb = fmt(vb);
   if (ta === null && tb === null) return null;
-  // Faster wins — but only when both sides answered, or the ink would mark a
-  // lone time as if it had beaten something.
-  const both = a?.elapsed_ms != null && b?.elapsed_ms != null;
-  const aWins = both && a!.elapsed_ms! < b!.elapsed_ms!;
-  const bWins = both && b!.elapsed_ms! < a!.elapsed_ms!;
+  const both = va != null && vb != null;
+  const aWins = both && va! < vb!;
+  const bWins = both && vb! < va!;
   return (
-    <div className="flex items-center gap-1.5 font-mono text-[11px] tabular-nums text-muted">
-      <span className="font-sans text-[10px] font-semibold uppercase tracking-[0.6px]">시간</span>
+    <div className="flex items-center gap-1.5 font-mono text-[11px] tabular-nums text-muted" title={title}>
+      <span className="font-sans text-[10px] font-semibold uppercase tracking-[0.6px]">{label}</span>
       <span>
         <span className={cn(aWins && 'font-semibold text-ink')}>A {ta ?? '—'}</span>
         {' · '}
         <span className={cn(bWins && 'font-semibold text-ink')}>B {tb ?? '—'}</span>
       </span>
+    </div>
+  );
+}
+
+/**
+ * Both sides' timings. Shown for unscored runs too — speed is a comparison of
+ * its own, and on an A/B it is often the only difference the two sides have.
+ *
+ * TTFT sits above the total because the two can disagree, and when they do the
+ * disagreement is the finding: a side that wins on TTFT but loses on total was
+ * not busier, it just said more. Only streaming endpoints produce the first
+ * line; without it this is the single total row it has always been.
+ */
+function ElapsedPair({ a, b }: { a?: RagasResultRow; b?: RagasResultRow }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <TimingPair
+        label="TTFT"
+        title="요청 → 첫 토큰. 생성 시간이 빠져 있어 큐 대기가 그대로 드러난다."
+        va={a?.ttft_ms}
+        vb={b?.ttft_ms}
+        fmt={fmtTtft}
+      />
+      <TimingPair label="시간" title="요청 → 답변 완료" va={a?.elapsed_ms} vb={b?.elapsed_ms} fmt={fmtElapsed} />
     </div>
   );
 }

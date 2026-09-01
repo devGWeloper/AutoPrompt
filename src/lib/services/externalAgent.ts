@@ -55,6 +55,12 @@ export interface AgentAnswer {
   raw?: Record<string, unknown> | unknown[] | string;
   /** TRACE_ID sent with this call — the key the agent writes PTX_TRACE_HIS under. */
   traceId?: string;
+  /** Request sent → first token of the answer arrived, in ms. Only a streaming
+   * (text/event-stream) reply has one: it is the part of the wait that happens
+   * before any of the answer is written, so it holds queue time and drops the
+   * generation time that makes the total depend on how long the answer got.
+   * null when the endpoint answered in a single body. */
+  ttftMs?: number | null;
 }
 
 /** Failures carry the TRACE_ID too: a node can commit its captured variable and
@@ -99,33 +105,92 @@ function collectTxt(obj: unknown, out: string[]): void {
   }
 }
 
+/** The answer text carried by ONE `data:` line — "" when the line carries none
+ * (a keep-alive, `[DONE]`, or a frame whose payload is metadata rather than
+ * text). Shared so the incremental read and the final parse agree on what
+ * counts as answer text; TTFT is defined as the first line this returns
+ * something for. */
+function sseLineText(line: string): string {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("data:")) return "";
+  const payload = trimmed.slice("data:".length).trim();
+  if (!payload || payload === "[DONE]") return "";
+  let obj: unknown;
+  try {
+    obj = JSON.parse(payload);
+  } catch {
+    try {
+      obj = JSON.parse(`[${payload}]`);
+    } catch {
+      return "";
+    }
+  }
+  const parts: string[] = [];
+  collectTxt(obj, parts);
+  return parts.join("");
+}
+
 /** Aggregate a text/event-stream reply into {response, docs, raw}. */
 function parseSse(text: string): AgentAnswer {
   const parts: string[] = [];
-  for (let line of text.split(/\r?\n/)) {
-    line = line.trim();
-    if (!line.startsWith("data:")) continue;
-    const payload = line.slice("data:".length).trim();
-    if (!payload || payload === "[DONE]") continue;
-    let obj: unknown;
-    try {
-      obj = JSON.parse(payload);
-    } catch {
-      try {
-        obj = JSON.parse(`[${payload}]`);
-      } catch {
-        continue;
-      }
-    }
-    collectTxt(obj, parts);
+  for (const line of text.split(/\r?\n/)) {
+    const t = sseLineText(line);
+    if (t !== "") parts.push(t);
   }
   return { response: parts.join(""), docs: [], raw: text };
 }
 
-async function parseChatResponse(resp: Response): Promise<AgentAnswer> {
+/**
+ * The response body, plus when its first token of answer text arrived.
+ *
+ * `resp.text()` would be shorter, but it resolves only once the last byte is
+ * in — and by then the moment the answer *started* is gone. Reading the stream
+ * chunk by chunk costs nothing extra and recovers TTFT: request sent → first
+ * token, which is queue wait + prefill without any of the generation time that
+ * dominates the total. The text handed back is byte-for-byte what `text()`
+ * would have produced, so every parser below is unaffected.
+ *
+ * `ttftMs` is null when the endpoint does not stream — one JSON body has no
+ * first token, and its arrival time IS its completion time.
+ */
+async function readBodyTimed(resp: Response, startedAt: number, sse: boolean): Promise<{ text: string; ttftMs: number | null }> {
+  if (!resp.body) return { text: await resp.text(), ttftMs: null };
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  let pending = ""; // the tail of the last chunk: possibly half a frame
+  let ttftMs: number | null = null;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      text += chunk;
+      if (!sse || ttftMs !== null) continue;
+      pending += chunk;
+      const lines = pending.split(/\r?\n/);
+      // A frame torn across two TCP writes is not a token yet; its tail waits
+      // for the rest rather than being parsed as truncated JSON.
+      pending = lines.pop() ?? "";
+      for (const line of lines) {
+        if (sseLineText(line) !== "") {
+          ttftMs = Date.now() - startedAt;
+          break;
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  text += decoder.decode();
+  return { text, ttftMs };
+}
+
+async function parseChatResponse(resp: Response, startedAt: number): Promise<AgentAnswer> {
   const ctype = (resp.headers.get("content-type") ?? "").toLowerCase();
-  const text = await resp.text();
-  if (ctype.includes("text/event-stream")) return parseSse(text);
+  const isSse = ctype.includes("text/event-stream");
+  const { text, ttftMs } = await readBodyTimed(resp, startedAt, isSse);
+  if (isSse) return { ...parseSse(text), ttftMs };
   let data: unknown;
   try {
     data = JSON.parse(text);
@@ -357,10 +422,13 @@ export async function runFlow(
   try {
     url = urlOverride ? ensureDirectUrl(urlOverride) : baseUrl(side);
     ({ body, traceId } = buildPayload(message, null, traceIdIn));
+    // Started here, immediately before the request goes out — URL building and
+    // payload assembly above are ours, and TTFT must not carry them.
+    const startedAt = Date.now();
     const resp = await post(url, body, requestHeaders(side, null, headers));
     if (!resp.ok) throw await httpError(resp, body);
-    const parsed = await parseChatResponse(resp);
-    return { response: parsed.response, docs: parsed.docs, traceId };
+    const parsed = await parseChatResponse(resp, startedAt);
+    return { response: parsed.response, docs: parsed.docs, traceId, ttftMs: parsed.ttftMs ?? null };
   } catch (e) {
     logger.error("chat run failed", {
       side: side ?? null,
@@ -395,9 +463,10 @@ export async function runDirect(args: {
   const url = ensureDirectUrl(args.baseUrl, side);
   const { body, traceId } = buildPayload(args.message, args.userId, args.traceId);
   try {
+    const startedAt = Date.now();
     const resp = await post(url, body, requestHeaders(side, args.authKey, args.headers));
     if (!resp.ok) throw await httpError(resp, body);
-    return { ...(await parseChatResponse(resp)), traceId };
+    return { ...(await parseChatResponse(resp, startedAt)), traceId };
   } catch (e) {
     logger.error("direct call failed", {
       side,

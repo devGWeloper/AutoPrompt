@@ -2,7 +2,7 @@ import { readConn, withConn } from "@/lib/db";
 import type { OracleConnection } from "@/lib/db";
 import { notFound } from "@/lib/http";
 import {
-  RESULT_COLS,
+  resultCols,
   RUN_COLS,
   mapRagasResult,
   mapRagasRun,
@@ -234,7 +234,7 @@ export async function getRunDetail(runId: number): Promise<RagasRunDetail> {
     if (runRows.length === 0) return null;
     const run = mapRagasRun(runRows[0]);
     const resultsRes = await conn.execute(
-      `SELECT ${RESULT_COLS} FROM PTX_RUN_DET WHERE RUN_ID = :id ORDER BY RESULT_ID ASC`,
+      `SELECT ${await resultCols(conn)} FROM PTX_RUN_DET WHERE RUN_ID = :id ORDER BY RESULT_ID ASC`,
       { id: runId },
     );
     const results = ((resultsRes.rows ?? []) as Record<string, unknown>[]).map(mapRagasResult);

@@ -305,6 +305,12 @@ export interface RagasResultRow {
   /** Wall time of the agent call for this case, in ms. Excludes scoring. null on
    * rows written before the column existed, and on synthesised rows. */
   elapsed_ms: number | null;
+  /** Request → first token of this call's answer, in ms. What `elapsed_ms`
+   * cannot separate: it holds the queue wait and prefill, and stops before the
+   * generation time that makes a total depend on how long the answer ran. null
+   * when the endpoint answered in one body (nothing to time), and on every row
+   * written before the column existed. */
+  ttft_ms: number | null;
 }
 
 export interface RagasRunOut {

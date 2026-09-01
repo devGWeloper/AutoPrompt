@@ -74,6 +74,7 @@ WITH expected AS (
   SELECT 'PTX_RUN_DET',          'TRACE_VAR_NM'           FROM dual UNION ALL
   SELECT 'PTX_RUN_DET',          'TRACE_CTN'              FROM dual UNION ALL
   SELECT 'PTX_RUN_DET',          'ELAPSED_MS'             FROM dual UNION ALL
+  SELECT 'PTX_RUN_DET',          'TTFT_MS'                FROM dual UNION ALL
   SELECT 'PTX_RUN_DET',          'CRT_TM'                 FROM dual UNION ALL
   SELECT 'PTX_TRACE_HIS',        'TRACE_ID'               FROM dual UNION ALL
   SELECT 'PTX_TRACE_HIS',        'VAR_NM'                 FROM dual UNION ALL

@@ -109,7 +109,7 @@ export function MatchDiff({ row }: { row: RagasResultRow }) {
       <div className="flex items-center gap-2 border-b border-line bg-surface-2 px-3 py-1.5">
         <span className="eyebrow">채점 대상 · 기대 정답</span>
         {row.exact_match != null && <OxBadge value={row.exact_match} />}
-        <span className="ml-auto"><ElapsedTag ms={row.elapsed_ms} /></span>
+        <span className="ml-auto"><ElapsedTag ms={row.elapsed_ms} ttft={row.ttft_ms} /></span>
       </div>
       <div className="grid divide-y divide-line sm:grid-cols-2 sm:divide-x sm:divide-y-0">
         <Pane

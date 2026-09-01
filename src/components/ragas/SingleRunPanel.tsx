@@ -69,6 +69,8 @@ type DirectResult = {
   score_error: string | null;
   /** How long the endpoint took, in ms. Scoring time is not in it. */
   elapsed_ms: number;
+  /** Request → first token, in ms. null unless the endpoint streamed. */
+  ttft_ms: number | null;
   /** Variable the node captured mid-flow, when it captured one. It is what
    * 정답 일치 was decided on, so it is shown next to the answer. */
   trace_var_nm: string | null;
@@ -85,6 +87,7 @@ function directScoresRow(res: DirectResult): RagasResultRow | null {
     ragas_result_id: 0, ragas_run_id: 0, case_id: null, question: '',
     answer: res.response, contexts: null, ground_truth: null, error_msg: null,
     elapsed_ms: res.elapsed_ms,
+    ttft_ms: res.ttft_ms,
     // Carried through so the score block previews what was judged, not the
     // answer it was not judged on.
     trace_var_nm: res.trace_var_nm, trace_value: res.trace_value,
@@ -437,7 +440,7 @@ export default function SingleRunPanel() {
             <Card>
               <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
                 <h3 className="text-sm font-semibold text-ink">Response</h3>
-                <ElapsedTag ms={callResult.elapsed_ms} />
+                <ElapsedTag ms={callResult.elapsed_ms} ttft={callResult.ttft_ms} />
               </div>
               <div className="p-4">
                 <AnswerBox text={callResult.response} />

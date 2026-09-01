@@ -31,6 +31,7 @@ export async function POST(req: Request) {
       scores: data.scores,
       score_error: data.score_error,
       elapsed_ms: data.elapsed_ms,
+      ttft_ms: data.ttft_ms,
     });
   } catch (e) {
     return errorResponse(e);

@@ -2,6 +2,7 @@ import { readConn, withConn } from "@/lib/db";
 import type { OracleConnection, OracleModule } from "@/lib/db";
 import { ApiError, badRequest, errorText, notFound } from "@/lib/http";
 import { METRIC_COLS, RUN_COLS, insertReturningId, mapRagasRun } from "@/lib/db/rows";
+import { hasColumn } from "@/lib/db/optionalColumn";
 import { ALL_METRICS, DIRECT_SINK_NM, EXACT_MATCH, SYSTEM_USER } from "@/lib/types";
 import type {
   EndpointHeader,
@@ -276,6 +277,8 @@ export interface DirectRunResult extends agent.AgentAnswer {
   trace_value: string | null;
   /** Wall time of the endpoint call, in ms. Scoring is not counted. */
   elapsed_ms: number;
+  /** Request → first token, in ms. null when the endpoint did not stream. */
+  ttft_ms: number | null;
 }
 
 export interface DirectRunArgs {
@@ -316,6 +319,9 @@ export async function recordDirectRun(argsIn: DirectRunArgs): Promise<DirectRunR
   const startedAt = Date.now();
   const data = await callForPrompt({ ...args, traceId: callId });
   const elapsedMs = Date.now() - startedAt;
+  // Timed inside the client, at the first token off the wire — null unless the
+  // endpoint streamed its answer.
+  const ttftMs = data.ttftMs ?? null;
   // Read before scoring: when the node captured a variable, that is what the
   // case is judged on, exactly as in a dataset run.
   const captured = await readConn((conn) => readTraceVar(conn, callId), null);
@@ -380,11 +386,12 @@ export async function recordDirectRun(argsIn: DirectRunArgs): Promise<DirectRunR
         ac: dec("answer_correctness"),
       },
     );
+    const ttftCol = await hasColumn(conn, "PTX_RUN_DET", "TTFT_MS");
     await conn.execute(
       `INSERT INTO PTX_RUN_DET (RUN_ID, CASE_ID, QUESTION_CTN, ANSWER_CTN, CNTX_CTN, TRUTH_CTN, ERROR_CTN, ELAPSED_MS,
-                                    TRACE_ID, TRACE_VAR_NM, TRACE_CTN,
+                                    TRACE_ID, TRACE_VAR_NM, TRACE_CTN,${ttftCol ? " TTFT_MS," : ""}
                                     EXACT_VAL, FAITH_VAL, ANS_RELEVANCY_VAL, CNTX_PRECISION_VAL, CNTX_RECALL_VAL, ANS_CORRECTNESS_VAL)
-       VALUES (:rid, NULL, :q, :a, :ctx, :gt, :err, :el, :tid, :tvar, :tctn, :em, :f, :ar, :cp, :cr, :ac)`,
+       VALUES (:rid, NULL, :q, :a, :ctx, :gt, :err, :el, :tid, :tvar, :tctn,${ttftCol ? " :ttft," : ""} :em, :f, :ar, :cp, :cr, :ac)`,
       {
         rid: runId,
         q: args.message,
@@ -397,6 +404,7 @@ export async function recordDirectRun(argsIn: DirectRunArgs): Promise<DirectRunR
         gt: groundTruth,
         err: scoreErr,
         el: elapsedMs,
+        ...(ttftCol ? { ttft: ttftMs } : {}),
         em,
         f: dec("faithfulness"),
         ar: dec("answer_relevancy"),
@@ -417,13 +425,14 @@ export async function recordDirectRun(argsIn: DirectRunArgs): Promise<DirectRunR
   // silently here would show a blank score block with no reason.
   const trace = { trace_var_nm: captured?.varNm ?? null, trace_value: captured?.ctn ?? null };
   if (!metrics.length) {
-    return { ...data, ...trace, run_id: runId, elapsed_ms: elapsedMs, scores: null, score_error: null };
+    return { ...data, ...trace, run_id: runId, elapsed_ms: elapsedMs, ttft_ms: ttftMs, scores: null, score_error: null };
   }
   return {
     ...data,
     ...trace,
     run_id: runId,
     elapsed_ms: elapsedMs,
+    ttft_ms: ttftMs,
     scores: { ...(scores ?? {}), ...(metrics.includes(EXACT_MATCH) ? { exact_match: em } : {}) },
     score_error: scoreErr,
   };
@@ -539,8 +548,8 @@ async function isCancelRequested(conn: OracleConnection, runId: number, signal?:
 }
 
 async function fetchResultRow(conn: OracleConnection, resultId: number): Promise<RagasResultRow> {
-  const { RESULT_COLS, mapRagasResult } = await import("@/lib/db/rows");
-  const res = await conn.execute(`SELECT ${RESULT_COLS} FROM PTX_RUN_DET WHERE RESULT_ID = :id`, {
+  const { mapRagasResult, resultCols } = await import("@/lib/db/rows");
+  const res = await conn.execute(`SELECT ${await resultCols(conn)} FROM PTX_RUN_DET WHERE RESULT_ID = :id`, {
     id: resultId,
   });
   const rows = (res.rows ?? []) as Record<string, unknown>[];
@@ -699,9 +708,14 @@ async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx,
     // trace read below are ours, not the agent's, and would muddy the number.
     const startedAt = Date.now();
     let elapsedMs: number;
+    // Request → first token, measured inside the client off the live stream.
+    // Stays null when the endpoint answers in one body: there is no first token
+    // to catch, and reporting the total under that name would be a lie.
+    let ttftMs: number | null = null;
     try {
       const data = await agent.flowAnswer(message, ctx.baseUrl, ctx.side, callId, ctx.headers);
       elapsedMs = Date.now() - startedAt;
+      ttftMs = data.ttftMs ?? null;
       answer = data.response;
       traceId = data.traceId ?? null;
       if (!contexts.length && data.docs.length) contexts = data.docs;
@@ -735,12 +749,13 @@ async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx,
         ? exactMatchScore(captured ? captured.ctn : answer, fields.groundTruth, { unwrapBody: !captured })
         : null;
     if (em !== null) ctx.sums[EXACT_MATCH].push(em);
+    const ttftCol = await hasColumn(conn, "PTX_RUN_DET", "TTFT_MS");
     const resultId = await insertReturningId(
       conn,
       oracle,
       `INSERT INTO PTX_RUN_DET (RUN_ID, CASE_ID, QUESTION_CTN, CNTX_CTN, TRUTH_CTN, ANSWER_CTN, ERROR_CTN, EXACT_VAL,
-                                TRACE_ID, TRACE_VAR_NM, TRACE_CTN, ELAPSED_MS)
-       VALUES (:rid, :cid, :q, :ctx, :gt, :a, :err, :em, :tid, :tvar, :tctn, :el) RETURNING RESULT_ID INTO :out_id`,
+                                TRACE_ID, TRACE_VAR_NM, TRACE_CTN, ELAPSED_MS${ttftCol ? ", TTFT_MS" : ""})
+       VALUES (:rid, :cid, :q, :ctx, :gt, :a, :err, :em, :tid, :tvar, :tctn, :el${ttftCol ? ", :ttft" : ""}) RETURNING RESULT_ID INTO :out_id`,
       {
         rid: ctx.runId,
         cid: c.case_id,
@@ -755,6 +770,7 @@ async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx,
         // Snapshot — PTX_TRACE_HIS gets purged on retention, run records do not.
         tctn: captured?.ctn ?? null,
         el: elapsedMs,
+        ...(ttftCol ? { ttft: ttftMs } : {}),
       },
     );
     await conn.commit();
