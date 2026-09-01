@@ -132,6 +132,18 @@ function parseSse(text: string): AgentAnswer {
   return { response: parts.join(""), docs: [], raw: text };
 }
 
+/** Did the stream carry anything at all beyond its closing marker? A `data:`
+ * line that is not `[DONE]` is the endpoint saying something — whether or not
+ * `collectTxt` recognised it as answer text. */
+function sseHasPayload(text: string): boolean {
+  return text.split(/\r?\n/).some((line) => {
+    const t = line.trim();
+    if (!t.startsWith("data:")) return false;
+    const payload = t.slice("data:".length).trim();
+    return payload !== "" && payload !== "[DONE]";
+  });
+}
+
 /**
  * The response body, plus when its first token of answer text arrived.
  *
@@ -192,7 +204,20 @@ async function parseChatResponse(resp: Response, startedAt: number): Promise<Age
   const ctype = (resp.headers.get("content-type") ?? "").toLowerCase();
   const isSse = ctype.includes("text/event-stream");
   const { text, ttftMs } = await readBodyTimed(resp, startedAt, isSse);
-  if (isSse) return { ...parseSse(text), ttftMs };
+  if (isSse) {
+    const parsed = parseSse(text);
+    // The stream spoke, but none of it was answer text. `collectTxt` recognises
+    // exactly one frame shape ({type:"txt"}), so an endpoint reporting a failure
+    // in any other shape — an openAITimeoutError frame, say — used to be dropped
+    // here and handed on as an empty answer: the failure vanished, the case was
+    // scored against "" and recorded an X that read as a wrong answer rather
+    // than as a call that never produced one. Raise what actually arrived; a
+    // frame we cannot read as an answer is not an answer.
+    if (parsed.response === "" && sseHasPayload(text)) {
+      throw new Error(oneLine(text).slice(0, 900));
+    }
+    return { ...parsed, ttftMs };
+  }
   let data: unknown;
   try {
     data = JSON.parse(text);
@@ -288,16 +313,45 @@ function callTimeoutMs(): number {
   return getCallTimeoutMs();
 }
 
+/**
+ * The wire-level code Node buries under "fetch failed". It sits one level down
+ * in `cause`, except when both IPv4 and IPv6 were tried — then `cause` is an
+ * AggregateError and the codes are one level further in.
+ */
+function netCode(e: unknown): string | null {
+  const c = (e as { cause?: unknown }).cause as
+    | { code?: unknown; errors?: { code?: unknown }[] }
+    | undefined;
+  if (typeof c?.code === "string") return c.code;
+  for (const sub of c?.errors ?? []) {
+    if (typeof sub?.code === "string") return sub.code;
+  }
+  return null;
+}
+
 async function post(
   url: string,
   body: unknown,
   headers: Record<string, string>,
   timeoutMs = callTimeoutMs(),
 ): Promise<Response> {
-  // fetchWithTimeout, not fetch: it puts connect/headers/body under this same
-  // deadline. Plain fetch would give up on the connect after Node's own 10s and
-  // report a network error long before the configured limit.
-  return fetchWithTimeout(url, { method: "POST", headers, body: JSON.stringify(body) }, timeoutMs);
+  try {
+    // fetchWithTimeout, not fetch: it puts headers/body under the configured
+    // deadline (the connect gets its own, much shorter one).
+    return await fetchWithTimeout(url, { method: "POST", headers, body: JSON.stringify(body) }, timeoutMs);
+  } catch (e) {
+    // "fetch failed" names nothing: every network failure — never connected,
+    // connected then dropped, TLS refused — arrives under that one sentence,
+    // and the only way left to tell them apart is counting how many seconds
+    // passed. The real reason is a code sitting in `cause`, so it is appended
+    // verbatim. Nothing is translated or invented here; the code is what
+    // actually happened, and `UND_ERR_CONNECT_TIMEOUT` (never reached the host)
+    // vs `ECONNRESET` (reached it, then the connection died) are opposite
+    // diagnoses that this one word separates.
+    const code = netCode(e);
+    if (code && e instanceof Error) e.message = `${e.message} (${code})`;
+    throw e;
+  }
 }
 
 function oneLine(s: string): string {
