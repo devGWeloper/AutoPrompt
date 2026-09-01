@@ -876,18 +876,18 @@ export function OxBadge({ value, rate }: { value: number | null; rate?: boolean 
   );
 }
 
-/** ms → seconds, always. Minutes are never used: a 92초 call sits next to the
- * 90초 timeout on the same scale, which '1분 32초' hides. Tenths stay because
- * the gap between 2.1초 and 2.9초 is the point when comparing endpoints. */
+/**
+ * ms → seconds, always. Minutes are never used: a 92초 call sits next to the
+ * 90초 timeout on the same scale, which '1분 32초' hides.
+ *
+ * Two decimals, because both timings on a row are read against each other and a
+ * coarser total lies about that comparison: a 75.34초 answer printed as 75.3초
+ * sits under a 75.33초 first token and reads as though the parts outran the
+ * whole. The same two decimals also keep TTFT legible where it usually lives —
+ * one decimal rounds 0.18 and 0.24 to the same 0.2, and that gap is what a
+ * congestion reading is made of.
+ */
 export function fmtElapsed(ms: number | null | undefined): string | null {
-  if (ms == null || !Number.isFinite(ms) || ms < 0) return null;
-  return `${(ms / 1000).toFixed(1)}초`;
-}
-
-/** TTFT sits well under a second often enough that the one decimal used for
- * totals would round 0.18 and 0.24 to the same 0.2 — and the gap between those
- * two is exactly what a congestion reading is made of. */
-export function fmtTtft(ms: number | null | undefined): string | null {
   if (ms == null || !Number.isFinite(ms) || ms < 0) return null;
   return `${(ms / 1000).toFixed(2)}초`;
 }
@@ -911,7 +911,7 @@ export function ElapsedTag({
   className?: string;
 }) {
   const text = fmtElapsed(ms);
-  const first = fmtTtft(ttft);
+  const first = fmtElapsed(ttft);
   if (text === null && first === null) return null;
   return (
     <span

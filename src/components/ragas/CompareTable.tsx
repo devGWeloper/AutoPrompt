@@ -13,7 +13,7 @@ import {
 } from '@/lib/types';
 import {
   AnswerBox, caseMean, Chevron, CollapseAllStrip, CopyButton, DisclosureHeader, ElapsedTag, fmt3, fmtElapsed,
-  fmtTtft, OxBadge, PendingHint, ScoredPreview, sideLabel, TraceValueBox,
+  OxBadge, PendingHint, ScoredPreview, sideLabel, TraceValueBox,
 } from './shared';
 import { DiffAgainst, PaneLabel } from './MatchDiff';
 
@@ -135,7 +135,7 @@ function ElapsedPair({ a, b }: { a?: RagasResultRow; b?: RagasResultRow }) {
         title="요청 → 첫 토큰. 생성 시간이 빠져 있어 큐 대기가 그대로 드러난다."
         va={a?.ttft_ms}
         vb={b?.ttft_ms}
-        fmt={fmtTtft}
+        fmt={fmtElapsed}
       />
       <TimingPair label="시간" title="요청 → 답변 완료" va={a?.elapsed_ms} vb={b?.elapsed_ms} fmt={fmtElapsed} />
     </div>
