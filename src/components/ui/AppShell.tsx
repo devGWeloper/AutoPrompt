@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import pkg from '../../../package.json';
 
@@ -114,7 +114,8 @@ interface HealthData {
 }
 
 /** Environment and DB state as two dots — the sidebar foot says what this app is
- * talking to without a sentence about it. */
+ * talking to without a sentence about it. Set in inview's status-bar register:
+ * small, tracked, grey, with the version in mono at the far end. */
 function StatusFoot() {
   const [health, setHealth] = useState<HealthData | null>(null);
   useEffect(() => {
@@ -127,17 +128,19 @@ function StatusFoot() {
   const prd = health.env === 'prd';
   const db = !!health.dbConnected;
   return (
-    <div className="flex items-center gap-3 border-t border-line px-4 py-3 text-caption">
+    <div className="flex items-center gap-2.5 border-t border-line bg-surface-2 px-4 py-2.5 text-[12px] tracking-[0.2px]">
       <span
-        className={cn('inline-flex items-center gap-1.5', prd ? 'text-warn' : 'text-muted')}
+        className={cn(
+          'inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-semibold uppercase tracking-[0.5px]',
+          prd ? 'border-warn-line bg-warn-soft text-warn' : 'border-accent-line bg-accent-soft text-accent',
+        )}
       >
-        <span className={cn('h-1.5 w-1.5 rounded-full', prd ? 'bg-chroma-orange' : 'bg-accent')} />
-        <span className="uppercase tracking-[0.6px]">{health.env}</span>
+        <span className={cn('h-1.5 w-1.5 rounded-full', prd ? 'bg-warn-vivid' : 'bg-accent')} />
+        {health.env}
       </span>
-      <span
-        className={cn('inline-flex items-center gap-1.5', db ? 'text-muted' : 'text-muted-soft')}
-      >
-        <span className={cn("h-1.5 w-1.5 rounded-full", db ? "bg-ok-vivid" : "bg-muted-soft")} />
+      <span aria-hidden className="h-3 w-px bg-line-strong" />
+      <span className={cn('inline-flex items-center gap-1.5', db ? 'text-ok' : 'text-muted-soft')}>
+        <span className={cn('h-1.5 w-1.5 rounded-full', db ? 'bg-ok-vivid' : 'bg-muted-soft')} />
         DB
       </span>
       <span className="ml-auto font-mono text-caption-mono text-muted-soft">v{pkg.version}</span>
@@ -145,17 +148,43 @@ function StatusFoot() {
   );
 }
 
-/** The mark carries its own colours in the SVG — a near-black tile with a white
- * X. Painted with a token class instead, a build whose CSS is missing that token
- * renders the tile transparent and the mark inverts to black-on-white. */
+/** The mark carries its own colours in the SVG — a blue→violet gradient tile
+ * with a white glyph. Painted with a token class instead, a build whose CSS is
+ * missing that token renders the tile transparent and the mark disappears.
+ * Same composition as the favicon (`src/app/icon.svg`) so the browser tab and
+ * the sidebar read as one mark. */
 function BrandMark() {
+  // 사이드바와 모바일 레일이 둘 다 DOM 에 있어서, 그라데이션 id 는 인스턴스마다 달라야 한다.
+  // useId 는 ':' 를 포함한다 — url(#…) 참조에서 탈나지 않도록 걷어낸다.
+  const gid = 'tx-mark-' + useId().replace(/:/g, '');
   return (
-    <svg aria-hidden width="32" height="32" viewBox="0 0 32 32" className="shrink-0">
-      <rect width="32" height="32" rx="8" fill="#080808" />
-      {/* 가로보다 세로가 긴 X — 정사각형 대각선 두 개는 문자가 아니라 표식으로 읽힌다. */}
+    <svg aria-hidden width="28" height="28" viewBox="0 0 32 32" className="shrink-0">
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#2563eb" />
+          <stop offset="1" stopColor="#7c3aed" />
+        </linearGradient>
+      </defs>
+      <rect width="32" height="32" rx="7" fill={`url(#${gid})`} />
+      {/* 옅은 눈금 — inview 마크의 '기록지' 결 */}
+      <g stroke="#ffffff" strokeOpacity="0.28" strokeWidth="1" strokeLinecap="round">
+        <line x1="6" y1="9" x2="26" y2="9" />
+        <line x1="6" y1="13" x2="26" y2="13" />
+        <line x1="6" y1="17" x2="26" y2="17" />
+        <line x1="6" y1="21" x2="26" y2="21" />
+        <line x1="6" y1="25" x2="26" y2="25" />
+      </g>
+      {/* 문자 X 비율: 가로보다 세로가 길다 */}
       <g stroke="#ffffff" strokeWidth="3.2" strokeLinecap="round">
-        <path d="M12 9 L20 23" />
-        <path d="M20 9 L12 23" />
+        <line x1="10" y1="8" x2="22" y2="24" />
+        <line x1="22" y1="8" x2="10" y2="24" />
+      </g>
+      <g fill="#ffffff">
+        <circle cx="10" cy="8" r="1.6" />
+        <circle cx="22" cy="8" r="1.6" />
+        <circle cx="16" cy="16" r="1.8" />
+        <circle cx="10" cy="24" r="1.6" />
+        <circle cx="22" cy="24" r="1.6" />
       </g>
     </svg>
   );
@@ -178,17 +207,20 @@ function NavRow({
       title={item.label}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'group relative flex items-center gap-2.5 rounded-sm py-2 pl-3 pr-2.5 text-left text-body-sm transition-colors',
+        'group relative flex items-center gap-2.5 overflow-hidden rounded-sm py-2 pl-3 pr-2.5 text-left text-body-sm transition-colors',
         compact ? 'shrink-0 pl-2.5' : 'w-full',
-        active ? 'bg-surface font-medium text-ink shadow-[0_1px_2px_rgba(8,8,8,0.06)]' : 'text-muted hover:bg-surface hover:text-ink',
+        active
+          ? 'bg-accent-soft font-semibold text-accent'
+          : 'text-body hover:bg-surface-3 hover:text-ink',
       )}
     >
-      {/* The active row is marked in near-black, the brand's own emphasis. */}
+      {/* Selected rows carry a solid accent bar at the leading edge — the same
+          mark inview puts on the active row of a list. */}
       <span
         aria-hidden
-        className={cn('absolute bottom-1.5 left-0 top-1.5 w-0.5', active ? 'bg-primary' : 'bg-transparent')}
+        className={cn('absolute bottom-0 left-0 top-0 w-[3px]', active ? 'bg-accent' : 'bg-transparent')}
       />
-      <span className={cn('shrink-0 transition-colors', active ? 'text-ink' : 'text-muted-soft group-hover:text-muted')}>
+      <span className={cn('shrink-0 transition-colors', active ? 'text-accent' : 'text-muted-soft group-hover:text-muted')}>
         {item.icon}
       </span>
       {!compact && <span className="truncate">{item.label}</span>}
@@ -217,12 +249,18 @@ export default function AppShell({
   return (
     <div className="flex h-full">
       {/* Sidebar — the whole map of the product in one column. */}
-      <aside className="hidden w-[228px] shrink-0 flex-col border-r border-line bg-bg md:flex">
-        <button onClick={() => router.push('/')} className="flex items-center gap-2.5 px-4 py-4">
+      <aside className="hidden w-[228px] shrink-0 flex-col border-r border-line bg-surface md:flex">
+        <button
+          onClick={() => router.push('/')}
+          className="flex h-16 shrink-0 items-center gap-2.5 border-b border-line bg-gradient-to-b from-white to-[#fbfcfe] px-4"
+        >
           <BrandMark />
-          <span className="text-display-xs font-semibold tracking-[-0.4px] text-ink">TestX</span>
+          <span className="text-[18px] font-bold tracking-[-0.1px] text-ink">
+            Test
+            <span className="bg-gradient-to-br from-accent to-chroma-purple bg-clip-text text-transparent">X</span>
+          </span>
         </button>
-        <nav className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
+        <nav className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-4">
           {GROUPS.map((g) => (
             <div key={g.label} className="mb-4">
               <p className="eyebrow px-3 pb-1.5">{g.label}</p>
@@ -239,7 +277,7 @@ export default function AppShell({
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Below md the same rows become one icon rail across the top. */}
-        <div className="flex items-center gap-1 border-b border-line bg-bg px-3 py-2 md:hidden">
+        <div className="flex items-center gap-1 border-b border-line bg-surface px-3 py-2 shadow-topbar md:hidden">
           <BrandMark />
           <div className="ml-1 flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
             {ALL_ITEMS.map((it) => (

@@ -165,7 +165,7 @@ function MetricBar({ side, value, win }: { side: 'A' | 'B'; value: number | null
       <span className="w-3 shrink-0 text-[10px] font-semibold text-muted">{side}</span>
       <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-surface-3">
         <span
-          className={'absolute inset-y-0 left-0 rounded-full ' + (side === 'B' ? 'bg-accent' : 'bg-muted/40')}
+          className={'absolute inset-y-0 left-0 rounded-full ' + (side === 'B' ? 'bg-accent' : 'bg-muted-soft')}
           style={{ width: pct + '%' }}
         />
       </div>
@@ -236,13 +236,13 @@ function PairedMetricList({ rows }: { rows: MetricRow[] }) {
           ) : (
             <span
               className={cn(
-                'inline-flex min-w-[60px] items-center justify-center rounded-sm px-2 py-0.5 font-mono text-xs font-semibold tabular-nums border',
+                'inline-flex min-w-[60px] items-center justify-center rounded-full px-2 py-0.5 font-mono text-xs font-semibold tabular-nums border',
                 d == null
                   ? 'border-transparent text-muted'
                   : d > 0
-                  ? 'border-ok/25 bg-ok/[0.07] text-ok'
+                  ? 'border-ok-line bg-ok-soft text-ok'
                   : d < 0
-                  ? 'border-bad/25 bg-bad/[0.07] text-bad'
+                  ? 'border-bad-line bg-bad-soft text-bad'
                   : 'border-line bg-surface-2 text-muted'
               )}
             >
@@ -429,9 +429,9 @@ export function CaseCompareTable({
                               className={cn(
                                 'inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-semibold border',
                                 delta > 0
-                                  ? 'border-ok/25 bg-ok/[0.07] text-ok'
+                                  ? 'border-ok-line bg-ok-soft text-ok'
                                   : delta < 0
-                                  ? 'border-bad/25 bg-bad/[0.07] text-bad'
+                                  ? 'border-bad-line bg-bad-soft text-bad'
                                   : 'border-line bg-surface-2 text-muted'
                               )}
                             >

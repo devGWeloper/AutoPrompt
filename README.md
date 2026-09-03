@@ -8,7 +8,7 @@ AI Agent의 프롬프트/모델 설정을 중앙에서 버전 관리하고, 전�
 - DB: **Oracle 19c+** — `oracledb` 드라이버로 직접 접근 (PTX_* 7개 테이블). Docker 미사용, 로컬 직접 설치
 - 인증: **없음** (사내 단일 신뢰 환경 가정). 네트워크 레벨에서 접근 통제할 것
 - 설계 톤: 코드 구조는 `C:\work\inview` 앱과 동일한 패턴(설정 yml + `deploy.sh` + `src/lib`)으로 정렬 — 추후 inview 통합 대비
-- UI 디자인: Webflow 디자인 언어(`docs/DESIGN-webflow.md`) 기반 — 흰 캔버스 + 니어블랙 `#080808` 프라이머리, `#d8d8d8` 헤어라인, 5색 크로마 팔레트(purple·pink·blue·orange·green)는 섹션 키/서피스 전용, 버튼 4px · 카드 8px 라운드. 토큰은 `src/app/globals.css` + `tailwind.config.ts`
+- UI 디자인: **inview 와 동일한 톤앤매너**(`docs/DESIGN-inview.md`) — 회색 캔버스 `#f4f5f7` + 흰 패널, `#e1e4e8` 헤어라인, 액센트는 파랑 `#2563eb` 하나, 상태는 soft/line/vivid 3단 솔리드 틴트, 버튼·입력 6px · 패널 8px · KPI 11px 라운드, 상태 칩은 알약. 토큰은 `src/app/globals.css` + `tailwind.config.ts`
 
 ## 디렉토리 구조
 

@@ -38,7 +38,7 @@ function DiffText({ segs, tone, mono }: { segs: DiffSeg[]; tone: 'left' | 'right
             key={i}
             className={cn(
               'rounded-[2px] px-px',
-              tone === 'left' ? 'bg-bad/12 text-bad' : 'bg-ok/12 text-ok',
+              tone === 'left' ? 'bg-bad-soft text-bad' : 'bg-ok-soft text-ok',
             )}
           >
             {s.text}
@@ -55,8 +55,8 @@ export function PaneLabel({ children, tone }: { children: string; tone: 'left' |
   return (
     <span
       className={cn(
-        'inline-flex shrink-0 items-center rounded-sm border px-1.5 py-px text-[10px] font-semibold uppercase tracking-[0.6px]',
-        tone === 'left' ? 'border-accent/30 bg-accent-soft text-accent' : 'border-line bg-surface-2 text-muted',
+        'inline-flex shrink-0 items-center rounded-full border px-1.5 py-px text-[10px] font-semibold uppercase tracking-[0.6px]',
+        tone === 'left' ? 'border-accent-line bg-accent-soft text-accent' : 'border-line bg-surface-2 text-muted',
       )}
     >
       {children}

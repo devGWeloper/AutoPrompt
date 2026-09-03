@@ -457,7 +457,7 @@ export default function SingleRunPanel() {
                   </div>
                 )}
                 {callResult.score_error && (
-                  <p className="mt-4 rounded-sm border border-bad/20 bg-bad/5 px-3 py-2 text-xs text-bad">
+                  <p className="mt-4 rounded-sm border border-bad-line bg-bad-soft px-3 py-2 text-xs text-bad">
                     채점 실패 — {callResult.score_error}
                   </p>
                 )}

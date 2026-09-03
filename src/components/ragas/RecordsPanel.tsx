@@ -152,7 +152,7 @@ function RowActionsCell({ csvHref, onDelete }: { csvHref: string; onDelete: () =
         <a href={csvHref} title="CSV 내보내기" className={cn(base, 'hover:bg-surface-3 hover:text-ink')}>
           <DownloadIcon />
         </a>
-        <button type="button" title="삭제" onClick={onDelete} className={cn(base, 'hover:bg-bad/10 hover:text-bad')}>
+        <button type="button" title="삭제" onClick={onDelete} className={cn(base, 'hover:bg-bad-soft hover:text-bad')}>
           <TrashIcon />
         </button>
       </div>
@@ -218,7 +218,7 @@ function AvgCell({
               <span className="font-sans text-[10px] font-semibold uppercase tracking-[0.6px] text-muted">RAGAS</span>
               <div className="flex items-center gap-1.5 text-xs">
                 <span className="text-muted font-normal">A <span className="font-semibold text-ink">{fmt2(meanA)}</span></span>
-                <span className="text-muted/60">·</span>
+                <span className="text-muted-soft">·</span>
                 <span className="text-muted font-normal">B <span className="font-semibold text-ink">{fmt2(meanB)}</span></span>
               </div>
               {delta != null && (
@@ -226,9 +226,9 @@ function AvgCell({
                   className={cn(
                     'inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold border',
                     delta > 0
-                      ? 'border-ok/25 bg-ok/[0.07] text-ok'
+                      ? 'border-ok-line bg-ok-soft text-ok'
                       : delta < 0
-                      ? 'border-bad/25 bg-bad/[0.07] text-bad'
+                      ? 'border-bad-line bg-bad-soft text-bad'
                       : 'border-line bg-surface-2 text-muted'
                   )}
                 >
@@ -241,7 +241,7 @@ function AvgCell({
             <div className="flex items-center gap-2 text-xs">
               <span className="font-sans text-[10px] font-semibold uppercase tracking-[0.6px] text-muted">일치</span>
               <span className="text-muted font-normal">A <span className="font-semibold text-ink">{pct(exA)}</span></span>
-              <span className="text-muted/60">·</span>
+              <span className="text-muted-soft">·</span>
               <span className="text-muted font-normal">B <span className="font-semibold text-ink">{pct(exB)}</span></span>
             </div>
           )}
@@ -536,7 +536,7 @@ function RecordDetailDrawer({
     <div className="fixed inset-0 z-50 flex justify-end">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-ink/50 transition-opacity"
+        className="fixed inset-0 bg-[rgba(17,24,39,0.5)] transition-opacity"
         onClick={onClose}
         aria-hidden
       />
@@ -591,7 +591,7 @@ function RecordDetailDrawer({
               type="button"
               title="삭제"
               onClick={onDelete}
-              className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-bad/20 bg-bad/5 px-3 text-xs font-medium text-bad hover:bg-bad/10 transition-colors"
+              className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-bad-line bg-bad-soft px-3 text-xs font-medium text-bad hover:bg-bad-soft2 transition-colors"
             >
               <TrashIcon /> 삭제
             </button>
@@ -640,7 +640,7 @@ function RunsPager({
       </button>
       <span className="font-mono text-xs font-semibold tabular-nums text-muted">
         {curPage + 1} / {pageCount}
-        <span className="font-normal text-muted/60"> · {from}–{to} / {total}</span>
+        <span className="font-normal text-muted-soft"> · {from}–{to} / {total}</span>
       </span>
       <button
         type="button"

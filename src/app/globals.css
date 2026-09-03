@@ -9,58 +9,57 @@
  * does not support space-separated rgb() drops every one of those declarations,
  * which is why an older browser rendered the app with no fills at all — black
  * buttons stayed white, the logo tile disappeared. Hex needs none of that, and
- * only the /alpha tints (bg-bad/5 and friends) still depend on Color 4, where
- * falling back to transparent costs nothing.
+ * the status tones now carry solid `-soft` / `-line` stops so tints need no
+ * alpha either.
+ *
+ * Visual language: inview (C:\work\inview, src/app/globals.css).
  */
 
 html, body, #__next { height: 100%; }
 body {
-  background: #f9f9f9;
-  color: #080808;
-  font-size: 15px;
+  background: #f4f5f7;
+  color: #1f2328;
+  /* 16px / 1.6, no tracking games — inview reads as a plain, dense enterprise
+     console, and negative letter-spacing at this size hurts Hangul. */
+  font-size: 16px;
   line-height: 1.6;
-  /* the brand's negative tracking runs through body copy too */
-  letter-spacing: -0.15px;
-  font-feature-settings: 'ss01';
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
 }
 
-/* Weight ceiling is 600 — the brand is confident, never loud. Tailwind's
-   `font-bold` (700) is remapped rather than hunted down call site by call site. */
-.font-bold { font-weight: 600; }
+/* Headings carry the weight; only the large ones get optical tightening, which
+   the type scale already sets. */
+h1, h2, h3, h4 { letter-spacing: -0.1px; }
 
-h1, h2, h3, h4 { letter-spacing: -0.2px; }
-
-::selection { background: rgba(8, 8, 8, 0.14); }
+::selection { background: rgba(37, 99, 235, 0.16); }
 
 @layer components {
-  /* The brand's signature section label: uppercase, positive tracking. */
+  /* The section label over every table, field group and card: uppercase, small,
+     positively tracked (inview `.filter-grid label`, `.trace-list thead th`). */
   .eyebrow {
-    font-size: 12px;
-    font-weight: 500;
-    line-height: 1;
-    letter-spacing: 0.6px;
+    font-size: 12.5px;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: 0.7px;
     text-transform: uppercase;
-    color: #5a5a5a;
+    color: #6b7280;
   }
   .eyebrow-lg {
-    font-size: 15px;
-    font-weight: 500;
-    line-height: 19.5px;
-    letter-spacing: 1.5px;
+    font-size: 13.5px;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: 0.9px;
     text-transform: uppercase;
-    color: #5a5a5a;
+    color: #6b7280;
   }
 }
 
 /* interactive elements ease by default for a softer feel */
 button, a, input, select, textarea { transition-duration: 120ms; }
 
-/* hairline scrollbar in the brand's neutral greys (webkit) */
+/* hairline scrollbar in the neutral greys (webkit) */
 *::-webkit-scrollbar { width: 10px; height: 10px; }
 *::-webkit-scrollbar-thumb {
-  background: #d8d8d8; border-radius: 9999px;
+  background: #d5d9df; border-radius: 10px;
   border: 2px solid transparent; background-clip: padding-box;
 }
-*::-webkit-scrollbar-thumb:hover { background: #ababab; background-clip: padding-box; }
+*::-webkit-scrollbar-thumb:hover { background: #b9bfc7; background-clip: padding-box; }

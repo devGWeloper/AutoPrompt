@@ -4,16 +4,16 @@ import { cn } from '@/lib/cn';
 export function Table({ className, children }: { className?: string; children: ReactNode }) {
   return (
     <div className="overflow-x-auto">
-      <table className={cn('w-full text-sm', className)}>{children}</table>
+      <table className={cn('w-full border-separate border-spacing-0 text-[14.5px]', className)}>{children}</table>
     </div>
   );
 }
 
 export function THead({ children }: { children: ReactNode }) {
-  // Header sits on the canvas and is marked by an uppercase, positively-tracked
-  // eyebrow over a hairline rule — the brand's data-table chrome.
+  // The header is a recessed strip carrying an uppercase, positively-tracked
+  // eyebrow over a hairline rule — inview's `.trace-list thead th`.
   return (
-    <thead className="border-b border-line bg-surface text-left text-[11.5px] font-[550] uppercase tracking-[0.6px] text-muted">
+    <thead className="bg-surface-2 text-left text-caption uppercase tracking-[0.7px] text-muted">
       {children}
     </thead>
   );
@@ -25,7 +25,7 @@ export function TBody({ children }: { children: ReactNode }) {
 
 export function TR({ className, children, ...rest }: HTMLAttributes<HTMLTableRowElement>) {
   return (
-    <tr className={cn('border-b border-line last:border-0', className)} {...rest}>
+    <tr className={cn('transition-colors', className)} {...rest}>
       {children}
     </tr>
   );
@@ -41,7 +41,10 @@ export function TH({
   children?: ReactNode;
 }) {
   return (
-    <th colSpan={colSpan} className={cn('px-4 py-2.5 font-[550]', className)}>
+    <th
+      colSpan={colSpan}
+      className={cn('whitespace-nowrap border-b border-line px-4 py-2.5 font-semibold', className)}
+    >
       {children}
     </th>
   );
@@ -61,7 +64,12 @@ export function TD({
   children?: ReactNode;
 }) {
   return (
-    <td colSpan={colSpan} rowSpan={rowSpan} title={title} className={cn('px-4 py-3 align-top', className)}>
+    <td
+      colSpan={colSpan}
+      rowSpan={rowSpan}
+      title={title}
+      className={cn('border-b border-line px-4 py-2.5 align-top', className)}
+    >
       {children}
     </td>
   );

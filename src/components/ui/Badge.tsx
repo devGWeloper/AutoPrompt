@@ -1,31 +1,33 @@
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 
-type Tone = 'neutral' | 'accent' | 'ok' | 'warn' | 'bad' | 'purple';
+type Tone = 'neutral' | 'accent' | 'ok' | 'warn' | 'bad' | 'fail' | 'purple';
 
-// Soft badges: canvas surface, hairline chrome, coloured label — the brand's
-// `badge-info-soft`. Set in the signature 12.8px / weight 550 caption.
+// Status pills: a solid soft tint, a matching hairline and the legible stop of
+// the same hue as the label — inview's `.pill`. Solid tints, no alpha, so the
+// fill still lands on a browser without CSS Color 4.
 const tones: Record<Tone, string> = {
-  neutral: 'bg-surface text-muted border-line',
-  accent: 'bg-accent/[0.07] text-accent border-accent/25',
-  ok: 'bg-ok/[0.07] text-ok border-ok/25',
-  warn: 'bg-warn/[0.07] text-warn border-warn/25',
-  bad: 'bg-bad/[0.07] text-bad border-bad/25',
-  purple: 'bg-chroma-purple/[0.07] text-chroma-purple border-chroma-purple/25',
+  neutral: 'bg-surface-3 text-muted border-line',
+  accent: 'bg-accent-soft text-accent border-accent-line',
+  ok: 'bg-ok-soft text-ok border-ok-line',
+  warn: 'bg-warn-soft text-warn border-warn-line',
+  bad: 'bg-bad-soft text-bad border-bad-line',
+  fail: 'bg-fail-soft text-fail border-fail-line',
+  purple: 'bg-[#f1e9ff] text-chroma-purple border-[#ddc9fb]',
 };
 
 // Dots use the full-saturation stop of each hue.
 const dots: Record<Tone, string> = {
-  neutral: 'bg-muted',
+  neutral: 'bg-muted-soft',
   accent: 'bg-accent',
-  ok: 'bg-ok-vivid',
-  warn: 'bg-warn-vivid',
-  bad: 'bg-bad-vivid',
+  ok: 'bg-ok',
+  warn: 'bg-warn',
+  bad: 'bg-bad',
+  fail: 'bg-fail',
   purple: 'bg-chroma-purple',
 };
 
-/** Badge at the brand's 4px radius (pill is reserved for circular icons).
- *  `dot` prepends a small status dot. */
+/** Pill-shaped status badge. `dot` prepends a small status dot. */
 export function Badge({
   tone = 'neutral',
   dot = false,
@@ -40,12 +42,12 @@ export function Badge({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-sm border px-2 py-0.5 text-caption',
+        'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-caption',
         tones[tone],
         className,
       )}
     >
-      {dot && <span className={cn('h-1.5 w-1.5 rounded-full', dots[tone])} />}
+      {dot && <span className={cn('h-[7px] w-[7px] shrink-0 rounded-full', dots[tone])} />}
       {children}
     </span>
   );

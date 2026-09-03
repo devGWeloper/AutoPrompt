@@ -172,14 +172,14 @@ export function ModelPicker({
       <span className="min-w-0 flex-1 truncate text-xs text-muted">
         {identical || columns.length === 1 ? (
           <>
-            {identical && <span className="mr-1.5 text-muted/70">A · B 동일</span>}
+            {identical && <span className="mr-1.5 text-muted-soft">A · B 동일</span>}
             {pinText(columns[0].drafts)}
           </>
         ) : (
           columns.map((c, i) => (
             <Fragment key={c.key}>
-              {i > 0 && <span className="mx-1.5 text-muted/50">·</span>}
-              <span className="font-semibold text-ink/70">{c.label} </span>
+              {i > 0 && <span className="mx-1.5 text-muted-soft">·</span>}
+              <span className="font-semibold text-body">{c.label} </span>
               {pinText(c.drafts)}
             </Fragment>
           ))
@@ -233,7 +233,7 @@ export function ModelPicker({
                         onChange={(e) => set(c, r.role_cd, { model: e.target.value })}
                         className={cn(
                           'h-9 w-full rounded-sm border bg-surface px-2 font-mono text-xs text-ink transition',
-                          'hover:border-line-strong focus:border-ink focus:shadow-ring focus:outline-none',
+                          'hover:border-line-strong focus:border-accent focus:shadow-ring focus:outline-none',
                           catalogMissing(cells[i].model) ? 'border-warn' : 'border-line',
                         )}
                         title={cells[i].model || undefined}

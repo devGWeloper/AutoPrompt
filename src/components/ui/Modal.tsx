@@ -30,7 +30,7 @@ export default function Modal({
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(8,8,8,0.5)] p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(17,24,39,0.5)] p-4"
       role="dialog"
       aria-modal="true"
     >

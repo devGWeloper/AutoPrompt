@@ -215,7 +215,7 @@ function IconBtn({
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       className={cn(
         'inline-flex h-6 w-6 items-center justify-center rounded-sm transition-colors',
-        danger ? 'bg-bad/10 text-bad hover:bg-bad/15' : 'text-muted hover:bg-surface-3 hover:text-ink',
+        danger ? 'bg-bad-soft text-bad hover:bg-bad-soft2' : 'text-muted hover:bg-surface-3 hover:text-ink',
       )}
     >
       {children}

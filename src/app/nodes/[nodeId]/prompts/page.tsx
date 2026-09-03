@@ -94,7 +94,7 @@ export default function NodePromptsPage() {
       </div>
 
       {error && (
-        <div className="mx-8 mt-4 rounded-sm border border-bad/20 bg-bad/5 px-4 py-3 text-sm text-bad">
+        <div className="mx-8 mt-4 rounded-sm border border-bad-line bg-bad-soft px-4 py-3 text-sm text-bad">
           {error}
         </div>
       )}
@@ -114,7 +114,7 @@ export default function NodePromptsPage() {
                   className={
                     'w-full rounded-md border px-3 py-2.5 text-left transition-colors ' +
                     (detail?.prompt_id === v.prompt_id
-                      ? 'border-ink bg-surface-2'
+                      ? 'border-accent bg-accent-soft'
                       : 'border-line hover:bg-surface-2')
                   }
                 >
@@ -135,7 +135,7 @@ export default function NodePromptsPage() {
                     setConfirmDelete(v);
                   }}
                   title="Delete this version"
-                  className="absolute right-2 top-2 rounded-sm border border-line bg-surface px-2 py-1 text-[11px] font-medium text-muted transition-colors hover:border-bad/40 hover:bg-bad/5 hover:text-bad"
+                  className="absolute right-2 top-2 rounded-sm border border-line bg-surface px-2 py-1 text-[11px] font-medium text-muted transition-colors hover:border-bad-line hover:bg-bad-soft hover:text-bad"
                 >
                   Delete
                 </button>
@@ -265,7 +265,7 @@ function EditorTab({
 
   return (
     <div className="flex flex-col gap-5">
-      {err && <div className="rounded-sm border border-bad/20 bg-bad/5 px-3 py-2 text-sm text-bad">{err}</div>}
+      {err && <div className="rounded-sm border border-bad-line bg-bad-soft px-3 py-2 text-sm text-bad">{err}</div>}
       <div>
         <div className="mb-1.5">
           <span className="text-sm font-medium text-ink">Model</span>
@@ -382,11 +382,11 @@ function AuditDetail({ log }: { log: AuditLog }) {
               <dt className="eyebrow">{label}</dt>
               <dd className="mt-0.5 grid gap-1">
                 {changed && b && (
-                  <pre className="max-h-28 overflow-auto whitespace-pre-wrap rounded-sm border border-bad/20 bg-bad/5 p-2 text-xs text-bad">
+                  <pre className="max-h-28 overflow-auto whitespace-pre-wrap rounded-sm border border-bad-line bg-bad-soft p-2 text-xs text-bad">
                     − {b}
                   </pre>
                 )}
-                <pre className="max-h-28 overflow-auto whitespace-pre-wrap rounded-sm border border-ok/20 bg-ok/5 p-2 text-xs text-ok">
+                <pre className="max-h-28 overflow-auto whitespace-pre-wrap rounded-sm border border-ok-line bg-ok-soft p-2 text-xs text-ok">
                   {changed && b ? '+ ' : ''}{a || '(empty)'}
                 </pre>
               </dd>
@@ -489,7 +489,7 @@ function NewVersionModal({
         </>
       }
     >
-      {err && <div className="mb-3 rounded-sm border border-bad/20 bg-bad/5 px-3 py-2 text-xs text-bad">{err}</div>}
+      {err && <div className="mb-3 rounded-sm border border-bad-line bg-bad-soft px-3 py-2 text-xs text-bad">{err}</div>}
       <label className="mb-3 block">
         <span className="text-sm font-medium text-ink">Model</span>
         <ModelSelect value={model} onChange={setModel} className="mt-1 w-full" />

@@ -61,7 +61,7 @@ function IconBtn({ title, onClick, children, tone }: { title: string; onClick: (
       onClick={onClick}
       className={cn(
         'rounded-sm p-1.5 transition-colors',
-        tone === 'bad' ? 'text-muted hover:bg-bad/5 hover:text-bad' : 'text-muted hover:bg-surface-3 hover:text-ink',
+        tone === 'bad' ? 'text-muted hover:bg-bad-soft hover:text-bad' : 'text-muted hover:bg-surface-3 hover:text-ink',
       )}
     >
       {children}
@@ -80,7 +80,7 @@ function DeleteBtn({ onConfirm, title }: { onConfirm: () => void; title: string 
       onClick={() => (armed ? onConfirm() : setArmed(true))}
       className={cn(
         'rounded-sm p-1.5 transition-colors',
-        armed ? 'bg-bad/10 text-bad' : 'text-muted hover:bg-bad/5 hover:text-bad',
+        armed ? 'bg-bad-soft text-bad' : 'text-muted hover:bg-bad-soft hover:text-bad',
       )}
     >
       <TrashIcon />
@@ -104,7 +104,7 @@ function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) =
     >
       <span
         className={cn(
-          'absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white shadow-[0_1px_2px_rgba(8,8,8,0.35)] transition-transform',
+          'absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white shadow-[0_1px_2px_rgba(17,24,39,0.35)] transition-transform',
           on && 'translate-x-3',
         )}
       />
@@ -114,7 +114,7 @@ function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) =
 
 function ErrLine({ msg }: { msg: string | null }) {
   if (!msg) return null;
-  return <div className="border-b border-line bg-bad/5 px-5 py-2.5 text-body-sm text-bad">{msg}</div>;
+  return <div className="border-b border-line bg-bad-soft px-5 py-2.5 text-body-sm text-bad">{msg}</div>;
 }
 
 function Empty({ children }: { children: ReactNode }) {
@@ -182,7 +182,7 @@ function EndpointModal({
         </>
       }
     >
-      {err && <div className="mb-4 rounded-sm border border-bad/20 bg-bad/5 px-3 py-2 text-body-sm text-bad">{err}</div>}
+      {err && <div className="mb-4 rounded-sm border border-bad-line bg-bad-soft px-3 py-2 text-body-sm text-bad">{err}</div>}
       <label className="mb-4 block">
         <span className="eyebrow">이름</span>
         <Input value={nm} onChange={(e) => setNm(e.target.value)} placeholder="운영 챗 API" className="mt-1.5 w-full" />

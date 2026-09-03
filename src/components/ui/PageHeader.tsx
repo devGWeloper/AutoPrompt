@@ -17,7 +17,7 @@ export default function PageHeader({
 }) {
   return (
     <header className={cn('mb-5 flex items-center justify-between gap-4 border-b border-line pb-3.5', className)}>
-      <h1 className="min-w-0 truncate text-display-xs text-ink">{title}</h1>
+      <h1 className="min-w-0 truncate text-display-lg text-ink">{title}</h1>
       {right && <div className="flex shrink-0 items-center gap-2">{right}</div>}
     </header>
   );

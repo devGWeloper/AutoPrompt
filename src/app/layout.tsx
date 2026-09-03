@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   // System font stack (no next/font/google — the internal network is closed; the
-  // stack in tailwind.config.ts falls back from Inter to the platform faces).
+  // stack in tailwind.config.ts is the platform UI face plus the Hangul fallbacks).
   // The shell (sidebar + content) is AppShell's; nothing wraps it here — a
   // status footer under it only repeated what the sidebar foot already shows.
   return (

@@ -59,7 +59,7 @@ export default function NodesPage() {
       <div className="flex h-full flex-col">
         <div className={cn(SHELL, 'px-8 py-7')}>
           {error && (
-            <div className="mb-4 rounded-sm border border-bad/20 bg-bad/5 px-4 py-3 text-sm text-bad">{error}</div>
+            <div className="mb-4 rounded-sm border border-bad-line bg-bad-soft px-4 py-3 text-sm text-bad">{error}</div>
           )}
           <PageHeader
             title={<>프롬프트 <span className="text-muted-soft">{nodes.length}</span></>}
@@ -70,7 +70,7 @@ export default function NodesPage() {
               <li key={n.node_nm} className="group relative">
                 <button
                   onClick={() => openNode(n)}
-                  className="flex w-full flex-col rounded-md border border-line bg-surface p-6 text-left transition-all hover:border-ink hover:shadow-lift"
+                  className="flex w-full flex-col rounded-md border border-line bg-surface p-6 text-left transition-all hover:border-accent hover:shadow-lift"
                 >
                   <div className="flex items-center gap-2 pr-28">
                     <span className="truncate text-display-xs text-ink">{n.node_nm}</span>
@@ -85,7 +85,7 @@ export default function NodesPage() {
                       setConfirmDelete(n);
                     }}
                     title="Delete node"
-                    className="rounded-sm border border-line bg-surface px-2 py-1 text-[11px] font-medium text-muted transition-colors hover:border-bad/40 hover:bg-bad/5 hover:text-bad"
+                    className="rounded-sm border border-line bg-surface px-2 py-1 text-[11px] font-medium text-muted transition-colors hover:border-bad-line hover:bg-bad-soft hover:text-bad"
                   >
                     Delete
                   </button>
@@ -183,7 +183,7 @@ function NewNodeModal({
         </>
       }
     >
-      {err && <div className="mb-3 rounded-sm border border-bad/20 bg-bad/5 px-3 py-2 text-xs text-bad">{err}</div>}
+      {err && <div className="mb-3 rounded-sm border border-bad-line bg-bad-soft px-3 py-2 text-xs text-bad">{err}</div>}
       <label className="mb-3 block">
         <span className="text-sm font-medium text-ink">Node name (NODE_NM) *</span>
         <Input value={nodeNm} onChange={(e) => setNodeNm(e.target.value)} placeholder="e.g. router" className="mt-1 w-full font-mono" />

@@ -126,7 +126,7 @@ export function ScoreToggle({ on, onChange }: { on: boolean; onChange: (v: boole
       >
         <span
           className={cn(
-            'absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white shadow-[0_1px_2px_rgba(8,8,8,0.35)] transition-transform',
+            'absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white shadow-[0_1px_2px_rgba(17,24,39,0.35)] transition-transform',
             on && 'translate-x-3',
           )}
         />
@@ -502,7 +502,7 @@ function Bar({ done, total, tone }: { done: number; total: number; tone: 'accent
   return (
     <span className="relative block h-1 w-full overflow-hidden rounded-full bg-surface-3">
       <span
-        className={cn('absolute inset-y-0 left-0 rounded-full transition-[width] duration-300', tone === 'accent' ? 'bg-accent' : 'bg-muted/50')}
+        className={cn('absolute inset-y-0 left-0 rounded-full transition-[width] duration-300', tone === 'accent' ? 'bg-accent' : 'bg-muted-soft')}
         style={{ width: `${pct}%` }}
       />
     </span>
@@ -536,7 +536,7 @@ export function RunProgress({
         </span>
         {scoreOn && hasRagas && (
           <>
-            <span className="text-muted/50">·</span>
+            <span className="text-muted-soft">·</span>
             <span className={cn('font-medium', scoring ? 'text-ink' : 'text-muted')}>
               RAGAS 채점 {ragasDone}/{n}
             </span>
@@ -650,7 +650,7 @@ export function SegToggle<T extends string>({ value, onChange, options }: { valu
             value === o.id ? 'bg-primary text-primary-fg' : 'text-muted hover:text-ink',
             // Not `disabled:opacity-50` alone — the point is that it stays
             // readable as a real option that is simply out of service.
-            o.disabled && 'cursor-not-allowed text-muted/50 hover:text-muted/50',
+            o.disabled && 'cursor-not-allowed text-muted-soft hover:text-muted-soft',
           )}
         >
           {o.label}
@@ -664,7 +664,7 @@ export function StatusPill({ status }: { status: string }) {
   const dot =
     status === 'done' ? 'bg-ok-vivid'
     : status === 'failed' ? 'bg-bad-vivid'
-    : status === 'cancelled' ? 'bg-bad/60'
+    : status === 'cancelled' ? 'bg-fail-vivid'
     : status === 'running' ? 'bg-accent animate-pulse'
     : 'bg-muted';
   return (
@@ -715,7 +715,7 @@ export function useArmed(ms = 4000) {
 }
 
 export function ErrBox({ msg }: { msg: string }) {
-  return <div className="rounded-sm border border-bad/20 bg-bad/5 px-4 py-3 text-sm text-bad">{msg}</div>;
+  return <div className="rounded-sm border border-bad-line bg-bad-soft px-4 py-3 text-sm text-bad">{msg}</div>;
 }
 
 /** Placeholder for an answer that hasn't arrived yet. A bare '—' in error red
@@ -907,8 +907,8 @@ export function OxBadge({ value, rate }: { value: number | null; rate?: boolean 
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 whitespace-nowrap rounded-sm border px-2 py-0.5 text-[11px] font-semibold',
-        ok ? 'border-ok/30 bg-ok/10 text-ok' : 'border-bad/25 bg-bad/10 text-bad',
+        'inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold',
+        ok ? 'border-ok-line bg-ok-soft text-ok' : 'border-bad-line bg-bad-soft text-bad',
       )}
     >
       <span className="font-mono">{ok ? 'O' : 'X'}</span>
@@ -1143,7 +1143,7 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
   if (detail.error_msg) {
     return (
       <div className="overflow-hidden rounded-sm border border-line bg-surface">
-        <div className="border-b border-line bg-bad/5 px-3 py-2 text-xs text-bad">{detail.error_msg}</div>
+        <div className="border-b border-line bg-bad-soft px-3 py-2 text-xs text-bad">{detail.error_msg}</div>
         {list}
       </div>
     );
