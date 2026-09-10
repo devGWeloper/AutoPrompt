@@ -15,7 +15,7 @@ import {
   AnswerBox, caseMean, Chevron, CollapseAllStrip, CopyButton, DisclosureHeader, ElapsedTag, fmt3, fmtElapsed,
   compareSideLabel, OxBadge, PendingHint, AnswerPreview, TraceValueBox,
 } from './shared';
-import { DiffAgainst, PaneLabel } from './MatchDiff';
+import { DiffAgainst, FieldDiffLine, PaneLabel } from './MatchDiff';
 
 /** The expected answer, once, above both sides — it is the same text for A and
  * B, and repeating it under each would push the two answers apart. */
@@ -79,6 +79,7 @@ function SideBox({
               </span>
             </div>
           )}
+          <FieldDiffLine className="mt-2" text={scored} expected={gt} unwrapBody={!row?.trace_value} />
           <DiffAgainst className="mt-2" text={scored} expected={gt} unwrapBody={!row?.trace_value} />
           {/* 중간 변수를 채점한 경우에만 답변이 따로 있다 — 아니면 위가 곧 답변이다. */}
           {row?.trace_value && (

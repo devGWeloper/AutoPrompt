@@ -40,7 +40,7 @@ export const METRIC_LABELS: Record<RagasMetric, string> = {
 /** One-line hover explanations for each metric (used as `title` tooltips). */
 export const METRIC_DESCRIPTIONS: Record<RagasMetric, string> = {
   exact_match:
-    "답변이 정답(ground truth)과 동일한가? 응답 JSON의 body 부분을 정답과 그대로 비교해 O/X로 판정합니다. 심판 LLM이 필요 없습니다.",
+    "채점 대상(중간 변수 parsed 또는 응답 JSON의 body)을 기대 정답과 키 단위로 비교합니다. 키 누락·추가, 타입 불일치, 값 불일치를 각각 짚어 주고 모두 맞을 때만 일치입니다. 심판 LLM이 필요 없습니다.",
   faithfulness:
     "답변이 검색된 컨텍스트에 근거하고 있는가? 컨텍스트로 뒷받침되지 않는 주장이 있으면 점수가 낮아집니다 (환각 여부 체크).",
   answer_relevancy:
