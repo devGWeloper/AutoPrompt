@@ -217,7 +217,7 @@ function PairedMetricList({ rows }: { rows: MetricRow[] }) {
       {rows.map(({ m, av, bv, d }) => (
         <li key={m} className="grid grid-cols-[minmax(104px,0.8fr)_2fr_auto] items-center gap-4 px-3.5 py-2.5">
           <span className="truncate text-sm font-medium text-ink">{METRIC_LABELS[m]}</span>
-          {/* 정답 일치 is a per-case verdict — O/X reads better than a 0/1 bar. */}
+          {/* 정답 일치 is a per-case verdict — 일치/불일치 reads better than a 0/1 bar. */}
           {m === EXACT_MATCH ? (
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center gap-2"><span className="w-3 shrink-0 text-[10px] font-semibold text-muted">A</span><OxBadge value={av} /></div>

@@ -892,18 +892,17 @@ export function CollapseAllStrip({ allClosed, onToggle }: { allClosed: boolean; 
   );
 }
 
-/** 정답 일치 verdict: 1 → O, 0 → X (a run-level rate renders as a percentage). */
+/** 정답 일치 verdict: 1 → 일치, 0 → 불일치 (a run-level rate renders as a percentage). */
 export function OxBadge({ value, rate }: { value: number | null; rate?: boolean }) {
   if (value == null) return <span className="text-[11px] text-muted">—</span>;
   const ok = rate ? value >= 1 : value >= 0.5;
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold',
+        'inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold',
         ok ? 'border-ok-line bg-ok-soft text-ok' : 'border-bad-line bg-bad-soft text-bad',
       )}
     >
-      <span className="font-mono">{ok ? 'O' : 'X'}</span>
       {rate ? `${Math.round(value * 100)}% 일치` : ok ? '일치' : '불일치'}
     </span>
   );
