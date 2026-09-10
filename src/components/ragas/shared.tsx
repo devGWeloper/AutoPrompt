@@ -779,24 +779,16 @@ export function TraceTag({ name }: { name?: string | null }) {
   );
 }
 
-/** One-line preview of what the case was actually judged on: the captured
- * variable when there is one, else the final answer. Previewing the answer next
- * to an O/X decided from something else reads as a bug. */
-export function ScoredPreview({ row, className }: { row: RagasResultRow; className?: string }) {
-  if (row.trace_value) {
-    return (
-      <span className={cn('flex min-w-0 items-baseline gap-1.5 text-xs text-muted', className)}>
-        <TraceTag name={row.trace_var_nm} />
-        <span className="min-w-0 flex-1 truncate">{oneLine(row.trace_value)}</span>
-      </span>
-    );
-  }
+/** 접힌 케이스가 한 줄로 보여 주는 것 — 이 실행이 끝내 내놓은 최종 응답이다.
+ * 펼치지 않고도 답이 무엇이었는지가 먼저 궁금하다. 중간 변수를 채점했더라도
+ * 그 값은 펼친 뒤 '채점 대상' 칸이 그대로 보여 준다. */
+export function AnswerPreview({ row, className }: { row: RagasResultRow; className?: string }) {
   if (row.answer == null) {
     return row.error_msg
       ? <span className={cn('truncate text-xs text-bad', className)}>{oneLine(row.error_msg)}</span>
       : <PendingHint label="대기 중" className={className} />;
   }
-  return <span className={cn('truncate text-xs text-muted', className)}>{row.answer}</span>;
+  return <span className={cn('truncate text-xs text-muted', className)}>{oneLine(row.answer)}</span>;
 }
 
 export function CopyButton({ text }: { text: string }) {
@@ -1086,7 +1078,7 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
                   <CopyButton text={r.question} />
                 </span>
               )}
-              {isClosed && <ScoredPreview row={r} className="mt-0.5 min-w-0 flex-1" />}
+              {isClosed && <AnswerPreview row={r} className="mt-0.5 min-w-0 flex-1" />}
               {isClosed && <ElapsedTag ms={r.elapsed_ms} ttft={r.ttft_ms} className="mt-0.5" />}
               {isClosed && showScores && (
                 <span className="flex shrink-0 items-center gap-2">

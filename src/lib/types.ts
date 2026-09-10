@@ -29,7 +29,7 @@ export const ALL_METRICS = [EXACT_MATCH, ...RAGAS_METRICS] as const;
 export type RagasMetric = (typeof ALL_METRICS)[number];
 
 export const METRIC_LABELS: Record<RagasMetric, string> = {
-  exact_match: "정답 일치",
+  exact_match: "Action Test",
   faithfulness: "Faithfulness",
   answer_relevancy: "Answer Relevancy",
   context_precision: "Context Precision",

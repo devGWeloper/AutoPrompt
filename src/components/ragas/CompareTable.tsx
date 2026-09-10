@@ -13,7 +13,7 @@ import {
 } from '@/lib/types';
 import {
   AnswerBox, caseMean, Chevron, CollapseAllStrip, CopyButton, DisclosureHeader, ElapsedTag, fmt3, fmtElapsed,
-  compareSideLabel, OxBadge, PendingHint, ScoredPreview, TraceValueBox,
+  compareSideLabel, OxBadge, PendingHint, AnswerPreview, TraceValueBox,
 } from './shared';
 import { DiffAgainst, PaneLabel } from './MatchDiff';
 
@@ -393,11 +393,11 @@ export function CaseCompareTable({
                 <span className="mt-0.5 flex min-w-0 flex-[2] items-baseline gap-2.5 text-xs text-muted">
                   <span className="flex min-w-0 flex-1 items-baseline gap-1">
                     <span className="shrink-0 font-semibold">A</span>
-                    {a ? <ScoredPreview row={a} className="min-w-0 flex-1" /> : <PendingHint label="대기 중" className="min-w-0 flex-1" />}
+                    {a ? <AnswerPreview row={a} className="min-w-0 flex-1" /> : <PendingHint label="대기 중" className="min-w-0 flex-1" />}
                   </span>
                   <span className="flex min-w-0 flex-1 items-baseline gap-1">
                     <span className="shrink-0 font-semibold">B</span>
-                    {b ? <ScoredPreview row={b} className="min-w-0 flex-1" /> : <PendingHint label="대기 중" className="min-w-0 flex-1" />}
+                    {b ? <AnswerPreview row={b} className="min-w-0 flex-1" /> : <PendingHint label="대기 중" className="min-w-0 flex-1" />}
                   </span>
                 </span>
               )}

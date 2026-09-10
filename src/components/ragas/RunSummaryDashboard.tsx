@@ -189,7 +189,7 @@ export function CompareSummaryDashboard({
             <span className="text-xs text-muted">RAGAS Mean</span>
             {exA != null && (
               <span className="ml-auto flex items-baseline gap-1.5 text-xs text-muted">
-                정답 일치 <OxBadge value={exA} rate />
+                {METRIC_LABELS[EXACT_MATCH]} <OxBadge value={exA} rate />
               </span>
             )}
           </div>
@@ -238,7 +238,7 @@ export function CompareSummaryDashboard({
             <span className="text-xs text-muted">RAGAS Mean</span>
             {exB != null && (
               <span className="ml-auto flex items-baseline gap-1.5 text-xs text-muted">
-                정답 일치 <OxBadge value={exB} rate />
+                {METRIC_LABELS[EXACT_MATCH]} <OxBadge value={exB} rate />
               </span>
             )}
           </div>

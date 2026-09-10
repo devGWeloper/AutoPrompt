@@ -239,7 +239,7 @@ function AvgCell({
           )}
           {(exA != null || exB != null) && (
             <div className="flex items-center gap-2 text-xs">
-              <span className="font-sans text-[10px] font-semibold uppercase tracking-[0.6px] text-muted">일치</span>
+              <span className="font-sans text-[10px] font-semibold uppercase tracking-[0.6px] text-muted">Action</span>
               <span className="text-muted font-normal">A <span className="font-semibold text-ink">{pct(exA)}</span></span>
               <span className="text-muted-soft">·</span>
               <span className="text-muted font-normal">B <span className="font-semibold text-ink">{pct(exB)}</span></span>
@@ -262,7 +262,7 @@ function AvgCell({
         )}
         {ex != null && (
           <span>
-            <span className="font-sans text-[10px] font-semibold uppercase tracking-[0.6px] text-muted">일치 </span>
+            <span className="font-sans text-[10px] font-semibold uppercase tracking-[0.6px] text-muted">Action </span>
             <span className="font-semibold">{pct(ex)}</span>
           </span>
         )}
