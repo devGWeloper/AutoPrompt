@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Select, Textarea } from '@/components/ui/Field';
-import { api } from '@/lib/api';
+import { ApiError, api } from '@/lib/api';
 import { clearActiveRun, readActiveRun, saveActiveRun, type ActiveSingleRun } from '@/lib/activeRun';
 import { connectRagasRunStream as connectRagasRunWs } from '@/lib/sse-client';
 import { SingleRunSummaryDashboard } from './RunSummaryDashboard';
@@ -197,10 +197,17 @@ export default function SingleRunPanel() {
           setTotal(m.total);
           setLive((cur) => upsertResult(cur, m.result));
         } else if (m.event === 'DONE' || m.event === 'FAILED' || m.event === 'CANCELLED') {
+          // 상태 전환이 먼저다. 아래 상세 조회는 기록이 지워진 실행이면 실패하는데,
+          // 그 실패가 여기서 던져지면 패널은 영영 '실행 중'으로 남는다 — 실행
+          // 버튼은 취소 버튼인 채, 취소할 실행은 없는 상태.
           clearActiveRun('single');
-          setDetail(await api.get<RagasRunDetail>(`/ragas-runs/${runId}`));
-          setStatus(m.event === 'DONE' ? 'done' : m.event === 'CANCELLED' ? 'cancelled' : 'failed');
           ws.close();
+          setStatus(m.event === 'DONE' ? 'done' : m.event === 'CANCELLED' ? 'cancelled' : 'failed');
+          try {
+            setDetail(await api.get<RagasRunDetail>(`/ragas-runs/${runId}`));
+          } catch (e) {
+            setError(m.event === 'FAILED' && m.error ? m.error : errText(e));
+          }
         }
       },
     }, { side: 'a', endpointId: epId });
@@ -254,7 +261,31 @@ export default function SingleRunPanel() {
     setCancelling(true);
     try {
       await api.post(`/ragas-runs/${id}/cancel`, {});
-    } catch (e) { setError(errText(e)); setCancelling(false); }
+    } catch (e) {
+      setCancelling(false);
+      // 취소할 실행이 없다는 답(404 기록이 지워짐 / 409 이미 끝남)이면, 멈춰 있는
+      // 건 실행이 아니라 이 화면이다 — 스트림을 닫고 실행 버튼을 되돌린다.
+      if (e instanceof ApiError && (e.status === 404 || e.status === 409)) {
+        wsRef.current?.close();
+        clearActiveRun('single');
+        await settle(id);
+        return;
+      }
+      setError(errText(e));
+    }
+  }
+
+  /** End the panel on whatever the record says, or — when there is no record
+   * left to read — on the fact that there isn't one. */
+  async function settle(id: number) {
+    try {
+      const d = await api.get<RagasRunDetail>(`/ragas-runs/${id}`);
+      setDetail(d);
+      setStatus(d.status === 'DONE' ? 'done' : d.status === 'CANCELLED' ? 'cancelled' : 'failed');
+    } catch {
+      setStatus('failed');
+      setError('실행 기록이 없습니다 — 실행 중에 기록이 삭제된 것 같습니다. 다시 실행해 주세요.');
+    }
   }
 
   async function call() {

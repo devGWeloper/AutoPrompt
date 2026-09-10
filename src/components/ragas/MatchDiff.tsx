@@ -11,7 +11,7 @@ import {
 import { diffWords, type DiffSeg } from '@/lib/textDiff';
 import { cn } from '@/lib/cn';
 import type { RagasResultRow } from '@/lib/types';
-import { AnswerBox, CopyButton, ElapsedTag, OxBadge } from './shared';
+import { AnswerBox, CopyButton, ElapsedTag, OxBadge, TraceTag } from './shared';
 
 /**
  * What was scored, next to what it was supposed to be.
@@ -104,58 +104,107 @@ function Pane({
   );
 }
 
-/** 키 하나가 어떻게 판정됐는지 — 이름과 색. '추가'만 warn 인 까닭은, 나머지 셋이
- * "기대한 것이 그대로 오지 않았다"인 반면 이것은 "묻지 않은 것이 더 왔다"라서
- * 고칠 곳이 프롬프트가 아니라 기대 정답인 경우가 잦기 때문이다. */
-const STATUS: Record<FieldStatus, { label: string; text: string; rail: string }> = {
-  match: { label: '일치', text: 'text-muted', rail: 'border-l-transparent' },
-  diff: { label: '값 다름', text: 'text-bad', rail: 'border-l-bad-line' },
-  type: { label: '타입 다름', text: 'text-bad', rail: 'border-l-bad-line' },
-  missing: { label: '누락', text: 'text-bad', rail: 'border-l-bad-line' },
-  extra: { label: '추가', text: 'text-warn', rail: 'border-l-warn-line' },
+/** 판정 하나가 입는 옷. 색은 세 군데에 같은 톤으로 나뉘어 나온다 — 행 왼쪽 레일,
+ * 어긋난 값 칸의 면, 결과 칩 — 그래서 한 줄을 읽는 데 세 번 판단할 필요가 없다. */
+interface StatusStyle {
+  label: string;
+  /** 요약 줄처럼 면 없이 이름만 놓는 자리의 글자색. */
+  text: string;
+  /** 결과 칸의 상태 칩. 일치는 테두리 없이 조용히 — 스무 줄이 전부 알약이면
+   * 어긋난 줄이 도리어 묻힌다. */
+  chip: string;
+  /** 행 왼쪽 3px 톤 레일 (선택 행·KPI 카드와 같은 장치). */
+  rail: string;
+  /** 두 값 칸의 면. 어긋난 줄에서만 칠하고, 값이 없는 쪽은 칠하지 않는다. */
+  expected: string;
+  actual: string;
+}
+
+const QUIET = 'text-muted';
+const BAD = {
+  text: 'text-bad',
+  chip: 'border border-bad-line bg-bad-soft text-bad',
+  rail: 'border-l-bad-vivid',
+  expected: 'bg-ok-soft text-ok',
+  actual: 'bg-bad-soft text-bad',
 };
 
-const CELL = 'border-b border-line px-3 py-1.5 align-top';
+const STATUS: Record<FieldStatus, StatusStyle> = {
+  match: { label: '일치', text: QUIET, chip: QUIET, rail: 'border-l-transparent', expected: QUIET, actual: QUIET },
+  diff: { label: '값 다름', ...BAD },
+  type: { label: '타입 다름', ...BAD },
+  missing: { label: '누락', ...BAD },
+  // '추가'만 warn 인 까닭은, 나머지 셋이 "기대한 것이 그대로 오지 않았다"인 반면
+  // 이것은 "묻지 않은 것이 더 왔다"라서 고칠 곳이 프롬프트가 아니라 기대 정답인
+  // 경우가 잦기 때문이다. 기대값 칸은 칠하지 않는다 — 거기엔 아무것도 없다.
+  extra: {
+    label: '추가',
+    text: 'text-warn',
+    chip: 'border border-warn-line bg-warn-soft text-warn',
+    rail: 'border-l-warn-vivid',
+    expected: QUIET,
+    actual: 'bg-warn-soft text-warn',
+  },
+};
+
+const CELL = 'border-b border-line px-3 py-2 align-top';
+/** 열 사이 세로 헤어라인. 값이 두 칸에 걸쳐 읽히는 표라 가로줄만으로는 어느
+ * 칸까지가 기대값인지 눈이 자꾸 놓친다. */
+const COL = 'border-r border-line';
 
 /** 값이 아예 없는 쪽 — 빈 칸으로 두면 '빈 문자열이 왔다'로도 읽힌다. */
 function Absent({ children }: { children: string }) {
-  return <span className="text-[11px] text-muted-soft">{children}</span>;
+  return <span className="font-sans text-[11px] opacity-70">{children}</span>;
 }
 
 function FieldRow({ f }: { f: FieldResult }) {
   const s = STATUS[f.status];
-  const ok = f.status === 'match';
   return (
-    <tr>
-      <td className={cn(CELL, 'border-l-2 font-mono text-ink', s.rail)}>
+    <tr className="transition-colors hover:bg-surface-2/70">
+      <td className={cn(CELL, COL, 'border-l-[3px] font-mono text-ink', s.rail)}>
         {f.path || <span className="text-muted">(전체)</span>}
       </td>
-      <td className={cn(CELL, 'break-all font-mono', ok ? 'text-muted' : 'text-ok')}>
+      <td className={cn(CELL, COL, 'break-words font-mono', s.expected)}>
         {f.expected === null ? <Absent>기대에 없음</Absent> : f.expected}
       </td>
-      <td className={cn(CELL, 'break-all font-mono', ok ? 'text-muted' : 'text-bad')}>
+      <td className={cn(CELL, COL, 'break-words font-mono', s.actual)}>
         {f.actual === null ? <Absent>응답에 없음</Absent> : f.actual}
       </td>
-      <td className={cn(CELL, 'whitespace-nowrap font-medium', s.text)}>{s.label}</td>
+      <td className={cn(CELL, 'whitespace-nowrap')}>
+        <span className={cn('inline-flex items-center rounded-full px-1.5 py-px text-[10px] font-semibold', s.chip)}>
+          {s.label}
+        </span>
+      </td>
     </tr>
   );
 }
 
-/** 키 단위 판정표. 기대 정답에 적힌 순서 그대로 읽히고, 어긋난 줄만 왼쪽에 색
- * 레일이 선다 — 키가 스무 개여도 눈이 갈 곳은 그 줄들이다. */
+/** 키 단위 판정표. 기대 정답에 적힌 순서 그대로 읽히고, 어긋난 줄만 색을 갖는다
+ * — 왼쪽 톤 레일과 어긋난 값 칸의 면, 그리고 결과 칩. 키가 스무 개여도 눈이 갈
+ * 곳은 그 줄들이다.
+ *
+ * 열 너비는 고정 비율이다. 자동 폭은 값 하나가 길어질 때마다 열이 통째로 밀려,
+ * 위아래 줄의 기대값·실제값이 서로 어긋난 자리에 서게 된다 — 나란히 읽으라고
+ * 만든 표에서 그것만은 일어나면 안 된다. */
 function FieldTable({ m }: { m: StructuredMatch }) {
   return (
-    <div className="max-h-72 overflow-auto">
-      <table className="w-full border-separate border-spacing-0 text-xs">
-        <thead className="sticky top-0 bg-surface-2 text-left text-[10px] uppercase tracking-[0.6px] text-muted">
+    <div className="max-h-80 overflow-auto">
+      <table className="w-full min-w-[560px] table-fixed border-separate border-spacing-0 text-xs">
+        <colgroup>
+          <col style={{ width: '24%' }} />
+          <col style={{ width: '30%' }} />
+          <col style={{ width: '30%' }} />
+          <col style={{ width: '16%' }} />
+        </colgroup>
+        <thead className="sticky top-0 z-10 bg-surface-2 text-left text-[10px] uppercase tracking-[0.6px] text-muted">
           <tr>
-            <th className="border-b border-line px-3 py-1.5 font-semibold">키</th>
-            <th className="border-b border-line px-3 py-1.5 font-semibold">기대값</th>
-            <th className="border-b border-line px-3 py-1.5 font-semibold">실제값</th>
-            <th className="w-px border-b border-line px-3 py-1.5 font-semibold">결과</th>
+            <th className={cn('border-b border-line px-3 py-2 font-semibold', COL)}>키</th>
+            <th className={cn('border-b border-line px-3 py-2 font-semibold', COL)}>기대값</th>
+            <th className={cn('border-b border-line px-3 py-2 font-semibold', COL)}>실제값</th>
+            <th className="border-b border-line px-3 py-2 font-semibold">결과</th>
           </tr>
         </thead>
-        <tbody className="[&>tr:hover]:bg-surface-2/60 [&>tr:last-child>td]:border-b-0">
+        <tbody className="[&>tr:last-child>td]:border-b-0">
           {m.fields.map((f) => (
             <FieldRow key={f.path + '·' + f.status} f={f} />
           ))}
@@ -175,30 +224,34 @@ function FieldSummary({ m }: { m: StructuredMatch }) {
   return (
     <span className="flex flex-wrap items-baseline gap-x-2 text-[11px] text-muted">
       <span className="font-mono tabular-nums">
-        키 <span className="font-semibold text-ink">{m.matched}</span>/{m.total}
+        키 <span className="font-semibold text-ink">{m.matched}</span>
+        <span className="text-muted-soft">/{m.total}</span>
       </span>
+      {counts.length > 0 && <span aria-hidden className="h-2.5 w-px self-center bg-line-strong" />}
       {counts.map(([k, n]) => (
-        <span key={k} className={STATUS[k].text}>
-          {STATUS[k].label} {n}
+        <span key={k} className={cn('font-medium', STATUS[k].text)}>
+          {STATUS[k].label} <span className="font-mono tabular-nums">{n}</span>
         </span>
       ))}
     </span>
   );
 }
 
-/** 같은 비교를 읽는 두 가지 방법 사이의 토글. */
+/** 같은 비교를 읽는 두 가지 방법 사이의 토글 — 사이드바·상단 탭과 같은 세그먼트
+ * 장치를 그대로 줄여 쓴다. */
 function ViewToggle({ raw, onRaw }: { raw: boolean; onRaw: (v: boolean) => void }) {
   const opts: [string, boolean][] = [['키별', false], ['원본', true]];
   return (
-    <span className="inline-flex shrink-0 overflow-hidden rounded-sm border border-line">
+    <span className="inline-flex shrink-0 items-stretch gap-0.5 rounded-md border border-line bg-surface-3 p-0.5">
       {opts.map(([label, v]) => (
         <button
           key={label}
           type="button"
           onClick={() => onRaw(v)}
+          aria-pressed={raw === v}
           className={cn(
-            'px-1.5 py-0.5 text-[10px] font-medium transition-colors',
-            raw === v ? 'bg-surface text-ink' : 'text-muted hover:text-ink',
+            'rounded-sm px-2 py-0.5 text-[11px] font-semibold transition',
+            raw === v ? 'bg-surface text-accent shadow-seg' : 'text-muted hover:text-ink',
           )}
         >
           {label}
@@ -226,9 +279,15 @@ export function MatchDiff({ row }: { row: RagasResultRow }) {
   const [raw, setRaw] = useState(false);
 
   return (
-    <div className="overflow-hidden rounded-sm border border-line bg-surface">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line bg-surface-2 px-3 py-1.5">
+    <div className="overflow-hidden rounded-md border border-line bg-surface">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-line bg-surface-2 px-3 py-2">
         <span className="eyebrow">채점 대상 · 기대 정답</span>
+        {/* 키별 표에는 변수 이름을 적을 자리가 없다 — 무엇을 채점했는지는 어느
+            보기에서든 이 줄이 말한다. */}
+        {row.trace_value && <TraceTag name={row.trace_var_nm} />}
+        {(row.exact_match != null || fields) && (
+          <span aria-hidden className="h-3 w-px self-center bg-line-strong" />
+        )}
         {row.exact_match != null && <OxBadge value={row.exact_match} />}
         {fields && <FieldSummary m={fields} />}
         <span className="ml-auto flex items-center gap-2">

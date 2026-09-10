@@ -8,6 +8,7 @@
 // it. A reconnecting client is replayed everything it missed.
 
 import type { RunEvent } from "@/lib/types";
+import { withRunSignal } from "@/lib/runSignal";
 import type { Emit } from "./flow";
 
 type Listener = (e: RunEvent) => void;
@@ -28,6 +29,9 @@ interface LiveRun {
   /** Set once the run ends; replayed last so the client closes its stream. */
   terminal: RunEvent | null;
   listeners: Set<Listener>;
+  /** Cuts whatever this run has on the wire. Cancel aborts it so the stop is
+   * felt at once instead of after the current call's timeout. */
+  ctrl: AbortController;
 }
 
 // Module scope: one map per server process, shared by every request that lands
@@ -44,12 +48,37 @@ export function isLive(runId: number): boolean {
 }
 
 /**
+ * Cut this run's in-flight work immediately. The DB flag ('CANCELLING') is only
+ * read between cases, so on its own a cancel waits out whatever call is already
+ * open — up to the full response timeout. Aborting ends that call now; the run
+ * loop sees the signal on the very next check and finishes as CANCELLED.
+ *
+ * Returns false when the run is not executing in this process (already
+ * finished, or lost to a restart) — there is nothing to abort.
+ */
+export function abortRun(runId: number): boolean {
+  const live = runs.get(runId);
+  if (!live) return false;
+  live.ctrl.abort();
+  return true;
+}
+
+/**
  * Begin executing ``runId`` in the background. Returns false when a run is
  * already registered under that id (a second stream must attach, not re-run).
  */
-export function startRun(runId: number, exec: (emit: Emit) => Promise<void>): boolean {
+export function startRun(
+  runId: number,
+  exec: (emit: Emit, signal: AbortSignal) => Promise<void>,
+): boolean {
   if (runs.has(runId)) return false;
-  const live: LiveRun = { running: null, cases: new Map(), terminal: null, listeners: new Set() };
+  const live: LiveRun = {
+    running: null,
+    cases: new Map(),
+    terminal: null,
+    listeners: new Set(),
+    ctrl: new AbortController(),
+  };
   runs.set(runId, live);
 
   const emit: Emit = (e) => {
@@ -66,7 +95,10 @@ export function startRun(runId: number, exec: (emit: Emit) => Promise<void>): bo
     }
   };
 
-  void exec(emit)
+  // The scope wraps the whole execution, so every fetch made anywhere inside it
+  // — agent, judge LLM, embeddings — sees this run's signal without each layer
+  // having to pass it along.
+  void withRunSignal(live.ctrl.signal, () => exec(emit, live.ctrl.signal))
     .catch(() => {
       /* executeRun records its own failures; nothing to add here */
     })

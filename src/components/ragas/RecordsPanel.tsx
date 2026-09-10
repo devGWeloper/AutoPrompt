@@ -13,7 +13,7 @@ import type { RagasRunDetail, RagasRunSummary } from '@/lib/types';
 import { CaseCompareTable } from './CompareTable';
 import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import {
-  CaseTable, DownloadIcon, fmt2, fmt3, fmtDt, folderLabel, hasTextSelection, runMean, runTargetLabel,
+  CaseTable, DownloadIcon, ErrBox, errText, fmt2, fmt3, fmtDt, folderLabel, hasTextSelection, runMean, runTargetLabel,
   compareSideLabel, runModelDetail, runTitle, runTitleParts, scoredMetrics, SegToggle, TrashIcon, UNSCORED_LABEL,
 } from './shared';
 
@@ -286,13 +286,23 @@ export default function RecordsPanel() {
   }, []);
   useEffect(reload, [reload]);
 
+  // 삭제가 거절될 수 있다 — 실행 중인 기록이 그렇다. 조용히 실패하면 행이
+  // 그대로 남은 이유를 알 수 없으므로 목록 위에 이유를 적는다.
+  const [delErr, setDelErr] = useState<string | null>(null);
+
   async function del(id: number) {
-    await api.del(`/ragas-runs/${id}`);
+    setDelErr(null);
+    try {
+      await api.del(`/ragas-runs/${id}`);
+    } catch (e) { setDelErr(errText(e)); return; }
     if (selectedKey === `s_${id}`) setSelectedKey(null);
     reload();
   }
   async function delPair(ids: number[], groupId: number) {
-    await Promise.all(ids.map((i) => api.del(`/ragas-runs/${i}`)));
+    setDelErr(null);
+    try {
+      await Promise.all(ids.map((i) => api.del(`/ragas-runs/${i}`)));
+    } catch (e) { setDelErr(errText(e)); reload(); return; }
     if (selectedKey === `ab_${groupId}`) setSelectedKey(null);
     reload();
   }
@@ -380,6 +390,11 @@ export default function RecordsPanel() {
             <Button variant="secondary" size="sm" onClick={reload}>새로고침</Button>
           </div>
         </div>
+        {delErr && (
+          <div className="border-b border-line px-4 py-2.5">
+            <ErrBox msg={delErr} />
+          </div>
+        )}
         <Table>
           <THead>
             <TR>

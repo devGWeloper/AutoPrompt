@@ -1,6 +1,6 @@
 import { readConn, withConn } from "@/lib/db";
 import type { OracleConnection } from "@/lib/db";
-import { notFound } from "@/lib/http";
+import { conflict, notFound } from "@/lib/http";
 import {
   resultCols,
   RUN_COLS,
@@ -12,6 +12,7 @@ import { ALL_METRICS, EXACT_MATCH, SYSTEM_USER } from "@/lib/types";
 import type { LlmMetric, RagasMetric, RagasRunDetail, RagasRunSummary } from "@/lib/types";
 import { writeAudit } from "./audit";
 import { deleteCallConfigs } from "./callConfig";
+import { isLive } from "./runRegistry";
 
 // ============================================================
 // Fallback scorer — deterministic token-overlap heuristics (dependency-free).
@@ -253,6 +254,14 @@ export async function getRunDetail(runId: number): Promise<RagasRunDetail> {
 }
 
 export async function deleteRun(runId: number): Promise<void> {
+  // A run that is still executing must not have its record pulled out from
+  // under it: the execution keeps writing to rows that no longer exist, its
+  // stream never reaches a terminal event, and the panel that started it is
+  // left showing nothing but a Cancel button for a run it can no longer
+  // cancel. Stop it first, then delete it.
+  if (isLive(runId)) {
+    throw conflict("실행 중인 기록입니다 — 먼저 취소한 뒤 삭제하세요");
+  }
   await withConn(async (conn) => {
     const res = await conn.execute(`SELECT RUN_ID FROM PTX_RUN_MAS WHERE RUN_ID = :id`, { id: runId });
     if (((res.rows ?? []) as unknown[]).length === 0) throw notFound("ragas run not found");

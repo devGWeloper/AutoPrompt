@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Select, Textarea } from '@/components/ui/Field';
-import { api } from '@/lib/api';
+import { ApiError, api } from '@/lib/api';
 import { clearActiveRun, readActiveRun, saveActiveRun, type ActiveCompareRun } from '@/lib/activeRun';
 import { connectRagasRunStream as connectRagasRunWs } from '@/lib/sse-client';
 import { CompareSummaryDashboard } from './RunSummaryDashboard';
@@ -171,6 +171,10 @@ export default function ComparePanel() {
   const [runLabels, setRunLabels] = useState<[string, string] | null>(null);
   const runIdsRef = useRef<number[]>([]);
   const resumedRef = useRef(false);
+  // The two open streams, so a panel that gives up on a run (its record was
+  // deleted mid-run) can shut them instead of leaving them writing into the
+  // next run's table.
+  const wsRefs = useRef<EventSource[]>([]);
 
   useEffect(() => {
     if (nodeNm == null) { setVersions([]); return; }
@@ -226,18 +230,27 @@ export default function ComparePanel() {
             setTotal((t) => Math.max(t, m.total));
             setLive((cur) => upsertResult(cur, m.result));
           } else if (m.event === 'DONE' || m.event === 'FAILED' || m.event === 'CANCELLED') {
-            setDet(await api.get<RagasRunDetail>(`/ragas-runs/${id}`));
             ws.close();
+            // 기록이 지워진 실행이면 상세 조회가 실패한다. 그 실패를 여기서
+            // 던지면 이 사이드는 영영 끝나지 않고, 두 쪽을 기다리는 패널도
+            // '실행 중'에 갇힌다 — 상세는 없어도 끝은 알린다.
+            try {
+              setDet(await api.get<RagasRunDetail>(`/ragas-runs/${id}`));
+            } catch {
+              /* 상세 없이 끝난 사이드 */
+            }
             resolve(m.event);
           }
         },
       }, { side, endpointId });
+      wsRefs.current.push(ws);
     });
 
   /** Stream both sides and settle the panel's status. Shared by a fresh run and
    * by a resume after refresh — the server replays what each run already emitted. */
   async function attachBoth(saved: ActiveCompareRun) {
     runIdsRef.current = [saved.runIdA, saved.runIdB];
+    closeStreams();
     const ev = await Promise.all([
       waitDone(saved.runIdA, setLiveA, setDetailA, saved.side ? 'a' : null, saved.endpointA),
       waitDone(saved.runIdB, setLiveB, setDetailB, saved.side ? 'b' : null, saved.endpointB),
@@ -327,12 +340,41 @@ export default function ComparePanel() {
     } catch (e) { setCallError(errText(e)); setCallStatus('failed'); }
   }
 
+  function closeStreams() {
+    for (const ws of wsRefs.current) ws.close();
+    wsRefs.current = [];
+  }
+
   async function cancel() {
     const ids = runIdsRef.current;
     if (!ids.length) return;
     setCancelling(true);
-    // Cancel both runs; ignore per-id errors (e.g. one already finished → 409).
-    await Promise.all(ids.map((id) => api.post(`/ragas-runs/${id}/cancel`, {}).catch(() => {})));
+    // Cancel both runs; a per-id error is fine on its own (one side may already
+    // have finished → 409).
+    const res = await Promise.all(
+      ids.map((id) => api.post(`/ragas-runs/${id}/cancel`, {}).then(() => null).catch((e: unknown) => e)),
+    );
+    // 어느 쪽도 취소되지 않았다면 취소할 실행 자체가 없는 것이다 — 실행 중에
+    // 기록이 지워졌을 때가 그렇다. 멈춘 건 실행이 아니라 이 화면이므로,
+    // 스트림을 닫고 실행 버튼을 되돌린다.
+    if (res.every((e) => e instanceof ApiError && (e.status === 404 || e.status === 409))) {
+      closeStreams();
+      clearActiveRun('compare');
+      setCancelling(false);
+      // 기록이 남아 있으면 그 상태로 끝내고, 하나도 읽히지 않으면 지워진 것이다.
+      const dets = await Promise.all(
+        ids.map((id) => api.get<RagasRunDetail>(`/ragas-runs/${id}`).catch(() => null)),
+      );
+      if (dets.every((d) => d === null)) {
+        setStatus('failed');
+        setError('실행 기록이 없습니다 — 실행 중에 기록이 삭제된 것 같습니다. 다시 실행해 주세요.');
+        return;
+      }
+      if (dets[0]) setDetailA(dets[0]);
+      if (dets[1]) setDetailB(dets[1]);
+      const sts = dets.map((d) => d?.status);
+      setStatus(sts.includes('FAILED') ? 'failed' : sts.includes('CANCELLED') ? 'cancelled' : 'done');
+    }
   }
 
   return (

@@ -497,7 +497,7 @@ function messageFromInputs(inputData: string): string {
 // ---- cancel ----
 
 export async function requestCancel(runId: number): Promise<{ status: string }> {
-  return withConn(async (conn) => {
+  const res = await withConn(async (conn) => {
     const run = await fetchRun(conn, runId);
     if (!run) throw notFound("ragas run not found");
     if (["DONE", "FAILED", "CANCELLED"].includes(run.status)) {
@@ -506,6 +506,12 @@ export async function requestCancel(runId: number): Promise<{ status: string }> 
     await conn.execute(`UPDATE PTX_RUN_MAS SET STATUS_CD = 'CANCELLING' WHERE RUN_ID = :id`, { id: runId });
     return { status: "cancelling" };
   }, { commit: true });
+  // The flag alone is read between cases only, so a cancel pressed during a
+  // call used to wait out that call's whole timeout — minutes of "취소 중…" for
+  // a button that had already done its job. Abort the run's in-flight requests
+  // so the stop happens where the user pressed it.
+  registry.abortRun(runId);
+  return res;
 }
 
 // ============================================================
@@ -727,6 +733,13 @@ async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx,
       errMsg = errorText(e).slice(0, 1000);
       traceId = agent.errorTraceId(e);
     }
+    // Cancel cuts the call in flight, so the failure just caught may be the
+    // cancel itself. That is not a result: recording it would leave the run
+    // with a case that "failed" for no reason the user can act on.
+    if (signal?.aborted) {
+      ctx.cancelled = true;
+      break;
+    }
     // Some nodes are judged on a variable the response never carries — the agent
     // committed it to PTX_TRACE_HIS under this TRACE_ID. A row existing IS the
     // signal; nothing is configured per node or per case. Only the first case
@@ -845,6 +858,12 @@ async function phase2(conn: OracleConnection, ctx: RunCtx, emit: Emit, signal?: 
           });
         }
       } catch (e) {
+        // Same as phase 1: an aborted judge call is the cancel arriving, not a
+        // scoring failure. Leave the case's answer as it stands and stop.
+        if (signal?.aborted) {
+          ctx.cancelled = true;
+          break;
+        }
         // Per-case scoring failure (e.g. LLM/embedding call failed) — record and continue.
         await conn.execute(`UPDATE PTX_RUN_DET SET ERROR_CTN = :err WHERE RESULT_ID = :id`, {
           err: errorText(e).slice(0, 1000),
@@ -1010,7 +1029,9 @@ export async function streamRun(
       await executeRun(runId, emit, undefined, opts);
       return;
     }
-    registry.startRun(runId, (e) => executeRun(runId, e, undefined, opts));
+    // The registry's signal, not this connection's: the run belongs to the
+    // server, and only Cancel may stop it — a client that drops just detaches.
+    registry.startRun(runId, (e, sig) => executeRun(runId, e, sig, opts));
   }
 
   await new Promise<void>((resolve) => {

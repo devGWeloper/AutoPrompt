@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getCallTimeoutMs } from "./config";
 import { logger } from "./logger";
 import { DbNotConfiguredError } from "./db";
+import { currentRunSignal } from "./runSignal";
 
 /** Service-layer HTTP error, mirroring FastAPI's HTTPException({status, detail}). */
 export class ApiError extends Error {
@@ -121,6 +122,11 @@ async function timeoutDispatcher(timeoutMs: number): Promise<object | undefined>
  *
  * Hitting the deadline rejects with `AbortError`; callers turn that into the
  * "응답 시간 초과" message naming the configured limit.
+ *
+ * The deadline is not the only thing that can end the wait: an explicit
+ * `init.signal`, or the enclosing run's signal (see lib/runSignal), aborts the
+ * request where it stands. That is what makes Cancel immediate — otherwise the
+ * call in flight would be billed its full timeout before anyone noticed.
  */
 export async function fetchWithTimeout(
   url: string,
@@ -130,6 +136,12 @@ export async function fetchWithTimeout(
   const dispatcher = await timeoutDispatcher(timeoutMs);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const outer = init.signal ?? currentRunSignal();
+  const onOuterAbort = () => controller.abort();
+  if (outer) {
+    if (outer.aborted) controller.abort();
+    else outer.addEventListener("abort", onOuterAbort, { once: true });
+  }
   try {
     return await fetch(url, {
       ...init,
@@ -139,5 +151,6 @@ export async function fetchWithTimeout(
     } as RequestInit);
   } finally {
     clearTimeout(timer);
+    outer?.removeEventListener("abort", onOuterAbort);
   }
 }
