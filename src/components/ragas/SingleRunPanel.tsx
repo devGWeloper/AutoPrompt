@@ -471,7 +471,7 @@ export default function SingleRunPanel() {
             <Card>
               <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
                 <h3 className="text-sm font-semibold text-ink">Response</h3>
-                <ElapsedTag ms={callResult.elapsed_ms} ttft={callResult.ttft_ms} />
+                <ElapsedTag ms={callResult.elapsed_ms} />
               </div>
               <div className="p-4">
                 <AnswerBox text={callResult.response} />

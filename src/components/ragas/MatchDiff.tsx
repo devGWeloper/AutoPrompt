@@ -292,7 +292,7 @@ export function MatchDiff({ row }: { row: RagasResultRow }) {
         {fields && <FieldSummary m={fields} />}
         <span className="ml-auto flex items-center gap-2">
           {fields && <ViewToggle raw={raw} onRaw={setRaw} />}
-          <ElapsedTag ms={row.elapsed_ms} ttft={row.ttft_ms} />
+          <ElapsedTag ms={row.elapsed_ms} />
         </span>
       </div>
       {fields && !raw ? (

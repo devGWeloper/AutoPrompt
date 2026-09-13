@@ -67,7 +67,7 @@ function SideBox({
           <span className="truncate">{label}</span>
         </Badge>
         {row?.exact_match != null && <OxBadge value={row.exact_match} />}
-        <span className="ml-auto"><ElapsedTag ms={row?.elapsed_ms} ttft={row?.ttft_ms} /></span>
+        <span className="ml-auto"><ElapsedTag ms={row?.elapsed_ms} /></span>
       </div>
       {diffable ? (
         <>
@@ -137,24 +137,11 @@ function TimingPair({
  * Both sides' timings. Shown for unscored runs too — speed is a comparison of
  * its own, and on an A/B it is often the only difference the two sides have.
  *
- * TTFT sits above the total because the two can disagree, and when they do the
- * disagreement is the finding: a side that wins on TTFT but loses on total was
- * not busier, it just said more. Only streaming endpoints produce the first
- * line; without it this is the single total row it has always been.
+ * 첫 토큰 시각(TTFT)은 기록은 되지만 여기 걸지 않는다 — 한 칸에 시간이 둘이면
+ * 어느 숫자를 견주는 중인지부터 골라야 했다.
  */
 function ElapsedPair({ a, b }: { a?: RagasResultRow; b?: RagasResultRow }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <TimingPair
-        label="TTFT"
-        title="요청 → 첫 토큰. 생성 시간이 빠져 있어 큐 대기가 그대로 드러난다."
-        va={a?.ttft_ms}
-        vb={b?.ttft_ms}
-        fmt={fmtElapsed}
-      />
-      <TimingPair label="시간" title="요청 → 답변 완료" va={a?.elapsed_ms} vb={b?.elapsed_ms} fmt={fmtElapsed} />
-    </div>
-  );
+  return <TimingPair label="시간" title="요청 → 답변 완료" va={a?.elapsed_ms} vb={b?.elapsed_ms} fmt={fmtElapsed} />;
 }
 
 // One side's absolute-score bar (fills 0→value on a 0..1 scale). B is the accent
@@ -410,11 +397,12 @@ export function CaseCompareTable({
                   pair, plus the response times. They are stacked rather than
                   merged — a run with both selected has two answers to give, not
                   one blended number. */}
-              {/* 고정 폭 — 이 스택의 내용은 줄마다 다르다(TTFT 유무, 점수 유무,
-                  Δ 유무). 폭을 내용에 맡기면 그만큼 왼쪽 A·B 미리보기가 줄마다
-                  다른 자리에서 끝나서, 접힌 목록이 표로 읽히지 않는다. */}
+              {/* 고정 폭 — 이 스택의 내용은 줄마다 다르다(점수 유무, Δ 유무).
+                  폭을 내용에 맡기면 그만큼 왼쪽 A·B 미리보기가 줄마다 다른
+                  자리에서 끝나서, 접힌 목록이 표로 읽히지 않는다. 칸 안에서는
+                  왼쪽 맞춤이라 시간·판정·RAGAS 의 머리가 한 선에 선다. */}
               {isClosed && (
-                <div className="flex w-[236px] shrink-0 flex-col items-end gap-1">
+                <div className="flex w-[236px] shrink-0 flex-col items-start gap-1">
                   <ElapsedPair a={a} b={b} />
                   {showScores && (
                     <>

@@ -736,26 +736,27 @@ export default function DatasetsPanel() {
                     const gt = (p.groundTruth ?? c.expected_output ?? '').trim();
                     return (
                       <li key={c.case_id}>
+                        {/* 질문 | 정답 두 칸이 줄마다 같은 자리에서 시작하고,
+                            그 사이를 세로 헤어라인이 가른다 — 줄이 쌓이면 선이
+                            이어져 두 칸의 경계가 눈에 그어진다. 정답 칸은 길이와
+                            상관없이 왼쪽에서 시작한다. */}
                         <button
                           type="button"
                           onClick={() => openEdit(c)}
-                          className="flex w-full items-start gap-2 px-4 py-2.5 text-left transition-colors hover:bg-surface-2/60"
+                          className="grid w-full grid-cols-[14px_22px_minmax(0,1fr)_1px_minmax(0,1fr)] items-start gap-x-2.5 px-4 py-2.5 text-left transition-colors hover:bg-surface-2/60"
                         >
                           <Chevron open={open} className="mt-0.5" />
-                          <span className="mt-px w-6 shrink-0 font-mono text-[11px] tabular-nums text-muted">{i + 1}</span>
-                          <span className={cn('min-w-0 flex-1 text-sm text-ink', open ? 'break-words font-medium' : 'truncate')}>
+                          <span className="mt-px font-mono text-[11px] tabular-nums text-muted">{i + 1}</span>
+                          <span className={cn('min-w-0 text-sm text-ink', open ? 'break-words font-medium' : 'truncate')}>
                             {p.question || <span className="text-muted">(질문 없음)</span>}
                           </span>
-                          {!open && (
-                            gt
-                              ? <span className="mt-0.5 min-w-0 flex-1 truncate text-xs text-muted">{oneLine(gt)}</span>
-                              : <span className="mt-0.5 shrink-0 text-[11px] text-muted">정답 없음</span>
-                          )}
-                          {folder === null && c.case_type !== UNFILED && (
-                            <span className="mt-0.5 shrink-0 rounded-sm bg-surface-2 px-1.5 py-px text-[11px] text-muted">
-                              {c.case_type}
-                            </span>
-                          )}
+                          {/* -my-2.5 는 줄의 세로 여백만큼 선을 위아래로 늘린다 —
+                              그래야 줄과 줄 사이에서 끊기지 않고 목록을 관통하는
+                              한 줄의 세로선이 된다. */}
+                          <span aria-hidden className="-my-2.5 w-px self-stretch bg-line" />
+                          <span className="mt-0.5 min-w-0 truncate text-xs text-muted">
+                            {open ? '' : gt ? oneLine(gt) : <span className="text-muted-soft">정답 없음</span>}
+                          </span>
                         </button>
                         {open && (
                           <div className="px-4 pb-3.5 pl-12">

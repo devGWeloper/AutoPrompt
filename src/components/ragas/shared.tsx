@@ -917,53 +917,29 @@ export function OxBadge({ value, rate }: { value: number | null; rate?: boolean 
  * ms → seconds, always. Minutes are never used: a 92초 call sits next to the
  * 90초 timeout on the same scale, which '1분 32초' hides.
  *
- * Two decimals, because both timings on a row are read against each other and a
- * coarser total lies about that comparison: a 75.34초 answer printed as 75.3초
- * sits under a 75.33초 first token and reads as though the parts outran the
- * whole. The same two decimals also keep TTFT legible where it usually lives —
- * one decimal rounds 0.18 and 0.24 to the same 0.2, and that gap is what a
- * congestion reading is made of.
+ * Two decimals, because the numbers on this screen are read against each other
+ * and a coarser total lies about that comparison — 75.34초 and 75.33초 are not
+ * the same call, and one decimal says they are.
  */
 export function fmtElapsed(ms: number | null | undefined): string | null {
   if (ms == null || !Number.isFinite(ms) || ms < 0) return null;
   return `${(ms / 1000).toFixed(2)}초`;
 }
 
-/**
- * How long the endpoint took on this case: first token, then the whole answer.
- *
- * The two are different measurements, so neither replaces the other. The total
- * carries generation time and therefore moves with how long the answer ran; the
- * first-token time stops before any of that and holds the queue wait. Only a
- * streaming endpoint has the first number — without it this renders exactly as
- * it always did, a single total.
- */
+/** How long the endpoint took on this case, 요청 → 답변 완료. 첫 토큰 시각(TTFT)은
+ * 여전히 기록되지만 화면에는 걸지 않는다 — 한 줄에 숫자가 둘이면 어느 쪽을 읽는
+ * 중인지부터 골라야 했다. */
 export function ElapsedTag({
   ms,
-  ttft,
   className,
 }: {
   ms: number | null | undefined;
-  ttft?: number | null;
   className?: string;
 }) {
   const text = fmtElapsed(ms);
-  const first = fmtElapsed(ttft);
-  if (text === null && first === null) return null;
+  if (text === null) return null;
   return (
-    <span
-      className={cn('shrink-0 font-mono text-[11px] tabular-nums text-muted', className)}
-      title={first !== null ? `첫 토큰 ${first} · 전체 ${text ?? '—'}` : undefined}
-    >
-      {first !== null && (
-        <>
-          <span className="font-sans text-[9px] font-semibold uppercase tracking-[0.6px] text-muted-soft">TTFT</span>
-          <span className="ml-1 text-ink">{first}</span>
-          <span className="mx-1 text-muted-soft">·</span>
-        </>
-      )}
-      {text ?? '—'}
-    </span>
+    <span className={cn('shrink-0 font-mono text-[11px] tabular-nums text-muted', className)}>{text}</span>
   );
 }
 
@@ -1089,11 +1065,12 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
               )}
               {isClosed && <AnswerPreview row={r} className="mt-0.5 min-w-0 flex-1" />}
               {/* 접힌 줄들은 하나의 표처럼 읽힌다 — 시간과 점수는 내용 길이에
-                  따라 떠다니지 않고 고정 폭 칸에 오른끝을 맞춰 선다. 빈 값이어도
-                  칸은 남아서, 위아래 줄의 같은 것이 같은 자리에 온다. */}
+                  따라 떠다니지 않고 고정 폭 칸을 차지한다. 시간은 그 칸의 왼쪽
+                  끝에서 시작해, 자릿수가 달라도 숫자의 머리가 한 줄로 선다.
+                  빈 값이어도 칸은 남아서 위아래 줄의 같은 것이 같은 자리에 온다. */}
               {isClosed && (
-                <span className="mt-0.5 w-[156px] shrink-0 text-right">
-                  <ElapsedTag ms={r.elapsed_ms} ttft={r.ttft_ms} />
+                <span className="mt-0.5 w-[76px] shrink-0 text-left">
+                  <ElapsedTag ms={r.elapsed_ms} />
                 </span>
               )}
               {isClosed && showScores && (
@@ -1132,7 +1109,7 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
                   <div className="min-w-0">
                     <div className="flex items-baseline justify-between gap-2">
                       <p className="eyebrow">답변</p>
-                      <ElapsedTag ms={r.elapsed_ms} ttft={r.ttft_ms} />
+                      <ElapsedTag ms={r.elapsed_ms} />
                     </div>
                     <div className="mt-0.5"><AnswerBox text={r.answer} error={r.error_msg} settled={settled} /></div>
                   </div>
