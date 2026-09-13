@@ -892,7 +892,11 @@ export function CollapseAllStrip({ allClosed, onToggle }: { allClosed: boolean; 
   );
 }
 
-/** 정답 일치 verdict: 1 → 일치, 0 → 불일치 (a run-level rate renders as a percentage). */
+/** 정답 일치 verdict: 1 → 일치, 0 → 불일치 (a run-level rate renders as a percentage).
+ *
+ * '일치'와 '불일치'는 글자 수가 달라, 줄마다 알약 너비가 달라지면 여러 줄이 쌓인
+ * 목록에서 그 자리가 통째로 흔들린다. 케이스 판정은 최소 너비를 잡고 가운데로
+ * 세워 어느 줄에서든 같은 폭을 차지하게 한다(비율 배지는 자릿수가 스스로 정한다). */
 export function OxBadge({ value, rate }: { value: number | null; rate?: boolean }) {
   if (value == null) return <span className="text-[11px] text-muted">—</span>;
   const ok = rate ? value >= 1 : value >= 0.5;
@@ -900,6 +904,7 @@ export function OxBadge({ value, rate }: { value: number | null; rate?: boolean 
     <span
       className={cn(
         'inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold',
+        rate ? '' : 'min-w-[52px] justify-center',
         ok ? 'border-ok-line bg-ok-soft text-ok' : 'border-bad-line bg-bad-soft text-bad',
       )}
     >
@@ -1003,25 +1008,30 @@ export function ScoreBars({
   return (
     <div className="overflow-hidden rounded-sm border border-line bg-surface p-3">
       <p className="mb-2 eyebrow">평가 결과</p>
-      <ul className="flex flex-col gap-2">
+      {/* 격자는 목록 전체가 하나로 쓴다(`li` 는 `contents`) — 줄마다 grid 를 따로
+          두면 트랙이 그 줄의 내용에만 맞춰져, 이름이 긴 지표의 막대만 다른 자리에서
+          시작한다. 이름 · 막대 · 값이 세로로 떨어지는 것은 이 한 겹 덕분이다.
+          Action Test 는 막대 대신 판정이라 가운데 칸을 비우고 오른쪽 값 칸에 선다. */}
+      <ul className="grid grid-cols-[minmax(92px,max-content)_1fr_auto] items-center gap-x-3 gap-y-2">
         {shown.map((m) => {
           const v = row[m] != null ? Number(row[m]) : null;
           if (m === EXACT_MATCH) {
             return (
-              <li key={m} className="flex items-center gap-3">
+              <li key={m} className="contents">
                 <span className="truncate text-[11px] text-muted">{METRIC_LABELS[m]}</span>
-                <OxBadge value={v} />
+                <span />
+                <span className="justify-self-end"><OxBadge value={v} /></span>
               </li>
             );
           }
           const pct = v != null ? Math.max(0, Math.min(1, v)) * 100 : 0;
           return (
-            <li key={m} className="grid grid-cols-[minmax(92px,auto)_1fr_auto] items-center gap-3">
+            <li key={m} className="contents">
               <span className="truncate text-[11px] text-muted">{METRIC_LABELS[m]}</span>
               <div className="relative h-2 overflow-hidden rounded-full bg-surface-3">
                 <span className="absolute inset-y-0 left-0 rounded-full bg-accent" style={{ width: pct + '%' }} />
               </div>
-              <span className={'w-12 shrink-0 text-right font-mono text-xs tabular-nums ' + (v != null ? 'text-ink' : 'text-muted')}>{fmt3(v)}</span>
+              <span className={'min-w-[48px] justify-self-end text-right font-mono text-xs tabular-nums ' + (v != null ? 'text-ink' : 'text-muted')}>{fmt3(v)}</span>
             </li>
           );
         })}
@@ -1078,9 +1088,16 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
                 </span>
               )}
               {isClosed && <AnswerPreview row={r} className="mt-0.5 min-w-0 flex-1" />}
-              {isClosed && <ElapsedTag ms={r.elapsed_ms} ttft={r.ttft_ms} className="mt-0.5" />}
+              {/* 접힌 줄들은 하나의 표처럼 읽힌다 — 시간과 점수는 내용 길이에
+                  따라 떠다니지 않고 고정 폭 칸에 오른끝을 맞춰 선다. 빈 값이어도
+                  칸은 남아서, 위아래 줄의 같은 것이 같은 자리에 온다. */}
+              {isClosed && (
+                <span className="mt-0.5 w-[156px] shrink-0 text-right">
+                  <ElapsedTag ms={r.elapsed_ms} ttft={r.ttft_ms} />
+                </span>
+              )}
               {isClosed && showScores && (
-                <span className="flex shrink-0 items-center gap-2">
+                <span className="flex w-[150px] shrink-0 items-center justify-end gap-2">
                   {/* O/X and the RAGAS mean stand on their own — a verdict and a
                       graded score answer different questions, so neither is
                       folded into the other. Both can be present at once. */}

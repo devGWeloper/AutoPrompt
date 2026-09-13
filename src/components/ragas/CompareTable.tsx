@@ -212,11 +212,15 @@ export function CompareVerdict({ detailA, detailB }: { detailA: RagasRunDetail; 
 
 // The shared leaderboard body: one row per metric with paired A/B bars on a
 // 0..1 scale and Δ (B−A) on the right as a high-contrast diff badge.
+//
+// Δ 칸은 고정 폭이다 — `auto` 로 두면 'B만 일치'가 든 줄만 세 번째 칸이 넓어지고,
+// 그만큼 그 줄의 막대가 짧아져 위아래 막대가 같은 자리에서 끝나지 않는다. 서로
+// 견주라고 그린 막대에서 그것만은 일어나면 안 된다.
 function PairedMetricList({ rows }: { rows: MetricRow[] }) {
   return (
     <ul className="divide-y divide-line">
       {rows.map(({ m, av, bv, d }) => (
-        <li key={m} className="grid grid-cols-[minmax(104px,0.8fr)_2fr_auto] items-center gap-4 px-3.5 py-2.5">
+        <li key={m} className="grid grid-cols-[minmax(104px,0.8fr)_2fr_88px] items-center gap-4 px-3.5 py-2.5">
           <span className="truncate text-sm font-medium text-ink">{METRIC_LABELS[m]}</span>
           {/* 정답 일치 is a per-case verdict — 일치/불일치 reads better than a 0/1 bar. */}
           {m === EXACT_MATCH ? (
@@ -231,13 +235,13 @@ function PairedMetricList({ rows }: { rows: MetricRow[] }) {
             </div>
           )}
           {m === EXACT_MATCH ? (
-            <span className="min-w-[60px] text-center text-[11px] font-medium text-muted">
+            <span className="w-full text-center text-[11px] font-medium text-muted">
               {d == null ? '—' : d === 0 ? '동일' : d > 0 ? 'B만 일치' : 'A만 일치'}
             </span>
           ) : (
             <span
               className={cn(
-                'inline-flex min-w-[60px] items-center justify-center rounded-full px-2 py-0.5 font-mono text-xs font-semibold tabular-nums border',
+                'inline-flex w-full items-center justify-center rounded-full px-2 py-0.5 font-mono text-xs font-semibold tabular-nums border',
                 d == null
                   ? 'border-transparent text-muted'
                   : d > 0
@@ -406,8 +410,11 @@ export function CaseCompareTable({
                   pair, plus the response times. They are stacked rather than
                   merged — a run with both selected has two answers to give, not
                   one blended number. */}
+              {/* 고정 폭 — 이 스택의 내용은 줄마다 다르다(TTFT 유무, 점수 유무,
+                  Δ 유무). 폭을 내용에 맡기면 그만큼 왼쪽 A·B 미리보기가 줄마다
+                  다른 자리에서 끝나서, 접힌 목록이 표로 읽히지 않는다. */}
               {isClosed && (
-                <div className="flex shrink-0 flex-col items-end gap-1">
+                <div className="flex w-[236px] shrink-0 flex-col items-end gap-1">
                   <ElapsedPair a={a} b={b} />
                   {showScores && (
                     <>
