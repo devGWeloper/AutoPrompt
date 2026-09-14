@@ -239,7 +239,7 @@ function FieldSummary({ m }: { m: StructuredMatch }) {
 
 /** 같은 비교를 읽는 두 가지 방법 사이의 토글 — 사이드바·상단 탭과 같은 세그먼트
  * 장치를 그대로 줄여 쓴다. */
-function ViewToggle({ raw, onRaw }: { raw: boolean; onRaw: (v: boolean) => void }) {
+export function ViewToggle({ raw, onRaw }: { raw: boolean; onRaw: (v: boolean) => void }) {
   const opts: [string, boolean][] = [['키별', false], ['원본', true]];
   return (
     <span className="inline-flex shrink-0 items-stretch gap-0.5 rounded-md border border-line bg-surface-3 p-0.5">
@@ -427,7 +427,7 @@ function PairCell({ f, last }: { f?: FieldResult; last?: boolean }) {
  * 두 사이드 모두 JSON 이 아니면 null — 그때는 예전처럼 원문 diff 가 답한다.
  */
 export function FieldCompareTable({
-  aText, bText, expected, unwrapA, unwrapB, nameA, nameB, className,
+  aText, bText, expected, unwrapA, unwrapB, nameA, nameB, className, trailing,
 }: {
   aText: string | null | undefined;
   bText: string | null | undefined;
@@ -437,6 +437,8 @@ export function FieldCompareTable({
   nameA: string;
   nameB: string;
   className?: string;
+  /** 머리줄 오른쪽 끝에 얹을 것 — 보기 전환 토글이 여기 선다. */
+  trailing?: ReactNode;
 }) {
   const rows = useMemo<PairRow[] | null>(() => {
     const ma = structuredMatch(aText ?? '', expected ?? '', { unwrapBody: unwrapA });
@@ -471,6 +473,7 @@ export function FieldCompareTable({
         <span className={cn('text-[11px] font-medium', split > 0 ? 'text-bad' : 'text-muted')}>
           {split > 0 ? `A·B 갈림 ${split}` : 'A·B 동일'}
         </span>
+        {trailing && <span className="ml-auto">{trailing}</span>}
       </div>
       <div className="max-h-80 overflow-auto">
         <table className="w-full min-w-[620px] table-fixed border-separate border-spacing-0 text-xs">

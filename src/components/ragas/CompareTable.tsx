@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/cn';
 import {
@@ -15,16 +15,19 @@ import {
   AnswerBox, caseMean, Chevron, CollapseAllStrip, CopyButton, DisclosureHeader, ElapsedTag, fmt3, fmtElapsed,
   compareSideLabel, OxBadge, PendingHint, AnswerPreview, TraceValueBox,
 } from './shared';
-import { canCompareFields, DiffAgainst, FieldCompareTable, FieldDiffLine, PaneLabel } from './MatchDiff';
+import { canCompareFields, DiffAgainst, FieldCompareTable, FieldDiffLine, PaneLabel, ViewToggle } from './MatchDiff';
 
 /** The expected answer, once, above both sides — it is the same text for A and
  * B, and repeating it under each would push the two answers apart. */
-function GroundTruthBox({ text }: { text: string }) {
+function GroundTruthBox({ text, trailing }: { text: string; trailing?: ReactNode }) {
   return (
     <div className="mb-3 overflow-hidden rounded-sm border border-line bg-surface">
-      <div className="flex items-center gap-1.5 border-b border-line bg-surface-2 px-3 py-1.5">
+      <div className="flex items-center gap-2 border-b border-line bg-surface-2 px-3 py-1.5">
         <PaneLabel tone="right">기대 정답</PaneLabel>
-        <span className="ml-auto"><CopyButton text={text} /></span>
+        <span className="ml-auto flex items-center gap-2">
+          {trailing}
+          <CopyButton text={text} />
+        </span>
       </div>
       <div className="max-h-48 overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 text-sm leading-relaxed text-ink">
         {text}
@@ -359,6 +362,11 @@ export function CaseCompareTable({
   const allClosed = opened.size === 0;
   const toggle = (k: string) =>
     setOpened((cur) => { const n = new Set(cur); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  // 보기(키별/원본)는 케이스마다 따로 기억한다 — 한 줄을 원본으로 펼쳐 읽는 동안
+  // 나머지 줄까지 같이 뒤집히면, 방금 보던 판정표를 다시 찾아 들어가야 한다.
+  const [rawKeys, setRawKeys] = useState<Set<string>>(() => new Set());
+  const setRaw = (k: string, v: boolean) =>
+    setRawKeys((cur) => { const n = new Set(cur); if (v) n.add(k); else n.delete(k); return n; });
   if (ids.length === 0) {
     return <div className="py-8 text-center text-xs text-muted">결과가 없습니다</div>;
   }
@@ -381,6 +389,7 @@ export function CaseCompareTable({
         const scoredA = a?.trace_value ?? a?.answer;
         const scoredB = b?.trace_value ?? b?.answer;
         const keyed = !isClosed && canCompareFields(scoredA, scoredB, gt, !a?.trace_value, !b?.trace_value);
+        const raw = rawKeys.has(key);
 
         return (
           <div key={key}>
@@ -461,22 +470,31 @@ export function CaseCompareTable({
               <div className="px-4 pb-3.5 pl-10">
                 {/* 키별 판정표가 서면 기대 정답 상자와 사이드별 어긋난 키 줄은
                     물러난다 — 같은 것을 세 번 말하는 대신, 두 사이드를 한 줄에
-                    놓고 보는 표가 그 자리를 대신한다. JSON 이 아닌 케이스는
-                    표가 없으므로 예전 그대로다. */}
-                <FieldCompareTable
-                  className="mb-3"
-                  aText={scoredA}
-                  bText={scoredB}
-                  expected={gt}
-                  unwrapA={!a?.trace_value}
-                  unwrapB={!b?.trace_value}
-                  nameA={nameA}
-                  nameB={nameB}
-                />
-                {gt && !keyed && <GroundTruthBox text={gt} />}
+                    놓고 보는 표가 그 자리를 대신한다. 토글은 그 둘 사이를 오가고,
+                    JSON 이 아닌 케이스에는 고를 것이 없어 서지 않는다. */}
+                {keyed && !raw ? (
+                  <FieldCompareTable
+                    className="mb-3"
+                    aText={scoredA}
+                    bText={scoredB}
+                    expected={gt}
+                    unwrapA={!a?.trace_value}
+                    unwrapB={!b?.trace_value}
+                    nameA={nameA}
+                    nameB={nameB}
+                    trailing={<ViewToggle raw={raw} onRaw={(v) => setRaw(key, v)} />}
+                  />
+                ) : (
+                  gt && (
+                    <GroundTruthBox
+                      text={gt}
+                      trailing={keyed ? <ViewToggle raw={raw} onRaw={(v) => setRaw(key, v)} /> : undefined}
+                    />
+                  )
+                )}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <SideBox side="A" label={nameA} tone="neutral" row={a} gt={gt} settled={settled} fieldLine={!keyed} />
-                  <SideBox side="B" label={nameB} tone="accent" row={b} gt={gt} settled={settled} fieldLine={!keyed} />
+                  <SideBox side="A" label={nameA} tone="neutral" row={a} gt={gt} settled={settled} fieldLine={!keyed || raw} />
+                  <SideBox side="B" label={nameB} tone="accent" row={b} gt={gt} settled={settled} fieldLine={!keyed || raw} />
                 </div>
                 {showScores && <CaseScoreBars a={a} b={b} cancelled={cancelled} settled={settled} />}
               </div>
