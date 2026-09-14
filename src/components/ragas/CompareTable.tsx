@@ -42,7 +42,7 @@ function GroundTruthBox({ text, trailing }: { text: string; trailing?: ReactNode
  * be read against the same yardstick instead of against each other by eye.
  */
 function SideBox({
-  side, label, tone, row, gt, settled, fieldLine = true,
+  side, label, tone, row, gt, settled, raw = true,
 }: {
   side: 'A' | 'B';
   label: string;
@@ -50,12 +50,19 @@ function SideBox({
   row?: RagasResultRow;
   gt: string | null;
   settled?: boolean;
-  /** 어긋난 키 이름 줄. 위에 키별 판정표가 서는 화면에서는 같은 말을 두 번
-   * 하게 되므로 끈다. */
-  fieldLine?: boolean;
+  /**
+   * 원본 보기인가. 위에 키별 판정표가 선 화면(=키별 보기)에서는 채점된 JSON 을
+   * 여기서 또 펼치지 않는다 — 단일 실행 상세와 같은 규칙이다: 표가 채점 대상을
+   * 말했으면 사이드에 남는 것은 최종 답변뿐이고, 그 답변이 곧 채점 대상이었다면
+   * 그조차 접는다.
+   */
+  raw?: boolean;
 }) {
   const scored = row?.trace_value ?? row?.answer ?? null;
   const diffable = gt !== null && scored !== null;
+  // 답변을 따로 적을 까닭이 있는 경우 — 중간 변수를 채점했거나(그럼 답변은 아직
+  // 아무 데도 안 나왔다), 호출이 실패했거나(메시지가 답변 자리에 온다).
+  const answerApart = !!row?.trace_value || !!row?.error_msg;
   return (
     // The two panels sit side by side and otherwise look identical, so the side
     // is carried by the edge of the box as well as by the badge — at a glance
@@ -85,12 +92,12 @@ function SideBox({
               </span>
             </div>
           )}
-          {fieldLine && <FieldDiffLine className="mt-2" text={scored} expected={gt} unwrapBody={!row?.trace_value} />}
-          <DiffAgainst className="mt-2" text={scored} expected={gt} unwrapBody={!row?.trace_value} />
+          {raw && <FieldDiffLine className="mt-2" text={scored} expected={gt} unwrapBody={!row?.trace_value} />}
+          {raw && <DiffAgainst className="mt-2" text={scored} expected={gt} unwrapBody={!row?.trace_value} />}
           {/* 중간 변수를 채점한 경우에만 답변이 따로 있다 — 아니면 위가 곧 답변이다. */}
-          {row?.trace_value && (
+          {answerApart && (
             <>
-              <p className="mt-3 eyebrow">답변</p>
+              <p className={cn('eyebrow', raw ? 'mt-3' : 'mt-2')}>답변</p>
               <div className="mt-0.5"><AnswerBox text={row?.answer} error={row?.error_msg} settled={settled} /></div>
             </>
           )}
@@ -493,8 +500,8 @@ export function CaseCompareTable({
                   )
                 )}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <SideBox side="A" label={nameA} tone="neutral" row={a} gt={gt} settled={settled} fieldLine={!keyed || raw} />
-                  <SideBox side="B" label={nameB} tone="accent" row={b} gt={gt} settled={settled} fieldLine={!keyed || raw} />
+                  <SideBox side="A" label={nameA} tone="neutral" row={a} gt={gt} settled={settled} raw={!keyed || raw} />
+                  <SideBox side="B" label={nameB} tone="accent" row={b} gt={gt} settled={settled} raw={!keyed || raw} />
                 </div>
                 {showScores && <CaseScoreBars a={a} b={b} cancelled={cancelled} settled={settled} />}
               </div>
