@@ -122,7 +122,7 @@ function TimingPair({
   const aWins = both && va! < vb!;
   const bWins = both && vb! < va!;
   return (
-    <div className="flex items-center gap-1.5 font-mono text-[11px] tabular-nums text-muted" title={title}>
+    <div className="flex items-center gap-1.5 whitespace-nowrap font-mono text-[11px] tabular-nums text-muted" title={title}>
       <span className="font-sans text-[10px] font-semibold uppercase tracking-[0.6px]">{label}</span>
       <span>
         <span className={cn(aWins && 'font-semibold text-ink')}>A {ta ?? '—'}</span>
@@ -348,7 +348,7 @@ export function CaseCompareTable({
   // 못박으면 RAGAS 를 재지 않은 비교에서 오른쪽 한 뼘이 빈 채로 남는다. 이 목록에
   // 실제로 무엇이 뜨는지 보고 그만큼만 잡아, 줄들은 정렬된 채로 오른쪽 끝까지 쓴다.
   const anyMean = showScores && ids.some((cid) => caseMean(byA.get(cid)) != null || caseMean(byB.get(cid)) != null);
-  const railW = anyMean ? 'w-[236px]' : 'w-[152px]';
+  const railW = anyMean ? 'w-[248px]' : 'w-[180px]';
   const keys = ids.map((cid) => String(cid));
   const [opened, setOpened] = useState<Set<string>>(() =>
     defaultAllOpen ? new Set(keys) : new Set()
@@ -411,13 +411,13 @@ export function CaseCompareTable({
                   {showScores && (
                     <>
                       {(a?.exact_match != null || b?.exact_match != null) && (
-                        <div className="flex items-center gap-1.5 text-[10px] font-semibold text-muted">
+                        <div className="flex items-center gap-1.5 whitespace-nowrap text-[10px] font-semibold text-muted">
                           A <OxBadge value={a?.exact_match ?? null} />
                           B <OxBadge value={b?.exact_match ?? null} />
                         </div>
                       )}
                       {(aMean != null || bMean != null) && (
-                        <div className="flex items-center gap-1.5 font-mono text-xs tabular-nums text-muted">
+                        <div className="flex items-center gap-1.5 whitespace-nowrap font-mono text-xs tabular-nums text-muted">
                           <span className="font-sans text-[10px] font-semibold uppercase tracking-[0.6px]">RAGAS</span>
                           <span>
                             <span className={cn(aMean != null && bMean != null && aMean > bMean && 'font-semibold text-ink')}>A {fmt3(aMean)}</span>
