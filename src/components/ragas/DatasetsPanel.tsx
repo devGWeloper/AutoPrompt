@@ -311,6 +311,34 @@ export default function DatasetsPanel() {
         (p.groundTruth ?? c.expected_output ?? '').toLowerCase().includes(q)));
   }, [cases, query, folder]);
 
+  /**
+   * 전체 보기는 카테고리로 묶어 내려간다 — 왼쪽 폴더 목록과 같은 순서로 묶음을
+   * 세우고, 묶음이 바뀌는 자리에 가로 구분선 겸 머리줄을 둔다. 줄마다 태그를
+   * 달던 방식은 케이스 수만큼 같은 이름을 반복하면서도 같은 폴더끼리 붙여 놓지는
+   * 못했다. 폴더 하나를 고른 화면은 이미 한 묶음이라 머리줄이 서지 않는다.
+   *
+   * 번호는 묶은 뒤의 자리를 센다 — 화면에 보이는 순서와 어긋나는 번호는 세는
+   * 것보다 헷갈리게 한다.
+   */
+  const groups = useMemo(() => {
+    const of = (c: TestCase) => c.case_type || UNFILED;
+    const byCat = new Map<string, typeof rows>();
+    for (const r of rows) {
+      const k = of(r.c);
+      const cur = byCat.get(k);
+      if (cur) cur.push(r);
+      else byCat.set(k, [r]);
+    }
+    const known = [...folderNames, UNFILED].filter((k) => byCat.has(k));
+    // 폴더로 등록되지 않은 이름을 가진 케이스도 제 묶음을 갖는다 (아래 folderHint 참조).
+    const rest = [...byCat.keys()].filter((k) => !known.includes(k));
+    let n = 0;
+    return [...known, ...rest].map((cat) => ({
+      cat,
+      items: byCat.get(cat)!.map((r) => ({ ...r, n: ++n })),
+    }));
+  }, [rows, folderNames]);
+
   const inFolder = useMemo(
     () => (folder === null ? cases : cases.filter((c) => (c.case_type || UNFILED) === folder)),
     [cases, folder],
@@ -731,51 +759,58 @@ export default function DatasetsPanel() {
                 </div>
               ) : (
                 <ul className="divide-y divide-line">
-                  {rows.map(({ c, p }, i) => {
-                    const open = editId === c.case_id;
-                    const gt = (p.groundTruth ?? c.expected_output ?? '').trim();
-                    return (
-                      <li key={c.case_id}>
-                        {/* 질문 | 정답 두 칸이 줄마다 같은 자리에서 시작하고,
-                            그 사이를 세로 헤어라인이 가른다 — 줄이 쌓이면 선이
-                            이어져 두 칸의 경계가 눈에 그어진다. 정답 칸은 길이와
-                            상관없이 왼쪽에서 시작한다. */}
-                        <button
-                          type="button"
-                          onClick={() => openEdit(c)}
-                          className="grid w-full grid-cols-[14px_22px_minmax(0,1fr)_1px_minmax(0,1fr)] items-start gap-x-2.5 px-4 py-2.5 text-left transition-colors hover:bg-surface-2/60"
-                        >
-                          <Chevron open={open} className="mt-0.5" />
-                          <span className="mt-px font-mono text-[11px] tabular-nums text-muted">{i + 1}</span>
-                          <span className={cn('min-w-0 text-sm text-ink', open ? 'break-words font-medium' : 'truncate')}>
-                            {p.question || <span className="text-muted">(질문 없음)</span>}
-                          </span>
-                          {/* -my-2.5 는 줄의 세로 여백만큼 선을 위아래로 늘린다 —
-                              그래야 줄과 줄 사이에서 끊기지 않고 목록을 관통하는
-                              한 줄의 세로선이 된다. */}
-                          <span aria-hidden className="-my-2.5 w-px self-stretch bg-line" />
-                          <span className="mt-0.5 min-w-0 truncate text-xs text-muted">
-                            {open ? '' : gt ? oneLine(gt) : <span className="text-muted-soft">정답 없음</span>}
-                          </span>
-                        </button>
-                        {open && (
-                          <div className="px-4 pb-3.5 pl-12">
-                            <FieldsEditor value={edit} onChange={setEdit} categories={folderNames} />
-                            <div className="mt-3 flex items-center gap-2">
-                              <Button variant="ghost" size="sm" onClick={() => duplicate(c)}>복제</Button>
-                              <DeleteButton label="삭제" onConfirm={() => delCase(c.case_id)} />
-                              <span className="ml-auto flex items-center gap-2">
-                                <Button variant="ghost" size="sm" onClick={() => setEditId(null)}>취소</Button>
-                                <Button variant="secondary" size="sm" disabled={!edit.question.trim() || busy} onClick={() => saveCase(c.case_id)}>
-                                  저장
-                                </Button>
+                  {groups.map(({ cat, items }) => (
+                    <Fragment key={cat}>
+                      {/* 카테고리가 바뀌는 자리의 가로 구분선. 이름을 얹은 까닭은
+                          선만으로는 무엇과 무엇이 갈렸는지 말하지 않기 때문이고,
+                          폴더를 하나 고른 화면에는 갈릴 것이 없어 서지 않는다. */}
+                      {folder === null && (
+                        <li className="flex items-baseline gap-2 border-b border-line bg-surface-2 px-4 py-1.5">
+                          <span className="text-[11px] font-semibold text-ink">{folderLabel(cat)}</span>
+                          <span className="font-mono text-[10px] tabular-nums text-muted-soft">{items.length}</span>
+                        </li>
+                      )}
+                      {items.map(({ c, p, n }) => {
+                        const open = editId === c.case_id;
+                        const gt = (p.groundTruth ?? c.expected_output ?? '').trim();
+                        return (
+                          <li key={c.case_id}>
+                            {/* 질문과 정답 두 칸은 줄마다 같은 자리에서 시작한다 —
+                                정답 칸은 길이와 상관없이 제 칸 왼쪽 끝에서 시작. */}
+                            <button
+                              type="button"
+                              onClick={() => openEdit(c)}
+                              className="grid w-full grid-cols-[14px_22px_minmax(0,1fr)_minmax(0,1fr)] items-start gap-x-2.5 px-4 py-2.5 text-left transition-colors hover:bg-surface-2/60"
+                            >
+                              <Chevron open={open} className="mt-0.5" />
+                              <span className="mt-px font-mono text-[11px] tabular-nums text-muted">{n}</span>
+                              <span className={cn('min-w-0 text-sm text-ink', open ? 'break-words font-medium' : 'truncate')}>
+                                {p.question || <span className="text-muted">(질문 없음)</span>}
                               </span>
-                            </div>
-                          </div>
-                        )}
-                      </li>
-                    );
-                  })}
+                              <span className="mt-0.5 min-w-0 truncate text-xs text-muted">
+                                {open ? '' : gt ? oneLine(gt) : <span className="text-muted-soft">정답 없음</span>}
+                              </span>
+                            </button>
+                            {open && (
+                              <div className="px-4 pb-3.5 pl-12">
+                                <FieldsEditor value={edit} onChange={setEdit} categories={folderNames} />
+                                <div className="mt-3 flex items-center gap-2">
+                                  <Button variant="ghost" size="sm" onClick={() => duplicate(c)}>복제</Button>
+                                  <DeleteButton label="삭제" onConfirm={() => delCase(c.case_id)} />
+                                  <span className="ml-auto flex items-center gap-2">
+                                    <Button variant="ghost" size="sm" onClick={() => setEditId(null)}>취소</Button>
+                                    <Button variant="secondary" size="sm" disabled={!edit.question.trim() || busy} onClick={() => saveCase(c.case_id)}>
+                                      저장
+                                    </Button>
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </Fragment>
+                  ))}
                 </ul>
               )}
             </>
