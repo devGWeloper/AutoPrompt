@@ -373,4 +373,149 @@ export function FieldDiffLine({
   );
 }
 
+/** 이 짝을 키별 판정표로 읽을 수 있나 — 한쪽이라도 구조가 잡히면 표가 선다.
+ * 표가 서면 화면에서 물러나는 것들이 있어(기대 정답 상자, 사이드별 어긋난 키 줄)
+ * 그리기 전에 물어볼 수 있어야 한다. */
+export function canCompareFields(
+  aText: string | null | undefined,
+  bText: string | null | undefined,
+  expected: string | null | undefined,
+  unwrapA?: boolean,
+  unwrapB?: boolean,
+): boolean {
+  return (
+    !!structuredMatch(aText ?? '', expected ?? '', { unwrapBody: unwrapA }) ||
+    !!structuredMatch(bText ?? '', expected ?? '', { unwrapBody: unwrapB })
+  );
+}
+
+/** 한 키에 대한 A·B 두 판정. 어느 쪽도 그 키를 다루지 않았으면 그 칸은 비운다. */
+interface PairRow {
+  path: string;
+  expected: string | null;
+  a?: FieldResult;
+  b?: FieldResult;
+}
+
+/** 한 사이드의 값 칸: 값 + (어긋났을 때만) 무엇이 어긋났는지. */
+function PairCell({ f, last }: { f?: FieldResult; last?: boolean }) {
+  if (!f) {
+    return <td className={cn(CELL, !last && COL, 'text-muted-soft')}>—</td>;
+  }
+  const s = STATUS[f.status];
+  return (
+    <td className={cn(CELL, !last && COL, 'break-words font-mono', s.actual)}>
+      {f.actual === null ? <Absent>응답에 없음</Absent> : f.actual}
+      {f.status !== 'match' && (
+        <span className={cn('ml-1.5 whitespace-nowrap rounded-full px-1 py-px align-middle text-[10px] font-semibold', s.chip)}>
+          {s.label}
+        </span>
+      )}
+    </td>
+  );
+}
+
+/**
+ * A/B 한 케이스의 키별 판정 — 한 표에 네 칸(키 · 기대값 · A · B).
+ *
+ * 사이드마다 표를 한 벌씩 놓는 대신 하나로 합친 까닭은, 비교에서 읽고 싶은 것이
+ * "A 가 맞았나"가 아니라 "어느 키에서 둘이 갈렸나"이기 때문이다 — 같은 줄에
+ * 나란히 놓여야 그게 한눈에 보인다. 기대값은 두 사이드가 같은 것을 보므로 한 번만
+ * 적는다(그래서 이 표가 뜨면 위의 기대 정답 상자는 하지 않을 말을 반복하지 않게
+ * 물러난다).
+ *
+ * 두 사이드 모두 JSON 이 아니면 null — 그때는 예전처럼 원문 diff 가 답한다.
+ */
+export function FieldCompareTable({
+  aText, bText, expected, unwrapA, unwrapB, nameA, nameB, className,
+}: {
+  aText: string | null | undefined;
+  bText: string | null | undefined;
+  expected: string | null | undefined;
+  unwrapA?: boolean;
+  unwrapB?: boolean;
+  nameA: string;
+  nameB: string;
+  className?: string;
+}) {
+  const rows = useMemo<PairRow[] | null>(() => {
+    const ma = structuredMatch(aText ?? '', expected ?? '', { unwrapBody: unwrapA });
+    const mb = structuredMatch(bText ?? '', expected ?? '', { unwrapBody: unwrapB });
+    if (!ma && !mb) return null;
+    // A 가 본 순서를 그대로 따르고, A 에 없던 키만 뒤에 붙인다 — 기대 정답에 적힌
+    // 차례가 곧 A 의 차례라, 두 사이드를 합쳐도 읽는 순서가 바뀌지 않는다.
+    const byPath = new Map<string, PairRow>();
+    const put = (f: FieldResult, side: 'a' | 'b') => {
+      const cur = byPath.get(f.path) ?? { path: f.path, expected: f.expected };
+      if (cur.expected === null && f.expected !== null) cur.expected = f.expected;
+      cur[side] = f;
+      byPath.set(f.path, cur);
+    };
+    ma?.fields.forEach((f) => put(f, 'a'));
+    mb?.fields.forEach((f) => put(f, 'b'));
+    return [...byPath.values()];
+  }, [aText, bText, expected, unwrapA, unwrapB]);
+
+  if (!rows) return null;
+  const split = rows.filter((r) => (r.a?.status ?? 'match') !== (r.b?.status ?? 'match')).length;
+
+  return (
+    <div className={cn('overflow-hidden rounded-md border border-line bg-surface', className)}>
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-line bg-surface-2 px-3 py-2">
+        <span className="eyebrow">키별 판정</span>
+        <span className="text-[11px] text-muted">
+          키 <span className="font-mono font-semibold text-ink">{rows.length}</span>
+        </span>
+        {/* 갈린 키가 이 표의 요점이다 — 없으면 없다고 먼저 말한다. */}
+        <span aria-hidden className="h-3 w-px self-center bg-line-strong" />
+        <span className={cn('text-[11px] font-medium', split > 0 ? 'text-bad' : 'text-muted')}>
+          {split > 0 ? `A·B 갈림 ${split}` : 'A·B 동일'}
+        </span>
+      </div>
+      <div className="max-h-80 overflow-auto">
+        <table className="w-full min-w-[620px] table-fixed border-separate border-spacing-0 text-xs">
+          <colgroup>
+            <col style={{ width: '22%' }} />
+            <col style={{ width: '26%' }} />
+            <col style={{ width: '26%' }} />
+            <col style={{ width: '26%' }} />
+          </colgroup>
+          <thead className="sticky top-0 z-10 bg-surface-2 text-left text-[10px] uppercase tracking-[0.6px] text-muted">
+            <tr>
+              <th className={cn('border-b border-line px-3 py-2 font-semibold', COL)}>키</th>
+              <th className={cn('border-b border-line px-3 py-2 font-semibold', COL)}>기대값</th>
+              <th className={cn('truncate border-b border-line px-3 py-2 font-semibold', COL)}>A · {nameA}</th>
+              <th className="truncate border-b border-line px-3 py-2 font-semibold">B · {nameB}</th>
+            </tr>
+          </thead>
+          <tbody className="[&>tr:last-child>td]:border-b-0">
+            {rows.map((r) => {
+              // 레일은 '이 줄에 볼 것이 있나'만 말한다 — 한쪽이라도 어긋났으면 선다.
+              const bad = [r.a, r.b].some((f) => f && f.status !== 'match');
+              const warnOnly = [r.a, r.b].every((f) => !f || f.status === 'match' || f.status === 'extra');
+              return (
+                <tr key={r.path} className="transition-colors hover:bg-surface-2/70">
+                  <td
+                    className={cn(
+                      CELL, COL, 'border-l-[3px] font-mono text-ink',
+                      !bad ? 'border-l-transparent' : warnOnly ? 'border-l-warn-vivid' : 'border-l-bad-vivid',
+                    )}
+                  >
+                    {r.path || <span className="text-muted">(전체)</span>}
+                  </td>
+                  <td className={cn(CELL, COL, 'break-words font-mono', bad ? 'text-ok' : 'text-muted')}>
+                    {r.expected === null ? <Absent>기대에 없음</Absent> : r.expected}
+                  </td>
+                  <PairCell f={r.a} />
+                  <PairCell f={r.b} last />
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default MatchDiff;

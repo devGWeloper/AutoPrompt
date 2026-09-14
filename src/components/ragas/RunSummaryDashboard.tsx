@@ -5,6 +5,7 @@ import { cn } from '@/lib/cn';
 import {
   EXACT_MATCH,
   METRIC_LABELS,
+  type RagasMetric,
   type RagasRunDetail,
 } from '@/lib/types';
 import { compareSideLabel, fmt3, OxBadge, runMean, scoredMetrics } from './shared';
@@ -15,6 +16,15 @@ function gridCols(n: number): string {
   if (n <= 2) return 'grid-cols-1 sm:grid-cols-2';
   if (n <= 3) return 'grid-cols-2 sm:grid-cols-3';
   return 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-6';
+}
+
+/** 비교 카드도 개수만큼만 칸을 연다 — Action Test 하나만 잰 비교에서 다섯 칸짜리
+ * 격자를 열면 카드 하나와 빈 칸 넷이 남는다. */
+function pairCols(n: number): string {
+  if (n <= 2) return 'grid-cols-1 sm:grid-cols-2';
+  if (n === 3) return 'grid-cols-1 sm:grid-cols-3';
+  if (n === 4) return 'grid-cols-2 sm:grid-cols-4';
+  return 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5';
 }
 
 function scoreLevel(score: number | null) {
@@ -136,6 +146,32 @@ export function SingleRunSummaryDashboard({ detail }: { detail: RagasRunDetail }
   );
 }
 
+/**
+ * 히어로 카드가 크게 세우는 숫자 — 그 실행이 실제로 잰 것.
+ *
+ * 'RAGAS Mean' 과 '—' 를 늘 세워 두던 이전 카드는, RAGAS 를 켜지 않은 실행에서
+ * 재지도 않은 지표의 이름만 큼직하게 보여 주고 정작 잰 것(Action Test 일치율)은
+ * 구석에 두었다. 화면에서 제일 큰 숫자가 무엇인지 헷갈리면 나머지를 읽을 이유가
+ * 없다: RAGAS 를 쟀으면 그 평균, 아니면 일치율, 둘 다 아니면 잰 것이 없다고 말한다.
+ */
+function heroScore(mean: number | null, exact: number | null) {
+  if (mean != null) return { score: mean, value: fmt3(mean), label: 'RAGAS Mean', ragas: true };
+  if (exact != null) {
+    return { score: exact, value: `${Math.round(exact * 100)}%`, label: `${METRIC_LABELS[EXACT_MATCH]} 일치율`, ragas: false };
+  }
+  return { score: null, value: '—', label: '점수 없음', ragas: false };
+}
+
+/** 일치율은 비율이라 퍼센트로 읽는다 — 0.800 은 RAGAS 점수와 같은 꼴이라 서로
+ * 다른 두 종류의 수를 같은 자리에서 견주게 만든다. */
+const metricValue = (m: RagasMetric, v: number | null) =>
+  m !== EXACT_MATCH ? fmt3(v) : v == null ? '—' : `${Math.round(v * 100)}%`;
+
+const metricDelta = (m: RagasMetric, d: number | null) =>
+  d == null ? '—' : m !== EXACT_MATCH
+    ? (d > 0 ? '+' : '') + d.toFixed(3)
+    : `${d > 0 ? '+' : ''}${Math.round(d * 100)}%p`;
+
 // Compare Run Dashboard: Two Side-by-Side Hero Cards (Version A & Version B) + 5 Paired Metric Cards
 export function CompareSummaryDashboard({
   detailA,
@@ -155,7 +191,6 @@ export function CompareSummaryDashboard({
   const meanA = runMean(detailA);
   const meanB = runMean(detailB);
   const shownPair = Array.from(new Set([...scoredMetrics(detailA), ...scoredMetrics(detailB)]));
-  const delta = meanA != null && meanB != null ? meanB - meanA : null;
   // Run-level EXACT_VAL is already the match rate (mean of the per-case 0/1).
   const exA = detailA.exact_match != null ? Number(detailA.exact_match) : null;
   const exB = detailB.exact_match != null ? Number(detailB.exact_match) : null;
@@ -163,6 +198,9 @@ export function CompareSummaryDashboard({
   // match rate rather than showing no verdict at all.
   const [cmpA, cmpB] = meanA != null || meanB != null ? [meanA, meanB] : [exA, exB];
   const winner = cmpA != null && cmpB != null ? (cmpB > cmpA ? 'B' : cmpA > cmpB ? 'A' : 'TIE') : null;
+  const headA = heroScore(meanA, exA);
+  const headB = heroScore(meanB, exB);
+  const headDelta = headA.score != null && headB.score != null ? headB.score - headA.score : null;
 
   return (
     <div className="mb-6 space-y-4">
@@ -180,14 +218,15 @@ export function CompareSummaryDashboard({
               <Badge tone="neutral">A · {nameA}</Badge>
               {winner === 'A' && <Badge tone="accent">🏆 Winner</Badge>}
             </div>
-            <ScoreBadge score={meanA} />
+            <ScoreBadge score={headA.score} />
           </div>
           <div className="my-3 flex items-baseline gap-3">
             <span className="font-mono text-3xl font-bold tabular-nums text-ink">
-              {fmt3(meanA)}
+              {headA.value}
             </span>
-            <span className="text-xs text-muted">RAGAS Mean</span>
-            {exA != null && (
+            <span className="text-xs text-muted">{headA.label}</span>
+            {/* 일치율이 이미 머리 숫자면 같은 것을 옆에 또 적지 않는다. */}
+            {headA.ragas && exA != null && (
               <span className="ml-auto flex items-baseline gap-1.5 text-xs text-muted">
                 {METRIC_LABELS[EXACT_MATCH]} <OxBadge value={exA} rate />
               </span>
@@ -196,7 +235,7 @@ export function CompareSummaryDashboard({
           <div className="relative h-2 w-full overflow-hidden rounded-full bg-surface-3">
             <div
               className="h-full rounded-full bg-muted-soft transition-all duration-300"
-              style={{ width: `${meanA != null ? meanA * 100 : 0}%` }}
+              style={{ width: `${headA.score != null ? headA.score * 100 : 0}%` }}
             />
           </div>
         </div>
@@ -214,29 +253,33 @@ export function CompareSummaryDashboard({
               {winner === 'B' && <Badge tone="accent">🏆 Winner</Badge>}
             </div>
             <div className="flex items-center gap-2">
-              {delta != null && (
+              {/* Δ 는 두 카드가 크게 세운 그 숫자의 차이다 — 위는 일치율인데 Δ 만
+                  RAGAS 평균 차이를 적으면 둘을 빼도 답이 나오지 않는다. */}
+              {headDelta != null && (
                 <span
                   className={cn(
                     'inline-flex items-center rounded-full px-2 py-0.5 font-mono text-xs font-semibold tabular-nums border',
-                    delta > 0
+                    headDelta > 0
                       ? 'border-ok-line bg-ok-soft text-ok'
-                      : delta < 0
+                      : headDelta < 0
                       ? 'border-bad-line bg-bad-soft text-bad'
                       : 'border-line bg-surface-2 text-muted'
                   )}
                 >
-                  Δ {(delta > 0 ? '+' : '') + delta.toFixed(3)}
+                  Δ {headA.ragas
+                    ? (headDelta > 0 ? '+' : '') + headDelta.toFixed(3)
+                    : `${headDelta > 0 ? '+' : ''}${Math.round(headDelta * 100)}%p`}
                 </span>
               )}
-              <ScoreBadge score={meanB} />
+              <ScoreBadge score={headB.score} />
             </div>
           </div>
           <div className="my-3 flex items-baseline gap-3">
             <span className="font-mono text-3xl font-bold tabular-nums text-ink">
-              {fmt3(meanB)}
+              {headB.value}
             </span>
-            <span className="text-xs text-muted">RAGAS Mean</span>
-            {exB != null && (
+            <span className="text-xs text-muted">{headB.label}</span>
+            {headB.ragas && exB != null && (
               <span className="ml-auto flex items-baseline gap-1.5 text-xs text-muted">
                 {METRIC_LABELS[EXACT_MATCH]} <OxBadge value={exB} rate />
               </span>
@@ -245,14 +288,14 @@ export function CompareSummaryDashboard({
           <div className="relative h-2 w-full overflow-hidden rounded-full bg-surface-3">
             <div
               className="h-full rounded-full bg-accent transition-all duration-300"
-              style={{ width: `${meanB != null ? meanB * 100 : 0}%` }}
+              style={{ width: `${headB.score != null ? headB.score * 100 : 0}%` }}
             />
           </div>
         </div>
       </div>
 
       {/* One comparison card per metric scored on either side */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className={cn('grid gap-3', pairCols(shownPair.length))}>
         {shownPair.map((m) => {
           const av = detailA[m] != null ? Number(detailA[m]) : null;
           const bv = detailB[m] != null ? Number(detailB[m]) : null;
@@ -268,10 +311,10 @@ export function CompareSummaryDashboard({
                 </span>
                 <div className="mt-2 flex items-center justify-between text-xs font-mono tabular-nums">
                   <span className={cn('font-medium', d != null && d < 0 ? 'font-bold text-ink' : 'text-muted')}>
-                    A {fmt3(av)}
+                    A {metricValue(m, av)}
                   </span>
                   <span className={cn('font-medium', d != null && d > 0 ? 'font-bold text-ink' : 'text-muted')}>
-                    B {fmt3(bv)}
+                    B {metricValue(m, bv)}
                   </span>
                 </div>
               </div>
@@ -294,7 +337,7 @@ export function CompareSummaryDashboard({
                     d == null ? 'text-muted' : d > 0 ? 'text-ok' : d < 0 ? 'text-bad' : 'text-muted'
                   )}
                 >
-                  {d == null ? '—' : (d > 0 ? '+' : '') + d.toFixed(3)}
+                  {metricDelta(m, d)}
                 </span>
               </div>
             </div>

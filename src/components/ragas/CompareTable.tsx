@@ -15,7 +15,7 @@ import {
   AnswerBox, caseMean, Chevron, CollapseAllStrip, CopyButton, DisclosureHeader, ElapsedTag, fmt3, fmtElapsed,
   compareSideLabel, OxBadge, PendingHint, AnswerPreview, TraceValueBox,
 } from './shared';
-import { DiffAgainst, FieldDiffLine, PaneLabel } from './MatchDiff';
+import { canCompareFields, DiffAgainst, FieldCompareTable, FieldDiffLine, PaneLabel } from './MatchDiff';
 
 /** The expected answer, once, above both sides — it is the same text for A and
  * B, and repeating it under each would push the two answers apart. */
@@ -39,7 +39,7 @@ function GroundTruthBox({ text }: { text: string }) {
  * be read against the same yardstick instead of against each other by eye.
  */
 function SideBox({
-  side, label, tone, row, gt, settled,
+  side, label, tone, row, gt, settled, fieldLine = true,
 }: {
   side: 'A' | 'B';
   label: string;
@@ -47,6 +47,9 @@ function SideBox({
   row?: RagasResultRow;
   gt: string | null;
   settled?: boolean;
+  /** 어긋난 키 이름 줄. 위에 키별 판정표가 서는 화면에서는 같은 말을 두 번
+   * 하게 되므로 끈다. */
+  fieldLine?: boolean;
 }) {
   const scored = row?.trace_value ?? row?.answer ?? null;
   const diffable = gt !== null && scored !== null;
@@ -79,7 +82,7 @@ function SideBox({
               </span>
             </div>
           )}
-          <FieldDiffLine className="mt-2" text={scored} expected={gt} unwrapBody={!row?.trace_value} />
+          {fieldLine && <FieldDiffLine className="mt-2" text={scored} expected={gt} unwrapBody={!row?.trace_value} />}
           <DiffAgainst className="mt-2" text={scored} expected={gt} unwrapBody={!row?.trace_value} />
           {/* 중간 변수를 채점한 경우에만 답변이 따로 있다 — 아니면 위가 곧 답변이다. */}
           {row?.trace_value && (
@@ -374,6 +377,10 @@ export function CaseCompareTable({
         const aMean = caseMean(a);
         const bMean = caseMean(b);
         const delta = aMean != null && bMean != null ? bMean - aMean : null;
+        // 채점된 값은 중간 변수가 있으면 그것, 없으면 최종 답변 (SideBox 와 같은 규칙).
+        const scoredA = a?.trace_value ?? a?.answer;
+        const scoredB = b?.trace_value ?? b?.answer;
+        const keyed = !isClosed && canCompareFields(scoredA, scoredB, gt, !a?.trace_value, !b?.trace_value);
 
         return (
           <div key={key}>
@@ -452,10 +459,24 @@ export function CaseCompareTable({
             </DisclosureHeader>
             {!isClosed && (
               <div className="px-4 pb-3.5 pl-10">
-                {gt && <GroundTruthBox text={gt} />}
+                {/* 키별 판정표가 서면 기대 정답 상자와 사이드별 어긋난 키 줄은
+                    물러난다 — 같은 것을 세 번 말하는 대신, 두 사이드를 한 줄에
+                    놓고 보는 표가 그 자리를 대신한다. JSON 이 아닌 케이스는
+                    표가 없으므로 예전 그대로다. */}
+                <FieldCompareTable
+                  className="mb-3"
+                  aText={scoredA}
+                  bText={scoredB}
+                  expected={gt}
+                  unwrapA={!a?.trace_value}
+                  unwrapB={!b?.trace_value}
+                  nameA={nameA}
+                  nameB={nameB}
+                />
+                {gt && !keyed && <GroundTruthBox text={gt} />}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <SideBox side="A" label={nameA} tone="neutral" row={a} gt={gt} settled={settled} />
-                  <SideBox side="B" label={nameB} tone="accent" row={b} gt={gt} settled={settled} />
+                  <SideBox side="A" label={nameA} tone="neutral" row={a} gt={gt} settled={settled} fieldLine={!keyed} />
+                  <SideBox side="B" label={nameB} tone="accent" row={b} gt={gt} settled={settled} fieldLine={!keyed} />
                 </div>
                 {showScores && <CaseScoreBars a={a} b={b} cancelled={cancelled} settled={settled} />}
               </div>
