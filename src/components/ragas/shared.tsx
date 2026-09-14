@@ -1034,6 +1034,11 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
   // finished, and reading only CANCELLED left those rows waiting forever.
   const settled = !['PENDING', 'RUNNING', 'CANCELLING'].includes(detail.status);
   const showScores = scored ?? (detail.engine !== 'direct' && detail.metrics !== '[]');
+  // 점수 칸의 폭은 목록 전체가 한 번만 정한다. 줄마다 내용에 맡기면 열이 어긋나고,
+  // 가장 넓은 경우로 못박으면 RAGAS 를 재지 않은 목록에서 오른쪽이 통째로 빈 채
+  // 남는다 — 실제로 이 목록에 무엇이 뜨는지를 보고 그만큼만 잡는다.
+  const anyMean = detail.results.some((r) => caseMean(r) != null);
+  const scoreW = anyMean ? 'w-[150px]' : 'w-[76px]';
   const ids = detail.results.map((r) => r.ragas_result_id);
   const [opened, setOpened] = useState<Set<number>>(() =>
     defaultAllOpen ? new Set(ids) : new Set()
@@ -1074,7 +1079,7 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
                 </span>
               )}
               {isClosed && showScores && (
-                <span className="flex w-[150px] shrink-0 items-center justify-end gap-2">
+                <span className={cn('flex shrink-0 items-center justify-end gap-2', scoreW)}>
                   {/* O/X and the RAGAS mean stand on their own — a verdict and a
                       graded score answer different questions, so neither is
                       folded into the other. Both can be present at once. */}

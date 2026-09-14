@@ -343,6 +343,12 @@ export function CaseCompareTable({
   const nameA = labelA ?? compareSideLabel(detailA);
   const nameB = labelB ?? compareSideLabel(detailB);
   const showScores = scored ?? (detailA.metrics !== '[]' && detailB.metrics !== '[]');
+  // 오른쪽 스택의 폭은 목록 전체가 한 번만 정한다. 줄마다 내용에 맡기면 왼쪽
+  // A·B 미리보기가 줄마다 다른 자리에서 끝나고, 제일 넓은 경우(RAGAS + Δ)로
+  // 못박으면 RAGAS 를 재지 않은 비교에서 오른쪽 한 뼘이 빈 채로 남는다. 이 목록에
+  // 실제로 무엇이 뜨는지 보고 그만큼만 잡아, 줄들은 정렬된 채로 오른쪽 끝까지 쓴다.
+  const anyMean = showScores && ids.some((cid) => caseMean(byA.get(cid)) != null || caseMean(byB.get(cid)) != null);
+  const railW = anyMean ? 'w-[236px]' : 'w-[152px]';
   const keys = ids.map((cid) => String(cid));
   const [opened, setOpened] = useState<Set<string>>(() =>
     defaultAllOpen ? new Set(keys) : new Set()
@@ -397,12 +403,10 @@ export function CaseCompareTable({
                   pair, plus the response times. They are stacked rather than
                   merged — a run with both selected has two answers to give, not
                   one blended number. */}
-              {/* 고정 폭 — 이 스택의 내용은 줄마다 다르다(점수 유무, Δ 유무).
-                  폭을 내용에 맡기면 그만큼 왼쪽 A·B 미리보기가 줄마다 다른
-                  자리에서 끝나서, 접힌 목록이 표로 읽히지 않는다. 칸 안에서는
+              {/* 폭은 위에서 목록 단위로 정해 모든 줄이 같이 쓴다. 칸 안에서는
                   왼쪽 맞춤이라 시간·판정·RAGAS 의 머리가 한 선에 선다. */}
               {isClosed && (
-                <div className="flex w-[236px] shrink-0 flex-col items-start gap-1">
+                <div className={cn('flex shrink-0 flex-col items-start gap-1', railW)}>
                   <ElapsedPair a={a} b={b} />
                   {showScores && (
                     <>
