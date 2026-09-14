@@ -1,6 +1,9 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import {
+  Fragment, useCallback, useEffect, useState,
+  type ComponentProps, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent,
+} from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -528,6 +531,104 @@ export default function RecordsPanel() {
   );
 }
 
+/**
+ * 서랍 폭. 읽고 싶은 너비는 사람마다, 그리고 무엇을 펼쳤느냐에 따라 다르다 —
+ * 질문 다섯 줄짜리 단일 실행과 네 칸짜리 A/B 판정표가 필요로 하는 자리는 아예
+ * 다르다. 끌어서 맞춘 폭은 이 브라우저에 남아 다음 상세보기에도 그대로 열린다.
+ */
+const DRAWER_W_KEY = 'ptx.records.drawerWidth';
+const DRAWER_MIN_W = 520;
+/** 왼쪽에 목록이 한 뼘은 남아야 '서랍'이다 — 화면을 통째로 덮지는 않는다. */
+const drawerMaxW = () => Math.max(DRAWER_MIN_W, window.innerWidth - 120);
+const clampDrawerW = (w: number) => Math.min(Math.max(w, DRAWER_MIN_W), drawerMaxW());
+/** 아무것도 고르지 않았을 때의 폭(= max-w-5xl). 키보드로 줄일 때의 출발점. */
+const defaultDrawerW = () => Math.min(1024, window.innerWidth);
+
+function useDrawerWidth() {
+  const [width, setWidth] = useState<number | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  // 저장된 폭은 첫 페인트 뒤에 읽는다 — 서버가 그릴 때는 없는 값이라, 처음부터
+  // 쓰면 서버와 클라이언트가 서로 다른 마크업을 그린다.
+  useEffect(() => {
+    try {
+      const saved = Number(window.localStorage.getItem(DRAWER_W_KEY));
+      if (Number.isFinite(saved) && saved > 0) setWidth(clampDrawerW(saved));
+    } catch {
+      // 저장소를 막아 둔 브라우저 — 기본 폭으로 연다.
+    }
+  }, []);
+
+  // 창이 줄면 서랍도 따라 줄어야 한다.
+  useEffect(() => {
+    const onResize = () => setWidth((w) => (w == null ? w : clampDrawerW(w)));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const apply = useCallback((w: number) => {
+    const next = clampDrawerW(w);
+    setWidth(next);
+    try { window.localStorage.setItem(DRAWER_W_KEY, String(Math.round(next))); } catch { /* 무시 */ }
+  }, []);
+
+  const reset = useCallback(() => {
+    setWidth(null);
+    try { window.localStorage.removeItem(DRAWER_W_KEY); } catch { /* 무시 */ }
+  }, []);
+
+  const handleProps = {
+    onPointerDown: (e: ReactPointerEvent<HTMLDivElement>) => {
+      // 포인터를 손잡이에 묶어 둔다 — 빠르게 끌다 손잡이 밖으로 나가도 계속 따라온다.
+      e.preventDefault();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      setDragging(true);
+    },
+    onPointerMove: (e: ReactPointerEvent<HTMLDivElement>) => {
+      if (!dragging) return;
+      apply(window.innerWidth - e.clientX);
+    },
+    onPointerUp: (e: ReactPointerEvent<HTMLDivElement>) => {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+      setDragging(false);
+    },
+    onDoubleClick: reset,
+    onKeyDown: (e: ReactKeyboardEvent<HTMLDivElement>) => {
+      // 손잡이가 포커스를 받는 까닭 — 마우스로만 조절되는 크롬은 없느니만 못하다.
+      const step = e.shiftKey ? 96 : 24;
+      const cur = width ?? defaultDrawerW();
+      if (e.key === 'ArrowLeft') { e.preventDefault(); apply(cur + step); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); apply(cur - step); }
+      else if (e.key === 'Home' || e.key === 'Backspace') { e.preventDefault(); reset(); }
+    },
+  };
+
+  return { width, dragging, handleProps };
+}
+
+/** 서랍 왼쪽 모서리의 손잡이. 평소에는 보이지 않다가 가져다 대면 파란 선이 서고,
+ * 끄는 동안에는 켜진 채로 남는다. 더블클릭은 기본 폭으로 되돌린다. */
+function DrawerResizer({
+  dragging, ...rest
+}: { dragging: boolean } & ComponentProps<'div'>) {
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="상세 패널 너비 조절"
+      title="끌어서 너비 조절 · 더블클릭하면 기본 너비"
+      tabIndex={0}
+      {...rest}
+      className={cn(
+        'group absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize touch-none',
+        'after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:transition-colors',
+        dragging ? 'after:bg-accent' : 'after:bg-transparent hover:after:bg-accent',
+        'focus-visible:outline-none focus-visible:after:bg-accent',
+      )}
+    />
+  );
+}
+
 /** Side Drawer Component for viewing Run Details without nested table expansion */
 function RecordDetailDrawer({
   group,
@@ -547,6 +648,8 @@ function RecordDetailDrawer({
     ? `${API_BASE}/ragas-runs/${group.run.ragas_run_id}/export?fmt=csv`
     : `${API_BASE}/ragas-runs/ab/${group.groupId}/export?fmt=csv`;
 
+  const { width, dragging, handleProps } = useDrawerWidth();
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       {/* Backdrop */}
@@ -557,7 +660,16 @@ function RecordDetailDrawer({
       />
 
       {/* Drawer Content */}
-      <aside className="relative z-10 flex h-full w-full max-w-5xl flex-col border-l border-line bg-surface shadow-modal animate-in slide-in-from-right duration-200">
+      <aside
+        className={cn(
+          'relative z-10 flex h-full w-full flex-col border-l border-line bg-surface shadow-modal',
+          width == null && 'max-w-5xl',
+          // 끄는 동안에는 열리는 애니메이션이 매 프레임 다시 걸리지 않게 둔다.
+          !dragging && 'animate-in slide-in-from-right duration-200',
+        )}
+        style={width == null ? undefined : { width, maxWidth: '100vw' }}
+      >
+        <DrawerResizer {...handleProps} dragging={dragging} />
         {/* Drawer Header */}
         <div className="flex items-center justify-between border-b border-line px-6 py-4">
           <div className="flex items-center gap-3">
