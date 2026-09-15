@@ -8,12 +8,15 @@ export default function Modal({
   onClose,
   children,
   footer,
+  width = 'w-[600px]',
 }: {
   open: boolean;
   title: string;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  /** Panel width class. Forms keep the default; a grid needs more. */
+  width?: string;
 }) {
   // Esc 는 닫는다. 바깥 클릭은 닫지 않는다 — 여기 뜨는 창은 전부 입력 폼이고,
   // 스크롤/드래그가 살짝 빗나간 클릭 한 번에 작성 중이던 내용이 사라졌다.
@@ -35,7 +38,7 @@ export default function Modal({
       aria-modal="true"
     >
       {/* Level 4 elevation — the heavy multi-stop drop reserved for dialogs. */}
-      <div className="w-[600px] max-w-full rounded-md border border-line bg-surface shadow-modal">
+      <div className={`${width} max-w-full rounded-md border border-line bg-surface shadow-modal`}>
         <div className="flex items-center justify-between border-b border-line px-6 py-4">
           <h2 className="text-display-xs text-ink">{title}</h2>
           {/* Circular icon container — the one place the brand uses a pill radius. */}

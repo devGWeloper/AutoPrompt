@@ -493,7 +493,7 @@ export default function SingleRunPanel() {
                     채점 실패 — {callResult.score_error}
                   </p>
                 )}
-                {manualScores && <div className="mt-4"><ScoreBars row={manualScores} /></div>}
+                {manualScores && <div className="mt-4"><ScoreBars row={manualScores} verdict /></div>}
                 {callResult.docs.length > 0 && (
                   <div className="mt-4 border-t border-line pt-3">
                     <p className="mb-1.5 eyebrow">Contexts ({callResult.docs.length})</p>

@@ -280,6 +280,16 @@ export interface CsvUploadResult {
   errors: string[];
 }
 
+export interface CaseBulkInput {
+  cases: CaseCreate[];
+}
+
+export interface CaseBulkResult {
+  created: number;
+  /** Folder names the cases used that did not exist yet, registered by this save. */
+  folders_created: string[];
+}
+
 // ---- ragas runs ----
 
 export interface RagasResultRow {

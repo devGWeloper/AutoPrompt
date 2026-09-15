@@ -749,9 +749,50 @@ export function AnswerBox({
     if (settled) return <p className="text-sm text-muted">답변이 비어 있습니다</p>;
     return <PendingHint />;
   }
+  // JSON 답변은 한 줄로 흘려 쓰면 읽을 수가 없다 — 들여써서 고정폭으로. 글로 된
+  // 답변은 그대로 둔다.
+  const json = indentedJson(text);
   return (
-    <div className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words pr-1 text-sm leading-relaxed text-ink">
-      {text}
+    <div
+      className={cn(
+        'max-h-72 overflow-y-auto whitespace-pre-wrap break-words pr-1 leading-relaxed text-ink',
+        json ? 'font-mono text-xs' : 'text-sm',
+      )}
+    >
+      {json ?? text}
+    </div>
+  );
+}
+
+/** 객체·배열 JSON 이면 들여쓴 모양, 아니면 null. 따옴표 한 쌍뿐인 문자열 JSON 은
+ * 글이지 구조가 아니라 건드리지 않는다. */
+function indentedJson(text: string): string | null {
+  const s = text.trim();
+  if (!s.startsWith('{') && !s.startsWith('[')) return null;
+  try {
+    return JSON.stringify(JSON.parse(s), null, 2);
+  } catch {
+    return null;
+  }
+}
+
+/** 한 케이스를 펼쳤을 때 쌓이는 칸들의 공통 모양 — 회색 머리줄 + 흰 본문, 같은
+ * 모서리. 어떤 칸은 상자이고 어떤 칸은 맨글자이면, 무엇이 한 덩어리인지부터
+ * 헷갈린다. */
+export function CasePanel({
+  title, trailing, children,
+}: {
+  title: ReactNode;
+  trailing?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="min-w-0 overflow-hidden rounded-md border border-line bg-surface">
+      <div className="flex items-center gap-2 border-b border-line bg-surface-2 px-3 py-2">
+        {title}
+        {trailing && <span className="ml-auto flex items-center gap-2">{trailing}</span>}
+      </div>
+      <div className="px-3 py-2.5">{children}</div>
     </div>
   );
 }
@@ -815,8 +856,8 @@ export function CopyButton({ text }: { text: string }) {
 export function TraceValueBox({ row }: { row: RagasResultRow }) {
   if (!row.trace_value) return null;
   return (
-    <div className="min-w-0 overflow-hidden rounded-sm border border-line bg-surface">
-      <div className="flex items-center gap-1.5 border-b border-line bg-surface-2 px-3 py-1.5">
+    <div className="min-w-0 overflow-hidden rounded-md border border-line bg-surface">
+      <div className="flex items-center gap-1.5 border-b border-line bg-surface-2 px-3 py-2">
         <PaneLabel tone="left">채점 대상</PaneLabel>
         <span className="truncate rounded-sm border border-line px-1 py-px font-mono text-[10px] text-muted">
           {row.trace_var_nm || 'trace'}
@@ -947,8 +988,12 @@ export function ScoreBars({
   row,
   cancelled,
   settled,
+  verdict = false,
 }: {
   row: RagasResultRow;
+  /** Action Test 판정도 여기 적는다. 케이스 목록에서는 끈다 — 접힌 줄과 판정표 머리가
+   * 이미 O/X 를 말한다. 판정을 말할 곳이 이 상자뿐인 화면(직접 호출 결과)에서만 켠다. */
+  verdict?: boolean;
   cancelled?: boolean;
   /** The run has reached a terminal state — nothing more is coming for this
    * case. Without it an empty row is indistinguishable from one still being
@@ -981,20 +1026,38 @@ export function ScoreBars({
       </span>
     );
   }
+  // Action Test 판정은 (verdict 가 아니면) 여기 다시 적지 않는다 — 접힌 줄과 바로 위
+  // '채점 대상 · 기대 정답' 머리가 이미 O/X 를 말했다. Action Test 하나만 돌린 케이스에서
+  // 판정 하나를 담으려고 상자를 한 벌 더 여는 것이 이 자리에서 가장 흔한 모습이었다.
+  const items = verdict ? shown : shown.filter((m) => m !== EXACT_MATCH);
+  const ragas = items.filter((m) => m !== EXACT_MATCH);
+  const partial = row.answer != null && !!row.error_msg;
+  if (!items.length) {
+    return partial ? <p className="text-[11px] text-bad">채점 실패 — {row.error_msg}</p> : null;
+  }
+  const mean = caseMean(row);
   return (
-    <div className="overflow-hidden rounded-sm border border-line bg-surface p-3">
-      <p className="mb-2 eyebrow">평가 결과</p>
+    <CasePanel
+      title={<span className="eyebrow">{ragas.length ? (verdict ? '평가 결과' : 'RAGAS') : 'Action Test'}</span>}
+      trailing={
+        mean != null && ragas.length > 1 ? (
+          <span className="font-mono text-[11px] tabular-nums text-muted">
+            <span className="font-sans">평균 </span>
+            <span className="font-semibold text-ink">{fmt3(mean)}</span>
+          </span>
+        ) : undefined
+      }
+    >
       {/* 격자는 목록 전체가 하나로 쓴다(`li` 는 `contents`) — 줄마다 grid 를 따로
-          두면 트랙이 그 줄의 내용에만 맞춰져, 이름이 긴 지표의 막대만 다른 자리에서
-          시작한다. 이름 · 막대 · 값이 세로로 떨어지는 것은 이 한 겹 덕분이다.
-          Action Test 는 막대 대신 판정이라 가운데 칸을 비우고 오른쪽 값 칸에 선다. */}
+          두면 이름이 긴 지표의 막대만 다른 자리에서 시작한다. Action Test 는 막대
+          대신 판정이라 가운데 칸을 비우고 오른쪽 값 칸에 선다. */}
       <ul className="grid grid-cols-[minmax(92px,max-content)_1fr_auto] items-center gap-x-3 gap-y-2">
-        {shown.map((m) => {
+        {items.map((m) => {
           const v = row[m] != null ? Number(row[m]) : null;
           if (m === EXACT_MATCH) {
             return (
               <li key={m} className="contents">
-                <span className="truncate text-[11px] text-muted">{METRIC_LABELS[m]}</span>
+                <span className="truncate text-[11px] text-body">{METRIC_LABELS[m]}</span>
                 <span />
                 <span className="justify-self-end"><OxBadge value={v} /></span>
               </li>
@@ -1003,7 +1066,7 @@ export function ScoreBars({
           const pct = v != null ? Math.max(0, Math.min(1, v)) * 100 : 0;
           return (
             <li key={m} className="contents">
-              <span className="truncate text-[11px] text-muted">{METRIC_LABELS[m]}</span>
+              <span className="truncate text-[11px] text-body">{METRIC_LABELS[m]}</span>
               <div className="relative h-2 overflow-hidden rounded-full bg-surface-3">
                 <span className="absolute inset-y-0 left-0 rounded-full bg-accent" style={{ width: pct + '%' }} />
               </div>
@@ -1012,13 +1075,11 @@ export function ScoreBars({
           );
         })}
       </ul>
-      {/* Selecting 정답 일치 + RAGAS together and having only the first succeed
-          leaves a scored row that is quietly missing every LLM metric. The bars
-          above can't show that, so the reason goes underneath them. */}
-      {row.answer != null && row.error_msg && (
-        <p className="mt-2.5 border-t border-line pt-2.5 text-[11px] text-bad">채점 실패 — {row.error_msg}</p>
+      {/* Action Test 는 들어왔는데 RAGAS 가 실패한 경우 — 막대만으로는 깨끗한 결과로 읽힌다. */}
+      {partial && (
+        <p className="-mx-3 -mb-2.5 mt-2.5 border-t border-line px-3 py-2 text-[11px] text-bad">채점 실패 — {row.error_msg}</p>
       )}
-    </div>
+    </CasePanel>
   );
 }
 
@@ -1108,16 +1169,23 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
                     O/X 를 눈으로 다시 검산하지 않아도 된다. 정답이 없는 실행은
                     비교할 짝이 없으니 채점 대상만 보여준다. */}
                 {r.ground_truth ? <MatchDiff row={r} /> : <TraceValueBox row={r} />}
-                {/* 답변이 곧 채점 대상이면 위 왼쪽 칸이 이미 그것이다. 중간 변수를
-                    채점했거나 호출이 실패했을 때만 따로 편다. */}
+                {/* 답변이 곧 채점 대상이면 위 판정표가 이미 그것이다. 중간 변수를 채점했거나
+                    호출이 실패했을 때만 따로 편다 — 위 칸과 같은 상자 모양으로. 중간
+                    변수를 채점한 케이스에서는 '답변'이 채점 대상과 헷갈리지 않게
+                    '최종 답변'이라 부른다. 시간은 위 판정표 머리에 이미 있으면 되풀이하지
+                    않는다. */}
                 {(!r.ground_truth || r.trace_value || !!r.error_msg) && (
-                  <div className="min-w-0">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <p className="eyebrow">답변</p>
-                      <ElapsedTag ms={r.elapsed_ms} />
-                    </div>
-                    <div className="mt-0.5"><AnswerBox text={r.answer} error={r.error_msg} settled={settled} /></div>
-                  </div>
+                  <CasePanel
+                    title={<span className="eyebrow">{r.trace_value ? '최종 답변' : '답변'}</span>}
+                    trailing={
+                      <>
+                        {!r.ground_truth && <ElapsedTag ms={r.elapsed_ms} />}
+                        {r.answer && <CopyButton text={r.answer} />}
+                      </>
+                    }
+                  >
+                    <AnswerBox text={r.answer} error={r.error_msg} settled={settled} />
+                  </CasePanel>
                 )}
                 {showScores && <ScoreBars row={r} cancelled={cancelled} settled={settled} />}
               </div>

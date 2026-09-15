@@ -21,8 +21,8 @@ import { canCompareFields, DiffAgainst, FieldCompareTable, FieldDiffLine, PaneLa
  * B, and repeating it under each would push the two answers apart. */
 function GroundTruthBox({ text, trailing }: { text: string; trailing?: ReactNode }) {
   return (
-    <div className="mb-3 overflow-hidden rounded-sm border border-line bg-surface">
-      <div className="flex items-center gap-2 border-b border-line bg-surface-2 px-3 py-1.5">
+    <div className="mb-3 overflow-hidden rounded-md border border-line bg-surface">
+      <div className="flex items-center gap-2 border-b border-line bg-surface-2 px-3 py-2">
         <PaneLabel tone="right">기대 정답</PaneLabel>
         <span className="ml-auto flex items-center gap-2">
           {trailing}
@@ -69,7 +69,7 @@ function SideBox({
     // the eye finds the rail, not a two-letter word inside a sentence.
     <div
       className={cn(
-        'min-w-0 rounded-sm border border-line border-l-2 bg-surface-2 p-3',
+        'min-w-0 rounded-md border border-line border-l-2 bg-surface-2 p-3',
         tone === 'accent' ? 'border-l-accent' : 'border-l-muted/50',
       )}
     >
@@ -272,8 +272,12 @@ function CaseScoreBars({
   /** Both runs have reached a terminal state — see `ScoreBars`. */
   settled?: boolean;
 }) {
-  const rows = buildMetricRows(a, b);
-  const scored = rows.some((r) => r.av != null || r.bv != null);
+  const all = buildMetricRows(a, b);
+  const scored = all.some((r) => r.av != null || r.bv != null);
+  // Action Test 는 사이드 머리(A O · B X)와 키별 판정표가 이미 말했다 — 여기서 한 줄
+  // 더 두면 판정 하나를 세 번째로 적게 된다. 남는 것은 막대로 견줄 RAGAS 뿐이다.
+  const rows = all.filter((r) => r.m !== EXACT_MATCH);
+  const failedMsg = [a, b].filter((r) => r?.answer != null && r?.error_msg).map((r) => r!.error_msg!)[0];
 
   if (!scored) {
     // An answer that arrived but has an error carries the scorer's failure — say
@@ -294,7 +298,7 @@ function CaseScoreBars({
     return (
       <div
         className={cn(
-          'mt-3 overflow-hidden rounded-sm border border-line bg-surface p-3 text-center text-[11px]',
+          'mt-3 text-[11px]',
           failed.length ? 'text-bad' : 'text-muted',
         )}
       >
@@ -302,10 +306,13 @@ function CaseScoreBars({
       </div>
     );
   }
+  if (!rows.length) {
+    return failedMsg ? <p className="mt-3 text-[11px] text-bad">채점 실패 — {failedMsg}</p> : null;
+  }
   return (
-    <div className="mt-3 overflow-hidden rounded-sm border border-line bg-surface">
-      <div className="border-b border-line bg-surface-2/60 px-3.5 py-2">
-        <span className="eyebrow">지표 비교</span>
+    <div className="mt-3 overflow-hidden rounded-md border border-line bg-surface">
+      <div className="border-b border-line bg-surface-2 px-3 py-2">
+        <span className="eyebrow">RAGAS 비교</span>
       </div>
       <PairedMetricList rows={rows} />
       {/* Partly scored (e.g. 정답 일치 landed, the RAGAS metrics did not) — the

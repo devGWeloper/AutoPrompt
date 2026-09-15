@@ -9,6 +9,7 @@ import {
   mapDataset,
 } from "@/lib/db/rows";
 import type {
+  CaseBulkResult,
   CaseCreate,
   CaseUpdate,
   CsvUploadResult,
@@ -186,6 +187,66 @@ export async function createCase(datasetId: number, payload: CaseCreate, created
       },
     );
     return (await fetchCase(conn, datasetId, id))!;
+  }, { commit: true });
+}
+
+const BULK_MAX = 2000;
+
+/**
+ * Save many cases in one transaction — the import grid and "기록 → 데이터셋".
+ * A folder name the dataset does not have yet is registered here rather than
+ * left as a stray value: typing it into the folder column is the request.
+ * All-or-nothing, so a failed save never leaves half a paste behind.
+ */
+export async function createCases(
+  datasetId: number,
+  cases: CaseCreate[] | undefined,
+  createdBy: string,
+): Promise<CaseBulkResult> {
+  await requireDataset(datasetId);
+  if (!Array.isArray(cases) || cases.length === 0) throw badRequest("저장할 케이스가 없습니다");
+  if (cases.length > BULK_MAX) throw badRequest(`한 번에 ${BULK_MAX}건까지 저장할 수 있습니다`);
+
+  const rows = cases.map((c, i) => {
+    const input = typeof c?.input_data === "string" ? c.input_data.trim() : "";
+    if (!input) throw badRequest(`${i + 1}번째 케이스: 질문이 비어 있습니다`);
+    let type = (c.case_type ?? "").trim() || "NORMAL";
+    if (type.toUpperCase() === "NORMAL") type = "NORMAL";
+    if (type.length > 50) throw badRequest(`${i + 1}번째 케이스: 폴더 이름이 너무 깁니다 (최대 50자)`);
+    return { input, expected: c.expected_output ?? null, crit: c.eval_criteria ?? null, type };
+  });
+
+  return withConn(async (conn) => {
+    const known = new Set(
+      (((await conn.execute(`SELECT TYPE_CD FROM PTX_CASETYPE_MAS WHERE DATASET_ID = :did`, {
+        did: datasetId,
+      })).rows ?? []) as Record<string, unknown>[]).map((t) => String(t.TYPE_CD)),
+    );
+    const foldersCreated = Array.from(new Set(rows.map((r) => r.type))).filter(
+      (t) => t !== "NORMAL" && !known.has(t),
+    );
+    for (const cd of foldersCreated) {
+      await conn.execute(
+        `INSERT INTO PTX_CASETYPE_MAS (DATASET_ID, TYPE_CD, USER_ID) VALUES (:did, :cd, :actor)`,
+        { did: datasetId, cd, actor: createdBy },
+      );
+    }
+    for (const r of rows) {
+      await conn.execute(
+        `INSERT INTO PTX_DATASET_DET (DATASET_ID, INPUT_CTN, EXPECT_CTN, CRITERIA_CTN, TYPE_CD, USER_ID)
+         VALUES (:did, :input, :expected, :crit, :ctype, :cby)`,
+        { did: datasetId, input: r.input, expected: r.expected, crit: r.crit, ctype: r.type, cby: createdBy },
+      );
+    }
+    await writeAudit(conn, {
+      targetTable: "PTX_DATASET_MAS",
+      targetId: datasetId,
+      action: "UPDATE",
+      before: null,
+      after: { bulk_import: { created: rows.length, folders_created: foldersCreated } },
+      createdBy,
+    });
+    return { created: rows.length, folders_created: foldersCreated };
   }, { commit: true });
 }
 

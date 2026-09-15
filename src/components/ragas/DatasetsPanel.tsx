@@ -6,83 +6,18 @@ import { Card } from '@/components/ui/Card';
 import { Input, Select, Textarea } from '@/components/ui/Field';
 import { cn } from '@/lib/cn';
 import { api } from '@/lib/api';
-import type { CsvUploadResult, DatasetCategory, TestCase } from '@/lib/types';
+import type { CaseBulkResult, DatasetCategory, TestCase } from '@/lib/types';
+import CaseImportModal from './CaseImportModal';
+import { EMPTY, parseCaseInput, toFields, toPayload, type Fields } from './caseFields';
 import {
   Chevron, EmptyState, ErrBox, errText, folderLabel, oneLine, PencilIcon, TrashIcon, UNFILED,
   useArmed, useDatasetCategories, useFlowDatasets,
 } from './shared';
 
-// A case's payload is the JSON in INPUT_CTN. The editor exposes the three fields
-// the evaluation actually reads (see services/ragas.ts parseCase) and carries any
-// other keys through untouched, so editing a case here never drops data that was
-// imported from CSV or written by hand.
-interface Parsed {
-  question: string;
-  contexts: string[];
-  groundTruth: string | null;
-  rest: Record<string, unknown>;
-}
+// ---- CSV download ----------------------------------------------------------
 
-function parseCaseInput(raw: string): Parsed {
-  try {
-    const o = JSON.parse(raw) as Record<string, unknown>;
-    if (!o || typeof o !== 'object' || Array.isArray(o)) throw new Error('not an object');
-    const { question, contexts, ground_truth: gt, ...rest } = o;
-    const ctx = Array.isArray(contexts) ? contexts.map(String) : contexts ? [String(contexts)] : [];
-    return {
-      question: question == null ? '' : String(question),
-      contexts: ctx,
-      groundTruth: gt == null ? null : String(gt),
-      rest,
-    };
-  } catch {
-    // Not JSON — treat the whole string as the question so it stays editable.
-    return { question: raw, contexts: [], groundTruth: null, rest: {} };
-  }
-}
-
-
-/** Editable form state for one case. */
-interface Fields {
-  question: string;
-  contexts: string; // one per line
-  groundTruth: string;
-  category: string; // TYPE_CD; '' in the form means UNFILED
-}
-
-const EMPTY: Fields = { question: '', contexts: '', groundTruth: '', category: '' };
-
-function toFields(p: Parsed, expected: string | null, caseType: string): Fields {
-  return {
-    question: p.question,
-    contexts: p.contexts.join('\n'),
-    // parseCase prefers input_data.ground_truth and falls back to EXPECT_CTN.
-    groundTruth: p.groundTruth ?? expected ?? '',
-    category: caseType === UNFILED ? '' : caseType,
-  };
-}
-
-function toPayload(f: Fields, rest: Record<string, unknown> = {}) {
-  const contexts = f.contexts.split('\n').map((s) => s.trim()).filter(Boolean);
-  const gt = f.groundTruth.trim();
-  const input: Record<string, unknown> = { ...rest, question: f.question.trim() };
-  if (contexts.length) input.contexts = contexts;
-  else delete input.contexts;
-  if (gt) input.ground_truth = gt;
-  else delete input.ground_truth;
-  // Both columns are written: EXPECT_CTN is what an unparseable input_data falls
-  // back to, and it is the column the CSV round-trip carries.
-  return {
-    input_data: JSON.stringify(input),
-    expected_output: gt || null,
-    case_type: f.category.trim() || UNFILED,
-  };
-}
-
-// ---- CSV round-trip --------------------------------------------------------
-
-// Same columns importCsv accepts, so a downloaded file can be edited in Excel
-// and uploaded straight back.
+// Same columns importCsv accepts; the import grid reads these headers too, so a
+// downloaded file opened there goes straight back in.
 const CSV_HEADER = ['input_json', 'expected_output', 'eval_criteria', 'case_type'];
 
 function toCsv(cases: TestCase[]): string {
@@ -266,7 +201,7 @@ export default function DatasetsPanel() {
   const [renameId, setRenameId] = useState<number | null>(null);
   const [renameVal, setRenameVal] = useState('');
   const [busy, setBusy] = useState(false);
-  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [importing, setImporting] = useState(false);
   // Escape must not commit the rename that the resulting blur would otherwise save.
   const cancelRename = useRef(false);
   const cancelFolder = useRef(false);
@@ -444,20 +379,15 @@ export default function DatasetsPanel() {
     setEdit(toFields(parseCaseInput(c.input_data), c.expected_output, c.case_type));
   }
 
-  const importCsv = (file: File) => guard(async () => {
-    if (selDataset == null) return;
-    const form = new FormData();
-    form.append('file', file);
-    const res = await api.upload<CsvUploadResult>(`/datasets/${selDataset}/upload`, form);
+  function onImported(res: CaseBulkResult) {
     setNotice(
-      `CSV 가져오기 — ${res.created}건 추가` +
-      (res.skipped ? `, ${res.skipped}건 건너뜀` : '') +
-      (res.errors.length ? ` · ${res.errors.slice(0, 3).join(' / ')}` : ''),
+      `${res.created}건 추가` +
+      (res.folders_created.length ? ` · 새 폴더 ${res.folders_created.join(', ')}` : ''),
     );
     loadCases();
     reloadCats();
     reload();
-  });
+  }
 
   return (
     <div className="space-y-5">
@@ -687,28 +617,17 @@ export default function DatasetsPanel() {
                     placeholder="질문 · 정답 검색"
                     className="h-8 w-44 text-xs"
                   />
-                  <input
-                    ref={fileRef}
-                    type="file"
-                    accept=".csv,text/csv"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      e.target.value = ''; // re-selecting the same file must fire again
-                      if (f) importCsv(f);
-                    }}
-                  />
                   <span className="ml-auto inline-flex items-center overflow-hidden rounded-sm border border-line bg-surface">
-                    <span className="px-2 text-[11px] font-medium text-muted">CSV</span>
                     <button
                       type="button" disabled={busy}
-                      onClick={() => fileRef.current?.click()}
-                      className="h-8 border-l border-line px-2.5 text-xs text-ink transition-colors hover:bg-surface-3 disabled:opacity-50"
+                      onClick={() => setImporting(true)}
+                      className="h-8 px-2.5 text-xs text-ink transition-colors hover:bg-surface-3 disabled:opacity-50"
                     >
-                      가져오기
+                      올리기
                     </button>
                     <button
                       type="button" disabled={cases.length === 0}
+                      title="CSV 로 내려받기"
                       onClick={() => download(`${selected.dataset_nm}.csv`, toCsv(cases))}
                       className="h-8 border-l border-line px-2.5 text-xs text-ink transition-colors hover:bg-surface-3 disabled:opacity-50"
                     >
@@ -817,6 +736,15 @@ export default function DatasetsPanel() {
           )}
         </Card>
       </div>
+
+      {importing && selected && (
+        <CaseImportModal
+          datasetId={selected.dataset_id}
+          datasetName={selected.dataset_nm}
+          onClose={() => setImporting(false)}
+          onSaved={onImported}
+        />
+      )}
     </div>
   );
 }

@@ -13,6 +13,8 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { formatModelPair, formatModelSnapshot } from '@/lib/modelSnapshot';
 import type { RagasRunDetail, RagasRunSummary } from '@/lib/types';
+import CaseImportModal from './CaseImportModal';
+import type { Fields } from './caseFields';
 import { CaseCompareTable } from './CompareTable';
 import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import { AbKeyBreakdown, KeyBreakdown } from './KeyBreakdown';
@@ -363,7 +365,9 @@ export default function RecordsPanel() {
   // ESC key to close drawer
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setSelectedKey(null);
+      // A dialog opened from the drawer takes Esc for itself — closing the drawer
+      // underneath would throw away whatever was being edited in it.
+      if (e.key === 'Escape' && !document.querySelector('[role="dialog"]')) setSelectedKey(null);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -816,12 +820,39 @@ function AbCompareView({ aId, bId }: { aId: number; bId: number }) {
   );
 }
 
+function parseContexts(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const v: unknown = JSON.parse(raw);
+    return Array.isArray(v) ? v.map(String).filter((s) => s.trim()) : [String(v)];
+  } catch {
+    return [raw];
+  }
+}
+
+/** A run's cases as rows for the import grid. The 정답 column takes what the run
+ * actually produced — the captured variable when one was judged, since that is
+ * what 정답 일치 compares — so a good run becomes its own expected answers. */
+function rowsFromRun(d: RagasRunDetail): Fields[] {
+  return d.results
+    .filter((r) => (r.question ?? '').trim())
+    .map((r) => ({
+      question: (r.question ?? '').trim(),
+      contexts: parseContexts(r.contexts).join('\n'),
+      groundTruth: (r.trace_value ?? r.answer ?? '').trim(),
+      category: '',
+    }));
+}
+
 function RagasRunDetailView({ ragasId }: { ragasId: number }) {
   const [detail, setDetail] = useState<RagasRunDetail | null>(null);
-  useEffect(() => { api.get<RagasRunDetail>(`/ragas-runs/${ragasId}`).then(setDetail).catch(() => setDetail(null)); }, [ragasId]);
+  const [adding, setAdding] = useState(false);
+  const [added, setAdded] = useState<string | null>(null);
+  useEffect(() => { setAdded(null); api.get<RagasRunDetail>(`/ragas-runs/${ragasId}`).then(setDetail).catch(() => setDetail(null)); }, [ragasId]);
   if (!detail) return <div className="p-4 text-xs text-muted">불러오는 중…</div>;
 
   const verLabel = detail.version_no != null ? `v${detail.version_no}` : (detail.prompt_id ? `ID ${detail.prompt_id}` : runTargetLabel(detail));
+  const seed = rowsFromRun(detail);
 
   return (
     <div className="space-y-4">
@@ -849,12 +880,34 @@ function RagasRunDetailView({ ragasId }: { ragasId: number }) {
             <span>Engine {detail.engine ?? '—'}</span>
             <span>·</span>
             <span>{detail.results.length} case{detail.results.length === 1 ? '' : 's'}</span>
+            <Button variant="secondary" size="sm" className="ml-1" disabled={seed.length === 0} onClick={() => setAdding(true)}>
+              데이터셋에 추가
+            </Button>
           </span>
         </div>
+        {added && (
+          <div className="flex items-center gap-2 border-b border-line bg-surface-2/50 px-4 py-2 text-xs text-muted">
+            <span className="min-w-0 flex-1 truncate">{added}</span>
+            <button type="button" className="shrink-0 hover:text-ink" onClick={() => setAdded(null)}>닫기</button>
+          </div>
+        )}
         <div className="p-4">
           <CaseTable detail={detail} defaultAllOpen={false} />
         </div>
       </div>
+      {adding && (
+        <CaseImportModal
+          title="데이터셋에 추가"
+          initialRows={seed}
+          onClose={() => setAdding(false)}
+          onSaved={(res, t) =>
+            setAdded(
+              `${t.name} 에 ${res.created}건 추가` +
+              (res.folders_created.length ? ` · 새 폴더 ${res.folders_created.join(', ')}` : ''),
+            )
+          }
+        />
+      )}
     </div>
   );
 }
