@@ -973,7 +973,7 @@ function FieldRow({
           />
         )}
       </ValueTd>
-      <td className={cn(CELL, 'text-right')}>{f.status !== 'match' && <StatusChip status={f.status} />}</td>
+      <td className={CELL}>{f.status !== 'match' && <StatusChip status={f.status} />}</td>
     </tr>
   );
 }
@@ -1051,7 +1051,7 @@ function FieldTable({ m }: { m: StructuredMatch }) {
                 <th className={cn(TH, COL)}>
                   값 <span className="ml-1 font-normal text-muted">기대 → 실제</span>
                 </th>
-                <th className={cn(TH, 'text-right')}>판정</th>
+                <th className={TH}>판정</th>
               </tr>
             </thead>
             <tbody className="[&>tr:last-child>td]:border-b-0">{body}</tbody>
@@ -1340,7 +1340,7 @@ function PairFieldRow({
           />
         )}
       </ValueTd>
-      <td className={cn(CELL, 'text-right')}>
+      <td className={CELL}>
         {bad && (
           <span
             className={cn(
@@ -1452,7 +1452,7 @@ export function FieldCompareTable({
                 <th className={cn(TH, COL, 'truncate')}>
                   값 <span className="ml-1 font-normal text-muted">기대 → A · {nameA} · B · {nameB}</span>
                 </th>
-                <th className={cn(TH, 'text-right')}>판정</th>
+                <th className={TH}>판정</th>
               </tr>
             </thead>
             <tbody className="[&>tr:last-child>td]:border-b-0">{body}</tbody>
