@@ -21,7 +21,10 @@ import { AbKeyBreakdown, KeyBreakdown } from './KeyBreakdown';
 import {
   CaseTable, DownloadIcon, ErrBox, errText, fmt2, fmt3, fmtDt, folderLabel, hasTextSelection, runMean, runTargetLabel,
   compareSideLabel, runModelDetail, runTitle, runTitleParts, scoredMetrics, SegToggle, TrashIcon, UNSCORED_LABEL,
+  useEndpoints,
 } from './shared';
+import { readActiveRun } from '@/lib/activeRun';
+import { mismatchCount, SINGLE_ATTACH_EVENT, startMismatchRerun } from '@/lib/rerun';
 
 const API_BASE = '/api';
 
@@ -744,7 +747,7 @@ function RecordDetailDrawer({
         {/* Drawer Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {isSingle ? (
-            <RagasRunDetailView ragasId={group.run.ragas_run_id} />
+            <RagasRunDetailView ragasId={group.run.ragas_run_id} manual={group.run.is_manual} />
           ) : (
             <AbCompareView aId={group.a.ragas_run_id} bId={group.b.ragas_run_id} />
           )}
@@ -825,8 +828,30 @@ function rowsFromRun(d: RagasRunDetail): Fields[] {
   return d.results.map(rowFromResult).filter((f) => f.question);
 }
 
-function RagasRunDetailView({ ragasId }: { ragasId: number }) {
+function RagasRunDetailView({ ragasId, manual }: { ragasId: number; manual?: boolean }) {
   const [detail, setDetail] = useState<RagasRunDetail | null>(null);
+  const endpoints = useEndpoints();
+  const [rerunErr, setRerunErr] = useState<string | null>(null);
+  const [rerunning, setRerunning] = useState(false);
+
+  // 불일치만 새 실행으로 — 진행은 Single 탭에서 실시간으로 보인다.
+  async function rerun() {
+    if (!detail) return;
+    setRerunErr(null);
+    if (readActiveRun('single')) {
+      setRerunErr('Single 탭에서 진행 중인 테스트가 끝난 뒤 다시 시도해 주세요');
+      return;
+    }
+    setRerunning(true);
+    try {
+      const active = await startMismatchRerun(detail, endpoints);
+      window.dispatchEvent(new CustomEvent(SINGLE_ATTACH_EVENT, { detail: active }));
+    } catch (e) {
+      setRerunErr(errText(e));
+    } finally {
+      setRerunning(false);
+    }
+  }
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState<string | null>(null);
   useEffect(() => { setAdded(null); api.get<RagasRunDetail>(`/ragas-runs/${ragasId}`).then(setDetail).catch(() => setDetail(null)); }, [ragasId]);
@@ -837,6 +862,7 @@ function RagasRunDetailView({ ragasId }: { ragasId: number }) {
 
   return (
     <div className="space-y-4">
+      {rerunErr && <ErrBox msg={rerunErr} />}
       {scoredMetrics(detail).length > 0 && <SingleRunSummaryDashboard detail={detail} />}
       <KeyBreakdown rows={detail.results} />
       <div className="overflow-hidden rounded-sm border border-line bg-surface">
@@ -864,6 +890,11 @@ function RagasRunDetailView({ ragasId }: { ragasId: number }) {
             <Button variant="secondary" size="sm" className="ml-1" disabled={seed.length === 0} onClick={() => setAdding(true)}>
               데이터셋에 추가
             </Button>
+            {!manual && mismatchCount(detail) > 0 && (
+              <Button variant="secondary" size="sm" disabled={rerunning} onClick={rerun}>
+                불일치 {mismatchCount(detail)}건 재테스트
+              </Button>
+            )}
           </span>
         </div>
         {added && (

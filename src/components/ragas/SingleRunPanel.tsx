@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/Card';
 import { Select, Textarea } from '@/components/ui/Field';
 import { ApiError, api } from '@/lib/api';
 import { clearActiveRun, readActiveRun, saveActiveRun, type ActiveSingleRun } from '@/lib/activeRun';
+import { mismatchCount, SINGLE_ATTACH_EVENT, startMismatchRerun } from '@/lib/rerun';
 import { connectRagasRunStream as connectRagasRunWs } from '@/lib/sse-client';
 import { SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import { KeyBreakdown } from './KeyBreakdown';
@@ -159,6 +160,7 @@ export default function SingleRunPanel() {
   // Manual (raw single message) state.
   const [message, setMessage] = useState(SAMPLE_MESSAGE);
   const [expected, setExpected] = useState("");
+  const rerunEndpoints = useEndpoints();
 
   const [showRaw, setShowRaw] = useState(false);
   const [callStatus, setCallStatus] = useState<'idle' | 'running' | 'done' | 'failed'>('idle');
@@ -236,6 +238,36 @@ export default function SingleRunPanel() {
     // Mount only: a resume must not re-fire when the form state settles.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** Switch the panel onto a run that was created elsewhere — a re-test started
+   * from this panel or from the records drawer. */
+  function follow(s: ActiveSingleRun) {
+    wsRef.current?.close();
+    setError(null); setDetail(null); setStatus('running');
+    setLive([]); setTotal(0); setRunMetrics(null); setCancelling(false);
+    setSource('dataset');
+    setScoreOn(s.scoreOn);
+    setRunMeta({ nodeNm: s.nodeNm, verLabel: s.verLabel });
+    attach(s.runId, s.endpointId);
+  }
+
+  useEffect(() => {
+    const onAttach = (e: Event) => follow((e as CustomEvent<ActiveSingleRun>).detail);
+    window.addEventListener(SINGLE_ATTACH_EVENT, onAttach);
+    return () => window.removeEventListener(SINGLE_ATTACH_EVENT, onAttach);
+    // follow only touches setters and refs, so the first render's copy is enough.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function rerunMismatch() {
+    if (!detail) return;
+    setError(null);
+    try {
+      follow(await startMismatchRerun(detail, rerunEndpoints));
+    } catch (e) {
+      setError(errText(e));
+    }
+  }
 
   async function run() {
     if (!canRun) return;
@@ -606,6 +638,11 @@ export default function SingleRunPanel() {
                     <span>Engine {detail.engine ?? '—'}</span>
                     <span>·</span>
                     <span>{detail.results.length} case{detail.results.length === 1 ? '' : 's'}</span>
+                    {mismatchCount(detail) > 0 && (
+                      <Button variant="secondary" size="sm" className="ml-1" onClick={rerunMismatch}>
+                        불일치 {mismatchCount(detail)}건 재테스트
+                      </Button>
+                    )}
                   </span>
                 </div>
                 <div className="p-4">

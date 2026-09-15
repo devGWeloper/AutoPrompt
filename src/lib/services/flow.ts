@@ -165,6 +165,65 @@ export async function createFlowRagasRun(args: {
   }, { commit: true });
 }
 
+/**
+ * Cases a re-test run is limited to, by run id. Held in memory rather than on
+ * the run row (no schema change): the client opens the run's stream right after
+ * creating it, and `setupRun` takes the set once. Parked on globalThis so a dev
+ * hot reload of this module does not drop a set between create and stream.
+ */
+const RUN_SUBSETS: Map<number, Set<number>> =
+  ((globalThis as { __ptxRunSubsets?: Map<number, Set<number>> }).__ptxRunSubsets ??= new Map());
+
+/**
+ * A new run over only the cases a finished run got 불일치 on (정답 일치 = 0),
+ * with everything else copied from it — prompt version, dataset and folder,
+ * metrics, pinned models. Cases deleted since are left out. The endpoint is not
+ * stored on a PENDING row; the client streams it with the source run's endpoint.
+ */
+export async function createMismatchRerun(sourceRunId: number): Promise<RagasRunOut> {
+  return withConn(async (conn, oracle) => {
+    const src = await fetchRun(conn, sourceRunId);
+    if (!src) throw notFound("ragas run not found");
+    if (src.ab_group_id != null) throw badRequest("Compare 실행은 불일치 재테스트를 지원하지 않습니다");
+    const ds = src.dataset_id == null
+      ? []
+      : ((await conn.execute(`SELECT DATASET_NM FROM PTX_DATASET_MAS WHERE DATASET_ID = :did`, {
+          did: src.dataset_id,
+        })).rows ?? []) as Record<string, unknown>[];
+    if (!ds.length) throw badRequest("데이터셋이 삭제된 실행이라 다시 돌릴 수 없습니다");
+    const datasetNm = String(ds[0].DATASET_NM);
+    if (datasetNm === DIRECT_SINK_NM) throw badRequest("직접 입력 실행은 재테스트할 수 없습니다 — 데이터셋 실행에서만 됩니다");
+
+    const res = await conn.execute(
+      `SELECT DISTINCT r.CASE_ID
+         FROM PTX_RUN_DET r
+         JOIN PTX_DATASET_DET c ON c.CASE_ID = r.CASE_ID AND c.DATASET_ID = :did
+        WHERE r.RUN_ID = :rid AND r.EXACT_VAL = 0`,
+      { did: src.dataset_id, rid: sourceRunId },
+    );
+    const ids = ((res.rows ?? []) as Record<string, unknown>[]).map((r) => Number(r.CASE_ID));
+    if (!ids.length) throw badRequest("다시 돌릴 불일치 케이스가 없습니다");
+
+    const id = await insertReturningId(
+      conn,
+      oracle,
+      `INSERT INTO PTX_RUN_MAS (PROMPT_ID, DATASET_ID, DATASET_NM, TYPE_CD, STATUS_CD, METRIC_CTN, MODEL_CTN, USER_ID)
+       VALUES (:pid, :did, :dnm, :ctype, 'PENDING', :metrics, :models, :cby) RETURNING RUN_ID INTO :out_id`,
+      {
+        pid: src.prompt_id ?? null,
+        did: src.dataset_id,
+        dnm: datasetNm,
+        ctype: src.case_type ?? null,
+        metrics: src.metrics,
+        models: src.model_snapshot ?? null,
+        cby: SYSTEM_USER,
+      },
+    );
+    RUN_SUBSETS.set(id, new Set(ids));
+    return (await fetchRun(conn, id))!;
+  }, { commit: true });
+}
+
 export async function createFlowRagasAbRun(args: {
   datasetId: number;
   caseType?: string | null;
@@ -669,7 +728,14 @@ async function setupRun(
       : { enm: endpointNm, eurl: endpointUrl ?? baseUrl, id: runId },
   );
   await conn.commit();
-  const cases = await loadCases(conn, run.dataset_id, run.case_type);
+  // A re-test run covers only the cases it was created for (createMismatchRerun).
+  // Matched by id across the whole dataset: a case moved to another folder since
+  // is still the case that failed.
+  const only = RUN_SUBSETS.get(runId);
+  RUN_SUBSETS.delete(runId);
+  const cases = only
+    ? (await loadCases(conn, run.dataset_id, null)).filter((c) => only.has(c.case_id))
+    : await loadCases(conn, run.dataset_id, run.case_type);
   emit({ event: "RUNNING", run_id: runId, total: cases.length, metrics });
 
   // No prompt version on the run (A/B pinned to two endpoints) → nothing to swap:
