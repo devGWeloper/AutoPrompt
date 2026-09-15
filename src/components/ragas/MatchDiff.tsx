@@ -137,14 +137,16 @@ interface StatusStyle {
 
 const QUIET = 'text-muted';
 const BAD_CHIP = 'border border-bad-line bg-bad-soft text-bad';
-const BAD_FILL = { expected: 'bg-ok-soft text-ok', actual: 'bg-bad-soft text-bad' };
+// 기대값 칸은 어느 상태에서도 칠하지 않는다 — 초록 면은 '맞았다'로 읽혀, 누락·타입
+// 다름 줄에서 뜻이 거꾸로 선다. 틀린 것은 실제값 쪽이다.
+const BAD_FILL = { expected: '', actual: 'bg-bad-soft text-bad' };
 
 const STATUS: Record<FieldStatus, StatusStyle> = {
   match: { label: '일치', text: QUIET, chip: QUIET, rail: 'border-l-transparent', expected: '', actual: '' },
   diff: { label: '값 다름', text: 'text-bad', chip: BAD_CHIP, rail: 'border-l-bad-vivid', ...BAD_FILL },
   type: { label: '타입 다름', text: 'text-bad', chip: BAD_CHIP, rail: 'border-l-bad-vivid', ...BAD_FILL },
   // 기대값만 있는 줄이라 실제값 칸은 칠하지 않는다 — 거기엔 아무것도 없다.
-  missing: { label: '누락', text: 'text-bad', chip: BAD_CHIP, rail: 'border-l-bad-vivid', expected: 'bg-ok-soft text-ok', actual: '' },
+  missing: { label: '누락', text: 'text-bad', chip: BAD_CHIP, rail: 'border-l-bad-vivid', expected: '', actual: '' },
   // '추가'만 warn 인 까닭은, 나머지 셋이 "기대한 것이 그대로 오지 않았다"인 반면
   // 이것은 "묻지 않은 것이 더 왔다"라서 고칠 곳이 프롬프트가 아니라 기대 정답인
   // 경우가 잦기 때문이다.
@@ -448,8 +450,34 @@ function KeyCell({
   );
 }
 
+/** JSON 타입 이름 — '타입 다름' 줄에서만 값 위에 붙는다. 표시 문자열에서 거꾸로
+ * 읽어도 되는 까닭은, 그 줄만은 문자열이 따옴표를 단 채로 오기 때문이다
+ * (`leafText(v, quoted)`). 이 이름이 없으면 `200` 과 `"200"` 을 두고 무엇이
+ * 다른지 사람이 알아채야 한다. */
+function jsonTypeOf(text: string): string {
+  const s = text.trim();
+  if (s.startsWith('"')) return 'string';
+  if (s.startsWith('{')) return 'object';
+  if (s.startsWith('[')) return 'array';
+  if (s === 'null') return 'null';
+  if (s === 'true' || s === 'false') return 'boolean';
+  return s !== '' && !Number.isNaN(Number(s)) ? 'number' : 'string';
+}
+
+/** 펼친 객체·배열은 한 줄 JSON 대신 들여쓴 모양으로. 접힌 두 줄에서는 짧은 쪽이
+ * 낫고, 다 펼쳐 읽을 때는 구조가 보이는 쪽이 낫다. */
+function prettyValue(text: string): string | null {
+  const s = text.trim();
+  if (!s.startsWith('{') && !s.startsWith('[')) return null;
+  try {
+    return JSON.stringify(JSON.parse(s), null, 2);
+  } catch {
+    return null;
+  }
+}
+
 function ValueCell({
-  text, absentLabel, segs, tone, fill, dim, expanded, onToggle, last,
+  text, absentLabel, segs, tone, fill, dim, typeTag, same, span, expanded, onToggle, last,
 }: {
   text: string | null;
   absentLabel: string;
@@ -458,13 +486,24 @@ function ValueCell({
   tone: 'ok' | 'bad' | 'warn';
   fill: string;
   dim?: boolean;
+  /** 값 위에 JSON 타입 이름을 단다 — 타입 다름 줄. */
+  typeTag?: boolean;
+  /** 기대값·실제값이 같아 한 칸으로 합친 자리. 앞에 `=` 하나로 그 사실을 적는다 —
+   * 빈 칸이 옆에 없으니 '기대값이 비었다'로 읽힐 걱정은 없지만, 두 열 머리 아래
+   * 값이 하나뿐인 이유는 보여야 한다. */
+  same?: boolean;
+  span?: number;
   expanded: boolean;
   onToggle: () => void;
   last?: boolean;
 }) {
+  const edge = cn(CELL, !last && COL);
+  const eq = same && (
+    <span className="mr-1.5 select-none text-muted-soft" title="기대값과 실제값이 같음">=</span>
+  );
   if (text === null) {
     return (
-      <td className={cn(CELL, !last && COL)}>
+      <td colSpan={span} className={edge}>
         <Absent>{absentLabel}</Absent>
       </td>
     );
@@ -472,15 +511,26 @@ function ValueCell({
   // 빈 문자열은 글자 없이 그리면 칸이 깨진 것처럼 보인다 — 빈 값이라고 적는다.
   if (text.trim() === '') {
     return (
-      <td className={cn(CELL, !last && COL, 'font-mono', fill)}>
+      <td colSpan={span} className={cn(edge, 'font-mono', fill)}>
+        {eq}
         <span className="text-muted-soft">&quot;&quot;</span>
       </td>
     );
   }
   const long = text.length > LONG;
+  const pretty = expanded && !segs ? prettyValue(text) : null;
   return (
-    <td className={cn(CELL, !last && COL, 'group/v relative break-words font-mono', !segs && fill, dim && 'text-muted')}>
+    <td colSpan={span} className={cn(edge, 'group/v relative break-words font-mono', !segs && fill, dim && 'text-muted')}>
+      {typeTag && (
+        <span className="mb-0.5 block font-sans text-[10px] font-semibold uppercase tracking-[0.4px] opacity-70">
+          {jsonTypeOf(text)}
+        </span>
+      )}
+      {pretty ? (
+        <pre className="whitespace-pre-wrap break-words font-mono leading-relaxed">{pretty}</pre>
+      ) : (
       <div className={cn(!expanded && long && 'line-clamp-2')}>
+        {eq}
         {segs
           ? segs.map((s, i) =>
               s.same ? (
@@ -493,6 +543,7 @@ function ValueCell({
             )
           : text}
       </div>
+      )}
       {long && (
         <button
           type="button"
@@ -520,9 +571,11 @@ function countBad<T extends Pathed>(row: TreeRow<T>, statusOf: (item: T) => Fiel
 /** 트리 보기에서 접었다 펴는 가지 줄. 접혀 있어도 아래에 무엇이 있는지는 말한다 —
  * 조용한 가지는 그 아래 실패가 없는 것으로 읽힌다. */
 function GroupRow<T extends Pathed>({
-  row, collapsed, onToggle, statusOf,
+  row, span, collapsed, onToggle, statusOf,
 }: {
   row: TreeRow<T>;
+  /** 키 칸을 뺀 나머지 열 수 — 요약이 그 폭 전체에 걸친다. */
+  span: number;
   collapsed: boolean;
   onToggle: () => void;
   statusOf: (item: T) => FieldStatus;
@@ -540,23 +593,21 @@ function GroupRow<T extends Pathed>({
         rail={worst === 'match' ? 'border-l-transparent' : s.rail}
         lead={<Chevron open={!collapsed} />}
       />
-      <td className={cn(CELL, COL)} colSpan={2}>
-        <span className="text-[11px] text-muted">
-          하위 <span className="font-mono tabular-nums">{row.leaves}</span>개
+      <td className={CELL} colSpan={span}>
+        <span className="flex flex-wrap items-center gap-x-2 text-[11px] text-muted">
+          <span>
+            하위 <span className="font-mono tabular-nums">{row.leaves}</span>개
+          </span>
           {bad > 0 && (
             <span className={cn('font-medium', s.text)}>
-              {' · 오류 '}
-              <span className="font-mono tabular-nums">{bad}</span>
+              오류 <span className="font-mono tabular-nums">{bad}</span>
             </span>
           )}
+          {/* 접힌 가지는 그 아래 가장 무거운 실패의 이름을 단다. */}
+          {collapsed && bad > 0 && (
+            <span className={cn('rounded-full px-1.5 py-px text-[10px] font-semibold', s.chip)}>{s.label}</span>
+          )}
         </span>
-      </td>
-      <td className={cn(CELL, 'whitespace-nowrap')}>
-        {collapsed && bad > 0 && (
-          <span className={cn('inline-flex items-center rounded-full px-1.5 py-px text-[10px] font-semibold', s.chip)}>
-            {s.label}
-          </span>
-        )}
       </td>
     </tr>
   );
@@ -643,7 +694,12 @@ function useKeyTable<T extends Pathed>(
   /** 오류 먼저 보기의 줄들 — 층이 바뀌는 자리마다 머리 한 줄. 오류 층의 머리는
    * 층이 하나뿐이어도 선다: '오류만 보기'를 켠 표에서도 무슨 종류가 몇인지는
    * 남아야 한다. */
-  const flatBody = (row: (t: T) => ReactNode, detail: (inTier: T[]) => ReactNode, sections: boolean): ReactNode[] => {
+  const flatBody = (
+    row: (t: T) => ReactNode,
+    detail: (inTier: T[]) => ReactNode,
+    sections: boolean,
+    cols: number,
+  ): ReactNode[] => {
     const body: ReactNode[] = [];
     const tiers = new Set(sorted.map(tierFn));
     let last: Tier | null = null;
@@ -652,7 +708,7 @@ function useKeyTable<T extends Pathed>(
       if (sections && tier !== last && (tiers.size > 1 || tier === 'bad')) {
         const inTier = sorted.filter((x) => tierFn(x) === tier);
         body.push(
-          <SectionRow key={'§' + tier} tier={tier} count={inTier.length} cols={4}>
+          <SectionRow key={'§' + tier} tier={tier} count={inTier.length} cols={cols}>
             {tier === 'bad' && detail(inTier)}
           </SectionRow>,
         );
@@ -690,35 +746,65 @@ function FieldRow({
   // 같은 값 두 개를 통째로 붉히는 대신 어긋난 낱말만 — 긴 문장에서 어디가
   // 갈렸는지 사람이 눈으로 찾던 일을 표가 한다.
   const marks = useMemo(() => markPair(f.expected, f.actual, f.status === 'diff'), [f]);
+  const type = f.status === 'type';
   return (
     <tr className="group transition-colors hover:bg-surface-2/70">
-      <KeyCell path={f.path} rail={s.rail} dim={dim} {...view} />
-      <ValueCell
-        text={f.expected}
-        absentLabel="기대에 없음"
-        segs={marks ? marks.left : null}
-        tone="ok"
-        fill={s.expected}
-        dim={dim}
-        expanded={expanded}
-        onToggle={onExpand}
-      />
-      <ValueCell
-        text={f.actual}
-        absentLabel="응답에 없음"
-        segs={marks ? marks.right : null}
-        tone={f.status === 'extra' ? 'warn' : 'bad'}
-        fill={s.actual}
-        dim={dim}
-        expanded={expanded}
-        onToggle={onExpand}
-      />
-      <td className={cn(CELL, 'whitespace-nowrap')}>
-        <span className={cn('inline-flex items-center rounded-full px-1.5 py-px text-[10px] font-semibold', s.chip)}>
-          {s.label}
-        </span>
-      </td>
+      <KeyCell path={f.path} rail={s.rail} dim={dim} {...view}>
+        {f.status !== 'match' && <StatusChip status={f.status} />}
+      </KeyCell>
+      {/* 맞은 줄은 값이 하나다 — 같은 글자를 두 칸에 두 번 쓰면 표 폭의 절반이
+          반복이 되고, 값이 둘로 갈린 줄이 도리어 묻힌다. */}
+      {f.status === 'match' ? (
+        <ValueCell
+          text={f.actual}
+          absentLabel=""
+          segs={null}
+          tone="ok"
+          fill=""
+          dim={dim}
+          same
+          span={2}
+          expanded={expanded}
+          onToggle={onExpand}
+          last
+        />
+      ) : (
+        <>
+          <ValueCell
+            text={f.expected}
+            absentLabel="기대에 없음"
+            segs={marks ? marks.left : null}
+            tone="ok"
+            fill={s.expected}
+            typeTag={type}
+            expanded={expanded}
+            onToggle={onExpand}
+          />
+          <ValueCell
+            text={f.actual}
+            absentLabel="응답에 없음"
+            segs={marks ? marks.right : null}
+            tone={f.status === 'extra' ? 'warn' : 'bad'}
+            fill={s.actual}
+            typeTag={type}
+            expanded={expanded}
+            onToggle={onExpand}
+            last
+          />
+        </>
+      )}
     </tr>
+  );
+}
+
+/** 키 옆의 상태 칩 — 어긋난 줄에만. 따로 '결과' 열을 두면 스무 줄이 '일치'
+ * 글자로 폭을 차지하고, 레일 색·층 머리가 이미 한 말을 한 번 더 한다. */
+function StatusChip({ status }: { status: FieldStatus }) {
+  const s = STATUS[status];
+  return (
+    <span className={cn('shrink-0 self-center whitespace-nowrap rounded-full px-1.5 py-px font-sans text-[10px] font-semibold', s.chip)}>
+      {s.label}
+    </span>
   );
 }
 
@@ -763,6 +849,7 @@ function FieldTable({ m }: { m: StructuredMatch }) {
           ),
           (rows) => <KindCounts rows={rows} />,
           roomy,
+          3,
         )
       : t.treeRows.map((r) =>
           r.item ? (
@@ -778,6 +865,7 @@ function FieldTable({ m }: { m: StructuredMatch }) {
               key={r.path}
               row={r}
               collapsed={t.collapsed.has(r.path)}
+              span={2}
               onToggle={() => t.toggleGroup(r.path)}
               statusOf={fieldStatus}
             />
@@ -793,17 +881,15 @@ function FieldTable({ m }: { m: StructuredMatch }) {
         <div className="max-h-[28rem] overflow-auto">
           <table className="w-full min-w-[560px] table-fixed border-separate border-spacing-0 text-xs">
             <colgroup>
-              <col style={{ width: '26%' }} />
               <col style={{ width: '30%' }} />
-              <col style={{ width: '30%' }} />
-              <col style={{ width: '14%' }} />
+              <col style={{ width: '35%' }} />
+              <col style={{ width: '35%' }} />
             </colgroup>
             <thead className="sticky top-0 z-10 bg-surface-2 text-left text-[10px] uppercase tracking-[0.6px] text-muted">
               <tr>
                 <th className={cn('border-b border-line px-3 py-2 font-semibold', COL)}>키</th>
                 <th className={cn('border-b border-line px-3 py-2 font-semibold', COL)}>기대값</th>
-                <th className={cn('border-b border-line px-3 py-2 font-semibold', COL)}>실제값</th>
-                <th className="border-b border-line px-3 py-2 font-semibold">결과</th>
+                <th className="border-b border-line px-3 py-2 font-semibold">실제값</th>
               </tr>
             </thead>
             <tbody className="[&>tr:last-child>td]:border-b-0">{body}</tbody>
@@ -868,7 +954,8 @@ export function MatchDiff({ row }: { row: RagasResultRow }) {
         {row.exact_match != null && <OxBadge value={row.exact_match} />}
         {fields && (
           <span className="font-mono text-[11px] tabular-nums text-muted">
-            <span className="font-sans">키 </span>
+            {/* '키 3/12' 는 '키 3개'로 읽힌다 — 맞은 수라고 적는다. */}
+            <span className="font-sans">일치 </span>
             <span className="font-semibold text-ink">{fields.matched}</span>
             <span className="text-muted-soft">/{fields.total}</span>
           </span>
@@ -1057,6 +1144,20 @@ function PairFieldRow({
   const warnOnly = [r.a, r.b].every((f) => !f || f.status === 'match' || f.status === 'extra');
   const cell = (f: FieldResult | undefined, last?: boolean) => {
     if (!f) return <td className={cn(CELL, !last && COL, 'text-muted-soft')}>—</td>;
+    // 맞은 쪽은 값을 되풀이하지 않고 맞았다고만 적는다 — 그래야 같은 줄에서 틀린
+    // 쪽의 값이 혼자 선다. 값 자체는 바로 왼쪽 기대값이고, 툴팁에도 남는다.
+    if (f.status === 'match') {
+      return (
+        <td className={cn(CELL, !last && COL)} title={f.actual ?? undefined}>
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-ok">
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden>
+              <path d="M3 8.5l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            일치
+          </span>
+        </td>
+      );
+    }
     const mark = markPair(r.expected, f.actual, f.status === 'diff');
     return (
       <ValueCell
@@ -1089,18 +1190,37 @@ function PairFieldRow({
           </span>
         )}
       </KeyCell>
-      <ValueCell
-        text={r.expected}
-        absentLabel="기대에 없음"
-        segs={null}
-        tone="ok"
-        fill={bad ? 'text-ok' : ''}
-        dim={dim}
-        expanded={expanded}
-        onToggle={onExpand}
-      />
-      {cell(r.a)}
-      {cell(r.b, true)}
+      {/* 두 사이드가 다 맞은 줄은 기대값·A·B 가 한 글자다 — 세 번 쓰지 않고 한 칸으로. */}
+      {v === 'same-ok' ? (
+        <ValueCell
+          text={r.expected}
+          absentLabel="기대에 없음"
+          segs={null}
+          tone="ok"
+          fill=""
+          dim={dim}
+          same
+          span={3}
+          expanded={expanded}
+          onToggle={onExpand}
+          last
+        />
+      ) : (
+        <>
+          <ValueCell
+            text={r.expected}
+            absentLabel="기대에 없음"
+            segs={null}
+            tone="ok"
+            fill=""
+            typeTag={[r.a, r.b].some((f) => f?.status === 'type')}
+            expanded={expanded}
+            onToggle={onExpand}
+          />
+          {cell(r.a)}
+          {cell(r.b, true)}
+        </>
+      )}
     </tr>
   );
 }
@@ -1168,6 +1288,7 @@ export function FieldCompareTable({
           ),
           (rows) => <VerdictCounts rows={rows} />,
           roomy,
+          4,
         )
       : t.treeRows.map((row) =>
           row.item ? (
@@ -1183,6 +1304,7 @@ export function FieldCompareTable({
               key={row.path}
               row={row}
               collapsed={t.collapsed.has(row.path)}
+              span={3}
               onToggle={() => t.toggleGroup(row.path)}
               statusOf={pairStatus}
             />
