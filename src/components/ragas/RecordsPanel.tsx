@@ -6,7 +6,7 @@ import {
 } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
+import { Card, CardHeader } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Field';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/Table';
 import { api } from '@/lib/api';
@@ -386,19 +386,21 @@ export default function RecordsPanel() {
   return (
     <>
       <Card>
-        <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
-          <h2 className="text-sm font-semibold text-ink">실행 기록 <span className="text-muted">({groups.length})</span></h2>
-          <div className="flex items-center gap-2.5">
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="노드 · 데이터셋 · 질문 검색"
-              className="h-8 w-56 text-xs"
-            />
-            <SegToggle value={filter} onChange={setFilter} options={RUN_TYPE_FILTERS} />
-            <Button variant="secondary" size="sm" onClick={reload}>새로고침</Button>
-          </div>
-        </div>
+        <CardHeader
+          title={<>실행 기록 <span className="ml-1 font-mono text-caption-mono font-normal text-muted-soft">{groups.length}</span></>}
+          right={
+            <>
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="노드 · 데이터셋 · 질문 검색"
+                className="w-56 text-xs"
+              />
+              <SegToggle value={filter} onChange={setFilter} options={RUN_TYPE_FILTERS} />
+              <Button variant="secondary" size="md" onClick={reload}>새로고침</Button>
+            </>
+          }
+        />
         {delErr && (
           <div className="border-b border-line px-4 py-2.5">
             <ErrBox msg={delErr} />
@@ -801,23 +803,24 @@ function AbCompareView({ aId, bId, manual }: { aId: number; bId: number; manual?
       {/* 케이스를 하나씩 펼쳐 A·B 를 견주기 전에, 데이터셋 전체에서 어느 키가 두
           버전을 갈랐는지부터. 갈린 키가 없으면 서지 않는다. */}
       <AbKeyBreakdown aRows={a.results} bRows={b.results} nameA={compareSideLabel(a)} nameB={compareSideLabel(b)} />
-      <div className="overflow-hidden rounded-sm border border-line bg-surface">
-        <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
-          <h3 className="mr-1 text-sm font-semibold text-ink">Compare Detail</h3>
+      <Card className="overflow-hidden">
+        <CardHeader
+          title="Compare Detail"
+          right={
+            <>
+              <ModelStamp text={formatModelPair(a.model_snapshot, b.model_snapshot)} />
+              <span>Engine {a.engine ?? '—'}</span>
+              {!manual && <RerunButton detail={a} detailB={b} />}
+            </>
+          }
+        >
           {a.node_nm && <span className="font-medium text-ink">{a.node_nm}</span>}
           <Badge tone="neutral">A · {compareSideLabel(a)}</Badge>
           <span>vs</span>
           <Badge tone="accent">B · {compareSideLabel(b)}</Badge>
-          <span className="ml-auto flex items-center gap-2">
-            <ModelStamp text={formatModelPair(a.model_snapshot, b.model_snapshot)} />
-            <span>Engine {a.engine ?? '—'}</span>
-            {!manual && <RerunButton detail={a} detailB={b} />}
-          </span>
-        </div>
-        <div className="p-4">
-          <CaseCompareTable detailA={a} detailB={b} defaultAllOpen={false} />
-        </div>
-      </div>
+        </CardHeader>
+        <CaseCompareTable detailA={a} detailB={b} defaultAllOpen={false} />
+      </Card>
     </div>
   );
 }
@@ -841,9 +844,22 @@ function RagasRunDetailView({ ragasId, manual }: { ragasId: number; manual?: boo
     <div className="space-y-4">
       {scoredMetrics(detail).length > 0 && <SingleRunSummaryDashboard detail={detail} />}
       <KeyBreakdown rows={detail.results} />
-      <div className="overflow-hidden rounded-sm border border-line bg-surface">
-        <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
-          <h3 className="mr-1 text-sm font-semibold text-ink">Single Detail</h3>
+      <Card className="overflow-hidden">
+        <CardHeader
+          title="Single Detail"
+          right={
+            <>
+              <ModelStamp text={formatModelSnapshot(detail.model_snapshot)} />
+              <span>Engine {detail.engine ?? '—'}</span>
+              <span>·</span>
+              <span>{detail.results.length} case{detail.results.length === 1 ? '' : 's'}</span>
+              <Button variant="secondary" size="sm" className="ml-1" disabled={seed.length === 0} onClick={() => setAdding(true)}>
+                데이터셋에 추가
+              </Button>
+              {!manual && <RerunButton detail={detail} />}
+            </>
+          }
+        >
           <Badge tone={detail.status === 'FAILED' ? 'bad' : 'neutral'} dot>{detail.status}</Badge>
           {detail.node_nm && <span className="font-medium text-ink">{detail.node_nm}</span>}
           <Badge tone="neutral">{verLabel}</Badge>
@@ -864,27 +880,15 @@ function RagasRunDetailView({ ragasId, manual }: { ragasId: number; manual?: boo
               </span>
             </Badge>
           )}
-          <span className="ml-auto flex items-center gap-2">
-            <ModelStamp text={formatModelSnapshot(detail.model_snapshot)} />
-            <span>Engine {detail.engine ?? '—'}</span>
-            <span>·</span>
-            <span>{detail.results.length} case{detail.results.length === 1 ? '' : 's'}</span>
-            <Button variant="secondary" size="sm" className="ml-1" disabled={seed.length === 0} onClick={() => setAdding(true)}>
-              데이터셋에 추가
-            </Button>
-            {!manual && <RerunButton detail={detail} />}
-          </span>
-        </div>
+        </CardHeader>
         {added && (
           <div className="flex items-center gap-2 border-b border-line bg-surface-2/50 px-4 py-2 text-xs text-muted">
             <span className="min-w-0 flex-1 truncate">{added}</span>
             <button type="button" className="shrink-0 hover:text-ink" onClick={() => setAdded(null)}>닫기</button>
           </div>
         )}
-        <div className="p-4">
-          <CaseTable detail={detail} defaultAllOpen={false} />
-        </div>
-      </div>
+        <CaseTable detail={detail} defaultAllOpen={false} />
+      </Card>
       {adding && (
         <CaseImportModal
           title="데이터셋에 추가"

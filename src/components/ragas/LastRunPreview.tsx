@@ -165,20 +165,16 @@ export default function LastRunPreview({ kind }: { kind: Kind }) {
         )}
         </div>
 
+        {/* 표는 카드 가장자리까지 붙는다 — 여백 안에 테두리 상자를 한 겹 더 두면
+            카드 안에 카드가 들어앉아 선이 두 번 그려진다. */}
         {open && (
-          <div className="p-4">
-            {!ready || !detailA ? (
-              <div className="py-6 text-center text-body-sm text-muted-soft">…</div>
-            ) : (
-              <div className="overflow-hidden rounded-sm border border-line bg-surface">
-                {paired && detailB ? (
-                  <CaseCompareTable detailA={detailA} detailB={detailB} defaultAllOpen={false} />
-                ) : (
-                  <CaseTable detail={detailA} defaultAllOpen={false} />
-                )}
-              </div>
-            )}
-          </div>
+          !ready || !detailA ? (
+            <div className="py-10 text-center text-body-sm text-muted-soft">…</div>
+          ) : paired && detailB ? (
+            <CaseCompareTable detailA={detailA} detailB={detailB} defaultAllOpen={false} />
+          ) : (
+            <CaseTable detail={detailA} defaultAllOpen={false} />
+          )
         )}
       </Card>
     </div>

@@ -30,3 +30,27 @@ export function Card({
     </div>
   );
 }
+
+/** The one header every card uses: title, then the facts about what is in the
+    card (badges, names) in muted small text, then the card's own actions pushed
+    to the far end. Same height and padding on every screen, so cards stacked on
+    one page — and cards on different pages — start their content on one line. */
+export function CardHeader({
+  title,
+  children,
+  right,
+  className,
+}: {
+  title: ReactNode;
+  children?: ReactNode;
+  right?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn('flex min-h-[3.25rem] flex-wrap items-center gap-2 border-b border-line px-4 py-2.5 text-xs text-muted', className)}>
+      <h3 className="mr-1 text-sm font-semibold text-ink">{title}</h3>
+      {children}
+      {right && <span className="ml-auto flex items-center gap-2">{right}</span>}
+    </div>
+  );
+}
