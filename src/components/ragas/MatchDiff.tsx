@@ -176,20 +176,20 @@ const rankOf = (s: FieldStatus) => RANK[s];
 
 const FAIL_KINDS: FieldStatus[] = ['diff', 'type', 'missing', 'extra'];
 
-const CELL = 'border-b border-line px-3 py-2 align-top';
+const CELL = 'border-b border-line px-3 py-2.5 align-top';
 /** 열 사이 세로 헤어라인. 값이 두 칸에 걸쳐 읽히는 표라 가로줄만으로는 어느
  * 칸까지가 기대값인지 눈이 자꾸 놓친다. */
 const COL = 'border-r border-line';
 
 /** 이 길이를 넘는 값은 두 줄로 접어 둔다. 한 줄이 화면을 다 먹으면 위아래를
  * 나란히 읽으라고 만든 표가 아니게 된다. */
-const LONG = 90;
+const LONG = 160;
 /** 이보다 긴 짝은 낱말 맞추기를 포기하고 칸을 통째로 칠한다. */
 const MARKABLE = 600;
 
 /** 값이 아예 없는 쪽 — 빈 칸으로 두면 '빈 문자열이 왔다'로도 읽힌다. */
 function Absent({ children }: { children: string }) {
-  return <span className="font-sans text-[11px] text-muted">{children}</span>;
+  return <span className="font-sans text-xs text-muted">{children}</span>;
 }
 
 /** 값·키를 집어가는 자리. 줄에 손을 올리기 전에는 보이지 않는다 — 표의 모든 칸이
@@ -258,7 +258,7 @@ function ToggleButton({
       aria-pressed={on}
       disabled={disabled}
       className={cn(
-        'inline-flex h-6 items-center gap-1.5 rounded-sm border px-2 text-[11px] font-medium transition disabled:cursor-default disabled:opacity-40',
+        'inline-flex h-7 items-center gap-1.5 rounded-sm border px-2.5 text-xs font-medium transition disabled:cursor-default disabled:opacity-40',
         on
           ? 'border-accent-line bg-accent-soft text-accent'
           : 'border-line-strong bg-surface text-body enabled:hover:bg-surface-2 enabled:hover:text-ink',
@@ -294,7 +294,7 @@ function SortToggle({ value, onChange }: { value: SortMode; onChange: (v: SortMo
           onClick={() => onChange(v)}
           aria-pressed={value === v}
           className={cn(
-            'rounded-sm px-2 py-0.5 text-[11px] font-semibold transition',
+            'rounded-sm px-2 py-0.5 text-xs font-semibold transition',
             value === v ? 'bg-surface text-accent shadow-seg' : 'text-muted hover:text-ink',
           )}
         >
@@ -332,7 +332,7 @@ function TableToolbar({
       <ToggleButton on={badOnly} onClick={() => onBadOnly(!badOnly)} label="오류만 보기" count={badCount} />
       <ToggleButton on={hideBlank} onClick={() => onHideBlank(!hideBlank)} label="빈 값 숨기기" count={blankCount} />
       {hidden > 0 && (
-        <span className="text-[11px] text-muted">
+        <span className="text-xs text-muted">
           <span className="font-mono tabular-nums">{hidden}</span>개 숨김
         </span>
       )}
@@ -341,7 +341,7 @@ function TableToolbar({
           <button
             type="button"
             onClick={onToggleAll}
-            className="h-6 rounded-sm border border-line px-2 text-[11px] text-muted transition hover:bg-surface-2 hover:text-ink"
+            className="h-7 rounded-sm border border-line px-2.5 text-xs text-muted transition hover:bg-surface-2 hover:text-ink"
           >
             {allCollapsed ? '모두 펼치기' : '모두 접기'}
           </button>
@@ -352,7 +352,7 @@ function TableToolbar({
             onChange={(e) => onQ(e.target.value)}
             placeholder="키 검색"
             spellCheck={false}
-            className="h-6 w-32 rounded-sm border border-line bg-surface-2 pl-2 pr-5 font-mono text-[11px] text-ink outline-none transition placeholder:font-sans placeholder:text-muted-soft focus:border-accent-line focus:bg-surface focus:shadow-ring"
+            className="h-7 w-40 rounded-sm border border-line bg-surface-2 pl-2 pr-5 font-mono text-xs text-ink outline-none transition placeholder:font-sans placeholder:text-muted-soft focus:border-accent-line focus:bg-surface focus:shadow-ring"
           />
           {q && (
             <button
@@ -384,7 +384,7 @@ function SectionRow({
   return (
     <tr>
       <td colSpan={cols} className="border-y border-line-strong bg-surface-3 px-3 py-1.5">
-        <span className="flex flex-wrap items-baseline gap-x-2.5 text-[11px]">
+        <span className="flex flex-wrap items-baseline gap-x-2.5 text-xs">
           <span className={cn('font-semibold', tier === 'bad' ? 'text-bad' : 'text-body')}>
             {TIER_LABEL[tier]} <span className="font-mono tabular-nums">{count}</span>
           </span>
@@ -513,7 +513,7 @@ function ValueCell({
   // 빈 문자열은 글자 없이 그리면 칸이 깨진 것처럼 보인다 — 빈 값이라고 적는다.
   if (text.trim() === '') {
     return (
-      <td colSpan={span} className={cn(edge, 'font-mono', fill)}>
+      <td colSpan={span} className={cn(edge, fill)}>
         {eq}
         <span className="text-muted">&quot;&quot;</span>
       </td>
@@ -522,16 +522,16 @@ function ValueCell({
   const long = text.length > LONG;
   const pretty = expanded && !segs ? prettyValue(text) : null;
   return (
-    <td colSpan={span} className={cn(edge, 'group/v relative break-words font-mono', fill, dim && 'text-muted')}>
+    <td colSpan={span} className={cn(edge, 'group/v relative break-words tabular-nums', fill, dim && 'text-muted')}>
       {typeTag && (
-        <span className="mb-0.5 block font-sans text-[10px] font-semibold uppercase tracking-[0.4px]">
+        <span className="mb-0.5 block font-mono text-[11px] font-semibold">
           {jsonTypeOf(text)}
         </span>
       )}
       {pretty ? (
-        <pre className="whitespace-pre-wrap break-words font-mono leading-relaxed">{pretty}</pre>
+        <pre className="whitespace-pre-wrap break-words font-mono text-[12.5px] leading-relaxed">{pretty}</pre>
       ) : (
-      <div className={cn(!expanded && long && 'line-clamp-2')}>
+      <div className={cn(!expanded && long && 'line-clamp-3')}>
         {eq}
         {segs
           ? segs.map((s, i) =>
@@ -550,7 +550,7 @@ function ValueCell({
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onToggle(); }}
-          className="mt-1 font-sans text-[10px] text-muted underline decoration-line-strong underline-offset-2 hover:text-ink"
+          className="mt-1 font-sans text-xs text-muted underline decoration-line-strong underline-offset-2 hover:text-ink"
         >
           {expanded ? '접기' : `더 보기 · ${text.length}자`}
         </button>
@@ -596,7 +596,7 @@ function GroupRow<T extends Pathed>({
         lead={<Chevron open={!collapsed} />}
       />
       <td className={CELL} colSpan={span}>
-        <span className="flex flex-wrap items-center gap-x-2 text-[11px] text-muted">
+        <span className="flex flex-wrap items-center gap-x-2 text-xs text-muted">
           <span>
             하위 <span className="font-mono tabular-nums">{row.leaves}</span>개
           </span>
@@ -607,7 +607,7 @@ function GroupRow<T extends Pathed>({
           )}
           {/* 접힌 가지는 그 아래 가장 무거운 실패의 이름을 단다. */}
           {collapsed && bad > 0 && (
-            <span className={cn('rounded-full px-1.5 py-px text-[10px] font-semibold', s.chip)}>{s.label}</span>
+            <span className={cn('rounded-full px-1.5 py-px text-[11px] font-semibold', s.chip)}>{s.label}</span>
           )}
         </span>
       </td>
@@ -804,7 +804,7 @@ function FieldRow({
 function StatusChip({ status }: { status: FieldStatus }) {
   const s = STATUS[status];
   return (
-    <span className={cn('shrink-0 self-center whitespace-nowrap rounded-full px-1.5 py-px font-sans text-[10px] font-semibold', s.chip)}>
+    <span className={cn('shrink-0 self-center whitespace-nowrap rounded-full px-1.5 py-px font-sans text-[11px] font-semibold', s.chip)}>
       {s.label}
     </span>
   );
@@ -880,14 +880,14 @@ function FieldTable({ m }: { m: StructuredMatch }) {
       {t.shown.length === 0 ? (
         <NoRows>{t.q.trim() ? '검색과 맞는 키가 없습니다' : '해당하는 키가 없습니다'}</NoRows>
       ) : (
-        <div className="max-h-[28rem] overflow-auto">
-          <table className="w-full min-w-[560px] table-fixed border-separate border-spacing-0 text-xs">
+        <div className="max-h-[36rem] overflow-auto">
+          <table className="w-full min-w-[560px] table-fixed border-separate border-spacing-0 text-[13px] leading-relaxed">
             <colgroup>
               <col style={{ width: '30%' }} />
               <col style={{ width: '35%' }} />
               <col style={{ width: '35%' }} />
             </colgroup>
-            <thead className="sticky top-0 z-10 bg-surface-3 text-left text-[10px] uppercase tracking-[0.6px] text-body">
+            <thead className="sticky top-0 z-10 bg-surface-3 text-left text-xs text-body">
               <tr>
                 <th className={cn('border-b border-line px-3 py-2 font-semibold', COL)}>키</th>
                 <th className={cn('border-b border-line px-3 py-2 font-semibold', COL)}>기대값</th>
@@ -915,7 +915,7 @@ export function ViewToggle({ raw, onRaw }: { raw: boolean; onRaw: (v: boolean) =
           onClick={() => onRaw(v)}
           aria-pressed={raw === v}
           className={cn(
-            'rounded-sm px-2 py-0.5 text-[11px] font-semibold transition',
+            'rounded-sm px-2 py-0.5 text-xs font-semibold transition',
             raw === v ? 'bg-surface text-accent shadow-seg' : 'text-muted hover:text-ink',
           )}
         >
@@ -955,7 +955,7 @@ export function MatchDiff({ row }: { row: RagasResultRow }) {
         )}
         {row.exact_match != null && <OxBadge value={row.exact_match} />}
         {fields && (
-          <span className="font-mono text-[11px] tabular-nums text-muted">
+          <span className="font-mono text-xs tabular-nums text-muted">
             {/* '키 3/12' 는 '키 3개'로 읽힌다 — 맞은 수라고 적는다. */}
             <span className="font-sans">일치 </span>
             <span className="font-semibold text-ink">{fields.matched}</span>
@@ -1151,7 +1151,7 @@ function PairFieldRow({
     if (f.status === 'match') {
       return (
         <td className={cn(CELL, !last && COL)} title={f.actual ?? undefined}>
-          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-ok">
+          <span className="inline-flex items-center gap-1 text-xs font-medium text-ok">
             <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden>
               <path d="M3 8.5l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
@@ -1186,7 +1186,7 @@ function PairFieldRow({
         {(v === 'a' || v === 'b') && (
           <span
             title={AB_LABEL[v]}
-            className="shrink-0 rounded-sm border border-ok-line bg-ok-soft px-1 py-px font-sans text-[10px] font-semibold text-ok"
+            className="shrink-0 rounded-sm border border-ok-line bg-ok-soft px-1 py-px font-sans text-[11px] font-semibold text-ok"
           >
             {v.toUpperCase()}
           </span>
@@ -1317,12 +1317,12 @@ export function FieldCompareTable({
     <div className={cn('overflow-hidden rounded-md border border-line bg-surface', className)}>
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-line bg-surface-2 px-3 py-2">
         <span className="eyebrow">키별 판정</span>
-        <span className="text-[11px] text-muted">
+        <span className="text-xs text-muted">
           키 <span className="font-mono font-semibold tabular-nums text-ink">{all.length}</span>
         </span>
         <span aria-hidden className="h-3 w-px self-center bg-line-strong" />
         {/* 갈린 키가 이 표의 요점이다 — 없으면 없다고 먼저 말한다. */}
-        <span className="flex flex-wrap items-baseline gap-x-2.5 text-[11px]">
+        <span className="flex flex-wrap items-baseline gap-x-2.5 text-xs">
           {quiet ? <span className="text-muted">A·B 동일</span> : <VerdictCounts rows={all} />}
         </span>
         {trailing && <span className="ml-auto">{trailing}</span>}
@@ -1331,15 +1331,15 @@ export function FieldCompareTable({
       {t.shown.length === 0 ? (
         <NoRows>{t.q.trim() ? '검색과 맞는 키가 없습니다' : '해당하는 키가 없습니다'}</NoRows>
       ) : (
-        <div className="max-h-[28rem] overflow-auto">
-          <table className="w-full min-w-[620px] table-fixed border-separate border-spacing-0 text-xs">
+        <div className="max-h-[36rem] overflow-auto">
+          <table className="w-full min-w-[620px] table-fixed border-separate border-spacing-0 text-[13px] leading-relaxed">
             <colgroup>
               <col style={{ width: '22%' }} />
               <col style={{ width: '26%' }} />
               <col style={{ width: '26%' }} />
               <col style={{ width: '26%' }} />
             </colgroup>
-            <thead className="sticky top-0 z-10 bg-surface-3 text-left text-[10px] uppercase tracking-[0.6px] text-body">
+            <thead className="sticky top-0 z-10 bg-surface-3 text-left text-xs text-body">
               <tr>
                 <th className={cn('border-b border-line px-3 py-2 font-semibold', COL)}>키</th>
                 <th className={cn('border-b border-line px-3 py-2 font-semibold', COL)}>기대값</th>
