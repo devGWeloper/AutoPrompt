@@ -21,7 +21,8 @@ import {
   type RagasResultRow,
   type RagasRunDetail,
 } from '@/lib/types';
-import { MatchDiff, PaneLabel } from './MatchDiff';
+import { MatchDiff, PaneLabel, ValuePanel, valueFields } from './MatchDiff';
+import AddExpectedButton from './AddExpectedButton';
 
 // ---- formatting ------------------------------------------------------------
 
@@ -1115,6 +1116,12 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
       {detail.results.map((r) => {
         const isClosed = !opened.has(r.ragas_result_id);
         const mean = caseMean(r);
+        const scored = r.trace_value ?? r.answer;
+        // 정답 없이 돌린 JSON 결과 — 판정표 자리에 키 · 값 표가 선다.
+        const keyed = !isClosed && !r.ground_truth && !!valueFields(scored, !r.trace_value);
+        const addExpected = !r.ground_truth && (
+          <AddExpectedButton question={r.question} contexts={r.contexts} answer={r.answer} traceValue={r.trace_value} />
+        );
         return (
           <div key={r.ragas_result_id}>
             <DisclosureHeader open={!isClosed} onToggle={() => toggle(r.ragas_result_id)}>
@@ -1168,18 +1175,33 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
                 {/* 기대 정답이 있으면 채점 대상 바로 옆에 놓고 다른 곳만 칠한다 —
                     O/X 를 눈으로 다시 검산하지 않아도 된다. 정답이 없는 실행은
                     비교할 짝이 없으니 채점 대상만 보여준다. */}
-                {r.ground_truth ? <MatchDiff row={r} /> : <TraceValueBox row={r} />}
+                {r.ground_truth ? (
+                  <MatchDiff row={r} />
+                ) : keyed ? (
+                  <ValuePanel
+                    text={scored!}
+                    unwrapBody={!r.trace_value}
+                    label={r.trace_value ? '채점 대상' : '답변'}
+                    tag={r.trace_value ? r.trace_var_nm || 'trace' : null}
+                    trailing={<><ElapsedTag ms={r.elapsed_ms} />{addExpected}</>}
+                  />
+                ) : (
+                  <TraceValueBox row={r} />
+                )}
                 {/* 답변이 곧 채점 대상이면 위 판정표가 이미 그것이다. 중간 변수를 채점했거나
                     호출이 실패했을 때만 따로 편다 — 위 칸과 같은 상자 모양으로. 중간
                     변수를 채점한 케이스에서는 '답변'이 채점 대상과 헷갈리지 않게
                     '최종 답변'이라 부른다. 시간은 위 판정표 머리에 이미 있으면 되풀이하지
                     않는다. */}
-                {(!r.ground_truth || r.trace_value || !!r.error_msg) && (
+                {/* 키 · 값 표가 곧 답변이면(중간 변수 없음) 원문을 한 번 더 적지 않는다. */}
+                {(!r.ground_truth || r.trace_value || !!r.error_msg) &&
+                  !(keyed && !r.trace_value && !r.error_msg) && (
                   <CasePanel
                     title={<span className="eyebrow">{r.trace_value ? '최종 답변' : '답변'}</span>}
                     trailing={
                       <>
-                        {!r.ground_truth && <ElapsedTag ms={r.elapsed_ms} />}
+                        {!r.ground_truth && !keyed && <ElapsedTag ms={r.elapsed_ms} />}
+                        {!keyed && addExpected}
                         {r.answer && <CopyButton text={r.answer} />}
                       </>
                     }

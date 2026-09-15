@@ -15,7 +15,10 @@ import {
   AnswerBox, caseMean, Chevron, CollapseAllStrip, CopyButton, DisclosureHeader, ElapsedTag, fmt3, fmtElapsed,
   compareSideLabel, OxBadge, PendingHint, AnswerPreview, TraceValueBox,
 } from './shared';
-import { canCompareFields, DiffAgainst, FieldCompareTable, FieldDiffLine, PaneLabel, ViewToggle } from './MatchDiff';
+import {
+  canCompareFields, DiffAgainst, FieldCompareTable, FieldDiffLine, PaneLabel, ValuePanel, valueFields, ViewToggle,
+} from './MatchDiff';
+import AddExpectedButton from './AddExpectedButton';
 
 /** The expected answer, once, above both sides — it is the same text for A and
  * B, and repeating it under each would push the two answers apart. */
@@ -63,6 +66,8 @@ function SideBox({
   // 답변을 따로 적을 까닭이 있는 경우 — 중간 변수를 채점했거나(그럼 답변은 아직
   // 아무 데도 안 나왔다), 호출이 실패했거나(메시지가 답변 자리에 온다).
   const answerApart = !!row?.trace_value || !!row?.error_msg;
+  // 정답이 없을 때 JSON 결과는 키 · 값 표로 — 들여쓴 원문보다 키를 찾기 쉽다.
+  const keyed = gt === null && !!valueFields(scored, !row?.trace_value);
   return (
     // The two panels sit side by side and otherwise look identical, so the side
     // is carried by the edge of the box as well as by the badge — at a glance
@@ -80,7 +85,17 @@ function SideBox({
           <span className="truncate">{label}</span>
         </Badge>
         {row?.exact_match != null && <OxBadge value={row.exact_match} />}
-        <span className="ml-auto"><ElapsedTag ms={row?.elapsed_ms} /></span>
+        <span className="ml-auto flex items-center gap-2">
+          <ElapsedTag ms={row?.elapsed_ms} />
+          {gt === null && row && (
+            <AddExpectedButton
+              question={row.question}
+              contexts={row.contexts}
+              answer={row.answer}
+              traceValue={row.trace_value}
+            />
+          )}
+        </span>
       </div>
       {diffable ? (
         <>
@@ -104,8 +119,22 @@ function SideBox({
         </>
       ) : (
         <>
-          {row?.trace_value && <div className="mt-2"><TraceValueBox row={row} /></div>}
-          <div className="mt-2"><AnswerBox text={row?.answer} error={row?.error_msg} settled={settled} /></div>
+          {keyed ? (
+            <div className="mt-2">
+              <ValuePanel
+                text={scored!}
+                unwrapBody={!row?.trace_value}
+                label={row?.trace_value ? '채점 대상' : '답변'}
+                tag={row?.trace_value ? row.trace_var_nm || 'trace' : null}
+              />
+            </div>
+          ) : (
+            row?.trace_value && <div className="mt-2"><TraceValueBox row={row} /></div>
+          )}
+          {/* 표가 곧 답변이면 원문을 한 번 더 적지 않는다. */}
+          {(!keyed || answerApart) && (
+            <div className="mt-2"><AnswerBox text={row?.answer} error={row?.error_msg} settled={settled} /></div>
+          )}
         </>
       )}
     </div>

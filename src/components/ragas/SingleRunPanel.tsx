@@ -11,6 +11,8 @@ import { connectRagasRunStream as connectRagasRunWs } from '@/lib/sse-client';
 import { SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import { KeyBreakdown } from './KeyBreakdown';
 import LastRunPreview from './LastRunPreview';
+import AddExpectedButton from './AddExpectedButton';
+import { ValuePanel, valueFields } from './MatchDiff';
 import {
   ALL_METRICS,
   EXACT_MATCH,
@@ -475,10 +477,48 @@ export default function SingleRunPanel() {
                 <ElapsedTag ms={callResult.elapsed_ms} />
               </div>
               <div className="p-4">
-                <AnswerBox text={callResult.response} />
+                {(() => {
+                  // 기대 정답 없이 부른 JSON 결과는 키 · 값 표로, 그 자리에서 정답으로 굳힐 수 있게.
+                  const scoredText = callResult.trace_value ?? callResult.response;
+                  const keyed = !expected.trim() && !!valueFields(scoredText, !callResult.trace_value);
+                  const add = !expected.trim() && (
+                    <AddExpectedButton
+                      question={message}
+                      contexts={callResult.docs}
+                      answer={callResult.response}
+                      traceValue={callResult.trace_value}
+                    />
+                  );
+                  if (!keyed) {
+                    return (
+                      <>
+                        {add && <div className="mb-2 flex justify-end">{add}</div>}
+                        <AnswerBox text={callResult.response} />
+                      </>
+                    );
+                  }
+                  return (
+                    <>
+                      <ValuePanel
+                        text={scoredText!}
+                        unwrapBody={!callResult.trace_value}
+                        label={callResult.trace_value ? '중간 변수' : '답변'}
+                        tag={callResult.trace_value ? callResult.trace_var_nm || 'trace' : null}
+                        trailing={add}
+                      />
+                      {callResult.trace_value && (
+                        <div className="mt-4">
+                          <p className="mb-1.5 eyebrow">답변</p>
+                          <AnswerBox text={callResult.response} />
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
                 {/* 응답에 실리지 않는 중간 변수를 노드가 남겼을 때만 나온다.
-                    정답 일치는 답변이 아니라 이 값으로 매겨진다. */}
-                {callResult.trace_value && (
+                    정답 일치는 답변이 아니라 이 값으로 매겨진다. 위에서 표로 이미
+                    보였으면 되풀이하지 않는다. */}
+                {callResult.trace_value && !(!expected.trim() && valueFields(callResult.trace_value, false)) && (
                   <div className="mt-4 border-t border-line pt-3">
                     <p className="mb-1.5 flex items-center gap-1.5 eyebrow">
                       중간 변수 <TraceTag name={callResult.trace_var_nm} />

@@ -1355,4 +1355,173 @@ export function FieldCompareTable({
   );
 }
 
+// ---------------------------------------------------------------------------
+// 정답 없는 실행 — 키 · 값 표
+// ---------------------------------------------------------------------------
+
+/**
+ * 결과 하나를 키 · 값 줄로. 비교할 정답이 없어도 Action 결과는 JSON 이라, 판정표와
+ * 같은 걸음(`structuredMatch`)으로 잎을 뽑는다 — 자기 자신과 견주면 모든 줄이
+ * 일치로 나오고, 필요한 것은 그 경로와 값뿐이다. JSON 이 아니면 null.
+ */
+export function valueFields(text: string | null | undefined, unwrapBody: boolean): FieldResult[] | null {
+  if (!text?.trim()) return null;
+  return structuredMatch(text, text, { unwrapBody })?.fields ?? null;
+}
+
+const noStatus = (): FieldStatus => 'match';
+
+function ValueTable({ fields }: { fields: FieldResult[] }) {
+  const [q, setQ] = useState('');
+  const [collapsed, toggleGroup, setCollapsed] = useToggleSet();
+  const [open, toggleValue] = useToggleSet();
+  const shown = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return needle ? fields.filter((f) => f.path.toLowerCase().includes(needle)) : fields;
+  }, [fields, q]);
+  const tree = useMemo(() => buildFieldTree(shown), [shown]);
+  const rows = useMemo(() => flattenTree(tree, collapsed), [tree, collapsed]);
+  const groups = useMemo(() => groupPaths(tree), [tree]);
+  const allCollapsed = groups.length > 0 && groups.every((p) => collapsed.has(p));
+
+  return (
+    <div>
+      {fields.length >= ROOMY && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface px-3 py-1.5">
+          {groups.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setCollapsed(allCollapsed ? new Set() : new Set(groups))}
+              className="h-7 rounded-sm border border-line px-2.5 text-xs text-muted transition hover:bg-surface-2 hover:text-ink"
+            >
+              {allCollapsed ? '모두 펼치기' : '모두 접기'}
+            </button>
+          )}
+          <span className="relative ml-auto">
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="키 검색"
+              spellCheck={false}
+              className="h-7 w-40 rounded-sm border border-line bg-surface-2 pl-2 pr-5 font-mono text-xs text-ink outline-none transition placeholder:font-sans placeholder:text-muted-soft focus:border-accent-line focus:bg-surface focus:shadow-ring"
+            />
+            {q && (
+              <button
+                type="button"
+                onClick={() => setQ('')}
+                aria-label="검색 지우기"
+                className="absolute right-1 top-1/2 -translate-y-1/2 px-0.5 text-[11px] leading-none text-muted hover:text-ink"
+              >
+                ×
+              </button>
+            )}
+          </span>
+        </div>
+      )}
+      {shown.length === 0 ? (
+        <NoRows>검색과 맞는 키가 없습니다</NoRows>
+      ) : (
+        <div className="max-h-[36rem] overflow-auto">
+          <table className="w-full min-w-[420px] table-fixed border-separate border-spacing-0 text-[13px] leading-relaxed">
+            <colgroup>
+              <col style={{ width: '32%' }} />
+              <col style={{ width: '68%' }} />
+            </colgroup>
+            <thead className="sticky top-0 z-10 bg-surface-3 text-left text-xs text-body">
+              <tr>
+                <th className={cn('border-b border-line px-3 py-2 font-semibold', COL)}>키</th>
+                <th className="border-b border-line px-3 py-2 font-semibold">값</th>
+              </tr>
+            </thead>
+            <tbody className="[&>tr:last-child>td]:border-b-0">
+              {rows.map((r) => {
+                if (!r.item) {
+                  return (
+                    <GroupRow
+                      key={r.path}
+                      row={r}
+                      collapsed={collapsed.has(r.path)}
+                      span={1}
+                      onToggle={() => toggleGroup(r.path)}
+                      statusOf={noStatus}
+                    />
+                  );
+                }
+                const dim = tierOf(true, r.item.actual, r.item.actual) === 'blank';
+                return (
+                  <tr key={r.path} className="group transition-colors hover:bg-surface-2/70">
+                    <KeyCell
+                      path={r.path}
+                      label={r.label}
+                      depth={r.depth}
+                      gutter={groups.length > 0}
+                      rail="border-l-transparent"
+                      dim={dim}
+                    />
+                    <ValueCell
+                      text={r.item.actual}
+                      absentLabel=""
+                      segs={null}
+                      tone="ok"
+                      fill=""
+                      dim={dim}
+                      expanded={open.has(r.path)}
+                      onToggle={() => toggleValue(r.path)}
+                      last
+                    />
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 정답 없이 돌린 결과를 판정표와 같은 모양으로 — 기대값·일치 칸만 없다. 키별 /
+ * 원본 전환도 그대로라, 들여쓴 JSON 전체가 필요할 때는 한 번에 넘어간다.
+ * JSON 이 아닌 값에는 쓰지 않는다(`valueFields` 가 null) — 그때는 원문 상자가 맞다.
+ */
+export function ValuePanel({
+  text, unwrapBody, label, tag, trailing,
+}: {
+  text: string;
+  unwrapBody: boolean;
+  label: string;
+  tag?: string | null;
+  trailing?: ReactNode;
+}) {
+  const fields = useMemo(() => valueFields(text, unwrapBody), [text, unwrapBody]);
+  const pretty = useMemo(() => prettyValue(text) ?? text, [text]);
+  const [raw, setRaw] = useState(false);
+  return (
+    <div className="min-w-0 overflow-hidden rounded-md border border-line bg-surface">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-line bg-surface-2 px-3 py-2">
+        <span className="eyebrow">{label}</span>
+        {tag && <TraceTag name={tag} />}
+        {fields && (
+          <span className="text-xs text-muted">
+            키 <span className="font-mono font-semibold tabular-nums text-ink">{fields.length}</span>
+          </span>
+        )}
+        <span className="ml-auto flex items-center gap-2">
+          {trailing}
+          {fields && <ViewToggle raw={raw} onRaw={setRaw} />}
+          <CopyButton text={text} />
+        </span>
+      </div>
+      {fields && !raw ? (
+        <ValueTable fields={fields} />
+      ) : (
+        <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-xs leading-relaxed text-ink">
+          {pretty}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 export default MatchDiff;

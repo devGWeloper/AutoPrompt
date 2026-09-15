@@ -14,7 +14,7 @@ import { cn } from '@/lib/cn';
 import { formatModelPair, formatModelSnapshot } from '@/lib/modelSnapshot';
 import type { RagasRunDetail, RagasRunSummary } from '@/lib/types';
 import CaseImportModal from './CaseImportModal';
-import type { Fields } from './caseFields';
+import { rowFromResult, type Fields } from './caseFields';
 import { CaseCompareTable } from './CompareTable';
 import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import { AbKeyBreakdown, KeyBreakdown } from './KeyBreakdown';
@@ -820,28 +820,9 @@ function AbCompareView({ aId, bId }: { aId: number; bId: number }) {
   );
 }
 
-function parseContexts(raw: string | null): string[] {
-  if (!raw) return [];
-  try {
-    const v: unknown = JSON.parse(raw);
-    return Array.isArray(v) ? v.map(String).filter((s) => s.trim()) : [String(v)];
-  } catch {
-    return [raw];
-  }
-}
-
-/** A run's cases as rows for the import grid. The 정답 column takes what the run
- * actually produced — the captured variable when one was judged, since that is
- * what 정답 일치 compares — so a good run becomes its own expected answers. */
+/** A run's cases as rows for the import grid. */
 function rowsFromRun(d: RagasRunDetail): Fields[] {
-  return d.results
-    .filter((r) => (r.question ?? '').trim())
-    .map((r) => ({
-      question: (r.question ?? '').trim(),
-      contexts: parseContexts(r.contexts).join('\n'),
-      groundTruth: (r.trace_value ?? r.answer ?? '').trim(),
-      category: '',
-    }));
+  return d.results.map(rowFromResult).filter((f) => f.question);
 }
 
 function RagasRunDetailView({ ragasId }: { ragasId: number }) {

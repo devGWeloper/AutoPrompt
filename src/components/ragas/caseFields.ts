@@ -49,6 +49,36 @@ export function toFields(p: Parsed, expected: string | null, caseType: string): 
   };
 }
 
+/** A run's stored contexts (a JSON array in CNTX_CTN) or a live call's docs, as
+ * a list. Anything unparseable is one context rather than none. */
+export function parseContexts(raw: string | string[] | null | undefined): string[] {
+  if (Array.isArray(raw)) return raw.map(String).filter((s) => s.trim());
+  if (!raw) return [];
+  try {
+    const v: unknown = JSON.parse(raw);
+    return Array.isArray(v) ? v.map(String).filter((s) => s.trim()) : [String(v)];
+  } catch {
+    return [raw];
+  }
+}
+
+/** One run result as a row for the import grid. The 정답 column takes what the
+ * call actually produced — the captured variable when one was judged, since that
+ * is what 정답 일치 compares — so a good result becomes its own expected answer. */
+export function rowFromResult(r: {
+  question: string | null | undefined;
+  contexts?: string | string[] | null;
+  answer: string | null | undefined;
+  trace_value?: string | null;
+}): Fields {
+  return {
+    question: (r.question ?? '').trim(),
+    contexts: parseContexts(r.contexts).join('\n'),
+    groundTruth: (r.trace_value ?? r.answer ?? '').trim(),
+    category: '',
+  };
+}
+
 export function toPayload(f: Fields, rest: Record<string, unknown> = {}) {
   const contexts = f.contexts.split('\n').map((s) => s.trim()).filter(Boolean);
   const gt = f.groundTruth.trim();
