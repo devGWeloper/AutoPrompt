@@ -76,7 +76,7 @@ export function SingleRunSummaryDashboard({ detail }: { detail: RagasRunDetail }
   const withOverall = shown.filter((m) => m !== EXACT_MATCH).length > 1;
 
   return (
-    <div>
+    <div className="mb-4">
       <div className={cn('grid gap-3', gridCols(shown.length + (withOverall ? 1 : 0)))}>
         {/* Overall Mean Card */}
         {withOverall && (
@@ -203,7 +203,7 @@ export function CompareSummaryDashboard({
   const headDelta = headA.score != null && headB.score != null ? headB.score - headA.score : null;
 
   return (
-    <div className="space-y-4">
+    <div className="mb-6 space-y-4">
       {/* 2 Hero Summary Cards Side by Side (Version A vs Version B) */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {/* Version A Hero Card */}
@@ -216,7 +216,7 @@ export function CompareSummaryDashboard({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Badge tone="neutral">A · {nameA}</Badge>
-              {winner === 'A' && <Badge tone="accent">Winner</Badge>}
+              {winner === 'A' && <Badge tone="accent">🏆 Winner</Badge>}
             </div>
             <ScoreBadge score={headA.score} />
           </div>
@@ -250,7 +250,7 @@ export function CompareSummaryDashboard({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Badge tone="accent">B · {nameB}</Badge>
-              {winner === 'B' && <Badge tone="accent">Winner</Badge>}
+              {winner === 'B' && <Badge tone="accent">🏆 Winner</Badge>}
             </div>
             <div className="flex items-center gap-2">
               {/* Δ 는 두 카드가 크게 세운 그 숫자의 차이다 — 위는 일치율인데 Δ 만
@@ -304,7 +304,7 @@ export function CompareSummaryDashboard({
           const pctB = bv != null ? Math.max(0, Math.min(1, bv)) * 100 : 0;
 
           return (
-            <div key={m} className="flex flex-col justify-between rounded-xl border border-line bg-surface p-4 shadow-card">
+            <div key={m} className="flex flex-col justify-between rounded-md border border-line bg-surface p-4">
               <div>
                 <span className="block truncate text-xs font-semibold text-ink">
                   {METRIC_LABELS[m]}

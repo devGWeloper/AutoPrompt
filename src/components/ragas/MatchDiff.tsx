@@ -176,7 +176,7 @@ const rankOf = (s: FieldStatus) => RANK[s];
 
 const FAIL_KINDS: FieldStatus[] = ['diff', 'type', 'missing', 'extra'];
 
-const CELL = 'border-b border-line px-3 py-2.5 align-top';
+const CELL = 'border-b border-line px-3 py-1.5 align-top';
 /** 열 사이 세로 헤어라인. 값이 두 칸에 걸쳐 읽히는 표라 가로줄만으로는 어느
  * 칸까지가 기대값인지 눈이 자꾸 놓친다. */
 const COL = 'border-r border-line';
@@ -383,7 +383,7 @@ function SectionRow({
 }) {
   return (
     <tr>
-      <td colSpan={cols} className="border-y border-line-strong bg-surface-3 px-3 py-1.5">
+      <td colSpan={cols} className="border-y border-line-strong bg-surface-3 px-3 py-1">
         <span className="flex flex-wrap items-baseline gap-x-2.5 text-xs">
           <span className={cn('font-semibold', tier === 'bad' ? 'text-bad' : 'text-body')}>
             {TIER_LABEL[tier]} <span className="font-mono tabular-nums">{count}</span>
@@ -403,6 +403,72 @@ function NoRows({ children }: { children: string }) {
 /** 이만큼은 돼야 조작 줄과 층 머리가 제 몫을 한다. 키 서너 개짜리 표에 버튼 둘과
  * 머리 셋을 얹으면 조작이 내용보다 커진다 — 그런 표는 정렬만 해서 그대로 보인다. */
 const ROOMY = 6;
+
+// ---------------------------------------------------------------------------
+// 열 폭 — 표가 담긴 것만큼만 넓어지게
+// ---------------------------------------------------------------------------
+
+/**
+ * 화면 폭을 다 채우는 표는 한눈에 들어오지 않는다 — `200` 같은 짧은 값이 500px 짜리
+ * 칸에 떠 있고, 키에서 값까지 눈이 한참 건너가다 어느 줄의 값인지 놓친다. 그래서
+ * 열마다 실제로 담길 글자 길이를 재서 폭을 정하고, 패널도 그 합만큼만 넓어진다.
+ *
+ * 값 열은 가장 긴 값이 아니라 대부분(90%)의 값에 맞춘다 — 긴 값 하나가 표 전체를
+ * 다시 벌리지 않고, 그 값은 제 칸에서 줄을 바꾸다 세 줄로 접힌다. 키 열은 가장 긴
+ * 경로에 맞추되 상한이 있다(넘치면 끊어 감긴다). 폭은 여전히 표 단위로 한 번만
+ * 정해지므로 위아래 줄의 칸은 어긋나지 않는다.
+ */
+const REM_PER_CH = { mono: 0.5, sans: 0.47 };
+/** px-3 양쪽 + 세로 헤어라인. */
+const CELL_PAD_REM = 1.6;
+/** 키 칸에 늘 붙는 것 — 레일 3px 과 줄에 손을 올리면 서는 복사 아이콘. */
+const KEY_CHROME_REM = 1.5;
+const KEY_CH: readonly [number, number] = [8, 30];
+const VAL_CH: readonly [number, number] = [12, 44];
+
+/** 한글·한자는 라틴 글자의 두 배 가까이 넓다. */
+function visualLen(s: string): number {
+  let n = 0;
+  for (const ch of s) n += ch.charCodeAt(0) >= 0x1100 ? 1.8 : 1;
+  return n;
+}
+
+function p90(ns: number[]): number {
+  if (!ns.length) return 0;
+  const s = [...ns].sort((a, b) => a - b);
+  return s[Math.min(s.length - 1, Math.floor(s.length * 0.9))];
+}
+
+const clampCh = (v: number, [lo, hi]: readonly [number, number]) => Math.min(hi, Math.max(lo, v));
+
+interface ColSizing {
+  /** colgroup 에 그대로 넣는 비율. */
+  cols: string[];
+  /** 패널 최대 폭. 조작 줄이 들어갈 자리(minRem)보다 좁아지지는 않는다. */
+  maxWidth: string;
+}
+
+function sizeColumns(
+  keys: string[],
+  keyExtraRem: number,
+  valueCols: string[][],
+  minRem: number,
+): ColSizing {
+  const keyRem =
+    clampCh(Math.max(0, ...keys.map(visualLen)), KEY_CH) * REM_PER_CH.mono + CELL_PAD_REM + KEY_CHROME_REM + keyExtraRem;
+  const valRems = valueCols.map(
+    (col) => clampCh(p90(col.map(visualLen)), VAL_CH) * REM_PER_CH.sans + CELL_PAD_REM,
+  );
+  const widths = [keyRem, ...valRems];
+  const total = widths.reduce((a, b) => a + b, 0);
+  return {
+    cols: widths.map((w) => `${((w / total) * 100).toFixed(2)}%`),
+    maxWidth: `${Math.max(total, minRem).toFixed(1)}rem`,
+  };
+}
+
+/** 값이 없는 칸이 실제로 적는 말 — 폭을 잴 때도 그 글자로 잰다. */
+const orAbsent = (v: string | null, label: string) => v ?? label;
 
 // ---------------------------------------------------------------------------
 // 표의 부품 — 단일 표와 A/B 표가 같은 것을 쓴다
@@ -833,7 +899,21 @@ function KindCounts({ rows }: { rows: FieldResult[] }) {
  *
  * 열 너비는 고정 비율이다. 자동 폭은 값 하나가 길어질 때마다 열이 통째로 밀려,
  * 위아래 줄의 기대값·실제값이 서로 어긋난 자리에 서게 된다. */
-function FieldTable({ m }: { m: StructuredMatch }) {
+function fieldSizing(m: StructuredMatch): ColSizing {
+  // 어긋난 줄은 키 옆에 상태 칩(값 다름 · 타입 다름 …)을 단다 — 그 자리까지 잰다.
+  const anyBad = m.fields.some((f) => f.status !== 'match');
+  return sizeColumns(
+    m.fields.map((f) => f.path),
+    anyBad ? 4 : 0,
+    [
+      m.fields.map((f) => orAbsent(f.expected, '기대에 없음')),
+      m.fields.map((f) => orAbsent(f.actual, '응답에 없음')),
+    ],
+    m.total >= ROOMY ? 42 : 36,
+  );
+}
+
+function FieldTable({ m, sizing }: { m: StructuredMatch; sizing: ColSizing }) {
   const t = useKeyTable(m.fields, fieldTier, fieldWeight);
   const roomy = m.total >= ROOMY;
 
@@ -881,17 +961,15 @@ function FieldTable({ m }: { m: StructuredMatch }) {
         <NoRows>{t.q.trim() ? '검색과 맞는 키가 없습니다' : '해당하는 키가 없습니다'}</NoRows>
       ) : (
         <div className="max-h-[36rem] overflow-auto">
-          <table className="w-full min-w-[560px] table-fixed border-separate border-spacing-0 text-[13px] leading-relaxed">
+          <table className="w-full min-w-[560px] table-fixed border-separate border-spacing-0 text-[13px] leading-normal">
             <colgroup>
-              <col style={{ width: '30%' }} />
-              <col style={{ width: '35%' }} />
-              <col style={{ width: '35%' }} />
+              {sizing.cols.map((w, i) => <col key={i} style={{ width: w }} />)}
             </colgroup>
             <thead className="sticky top-0 z-10 bg-surface-3 text-left text-xs text-body">
               <tr>
-                <th className={cn('border-b border-line px-3 py-2 font-semibold', COL)}>키</th>
-                <th className={cn('border-b border-line px-3 py-2 font-semibold', COL)}>기대값</th>
-                <th className="border-b border-line px-3 py-2 font-semibold">실제값</th>
+                <th className={cn('border-b border-line px-3 py-1.5 font-semibold', COL)}>키</th>
+                <th className={cn('border-b border-line px-3 py-1.5 font-semibold', COL)}>기대값</th>
+                <th className="border-b border-line px-3 py-1.5 font-semibold">실제값</th>
               </tr>
             </thead>
             <tbody className="[&>tr:last-child>td]:border-b-0">{body}</tbody>
@@ -942,9 +1020,14 @@ export function MatchDiff({ row }: { row: RagasResultRow }) {
   );
   const diff = useMemo(() => diffWords(pair.left, pair.right), [pair.left, pair.right]);
   const [raw, setRaw] = useState(false);
+  const sizing = useMemo(() => (fields ? fieldSizing(fields) : null), [fields]);
 
   return (
-    <div className="overflow-hidden rounded-md border border-line bg-surface">
+    // 키별 표일 때만 패널이 표만큼 좁아진다 — 원본 보기는 두 칸 나란히라 넓게 쓴다.
+    <div
+      className="overflow-hidden rounded-md border border-line bg-surface"
+      style={sizing && !raw ? { maxWidth: sizing.maxWidth } : undefined}
+    >
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-line bg-surface-2 px-3 py-2">
         <span className="eyebrow">채점 대상 · 기대 정답</span>
         {/* 키별 표에는 변수 이름을 적을 자리가 없다 — 무엇을 채점했는지는 어느
@@ -967,8 +1050,8 @@ export function MatchDiff({ row }: { row: RagasResultRow }) {
           <ElapsedTag ms={row.elapsed_ms} />
         </span>
       </div>
-      {fields && !raw ? (
-        <FieldTable m={fields} />
+      {fields && sizing && !raw ? (
+        <FieldTable m={fields} sizing={sizing} />
       ) : (
         <div className="grid divide-y divide-line sm:grid-cols-2 sm:divide-x sm:divide-y-0">
           <Pane
@@ -1272,6 +1355,21 @@ export function FieldCompareTable({
   }, [aText, bText, expected, unwrapA, unwrapB]);
 
   const t = useKeyTable(all, pairTier, pairWeight);
+  // 맞은 사이드 칸은 값 대신 '일치'만 적는다 — 폭도 그 글자로 잰다.
+  const sideText = (f: FieldResult | undefined) =>
+    !f ? '—' : f.status === 'match' ? '일치' : orAbsent(f.actual, '응답에 없음');
+  const sizing = useMemo(
+    () =>
+      sizeColumns(
+        all.map((r) => r.path),
+        1.5, // A · B 표시
+        [all.map((r) => orAbsent(r.expected, '기대에 없음')), all.map((r) => sideText(r.a)), all.map((r) => sideText(r.b))],
+        48,
+      ),
+    // sideText 는 all 에서만 읽는다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [all],
+  );
   if (all.length === 0) return null;
   const roomy = all.length >= ROOMY;
   const quiet = all.every((r) => abVerdict(r) === 'same-ok');
@@ -1314,7 +1412,7 @@ export function FieldCompareTable({
         );
 
   return (
-    <div className={cn('overflow-hidden rounded-md border border-line bg-surface', className)}>
+    <div className={cn('overflow-hidden rounded-md border border-line bg-surface', className)} style={{ maxWidth: sizing.maxWidth }}>
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-line bg-surface-2 px-3 py-2">
         <span className="eyebrow">키별 판정</span>
         <span className="text-xs text-muted">
@@ -1332,19 +1430,16 @@ export function FieldCompareTable({
         <NoRows>{t.q.trim() ? '검색과 맞는 키가 없습니다' : '해당하는 키가 없습니다'}</NoRows>
       ) : (
         <div className="max-h-[36rem] overflow-auto">
-          <table className="w-full min-w-[620px] table-fixed border-separate border-spacing-0 text-[13px] leading-relaxed">
+          <table className="w-full min-w-[620px] table-fixed border-separate border-spacing-0 text-[13px] leading-normal">
             <colgroup>
-              <col style={{ width: '22%' }} />
-              <col style={{ width: '26%' }} />
-              <col style={{ width: '26%' }} />
-              <col style={{ width: '26%' }} />
+              {sizing.cols.map((w, i) => <col key={i} style={{ width: w }} />)}
             </colgroup>
             <thead className="sticky top-0 z-10 bg-surface-3 text-left text-xs text-body">
               <tr>
-                <th className={cn('border-b border-line px-3 py-2 font-semibold', COL)}>키</th>
-                <th className={cn('border-b border-line px-3 py-2 font-semibold', COL)}>기대값</th>
-                <th className={cn('truncate border-b border-line px-3 py-2 font-semibold', COL)}>A · {nameA}</th>
-                <th className="truncate border-b border-line px-3 py-2 font-semibold">B · {nameB}</th>
+                <th className={cn('border-b border-line px-3 py-1.5 font-semibold', COL)}>키</th>
+                <th className={cn('border-b border-line px-3 py-1.5 font-semibold', COL)}>기대값</th>
+                <th className={cn('truncate border-b border-line px-3 py-1.5 font-semibold', COL)}>A · {nameA}</th>
+                <th className="truncate border-b border-line px-3 py-1.5 font-semibold">B · {nameB}</th>
               </tr>
             </thead>
             <tbody className="[&>tr:last-child>td]:border-b-0">{body}</tbody>
@@ -1371,7 +1466,7 @@ export function valueFields(text: string | null | undefined, unwrapBody: boolean
 
 const noStatus = (): FieldStatus => 'match';
 
-function ValueTable({ fields }: { fields: FieldResult[] }) {
+function ValueTable({ fields, sizing }: { fields: FieldResult[]; sizing: ColSizing }) {
   const [q, setQ] = useState('');
   const [collapsed, toggleGroup, setCollapsed] = useToggleSet();
   const [open, toggleValue] = useToggleSet();
@@ -1422,15 +1517,14 @@ function ValueTable({ fields }: { fields: FieldResult[] }) {
         <NoRows>검색과 맞는 키가 없습니다</NoRows>
       ) : (
         <div className="max-h-[36rem] overflow-auto">
-          <table className="w-full min-w-[420px] table-fixed border-separate border-spacing-0 text-[13px] leading-relaxed">
+          <table className="w-full min-w-[420px] table-fixed border-separate border-spacing-0 text-[13px] leading-normal">
             <colgroup>
-              <col style={{ width: '32%' }} />
-              <col style={{ width: '68%' }} />
+              {sizing.cols.map((w, i) => <col key={i} style={{ width: w }} />)}
             </colgroup>
             <thead className="sticky top-0 z-10 bg-surface-3 text-left text-xs text-body">
               <tr>
-                <th className={cn('border-b border-line px-3 py-2 font-semibold', COL)}>키</th>
-                <th className="border-b border-line px-3 py-2 font-semibold">값</th>
+                <th className={cn('border-b border-line px-3 py-1.5 font-semibold', COL)}>키</th>
+                <th className="border-b border-line px-3 py-1.5 font-semibold">값</th>
               </tr>
             </thead>
             <tbody className="[&>tr:last-child>td]:border-b-0">
@@ -1497,8 +1591,15 @@ export function ValuePanel({
   const fields = useMemo(() => valueFields(text, unwrapBody), [text, unwrapBody]);
   const pretty = useMemo(() => prettyValue(text) ?? text, [text]);
   const [raw, setRaw] = useState(false);
+  const sizing = useMemo(
+    () => (fields ? sizeColumns(fields.map((f) => f.path), 0, [fields.map((f) => f.actual ?? '')], 30) : null),
+    [fields],
+  );
   return (
-    <div className="min-w-0 overflow-hidden rounded-md border border-line bg-surface">
+    <div
+      className="min-w-0 overflow-hidden rounded-md border border-line bg-surface"
+      style={sizing && !raw ? { maxWidth: sizing.maxWidth } : undefined}
+    >
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-line bg-surface-2 px-3 py-2">
         <span className="eyebrow">{label}</span>
         {tag && <TraceTag name={tag} />}
@@ -1513,8 +1614,8 @@ export function ValuePanel({
           <CopyButton text={text} />
         </span>
       </div>
-      {fields && !raw ? (
-        <ValueTable fields={fields} />
+      {fields && sizing && !raw ? (
+        <ValueTable fields={fields} sizing={sizing} />
       ) : (
         <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-xs leading-relaxed text-ink">
           {pretty}

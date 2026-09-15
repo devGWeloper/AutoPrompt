@@ -4,11 +4,8 @@ import { useCallback, useEffect, useMemo, useState, type ChangeEventHandler } fr
 import { useParams, useRouter } from 'next/navigation';
 import AppShell from '@/components/ui/AppShell';
 import Modal from '@/components/ui/Modal';
-import PageHeader from '@/components/ui/PageHeader';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Card, CardHeader } from '@/components/ui/Card';
-import { EmptyState, fmtDt, TrashIcon } from '@/components/ragas/shared';
 import { Input, Textarea } from '@/components/ui/Field';
 import { ModelSelect } from '@/components/ui/ModelSelect';
 import { Tabs } from '@/components/ui/Tabs';
@@ -76,101 +73,110 @@ export default function NodePromptsPage() {
 
   return (
     <AppShell section="prompts">
-    {/* 다른 화면과 같은 틀: SHELL 폭 · 같은 여백 · PageHeader, 그 아래 목록 카드와
-        상세 카드 두 칸 — 데이터셋 화면과 같은 모양이라 따로 익힐 것이 없다. */}
-    <div className={cn(SHELL, 'px-8 py-7')}>
-      <PageHeader
-        title={
-          <span className="flex min-w-0 items-center gap-2">
-            <button
-              onClick={() => router.push('/nodes')}
-              className="shrink-0 rounded-sm text-muted transition-colors hover:text-ink"
-            >
-              프롬프트
-            </button>
-            <span className="shrink-0 font-normal text-line-strong">/</span>
-            <span className="truncate font-mono">{nodeNm}</span>
-          </span>
-        }
-        right={<Button onClick={() => setShowNew(true)}>+ 새 버전</Button>}
-      />
+    <div className="flex h-full flex-col">
+
+      {/* Breadcrumb strip: the way back sits top-left, where the eye starts and
+          directly above the version list — not buried beside the status pills. */}
+      <div className="border-b border-line bg-surface">
+        <div className={cn(SHELL, 'flex h-11 items-center gap-1.5 px-8')}>
+          <button
+            onClick={() => router.push('/nodes')}
+            className="-ml-2 inline-flex items-center gap-1 rounded-sm px-2 py-1 text-[13px] font-medium text-muted transition-colors hover:bg-surface-3 hover:text-ink"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden>
+              <path d="M15 6 L9 12 L15 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Prompt nodes
+          </button>
+          <span className="text-line-strong">/</span>
+          <span className="truncate text-[13px] font-semibold text-ink">{nodeNm}</span>
+        </div>
+      </div>
 
       {error && (
-        <div className="mb-4 rounded-sm border border-bad-line bg-bad-soft px-4 py-3 text-sm text-bad">
+        <div className="mx-8 mt-4 rounded-sm border border-bad-line bg-bad-soft px-4 py-3 text-sm text-bad">
           {error}
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[17rem_minmax(0,1fr)]">
-        <Card className="min-w-0 self-start">
-          <CardHeader
-            title={<>버전 <span className="ml-1 font-mono text-caption-mono font-normal text-muted-soft">{versions.length}</span></>}
-          />
-          <ul className="max-h-[70vh] space-y-0.5 overflow-y-auto p-1.5">
-            {versions.map((v) => {
-              const on = detail?.prompt_id === v.prompt_id;
-              return (
-                <li key={v.prompt_id} className="group relative">
-                  <button
-                    onClick={() => selectVersion(v.prompt_id)}
-                    className={cn(
-                      'flex w-full items-start gap-2 rounded-sm py-2 pl-2 pr-2.5 text-left transition-colors',
-                      on ? 'bg-surface-3' : 'hover:bg-surface-2',
-                    )}
-                  >
-                    <span aria-hidden className={cn('mt-0.5 h-4 w-0.5 shrink-0', on ? 'bg-primary' : 'bg-transparent')} />
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-baseline justify-between gap-2">
-                        <span className="font-mono text-sm font-medium text-ink">v{v.version_no}</span>
-                        <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-soft group-hover:invisible">
-                          {fmtDt(v.created_dt)}
-                        </span>
-                      </span>
-                      {v.model_nm && <span className="mt-0.5 block truncate text-[11px] text-muted">{v.model_nm}</span>}
-                      {v.change_summary && <span className="mt-0.5 block truncate text-xs text-muted">{v.change_summary}</span>}
-                    </span>
-                  </button>
-                  {/* 삭제는 가져다 댈 때 날짜 자리에 선다 — 늘 떠 있으면 내용을 가린다. */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setConfirmDelete(v);
-                    }}
-                    title="버전 삭제"
-                    aria-label="버전 삭제"
-                    className="absolute right-1.5 top-1.5 hidden h-6 w-6 items-center justify-center rounded-sm text-muted transition-colors hover:bg-bad-soft hover:text-bad group-hover:inline-flex group-focus-within:inline-flex"
-                  >
-                    <TrashIcon />
-                  </button>
-                </li>
-              );
-            })}
+      <div className={cn(SHELL, 'flex flex-1 overflow-hidden')}>
+        {/* version list */}
+        <aside className="w-72 overflow-auto border-r border-line bg-surface p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="eyebrow">Versions</h2>
+            <Button size="sm" onClick={() => setShowNew(true)}>+ New version</Button>
+          </div>
+          <ul className="space-y-1.5">
+            {versions.map((v) => (
+              <li key={v.prompt_id} className="group/ver relative">
+                <button
+                  onClick={() => selectVersion(v.prompt_id)}
+                  className={
+                    'w-full rounded-md border px-3 py-2.5 text-left transition-colors ' +
+                    (detail?.prompt_id === v.prompt_id
+                      ? 'border-accent bg-accent-soft'
+                      : 'border-line hover:bg-surface-2')
+                  }
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-sm font-medium text-ink">v{v.version_no}</span>
+                  </div>
+                  {v.model_nm && (
+                    <div className="mt-1 truncate text-[11px] text-muted">{v.model_nm}</div>
+                  )}
+                  {v.change_summary && (
+                    <div className="mt-1 truncate text-xs text-muted">{v.change_summary}</div>
+                  )}
+                  <div className="mt-1 text-[11px] text-muted">{v.created_dt}</div>
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setConfirmDelete(v);
+                  }}
+                  title="Delete this version"
+                  className="absolute right-2 top-2 rounded-sm border border-line bg-surface px-2 py-1 text-[11px] font-medium text-muted transition-colors hover:border-bad-line hover:bg-bad-soft hover:text-bad"
+                >
+                  Delete
+                </button>
+              </li>
+            ))}
             {versions.length === 0 && (
-              <li className="px-1 py-8 text-center text-sm text-muted-soft">—</li>
+              <li className="px-1 py-2 text-sm text-muted-soft">—</li>
             )}
           </ul>
-        </Card>
+        </aside>
 
-        <Card className="min-w-0">
+        {/* detail */}
+        <main className="flex flex-1 flex-col overflow-hidden">
           {detail ? (
             <>
-              <CardHeader
-                title={<span className="font-mono">v{detail.version_no}</span>}
-                right={
-                  <Tabs
-                    items={[
-                      { id: 'editor', label: '내용' },
-                      { id: 'history', label: '이력' },
-                    ]}
-                    value={tab}
-                    onChange={setTab}
-                  />
-                }
-              >
-                {detail.model_nm && <Badge tone="neutral">{detail.model_nm}</Badge>}
-                {detail.change_summary && <span className="min-w-0 truncate">{detail.change_summary}</span>}
-              </CardHeader>
-              <div className="p-4">
+              <div className="flex items-center justify-between gap-3 border-b border-line bg-surface px-6 py-4">
+                <div className="min-w-0">
+                  {/* The node name now lives in the breadcrumb above, so the
+                      header only carries which version is open. */}
+                  <div className="flex items-center gap-2">
+                    <h1 className="font-mono text-display-xs text-ink">v{detail.version_no}</h1>
+                    {detail.model_nm && <Badge tone="neutral">{detail.model_nm}</Badge>}
+                  </div>
+                  {detail.change_summary && (
+                    <p className="mt-0.5 truncate text-xs text-muted">{detail.change_summary}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="px-6 pt-5">
+                <Tabs
+                  items={[
+                    { id: 'editor', label: 'Content' },
+                    { id: 'history', label: 'History' },
+                  ]}
+                  value={tab}
+                  onChange={setTab}
+                />
+              </div>
+
+              <div className="flex-1 overflow-auto p-6">
                 {tab === 'editor' && (
                   <EditorTab detail={detail} onSaved={() => reload(detail.prompt_id)} />
                 )}
@@ -178,9 +184,9 @@ export default function NodePromptsPage() {
               </div>
             </>
           ) : (
-            <EmptyState label="—" />
+            <div className="p-8 text-sm text-muted-soft">—</div>
           )}
-        </Card>
+        </main>
       </div>
 
       {showNew && (
@@ -197,12 +203,12 @@ export default function NodePromptsPage() {
 
       <Modal
         open={!!confirmDelete}
-        title="버전 삭제"
+        title="Delete version"
         onClose={() => setConfirmDelete(null)}
         footer={
           <>
-            <Button variant="secondary" onClick={() => setConfirmDelete(null)}>취소</Button>
-            <Button variant="danger" onClick={doDelete} disabled={busy}>삭제</Button>
+            <Button variant="secondary" onClick={() => setConfirmDelete(null)}>Cancel</Button>
+            <Button variant="danger" onClick={doDelete} disabled={busy}>Delete</Button>
           </>
         }
       >
@@ -280,7 +286,7 @@ function EditorTab({
         placeholder={'{{name}}'}
       />
       <div className="flex justify-end">
-        <Button onClick={save} disabled={!dirty || busy}>{busy ? '저장 중…' : '저장'}</Button>
+        <Button onClick={save} disabled={!dirty || busy}>{busy ? 'Saving…' : 'Save prompt'}</Button>
       </div>
     </div>
   );
@@ -474,12 +480,12 @@ function NewVersionModal({
   return (
     <Modal
       open
-      title="새 프롬프트 버전"
+      title="New prompt version"
       onClose={onClose}
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>취소</Button>
-          <Button onClick={save} disabled={!valid || busy}>저장</Button>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button onClick={save} disabled={!valid || busy}>Save</Button>
         </>
       }
     >
@@ -500,11 +506,11 @@ function NewVersionModal({
       </label>
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
-          <span className="text-sm font-medium text-ink">변경 요약 *</span>
+          <span className="text-sm font-medium text-ink">Change summary *</span>
           <Input value={summary} onChange={(e) => setSummary(e.target.value)} className="mt-1 w-full" />
         </label>
         <label className="block">
-          <span className="text-sm font-medium text-ink">변경 사유 *</span>
+          <span className="text-sm font-medium text-ink">Change reason *</span>
           <Input value={reason} onChange={(e) => setReason(e.target.value)} className="mt-1 w-full" />
         </label>
       </div>

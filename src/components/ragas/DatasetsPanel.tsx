@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
-import { Card, CardHeader } from '@/components/ui/Card';
+import { Card } from '@/components/ui/Card';
 import { Input, Select, Textarea } from '@/components/ui/Field';
 import { cn } from '@/lib/cn';
 import { api } from '@/lib/api';
@@ -489,18 +489,18 @@ export default function DatasetsPanel() {
         <Card className="min-w-0">
           {/* Creating a dataset belongs to this list, not to a permanent strip
               across the top of the page — it is a rare action on a rare object. */}
-          <CardHeader
-            title={<>데이터셋 <span className="ml-1 font-mono text-caption-mono font-normal text-muted-soft">{datasets.length}</span></>}
-            right={
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => { setCreating((v) => !v); setNewName(''); }}
-              >
-                {creating ? '취소' : '+ 새로 만들기'}
-              </Button>
-            }
-          />
+          <div className="flex items-center gap-2 border-b border-line px-4 py-2.5">
+            <h3 className="min-w-0 flex-1 text-sm font-semibold text-ink">
+              데이터셋 <span className="font-normal text-muted">({datasets.length})</span>
+            </h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { setCreating((v) => !v); setNewName(''); }}
+            >
+              {creating ? '취소' : '+ 새로 만들기'}
+            </Button>
+          </div>
           <ul className="max-h-[70vh] space-y-0.5 overflow-y-auto p-1.5">
             {creating && (
               <li className="px-0.5 pb-1 pt-0.5">

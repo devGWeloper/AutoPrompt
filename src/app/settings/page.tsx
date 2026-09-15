@@ -5,7 +5,7 @@ import AppShell from '@/components/ui/AppShell';
 import PageHeader from '@/components/ui/PageHeader';
 import Modal from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
-import { Card, CardHeader } from '@/components/ui/Card';
+import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Field';
 import { Table, TBody, THead, TD, TH, TR } from '@/components/ui/Table';
 import { api } from '@/lib/api';
@@ -38,11 +38,14 @@ function Section({
   children: ReactNode;
 }) {
   return (
-    <Card className="min-w-0 self-start">
-      <CardHeader
-        title={<>{title} <span className="ml-1 font-mono text-caption-mono font-normal text-muted-soft">{count}</span></>}
-        right={action}
-      />
+    <Card>
+      <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
+        <div className="flex items-baseline gap-2">
+          <span className="text-body-md font-medium text-ink">{title}</span>
+          <span className="font-mono text-caption-mono text-muted-soft">{count}</span>
+        </div>
+        {action}
+      </div>
       {children}
     </Card>
   );
@@ -111,11 +114,11 @@ function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) =
 
 function ErrLine({ msg }: { msg: string | null }) {
   if (!msg) return null;
-  return <div className="border-b border-line bg-bad-soft px-4 py-2.5 text-body-sm text-bad">{msg}</div>;
+  return <div className="border-b border-line bg-bad-soft px-5 py-2.5 text-body-sm text-bad">{msg}</div>;
 }
 
 function Empty({ children }: { children: ReactNode }) {
-  return <div className="px-4 py-10 text-center text-body-sm text-muted-soft">{children}</div>;
+  return <div className="px-5 py-10 text-center text-body-sm text-muted-soft">{children}</div>;
 }
 
 // ---- endpoints -------------------------------------------------------------
@@ -351,7 +354,7 @@ function ModelsSection({ list, setList }: { list: LlmModel[]; setList: (next: Ll
   return (
     <Section title="모델" count={list.length}>
       <ErrLine msg={err} />
-      <div className="flex items-center gap-2 border-b border-line px-4 py-3">
+      <div className="flex items-center gap-2 border-b border-line px-5 py-3">
         <Input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -366,7 +369,7 @@ function ModelsSection({ list, setList }: { list: LlmModel[]; setList: (next: Ll
       ) : (
         <ul className="divide-y divide-line">
           {list.map((m) => (
-            <li key={m.llm_id} className="flex items-center gap-3 px-4 py-2.5">
+            <li key={m.llm_id} className="flex items-center gap-3 px-5 py-2.5">
               <span className="min-w-0 flex-1 truncate font-mono text-body-sm text-ink">{m.llm_nm}</span>
               <DeleteBtn title="삭제" onConfirm={() => run(() => api.del<LlmModel[]>(`/llms/${m.llm_id}`))} />
             </li>
@@ -415,7 +418,7 @@ function RolesSection({ roles, setRoles }: { roles: ModelRole[]; setRoles: (next
   return (
     <Section title="Role" count={roles.length}>
       <ErrLine msg={err} />
-      <div className="flex items-center gap-2 border-b border-line px-4 py-3">
+      <div className="flex items-center gap-2 border-b border-line px-5 py-3">
         <Input
           value={newRole}
           onChange={(e) => setNewRole(e.target.value)}
@@ -430,7 +433,7 @@ function RolesSection({ roles, setRoles }: { roles: ModelRole[]; setRoles: (next
       ) : (
         <ul className="divide-y divide-line">
           {roles.map((m) => (
-            <li key={m.role_cd} className="flex items-center gap-3 px-4 py-2.5">
+            <li key={m.role_cd} className="flex items-center gap-3 px-5 py-2.5">
               <span className="min-w-0 flex-1 truncate font-mono text-body-sm text-ink">
                 {m.role_cd}
               </span>
@@ -483,12 +486,8 @@ export default function SettingsPage() {
     <AppShell section="settings">
       <div className={cn(SHELL, 'px-8 py-7')}>
         <PageHeader title="설정" />
-        {/* Agent 는 URL 이 긴 표라 전체 폭을 쓰고, 이름 한 줄짜리 목록인 모델 ·
-            Role 은 나란히 선다 — 1536px 까지 늘여 두면 오른쪽이 통째로 빈다. */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <div className="lg:col-span-2">
-            <EndpointsSection list={endpoints} setList={saveEndpoints} />
-          </div>
+        <div className="flex flex-col gap-5">
+          <EndpointsSection list={endpoints} setList={saveEndpoints} />
           <ModelsSection list={models} setList={saveModels} />
           <RolesSection roles={roles} setRoles={saveRoles} />
         </div>

@@ -3,10 +3,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Card, CardHeader } from '@/components/ui/Card';
+import { Card } from '@/components/ui/Card';
 import { Select, Textarea } from '@/components/ui/Field';
 import { ApiError, api } from '@/lib/api';
-import { cn } from '@/lib/cn';
 import { clearActiveRun, readActiveRun, saveActiveRun, type ActiveCompareRun } from '@/lib/activeRun';
 import { COMPARE_ATTACH_EVENT } from '@/lib/rerun';
 import RerunButton from './RerunButton';
@@ -27,8 +26,8 @@ import {
   CategorySelect,
   DatasetSelect,
   EndpointSelect,
-  FORM_LABEL_COL,
-  FormRow,
+  InlineDivider,
+  InlineField,
   ErrBox,
   PROMPT_TARGET_ENABLED,
   EvalOptions,
@@ -406,9 +405,9 @@ export default function ComparePanel() {
       {/* Single 과 같은 두 줄: 대상(무엇을 A/B 로 가를지)과 그 컨트롤이 한 줄,
           입력·채점·실행이 다음 줄. 정확히 한 축만 갈린다 — 두 축을 동시에 다르게
           두는 복합 비교는 무엇 때문에 결과가 달라졌는지 알 수 없다. */}
-      <Card>
-        <div className="grid gap-y-2 px-4 py-3">
-          <FormRow label="대상">
+      <Card className="px-4 py-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
+          <InlineField label="대상">
             <SegToggle
               value={mode}
               onChange={setMode}
@@ -418,49 +417,53 @@ export default function ComparePanel() {
                 { id: 'version', label: 'Prompt', disabled: !PROMPT_TARGET_ENABLED },
               ]}
             />
-          </FormRow>
+          </InlineField>
 
-          <FormRow label="Agent">
-            {mode === 'endpoint' ? (
-              // 두 사이드가 각각 등록된 API 하나씩. 프롬프트·모델은 그대로 둔다.
-              <>
-                <span className="text-caption text-muted">A</span>
+          <InlineDivider />
+
+          {mode === 'endpoint' ? (
+            // 두 사이드가 각각 등록된 API 하나씩. 프롬프트·모델은 그대로 둔다.
+            <>
+              <InlineField label="A">
                 <EndpointSelect endpoints={endpoints} value={epA} onChange={setEpA} />
-                <span className="ml-2 text-caption text-muted">B</span>
+              </InlineField>
+              <InlineField label="B">
                 <EndpointSelect endpoints={endpoints} value={epB} onChange={setEpB} />
-                {epA != null && epA === epB && <span className="text-caption text-bad">A ≠ B</span>}
-              </>
-            ) : (
-              <>
-                <EndpointSelect endpoints={endpoints} value={epA} onChange={setEpA} />
-                {mode === 'version' && (
-                  <>
-                    <Select value={nodeNm ?? ''} onChange={(e) => setNodeNm(e.target.value)} className="h-9 w-40">
-                      <option value="" disabled>노드</option>
-                      {nodes.map((n) => (<option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>))}
-                    </Select>
-                    <VersionSelect versions={versions} value={verA} onChange={setVerA} className="h-9 w-28" placeholder="A" />
-                    <VersionSelect versions={versions} value={verB} onChange={setVerB} className="h-9 w-28" placeholder="B" />
-                    {verA && verB && verA === verB && <span className="text-caption text-bad">A ≠ B</span>}
-                  </>
-                )}
-              </>
-            )}
-          </FormRow>
-
-          {mode === 'model' && (
-            <FormRow label="모델">
-              <ModelPicker
-                roles={roles}
-                columns={[
-                  { key: 'a', label: 'A', drafts: modelsA, onChange: setModelsA },
-                  { key: 'b', label: 'B', drafts: modelsB, onChange: setModelsB },
-                ]}
-              />
-            </FormRow>
+              </InlineField>
+              {epA != null && epA === epB && <span className="text-caption text-bad">A ≠ B</span>}
+            </>
+          ) : (
+            <InlineField label="Agent">
+              <EndpointSelect endpoints={endpoints} value={epA} onChange={setEpA} />
+              {mode === 'version' && (
+                <>
+                  <Select value={nodeNm ?? ''} onChange={(e) => setNodeNm(e.target.value)} className="h-9 w-40">
+                    <option value="" disabled>노드</option>
+                    {nodes.map((n) => (<option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>))}
+                  </Select>
+                  <VersionSelect versions={versions} value={verA} onChange={setVerA} className="h-9 w-28" placeholder="A" />
+                  <VersionSelect versions={versions} value={verB} onChange={setVerB} className="h-9 w-28" placeholder="B" />
+                  {verA && verB && verA === verB && <span className="text-caption text-bad">A ≠ B</span>}
+                </>
+              )}
+            </InlineField>
           )}
+        </div>
 
-          <FormRow label="입력">
+        {mode === 'model' && (
+          <div className="mt-2.5 flex flex-wrap items-center gap-2 border-t border-line pt-2.5">
+            <ModelPicker
+              roles={roles}
+              columns={[
+                { key: 'a', label: 'A', drafts: modelsA, onChange: setModelsA },
+                { key: 'b', label: 'B', drafts: modelsB, onChange: setModelsB },
+              ]}
+            />
+          </div>
+        )}
+
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2.5 border-t border-line pt-2.5">
+          <InlineField label="입력">
             <SegToggle
               value={source}
               onChange={setSource}
@@ -472,46 +475,14 @@ export default function ComparePanel() {
                 <CategorySelect cats={folders} value={caseType} onChange={setCaseType} />
               </>
             )}
-          </FormRow>
+          </InlineField>
 
-          {source === 'manual' && (
-            <FormRow label="메시지">
-              <div className="grid w-full gap-2.5 sm:grid-cols-2">
-                <Textarea
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  rows={3}
-                  placeholder="메시지 * (A · B 공통)"
-                  className="w-full text-sm"
-                />
-                {wantsExpected && (
-                  <Textarea
-                    value={expected}
-                    onChange={(e) => setExpected(e.target.value)}
-                    rows={3}
-                    placeholder="기대 정답"
-                    className="w-full text-sm"
-                  />
-                )}
-              </div>
-            </FormRow>
-          )}
+          <InlineDivider />
 
-          <FormRow label="채점">
-            <ScoreToggle on={scoreOn} onChange={setScoreOn} />
-            {scoreOn && (
-              <>
-                <EvalOptions metrics={metrics} setMetrics={setMetrics} />
-                {metrics.length === 0 && <span className="text-caption text-bad">하나 이상</span>}
-              </>
-            )}
-          </FormRow>
-        </div>
-
-        {/* 실행 줄: 조건을 다 채운 끝, 컨트롤과 같은 세로선에서 시작한다. */}
-        <div className={cn(FORM_LABEL_COL, 'items-center rounded-b-md border-t border-line bg-surface-2 px-4 py-2.5')}>
-          <span />
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          {/* 실행 버튼은 방금 고른 입력 바로 옆에 선다. 카드 오른쪽 끝으로
+              밀어두면 폼과 버튼 사이가 비어, 조건을 다 채우고도 어디를 눌러야
+              하는지 한 번 더 찾게 된다. */}
+          <div className="flex shrink-0 items-center gap-2.5">
             {source === 'dataset' ? (
               <Button
                 size="lg"
@@ -531,6 +502,41 @@ export default function ComparePanel() {
             {modelErr && <span className="text-caption text-bad">{modelErr}</span>}
           </div>
         </div>
+
+        {/* 채점은 자기 줄을 쓴다 — 지표가 켜지고 꺼질 때마다 위 줄이 접혀서 실행
+            버튼까지 밀려 내려가던 자리다. */}
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line pt-2.5">
+          <InlineField label="채점">
+            <ScoreToggle on={scoreOn} onChange={setScoreOn} />
+            {scoreOn && (
+              <>
+                <EvalOptions metrics={metrics} setMetrics={setMetrics} />
+                {metrics.length === 0 && <span className="text-caption text-bad">하나 이상</span>}
+              </>
+            )}
+          </InlineField>
+        </div>
+
+        {source === 'manual' && (
+          <div className="mt-2.5 grid gap-2.5 border-t border-line pt-2.5 sm:grid-cols-2">
+            <Textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              rows={3}
+              placeholder="메시지 * (A · B 공통)"
+              className="w-full text-sm"
+            />
+            {wantsExpected && (
+              <Textarea
+                value={expected}
+                onChange={(e) => setExpected(e.target.value)}
+                rows={3}
+                placeholder="기대 정답"
+                className="w-full text-sm"
+              />
+            )}
+          </div>
+        )}
       </Card>
 
       {source === 'manual' ? (
@@ -543,19 +549,24 @@ export default function ComparePanel() {
             <Card className="px-6 py-12 text-center"><PendingHint label="A · B 순차 호출 중…" /></Card>
           )}
           {ab && callStatus !== 'running' && (
-            <Card className="overflow-hidden">
-              <CardHeader title="Manual Comparison">
+            <Card>
+              <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
+                <h3 className="mr-1 text-sm font-semibold text-ink">Manual Comparison</h3>
                 <Badge tone="neutral">A · {dispLabel(labA)}</Badge>
                 <span>vs</span>
                 <Badge tone="accent">B · {dispLabel(labB)}</Badge>
-              </CardHeader>
-              <CaseCompareTable
-                detailA={manualDetail(ab.a, ab.question, ab.gt)}
-                detailB={manualDetail(ab.b, ab.question, ab.gt)}
-                labelA={dispLabel(labA)} labelB={dispLabel(labB)}
-                scored={scoreOn}
-                defaultAllOpen
-              />
+              </div>
+              <div className="p-4">
+                <div className="overflow-hidden rounded-sm border border-line bg-surface">
+                  <CaseCompareTable
+                    detailA={manualDetail(ab.a, ab.question, ab.gt)}
+                    detailB={manualDetail(ab.b, ab.question, ab.gt)}
+                    labelA={dispLabel(labA)} labelB={dispLabel(labB)}
+                    scored={scoreOn}
+                    defaultAllOpen
+                  />
+                </div>
+              </div>
             </Card>
           )}
         </>
@@ -569,13 +580,14 @@ export default function ComparePanel() {
 
       {/* Live A/B streaming while running: both versions' answers appear first, scores fill in. */}
       {status === 'running' && (
-        <Card className="overflow-hidden">
-          <CardHeader title="Comparison">
+        <Card>
+          <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
+            <h3 className="mr-1 text-sm font-semibold text-ink">Comparison</h3>
             <Badge tone="neutral" dot>RUNNING</Badge>
             <Badge tone="neutral">A · {dispLabel(labA)}</Badge>
             <span>vs</span>
             <Badge tone="accent">B · {dispLabel(labB)}</Badge>
-          </CardHeader>
+          </div>
           {/* One progress block per side — A and B run as two independent streams
               and routinely sit in different phases. */}
           <div className="grid gap-4 border-b border-line px-4 py-3 sm:grid-cols-2">
@@ -588,14 +600,18 @@ export default function ComparePanel() {
               <RunProgress rows={liveB} total={total} scoreOn={scoreOn} metrics={runMetrics} />
             </div>
           </div>
-          {liveA.length > 0 || liveB.length > 0
-            ? <CaseCompareTable
-                detailA={{ results: liveA } as RagasRunDetail}
-                detailB={{ results: liveB } as RagasRunDetail}
-                labelA={dispLabel(labA)} labelB={dispLabel(labB)}
-                scored={scoreOn}
-              />
-            : <div className="py-10 text-center"><PendingHint label="답변 생성 중…" /></div>}
+          <div className="p-4">
+            {liveA.length > 0 || liveB.length > 0
+              ? <div className="overflow-hidden rounded-sm border border-line bg-surface">
+                  <CaseCompareTable
+                    detailA={{ results: liveA } as RagasRunDetail}
+                    detailB={{ results: liveB } as RagasRunDetail}
+                    labelA={dispLabel(labA)} labelB={dispLabel(labB)}
+                    scored={scoreOn}
+                  />
+                </div>
+              : <div className="py-8 text-center"><PendingHint label="답변 생성 중…" /></div>}
+          </div>
         </Card>
       )}
 
@@ -607,23 +623,24 @@ export default function ComparePanel() {
             labelA={dispLabel(labA)}
             labelB={dispLabel(labB)}
           />
-          <Card className="overflow-hidden">
-            <CardHeader
-              title="Comparison Detail"
-              right={
-                <>
-                  <CompareVerdict detailA={detailA} detailB={detailB} />
-                  <span>Engine {detailA.engine ?? '—'}</span>
-                  <RerunButton detail={detailA} detailB={detailB} />
-                </>
-              }
-            >
+          <Card>
+            <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
+              <h3 className="mr-1 text-sm font-semibold text-ink">Comparison Detail</h3>
               {nodeNm && <span className="font-medium text-ink">{nodeNm}</span>}
               <Badge tone="neutral">A · {dispLabel(labA)}</Badge>
               <span>vs</span>
               <Badge tone="accent">B · {dispLabel(labB)}</Badge>
-            </CardHeader>
-            <CaseCompareTable detailA={detailA} detailB={detailB} labelA={dispLabel(labA)} labelB={dispLabel(labB)} />
+              <span className="ml-auto flex items-center gap-2.5">
+                <CompareVerdict detailA={detailA} detailB={detailB} />
+                <span>Engine {detailA.engine ?? '—'}</span>
+                <RerunButton detail={detailA} detailB={detailB} />
+              </span>
+            </div>
+            <div className="p-4">
+              <div className="overflow-hidden rounded-sm border border-line bg-surface">
+                <CaseCompareTable detailA={detailA} detailB={detailB} labelA={dispLabel(labA)} labelB={dispLabel(labB)} />
+              </div>
+            </div>
           </Card>
         </div>
       )}

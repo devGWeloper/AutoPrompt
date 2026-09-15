@@ -107,7 +107,7 @@ export function usePromptNodes() {
 
 // ---- small shared controls -------------------------------------------------
 
-/** '채점' master switch, shared by every run mode. 라벨은 바로 앞 FormRow 가
+/** '채점' master switch, shared by every run mode. 라벨은 바로 앞 InlineField 가
  * 이미 달고 있어서 스위치는 상태만 보인다. */
 export function ScoreToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -640,10 +640,7 @@ export const PROMPT_TARGET_ENABLED = false;
 
 export function SegToggle<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: { id: T; label: string; title?: string; disabled?: boolean }[] }) {
   return (
-    // 회색 트랙 안의 흰 키 — DESIGN-inview 의 세그먼트 규칙. 파란 면으로 채우면 한
-    // 카드에 파란 덩어리가 셋씩 생겨서, 정작 파란 CTA(실행)가 묻힌다.
-    // 높이는 트랙까지 36px 로 같은 줄의 셀렉트(h-9)와 맞춘다.
-    <div className="inline-flex shrink-0 rounded-lg border border-line bg-surface-3 p-0.5">
+    <div className="inline-flex rounded-md border border-line bg-surface p-0.5">
       {options.map((o) => (
         <button
           key={o.id}
@@ -651,8 +648,8 @@ export function SegToggle<T extends string>({ value, onChange, options }: { valu
           disabled={o.disabled}
           title={o.title}
           className={cn(
-            'h-[30px] rounded-sm px-3.5 text-sm font-medium transition-colors',
-            value === o.id ? 'bg-surface text-accent shadow-seg' : 'text-muted hover:text-ink',
+            'rounded-sm px-3.5 py-1.5 text-sm font-medium transition-colors',
+            value === o.id ? 'bg-primary text-primary-fg' : 'text-muted hover:text-ink',
             // Not `disabled:opacity-50` alone — the point is that it stays
             // readable as a real option that is simply out of service.
             o.disabled && 'cursor-not-allowed text-muted-soft hover:text-muted-soft',
@@ -1362,19 +1359,19 @@ export function EndpointSelect({
 
 /** One setting on a shared line: a small label, then its controls. Replaces the
  * label-column rows so a whole run's settings fit in two lines. */
-/** 실행 조건 폼의 한 줄: 고정 폭 라벨 열 + 컨트롤.
- *
- * 라벨을 컨트롤 바로 앞에 붙이면 '대상' · 'Agent' · '입력' 처럼 라벨 폭이 줄마다
- * 달라서 컨트롤이 서로 다른 자리에서 시작한다. 라벨 열 폭을 못박아 모든 줄이 한
- * 세로선에서 시작하게 한다. 라벨은 첫 컨트롤 줄(36px)의 가운데에 선다 — 컨트롤이
- * 여러 줄로 접히거나 textarea 여도 라벨은 맨 윗줄에 붙어 있다. */
-export const FORM_LABEL_COL = 'grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-3';
-
-export function FormRow({ label, children }: { label?: string; children: ReactNode }) {
+export function InlineField({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: ReactNode;
+}) {
   return (
-    <div className={cn(FORM_LABEL_COL, 'items-start')}>
-      <span className="eyebrow truncate leading-9">{label}</span>
-      <div className="flex min-h-9 min-w-0 flex-wrap items-center gap-2">{children}</div>
+    <div className={cn('flex min-w-0 flex-wrap items-center gap-2', className)}>
+      <span className="eyebrow shrink-0">{label}</span>
+      {children}
     </div>
   );
 }

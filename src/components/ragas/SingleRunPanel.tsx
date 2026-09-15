@@ -3,10 +3,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Card, CardHeader } from '@/components/ui/Card';
+import { Card } from '@/components/ui/Card';
 import { Select, Textarea } from '@/components/ui/Field';
 import { ApiError, api } from '@/lib/api';
-import { cn } from '@/lib/cn';
 import { clearActiveRun, readActiveRun, saveActiveRun, type ActiveSingleRun } from '@/lib/activeRun';
 import { SINGLE_ATTACH_EVENT } from '@/lib/rerun';
 import RerunButton from './RerunButton';
@@ -30,8 +29,8 @@ import {
   CategorySelect,
   DatasetSelect,
   EndpointSelect,
-  FORM_LABEL_COL,
-  FormRow,
+  InlineDivider,
+  InlineField,
   ErrBox,
   PROMPT_TARGET_ENABLED,
   EvalOptions,
@@ -354,16 +353,15 @@ export default function SingleRunPanel() {
 
   return (
     <div className="space-y-5">
-      {/* 실행 조건. 줄마다 라벨 열 폭이 같아서 모든 컨트롤이 한 세로선에서
-          시작하고, 순서는 Compare 와 같다: 무엇을 바꾸나(대상) → 어디로
-          보내나(Agent) → 무엇을 넣나(입력) → 어떻게 재나(채점). 실행 버튼은 조건을
-          다 채운 끝, 같은 세로선의 맨 아래 줄에 선다 — 카드 오른쪽 끝으로 밀지
-          않으므로 폼과 버튼 사이가 비지 않는다. */}
-      <Card>
-        <div className="grid gap-y-2 px-4 py-3">
+      {/* 실행 조건은 두 줄이다: API·대상 한 줄, 입력·채점·실행 한 줄. 항목마다
+          한 행을 주면 화면의 절반이 아직 누르지도 않은 폼이 된다. */}
+      <Card className="px-4 py-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
           {/* 대상 = 무엇을 바꾸는가. 셋 중 하나만 변인이고 나머지는 손대지
-              않는다 — 그래서 고른 것의 컨트롤만 옆에 나온다. */}
-          <FormRow label="대상">
+              않는다 — 그래서 고른 것의 컨트롤만 옆에 나온다. 대상이 API 앞에
+              서는 건 Compare 와 같은 순서라서이기도 하고, 무엇을 시험하는지가
+              정해져야 어느 API 로 부를지가 의미를 갖기 때문이다. */}
+          <InlineField label="대상">
             <SegToggle
               value={target}
               onChange={setTarget}
@@ -396,20 +394,25 @@ export default function SingleRunPanel() {
                 <VersionSelect versions={versions} value={ver} onChange={setVer} className="h-9 w-28" placeholder="버전" />
               </>
             )}
-          </FormRow>
+          </InlineField>
 
-          <FormRow label="Agent">
+          <InlineDivider />
+
+          <InlineField label="Agent">
             <EndpointSelect endpoints={endpoints} value={endpointId} onChange={setEndpointId} />
-          </FormRow>
+          </InlineField>
 
-          {/* 모델 대상일 때만 role 표가 열린다 — 다른 대상에서는 실행에 쓰이지도 않는다. */}
-          {target === 'model' && (
-            <FormRow label="모델">
-              <ModelPicker roles={roles} columns={[{ key: 'a', drafts: models, onChange: setModels }]} />
-            </FormRow>
-          )}
+        </div>
 
-          <FormRow label="입력">
+        {/* 모델 대상일 때만 role 표가 열린다 — 다른 대상에서는 실행에 쓰이지도 않는다. */}
+        {target === 'model' && (
+          <div className="mt-2.5 flex flex-wrap items-center gap-2 border-t border-line pt-2.5">
+            <ModelPicker roles={roles} columns={[{ key: 'a', drafts: models, onChange: setModels }]} />
+          </div>
+        )}
+
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2.5 border-t border-line pt-2.5">
+          <InlineField label="입력">
             <SegToggle
               value={source}
               onChange={setSource}
@@ -455,46 +458,14 @@ export default function SingleRunPanel() {
                 )}
               </>
             )}
-          </FormRow>
+          </InlineField>
 
-          {source === 'manual' && (
-            <FormRow label="메시지">
-              <div className="grid w-full gap-2.5 sm:grid-cols-2">
-                <Textarea
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  rows={3}
-                  placeholder="메시지 *"
-                  className="w-full text-sm"
-                />
-                {wantsExpected && (
-                  <Textarea
-                    value={expected}
-                    onChange={(e) => setExpected(e.target.value)}
-                    rows={3}
-                    placeholder="기대 정답"
-                    className="w-full text-sm"
-                  />
-                )}
-              </div>
-            </FormRow>
-          )}
+          <InlineDivider />
 
-          <FormRow label="채점">
-            <ScoreToggle on={scoreOn} onChange={setScoreOn} />
-            {scoreOn && (
-              <>
-                <EvalOptions metrics={metrics} setMetrics={setMetrics} />
-                {metrics.length === 0 && <span className="text-caption text-bad">하나 이상</span>}
-              </>
-            )}
-          </FormRow>
-        </div>
-
-        {/* 실행 줄: 조건을 다 채운 끝, 컨트롤과 같은 세로선에서 시작한다. */}
-        <div className={cn(FORM_LABEL_COL, 'items-center rounded-b-md border-t border-line bg-surface-2 px-4 py-2.5')}>
-          <span />
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          {/* 실행 버튼은 방금 고른 입력 바로 옆에 선다. 카드 오른쪽 끝으로
+              밀어두면 폼과 버튼 사이가 비어, 조건을 다 채우고도 어디를 눌러야
+              하는지 한 번 더 찾게 된다. */}
+          <div className="flex shrink-0 items-center gap-2.5">
             {source === 'dataset' ? (
               <Button
                 size="lg"
@@ -514,6 +485,43 @@ export default function SingleRunPanel() {
             {modelErr && <span className="text-caption text-bad">{modelErr}</span>}
           </div>
         </div>
+
+        {/* 채점은 자기 줄을 쓴다 — 지표가 켜지고 꺼질 때마다 위 줄이 접혀서 실행
+            버튼까지 밀려 내려가던 자리다. */}
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line pt-2.5">
+          <InlineField label="채점">
+            <ScoreToggle on={scoreOn} onChange={setScoreOn} />
+            {scoreOn && (
+              <>
+                <EvalOptions metrics={metrics} setMetrics={setMetrics} />
+                {metrics.length === 0 && <span className="text-caption text-bad">하나 이상</span>}
+              </>
+            )}
+          </InlineField>
+        </div>
+
+        {source === 'manual' && (
+          <div className="mt-2.5 grid gap-2.5 border-t border-line pt-2.5 sm:grid-cols-2">
+            <Textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              rows={3}
+              placeholder="메시지 *"
+              className="w-full text-sm"
+            />
+            {wantsExpected && (
+              <Textarea
+                value={expected}
+                onChange={(e) => setExpected(e.target.value)}
+                rows={3}
+                placeholder="기대 정답"
+                className="w-full text-sm"
+              />
+            )}
+          </div>
+        )}
+
+        
       </Card>
 
       {source === 'manual' ? (
@@ -527,7 +535,10 @@ export default function SingleRunPanel() {
           )}
           {callResult && callStatus !== 'running' && (
             <Card>
-              <CardHeader title="Response" right={<ElapsedTag ms={callResult.elapsed_ms} />} />
+              <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
+                <h3 className="text-sm font-semibold text-ink">Response</h3>
+                <ElapsedTag ms={callResult.elapsed_ms} />
+              </div>
               <div className="p-4">
                 {(() => {
                   // 기대 정답 없이 부른 JSON 결과는 키 · 값 표로, 그 자리에서 정답으로 굳힐 수 있게.
@@ -619,20 +630,25 @@ export default function SingleRunPanel() {
 
           {/* Live streaming view while running: answers appear first, scores fill in. */}
           {status === 'running' && (
-            <Card className="overflow-hidden">
-              <CardHeader title="Results">
+            <Card>
+              <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
+                <h3 className="mr-1 text-sm font-semibold text-ink">Results</h3>
                 <Badge tone="neutral" dot>{cancelling ? 'CANCELLING' : 'RUNNING'}</Badge>
                 {(runMeta?.nodeNm ?? nodeNm) && <span className="font-medium text-ink">{runMeta?.nodeNm ?? nodeNm}</span>}
                 <Badge tone="neutral">{runMeta?.verLabel ?? verLabel(ver)}</Badge>
-              </CardHeader>
+              </div>
               <div className="border-b border-line px-4 py-3">
                 <RunProgress rows={live} total={total} scoreOn={scoreOn} metrics={runMetrics} />
               </div>
-              {live.length > 0 ? (
-                <CaseTable detail={{ results: live } as RagasRunDetail} scored={scoreOn} />
-              ) : (
-                <div className="py-10 text-center"><PendingHint label="답변 생성 중…" /></div>
-              )}
+              <div className="p-4">
+                {live.length > 0 ? (
+                  <div className="overflow-hidden rounded-sm border border-line bg-surface">
+                    <CaseTable detail={{ results: live } as RagasRunDetail} scored={scoreOn} />
+                  </div>
+                ) : (
+                  <div className="py-8 text-center"><PendingHint label="답변 생성 중…" /></div>
+                )}
+              </div>
             </Card>
           )}
 
@@ -643,23 +659,24 @@ export default function SingleRunPanel() {
               {scoredMetrics(detail).length > 0 && <SingleRunSummaryDashboard detail={detail} />}
               {/* 어떤 키가 자주 깨졌나 — 케이스 목록을 열기 전에 답하는 판. */}
               <KeyBreakdown rows={detail.results} />
-              <Card className="overflow-hidden">
-                <CardHeader
-                  title="Results Detail"
-                  right={
-                    <>
-                      <span>Engine {detail.engine ?? '—'}</span>
-                      <span>·</span>
-                      <span>{detail.results.length} case{detail.results.length === 1 ? '' : 's'}</span>
-                      <RerunButton detail={detail} className="ml-1" />
-                    </>
-                  }
-                >
+              <Card>
+                <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
+                  <h3 className="mr-1 text-sm font-semibold text-ink">Results Detail</h3>
                   <Badge tone={detail.status === 'FAILED' ? 'bad' : 'neutral'} dot>{detail.status}</Badge>
                   {detail.node_nm && <span className="font-medium text-ink">{detail.node_nm}</span>}
                   {detail.prompt_id && <Badge tone="neutral">{verLabel(detail.prompt_id)}</Badge>}
-                </CardHeader>
-                <CaseTable detail={detail} />
+                  <span className="ml-auto flex items-center gap-2">
+                    <span>Engine {detail.engine ?? '—'}</span>
+                    <span>·</span>
+                    <span>{detail.results.length} case{detail.results.length === 1 ? '' : 's'}</span>
+                    <RerunButton detail={detail} className="ml-1" />
+                  </span>
+                </div>
+                <div className="p-4">
+                  <div className="overflow-hidden rounded-sm border border-line bg-surface">
+                    <CaseTable detail={detail} />
+                  </div>
+                </div>
               </Card>
             </div>
           )}
