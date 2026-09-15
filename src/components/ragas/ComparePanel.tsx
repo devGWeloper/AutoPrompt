@@ -7,6 +7,8 @@ import { Card } from '@/components/ui/Card';
 import { Select, Textarea } from '@/components/ui/Field';
 import { ApiError, api } from '@/lib/api';
 import { clearActiveRun, readActiveRun, saveActiveRun, type ActiveCompareRun } from '@/lib/activeRun';
+import { COMPARE_ATTACH_EVENT } from '@/lib/rerun';
+import RerunButton from './RerunButton';
 import { connectRagasRunStream as connectRagasRunWs } from '@/lib/sse-client';
 import { CompareSummaryDashboard } from './RunSummaryDashboard';
 import LastRunPreview from './LastRunPreview';
@@ -271,6 +273,25 @@ export default function ComparePanel() {
     setStatus('running');
     void attachBoth(saved);
     // Mount only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** Switch the panel onto a pair created elsewhere — a 불일치 re-test started
+   * from this panel's results, its last-run preview, or the records drawer. */
+  function follow(saved: ActiveCompareRun) {
+    setError(null); setDetailA(null); setDetailB(null); setStatus('running');
+    setLiveA([]); setLiveB([]); setTotal(0); setRunMetrics(null); setCancelling(false);
+    setSource('dataset');
+    setScoreOn(saved.scoreOn);
+    setRunLabels([saved.labelA, saved.labelB]);
+    void attachBoth(saved);
+  }
+
+  useEffect(() => {
+    const onAttach = (e: Event) => follow((e as CustomEvent<ActiveCompareRun>).detail);
+    window.addEventListener(COMPARE_ATTACH_EVENT, onAttach);
+    return () => window.removeEventListener(COMPARE_ATTACH_EVENT, onAttach);
+    // follow only touches setters and refs, so the first render's copy is enough.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -612,6 +633,7 @@ export default function ComparePanel() {
               <span className="ml-auto flex items-center gap-2.5">
                 <CompareVerdict detailA={detailA} detailB={detailB} />
                 <span>Engine {detailA.engine ?? '—'}</span>
+                <RerunButton detail={detailA} detailB={detailB} />
               </span>
             </div>
             <div className="p-4">

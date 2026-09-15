@@ -3,7 +3,7 @@ import type { OracleConnection, OracleModule } from "@/lib/db";
 import { ApiError, badRequest, errorText, notFound } from "@/lib/http";
 import { METRIC_COLS, RUN_COLS, insertReturningId, mapRagasRun } from "@/lib/db/rows";
 import { hasColumn } from "@/lib/db/optionalColumn";
-import { ALL_METRICS, DIRECT_SINK_NM, EXACT_MATCH, SYSTEM_USER } from "@/lib/types";
+import { ALL_METRICS, DIRECT_SINK_NM, EXACT_MATCH, PICKED_CASES, SYSTEM_USER } from "@/lib/types";
 import type {
   EndpointHeader,
   FlowCurrent,
@@ -128,6 +128,7 @@ async function runCaseType(
 export async function createFlowRagasRun(args: {
   datasetId: number;
   caseType?: string | null;
+  caseIds?: number[] | null;
   metrics: string[];
   nodeNm?: string | null;
   promptId?: number | null;
@@ -136,7 +137,24 @@ export async function createFlowRagasRun(args: {
 }): Promise<RagasRunOut> {
   await requireDataset(args.datasetId);
   return withConn(async (conn, oracle) => {
-    const caseType = await runCaseType(conn, args.datasetId, args.caseType);
+    // A hand-picked run writes the reserved PICKED_CASES in the folder column: the
+    // records list reads it as '선택 N건', and a run whose picked set was lost (a
+    // server restart before it started) ends with 0 cases instead of quietly
+    // running a whole folder.
+    let subset: number[] | null = null;
+    let caseType: string | null;
+    if (args.caseIds != null) {
+      const want = Array.from(
+        new Set((Array.isArray(args.caseIds) ? args.caseIds : []).map(Number).filter(Number.isInteger)),
+      );
+      if (!want.length) throw badRequest("실행할 케이스를 하나 이상 고르세요");
+      const have = new Set((await loadCases(conn, args.datasetId, null)).map((c) => c.case_id));
+      subset = want.filter((id) => have.has(id));
+      if (!subset.length) throw badRequest("고른 케이스가 이 데이터셋에 없습니다");
+      caseType = PICKED_CASES;
+    } else {
+      caseType = await runCaseType(conn, args.datasetId, args.caseType);
+    }
     if (args.promptId != null) {
       const nm = await promptNode(conn, args.promptId);
       if (nm === null || (args.nodeNm != null && nm !== args.nodeNm)) {
@@ -161,6 +179,7 @@ export async function createFlowRagasRun(args: {
         cby: SYSTEM_USER,
       },
     );
+    if (subset) RUN_SUBSETS.set(id, new Set(subset));
     return (await fetchRun(conn, id))!;
   }, { commit: true });
 }
@@ -174,53 +193,107 @@ export async function createFlowRagasRun(args: {
 const RUN_SUBSETS: Map<number, Set<number>> =
   ((globalThis as { __ptxRunSubsets?: Map<number, Set<number>> }).__ptxRunSubsets ??= new Map());
 
-/**
- * A new run over only the cases a finished run got 불일치 on (정답 일치 = 0),
- * with everything else copied from it — prompt version, dataset and folder,
- * metrics, pinned models. Cases deleted since are left out. The endpoint is not
- * stored on a PENDING row; the client streams it with the source run's endpoint.
- */
+/** The source run's current dataset name, refusing a run that cannot be re-tested. */
+async function rerunDatasetName(conn: OracleConnection, src: RagasRunOut): Promise<string> {
+  const ds = src.dataset_id == null
+    ? []
+    : ((await conn.execute(`SELECT DATASET_NM FROM PTX_DATASET_MAS WHERE DATASET_ID = :did`, {
+        did: src.dataset_id,
+      })).rows ?? []) as Record<string, unknown>[];
+  if (!ds.length) throw badRequest("데이터셋이 삭제된 실행이라 다시 돌릴 수 없습니다");
+  const name = String(ds[0].DATASET_NM);
+  if (name === DIRECT_SINK_NM) throw badRequest("직접 입력 실행은 재테스트할 수 없습니다 — 데이터셋 실행에서만 됩니다");
+  return name;
+}
+
+/** Cases any of these runs got 불일치 on (정답 일치 = 0) that are still in the
+ * dataset. For an A/B pair that is either side's failures — the re-test is a
+ * comparison again, so both sides run the same set. */
+async function mismatchCaseIds(conn: OracleConnection, datasetId: number, runIds: number[]): Promise<number[]> {
+  const binds: Record<string, unknown> = { did: datasetId };
+  const names = runIds.map((id, i) => {
+    binds[`r${i}`] = id;
+    return `:r${i}`;
+  });
+  const res = await conn.execute(
+    `SELECT DISTINCT r.CASE_ID
+       FROM PTX_RUN_DET r
+       JOIN PTX_DATASET_DET c ON c.CASE_ID = r.CASE_ID AND c.DATASET_ID = :did
+      WHERE r.RUN_ID IN (${names.join(", ")}) AND r.EXACT_VAL = 0`,
+    binds,
+  );
+  const ids = ((res.rows ?? []) as Record<string, unknown>[]).map((r) => Number(r.CASE_ID));
+  if (!ids.length) throw badRequest("다시 돌릴 불일치 케이스가 없습니다");
+  return ids;
+}
+
+/** A PENDING copy of `src` limited to `ids`: same prompt version, dataset,
+ * metrics and pinned models. The endpoint is not stored on a PENDING row; the
+ * client streams it with the source run's endpoint. */
+async function insertRerun(
+  conn: OracleConnection,
+  oracle: OracleModule,
+  src: RagasRunOut,
+  datasetNm: string,
+  ids: number[],
+): Promise<number> {
+  const id = await insertReturningId(
+    conn,
+    oracle,
+    `INSERT INTO PTX_RUN_MAS (PROMPT_ID, DATASET_ID, DATASET_NM, TYPE_CD, STATUS_CD, METRIC_CTN, MODEL_CTN, USER_ID)
+     VALUES (:pid, :did, :dnm, :ctype, 'PENDING', :metrics, :models, :cby) RETURNING RUN_ID INTO :out_id`,
+    {
+      pid: src.prompt_id ?? null,
+      did: src.dataset_id,
+      dnm: datasetNm,
+      // Only some cases run, whatever the source covered — see createFlowRagasRun.
+      ctype: PICKED_CASES,
+      metrics: src.metrics,
+      models: src.model_snapshot ?? null,
+      cby: SYSTEM_USER,
+    },
+  );
+  RUN_SUBSETS.set(id, new Set(ids));
+  return id;
+}
+
+/** A new run over only the cases a finished Single run got 불일치 on. */
 export async function createMismatchRerun(sourceRunId: number): Promise<RagasRunOut> {
   return withConn(async (conn, oracle) => {
     const src = await fetchRun(conn, sourceRunId);
     if (!src) throw notFound("ragas run not found");
-    if (src.ab_group_id != null) throw badRequest("Compare 실행은 불일치 재테스트를 지원하지 않습니다");
-    const ds = src.dataset_id == null
-      ? []
-      : ((await conn.execute(`SELECT DATASET_NM FROM PTX_DATASET_MAS WHERE DATASET_ID = :did`, {
-          did: src.dataset_id,
-        })).rows ?? []) as Record<string, unknown>[];
-    if (!ds.length) throw badRequest("데이터셋이 삭제된 실행이라 다시 돌릴 수 없습니다");
-    const datasetNm = String(ds[0].DATASET_NM);
-    if (datasetNm === DIRECT_SINK_NM) throw badRequest("직접 입력 실행은 재테스트할 수 없습니다 — 데이터셋 실행에서만 됩니다");
-
-    const res = await conn.execute(
-      `SELECT DISTINCT r.CASE_ID
-         FROM PTX_RUN_DET r
-         JOIN PTX_DATASET_DET c ON c.CASE_ID = r.CASE_ID AND c.DATASET_ID = :did
-        WHERE r.RUN_ID = :rid AND r.EXACT_VAL = 0`,
-      { did: src.dataset_id, rid: sourceRunId },
-    );
-    const ids = ((res.rows ?? []) as Record<string, unknown>[]).map((r) => Number(r.CASE_ID));
-    if (!ids.length) throw badRequest("다시 돌릴 불일치 케이스가 없습니다");
-
-    const id = await insertReturningId(
-      conn,
-      oracle,
-      `INSERT INTO PTX_RUN_MAS (PROMPT_ID, DATASET_ID, DATASET_NM, TYPE_CD, STATUS_CD, METRIC_CTN, MODEL_CTN, USER_ID)
-       VALUES (:pid, :did, :dnm, :ctype, 'PENDING', :metrics, :models, :cby) RETURNING RUN_ID INTO :out_id`,
-      {
-        pid: src.prompt_id ?? null,
-        did: src.dataset_id,
-        dnm: datasetNm,
-        ctype: src.case_type ?? null,
-        metrics: src.metrics,
-        models: src.model_snapshot ?? null,
-        cby: SYSTEM_USER,
-      },
-    );
-    RUN_SUBSETS.set(id, new Set(ids));
+    if (src.ab_group_id != null) throw badRequest("Compare 실행은 A·B 를 함께 다시 돌립니다");
+    const name = await rerunDatasetName(conn, src);
+    const ids = await mismatchCaseIds(conn, src.dataset_id, [sourceRunId]);
+    const id = await insertRerun(conn, oracle, src, name, ids);
     return (await fetchRun(conn, id))!;
+  }, { commit: true });
+}
+
+/** A new A/B pair over the cases either side of a finished comparison got
+ * 불일치 on. Each side keeps its own prompt version and models. */
+export async function createAbMismatchRerun(
+  groupId: number,
+): Promise<{ ragas_run_a_id: number; ragas_run_b_id: number }> {
+  return withConn(async (conn, oracle) => {
+    const res = await conn.execute(
+      `SELECT RUN_ID FROM PTX_RUN_MAS WHERE AB_GROUP_ID = :g ORDER BY RUN_ID ASC`,
+      { g: groupId },
+    );
+    const runIds = ((res.rows ?? []) as Record<string, unknown>[]).map((r) => Number(r.RUN_ID));
+    if (runIds.length !== 2) throw notFound("compare run not found");
+    const a = (await fetchRun(conn, runIds[0]))!;
+    const b = (await fetchRun(conn, runIds[1]))!;
+    const name = await rerunDatasetName(conn, a);
+    const ids = await mismatchCaseIds(conn, a.dataset_id, runIds);
+    const idA = await insertRerun(conn, oracle, a, name, ids);
+    const idB = await insertRerun(conn, oracle, b, name, ids);
+    await conn.execute(`UPDATE PTX_RUN_MAS SET AB_GROUP_ID = :g WHERE RUN_ID IN (:a, :b)`, {
+      g: idA,
+      a: idA,
+      b: idB,
+    });
+    return { ragas_run_a_id: idA, ragas_run_b_id: idB };
   }, { commit: true });
 }
 

@@ -12,7 +12,7 @@ import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/Table';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { formatModelPair, formatModelSnapshot } from '@/lib/modelSnapshot';
-import type { RagasRunDetail, RagasRunSummary } from '@/lib/types';
+import { PICKED_CASES, type RagasRunDetail, type RagasRunSummary } from '@/lib/types';
 import CaseImportModal from './CaseImportModal';
 import { rowFromResult, type Fields } from './caseFields';
 import { CaseCompareTable } from './CompareTable';
@@ -21,10 +21,8 @@ import { AbKeyBreakdown, KeyBreakdown } from './KeyBreakdown';
 import {
   CaseTable, DownloadIcon, ErrBox, errText, fmt2, fmt3, fmtDt, folderLabel, hasTextSelection, runMean, runTargetLabel,
   compareSideLabel, runModelDetail, runTitle, runTitleParts, scoredMetrics, SegToggle, TrashIcon, UNSCORED_LABEL,
-  useEndpoints,
 } from './shared';
-import { readActiveRun } from '@/lib/activeRun';
-import { mismatchCount, SINGLE_ATTACH_EVENT, startMismatchRerun } from '@/lib/rerun';
+import RerunButton from './RerunButton';
 
 const API_BASE = '/api';
 
@@ -749,7 +747,7 @@ function RecordDetailDrawer({
           {isSingle ? (
             <RagasRunDetailView ragasId={group.run.ragas_run_id} manual={group.run.is_manual} />
           ) : (
-            <AbCompareView aId={group.a.ragas_run_id} bId={group.b.ragas_run_id} />
+            <AbCompareView aId={group.a.ragas_run_id} bId={group.b.ragas_run_id} manual={group.a.is_manual} />
           )}
         </div>
       </aside>
@@ -789,7 +787,7 @@ function RunsPager({
   );
 }
 
-function AbCompareView({ aId, bId }: { aId: number; bId: number }) {
+function AbCompareView({ aId, bId, manual }: { aId: number; bId: number; manual?: boolean }) {
   const [a, setA] = useState<RagasRunDetail | null>(null);
   const [b, setB] = useState<RagasRunDetail | null>(null);
   useEffect(() => {
@@ -813,6 +811,7 @@ function AbCompareView({ aId, bId }: { aId: number; bId: number }) {
           <span className="ml-auto flex items-center gap-2">
             <ModelStamp text={formatModelPair(a.model_snapshot, b.model_snapshot)} />
             <span>Engine {a.engine ?? '—'}</span>
+            {!manual && <RerunButton detail={a} detailB={b} />}
           </span>
         </div>
         <div className="p-4">
@@ -830,28 +829,6 @@ function rowsFromRun(d: RagasRunDetail): Fields[] {
 
 function RagasRunDetailView({ ragasId, manual }: { ragasId: number; manual?: boolean }) {
   const [detail, setDetail] = useState<RagasRunDetail | null>(null);
-  const endpoints = useEndpoints();
-  const [rerunErr, setRerunErr] = useState<string | null>(null);
-  const [rerunning, setRerunning] = useState(false);
-
-  // 불일치만 새 실행으로 — 진행은 Single 탭에서 실시간으로 보인다.
-  async function rerun() {
-    if (!detail) return;
-    setRerunErr(null);
-    if (readActiveRun('single')) {
-      setRerunErr('Single 탭에서 진행 중인 테스트가 끝난 뒤 다시 시도해 주세요');
-      return;
-    }
-    setRerunning(true);
-    try {
-      const active = await startMismatchRerun(detail, endpoints);
-      window.dispatchEvent(new CustomEvent(SINGLE_ATTACH_EVENT, { detail: active }));
-    } catch (e) {
-      setRerunErr(errText(e));
-    } finally {
-      setRerunning(false);
-    }
-  }
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState<string | null>(null);
   useEffect(() => { setAdded(null); api.get<RagasRunDetail>(`/ragas-runs/${ragasId}`).then(setDetail).catch(() => setDetail(null)); }, [ragasId]);
@@ -862,7 +839,6 @@ function RagasRunDetailView({ ragasId, manual }: { ragasId: number; manual?: boo
 
   return (
     <div className="space-y-4">
-      {rerunErr && <ErrBox msg={rerunErr} />}
       {scoredMetrics(detail).length > 0 && <SingleRunSummaryDashboard detail={detail} />}
       <KeyBreakdown rows={detail.results} />
       <div className="overflow-hidden rounded-sm border border-line bg-surface">
@@ -873,7 +849,13 @@ function RagasRunDetailView({ ragasId, manual }: { ragasId: number; manual?: boo
           <Badge tone="neutral">{verLabel}</Badge>
           {/* 폴더가 붙어 있으면 이 실행의 모수는 데이터셋 전체가 아니다.
               그걸 모르고 다른 실행과 점수를 나란히 놓으면 비교가 어긋난다. */}
-          {detail.case_type && <Badge tone="neutral">폴더 {folderLabel(detail.case_type)}</Badge>}
+          {detail.case_type && (
+            <Badge tone="neutral">
+              {detail.case_type === PICKED_CASES
+                ? `선택 ${detail.results.length}건`
+                : `폴더 ${folderLabel(detail.case_type)}`}
+            </Badge>
+          )}
           {/* 목록은 이름(또는 host)까지만 적는다 — 전체 주소가 필요한 자리는 여기다. */}
           {(detail.endpoint_nm || detail.endpoint_url) && (
             <Badge tone="neutral">
@@ -890,11 +872,7 @@ function RagasRunDetailView({ ragasId, manual }: { ragasId: number; manual?: boo
             <Button variant="secondary" size="sm" className="ml-1" disabled={seed.length === 0} onClick={() => setAdding(true)}>
               데이터셋에 추가
             </Button>
-            {!manual && mismatchCount(detail) > 0 && (
-              <Button variant="secondary" size="sm" disabled={rerunning} onClick={rerun}>
-                불일치 {mismatchCount(detail)}건 재테스트
-              </Button>
-            )}
+            {!manual && <RerunButton detail={detail} />}
           </span>
         </div>
         {added && (

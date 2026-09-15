@@ -213,6 +213,7 @@ export async function createCases(
     let type = (c.case_type ?? "").trim() || "NORMAL";
     if (type.toUpperCase() === "NORMAL") type = "NORMAL";
     if (type.length > 50) throw badRequest(`${i + 1}번째 케이스: 폴더 이름이 너무 깁니다 (최대 50자)`);
+    if (type.startsWith("*")) throw badRequest(`${i + 1}번째 케이스: 폴더 이름은 '*' 로 시작할 수 없습니다`);
     return { input, expected: c.expected_output ?? null, crit: c.eval_criteria ?? null, type };
   });
 

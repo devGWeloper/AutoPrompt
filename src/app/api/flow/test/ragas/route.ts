@@ -11,6 +11,7 @@ export async function POST(req: Request) {
     const run = await createFlowRagasRun({
       datasetId: body.dataset_id,
       caseType: body.case_type ?? null,
+      caseIds: body.case_ids ?? null,
       metrics: body.metrics ?? [],
       nodeNm: body.node_nm,
       promptId: body.prompt_id,

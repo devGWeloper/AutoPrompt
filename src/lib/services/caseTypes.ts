@@ -70,6 +70,8 @@ function code(v: string | null | undefined): string {
   if (!s) throw badRequest("폴더 이름을 입력하세요");
   if (s.length > 50) throw badRequest("폴더 이름이 너무 깁니다 (최대 50자)");
   if (s.toUpperCase() === RESERVED) throw badRequest("'NORMAL' 은 폴더 없음을 뜻하는 예약값입니다");
+  // '*' marks reserved run values (PICKED_CASES) in the same column family.
+  if (s.startsWith("*")) throw badRequest("폴더 이름은 '*' 로 시작할 수 없습니다");
   return s;
 }
 

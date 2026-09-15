@@ -8,6 +8,11 @@ export const SYSTEM_USER = "system";
  * Rows whose dataset carries this name are "manual" in the records UI. */
 export const DIRECT_SINK_NM = "(직접 호출)";
 
+/** TYPE_CD a run carries when it ran hand-picked cases rather than a folder —
+ * the records list reads it as '선택 N건'. Folder names may not start with '*',
+ * so it cannot collide with a real folder. */
+export const PICKED_CASES = "*선택";
+
 // ---- evaluation metrics ----
 
 /** RAGAS metrics — every one of these needs the judge LLM (or the fallback). */
@@ -401,6 +406,8 @@ export interface FlowRagasRequest {
   dataset_id: number;
   /** Run only the cases in this folder. Absent/null = the whole dataset. */
   case_type?: string | null;
+  /** Run only these cases (hand-picked). Takes precedence over case_type. */
+  case_ids?: number[] | null;
   metrics?: string[];
   node_nm?: string | null;
   prompt_id?: number | null;

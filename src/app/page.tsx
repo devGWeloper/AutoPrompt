@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { cn } from '@/lib/cn';
 import { SHELL } from '@/lib/layout';
 import { readActiveRun } from '@/lib/activeRun';
-import { SINGLE_ATTACH_EVENT } from '@/lib/rerun';
+import { COMPARE_ATTACH_EVENT, SINGLE_ATTACH_EVENT } from '@/lib/rerun';
 import AppShell, { RUN_SECTIONS, SECTION_META, type SectionId } from '@/components/ui/AppShell';
 import PageHeader from '@/components/ui/PageHeader';
 import SingleRunPanel from '@/components/ragas/SingleRunPanel';
@@ -34,10 +34,15 @@ export default function RagasHomePage() {
     const wanted = new URLSearchParams(window.location.search).get('section');
     if (wanted && (RUN_SECTIONS as string[]).includes(wanted)) openTab(wanted as Tab);
     if (readActiveRun('compare')) openTab('compare');
-    // A re-test started from the records drawer streams in the Single tab.
-    const onAttach = () => openTab('single');
-    window.addEventListener(SINGLE_ATTACH_EVENT, onAttach);
-    return () => window.removeEventListener(SINGLE_ATTACH_EVENT, onAttach);
+    // A re-test streams in the tab of its kind, wherever it was started.
+    const toSingle = () => openTab('single');
+    const toCompare = () => openTab('compare');
+    window.addEventListener(SINGLE_ATTACH_EVENT, toSingle);
+    window.addEventListener(COMPARE_ATTACH_EVENT, toCompare);
+    return () => {
+      window.removeEventListener(SINGLE_ATTACH_EVENT, toSingle);
+      window.removeEventListener(COMPARE_ATTACH_EVENT, toCompare);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

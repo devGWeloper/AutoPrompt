@@ -8,6 +8,7 @@ import { formatModelPair, formatModelSnapshot, parseModelSnapshot } from '@/lib/
 import {
   ALL_METRICS,
   EXACT_MATCH,
+  PICKED_CASES,
   RAGAS_METRICS,
   METRIC_LABELS,
   type RagasMetric,
@@ -589,7 +590,7 @@ export function useDatasetCategories(datasetId: number | null) {
 
 /** TYPE_CD's column default is what the UI calls 폴더 없음. */
 export const UNFILED = 'NORMAL';
-export const folderLabel = (t: string) => (t === UNFILED ? '폴더 없음' : t);
+export const folderLabel = (t: string) => (t === UNFILED ? '폴더 없음' : t === PICKED_CASES ? '선택' : t);
 
 /** Narrow a run to one folder of the chosen dataset. null = the whole dataset.
  *

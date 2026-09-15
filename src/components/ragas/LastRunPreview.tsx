@@ -9,6 +9,7 @@ import type { RagasRunDetail, RagasRunSummary } from '@/lib/types';
 import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import { AbKeyBreakdown, KeyBreakdown } from './KeyBreakdown';
 import { CaseCompareTable } from './CompareTable';
+import RerunButton from './RerunButton';
 import { CaseTable, compareSideLabel, EmptyState, fmtDt, runTargetTitle, scoredMetrics } from './shared';
 
 /**
@@ -134,13 +135,13 @@ export default function LastRunPreview({ kind }: { kind: Kind }) {
         )
       )}
       <Card className="overflow-hidden">
+        {/* 재테스트 버튼은 접기 버튼 밖에 선다 — 버튼 안에 버튼은 둘 수 없고,
+            누르다 카드가 접히면 안 된다. */}
+        <div className={cn('flex items-center', open && 'border-b border-line')}>
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className={cn(
-            'flex w-full flex-wrap items-center gap-2 px-4 py-3 text-left text-xs text-muted transition-colors hover:bg-surface-2',
-            open && 'border-b border-line',
-          )}
+          className="flex min-w-0 flex-1 flex-wrap items-center gap-2 px-4 py-3 text-left text-xs text-muted transition-colors hover:bg-surface-2"
         >
           <span className="text-muted"><Chevron open={open} /></span>
           <h3 className="mr-1 text-sm font-semibold text-ink">Results Detail</h3>
@@ -159,6 +160,10 @@ export default function LastRunPreview({ kind }: { kind: Kind }) {
             {fmtDt(head.created_dt)}
           </span>
         </button>
+        {ready && detailA && !head.is_manual && (
+          <RerunButton detail={detailA} detailB={paired ? detailB : null} className="shrink-0 pr-4" />
+        )}
+        </div>
 
         {open && (
           <div className="p-4">

@@ -7,12 +7,14 @@ import { Card } from '@/components/ui/Card';
 import { Select, Textarea } from '@/components/ui/Field';
 import { ApiError, api } from '@/lib/api';
 import { clearActiveRun, readActiveRun, saveActiveRun, type ActiveSingleRun } from '@/lib/activeRun';
-import { mismatchCount, SINGLE_ATTACH_EVENT, startMismatchRerun } from '@/lib/rerun';
+import { SINGLE_ATTACH_EVENT } from '@/lib/rerun';
+import RerunButton from './RerunButton';
 import { connectRagasRunStream as connectRagasRunWs } from '@/lib/sse-client';
 import { SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import { KeyBreakdown } from './KeyBreakdown';
 import LastRunPreview from './LastRunPreview';
 import AddExpectedButton from './AddExpectedButton';
+import CasePickerModal from './CasePickerModal';
 import { ValuePanel, valueFields } from './MatchDiff';
 import {
   ALL_METRICS,
@@ -129,6 +131,11 @@ export default function SingleRunPanel() {
   const [caseType, setCaseType] = useState<string | null>(null);
   const { cats: folders } = useDatasetCategories(datasetId);
   useEffect(() => { setCaseType(null); }, [datasetId]);
+  // Hand-picked cases within the dataset/folder above. null = all of them. A pick
+  // belongs to one dataset and folder, so changing either drops it.
+  const [pickedCases, setPickedCases] = useState<Set<number> | null>(null);
+  const [picking, setPicking] = useState(false);
+  useEffect(() => { setPickedCases(null); }, [datasetId, caseType]);
   // Models for this run, pre-filled with the saved role defaults — the boxes are
   // the pin, so what the form shows is what the run stores and the agent reads.
   const { roles } = useModelRoles();
@@ -160,7 +167,6 @@ export default function SingleRunPanel() {
   // Manual (raw single message) state.
   const [message, setMessage] = useState(SAMPLE_MESSAGE);
   const [expected, setExpected] = useState("");
-  const rerunEndpoints = useEndpoints();
 
   const [showRaw, setShowRaw] = useState(false);
   const [callStatus, setCallStatus] = useState<'idle' | 'running' | 'done' | 'failed'>('idle');
@@ -259,16 +265,6 @@ export default function SingleRunPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function rerunMismatch() {
-    if (!detail) return;
-    setError(null);
-    try {
-      follow(await startMismatchRerun(detail, rerunEndpoints));
-    } catch (e) {
-      setError(errText(e));
-    }
-  }
-
   async function run() {
     if (!canRun) return;
     setError(null); setDetail(null); setStatus('running');
@@ -282,6 +278,7 @@ export default function SingleRunPanel() {
     try {
       const r = await api.post<{ ragas_run_id: number }>('/flow/test/ragas', {
         dataset_id: datasetId, case_type: caseType, metrics: scoreOn ? metrics : [], score: scoreOn,
+        case_ids: pickedCases ? Array.from(pickedCases) : null,
         node_nm: byPrompt ? nodeNm : null, prompt_id: byPrompt ? ver : null,
         models: target === 'model' ? toSelection(models) : {},
       });
@@ -425,6 +422,40 @@ export default function SingleRunPanel() {
               <>
                 <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />
                 <CategorySelect cats={folders} value={caseType} onChange={setCaseType} />
+                {datasetId != null && (
+                  <span className="inline-flex items-center">
+                    <Button
+                      variant="secondary"
+                      size="md"
+                      onClick={() => setPicking(true)}
+                      title="이 데이터셋(폴더)에서 돌릴 케이스만 고릅니다"
+                    >
+                      {pickedCases ? `선택 ${pickedCases.size}건` : '케이스 선택'}
+                    </Button>
+                    {pickedCases && (
+                      <button
+                        type="button"
+                        aria-label="선택 해제"
+                        title="선택 해제 — 전체 실행"
+                        onClick={() => setPickedCases(null)}
+                        className="ml-1 rounded-full p-1 text-muted-soft transition-colors hover:bg-surface-3 hover:text-ink"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
+                          <path d="M18 6 6 18M6 6l12 12" />
+                        </svg>
+                      </button>
+                    )}
+                    {picking && (
+                      <CasePickerModal
+                        datasetId={datasetId}
+                        caseType={caseType}
+                        value={pickedCases}
+                        onClose={() => setPicking(false)}
+                        onApply={setPickedCases}
+                      />
+                    )}
+                  </span>
+                )}
               </>
             )}
           </InlineField>
@@ -638,11 +669,7 @@ export default function SingleRunPanel() {
                     <span>Engine {detail.engine ?? '—'}</span>
                     <span>·</span>
                     <span>{detail.results.length} case{detail.results.length === 1 ? '' : 's'}</span>
-                    {mismatchCount(detail) > 0 && (
-                      <Button variant="secondary" size="sm" className="ml-1" onClick={rerunMismatch}>
-                        불일치 {mismatchCount(detail)}건 재테스트
-                      </Button>
-                    )}
+                    <RerunButton detail={detail} className="ml-1" />
                   </span>
                 </div>
                 <div className="p-4">
