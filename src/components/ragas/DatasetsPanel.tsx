@@ -7,37 +7,13 @@ import { Input, Select, Textarea } from '@/components/ui/Field';
 import { cn } from '@/lib/cn';
 import { api } from '@/lib/api';
 import type { CaseBulkResult, DatasetCategory, TestCase } from '@/lib/types';
-import CaseImportModal from './CaseImportModal';
+import { downloadBytes, XLSX_MIME } from '@/lib/xlsx';
+import CaseImportModal, { casesWorkbook } from './CaseImportModal';
 import { EMPTY, parseCaseInput, toFields, toPayload, type Fields } from './caseFields';
 import {
   Chevron, EmptyState, ErrBox, errText, folderLabel, oneLine, PencilIcon, TrashIcon, UNFILED,
   useArmed, useDatasetCategories, useFlowDatasets,
 } from './shared';
-
-// ---- CSV download ----------------------------------------------------------
-
-// Same columns importCsv accepts; the import grid reads these headers too, so a
-// downloaded file opened there goes straight back in.
-const CSV_HEADER = ['input_json', 'expected_output', 'eval_criteria', 'case_type'];
-
-function toCsv(cases: TestCase[]): string {
-  const esc = (s: string) => `"${s.replace(/"/g, '""')}"`;
-  const lines = [CSV_HEADER.join(',')];
-  for (const c of cases) {
-    lines.push([c.input_data, c.expected_output ?? '', c.eval_criteria ?? '', c.case_type].map(esc).join(','));
-  }
-  return lines.join('\r\n');
-}
-
-function download(filename: string, text: string) {
-  // BOM so Excel opens UTF-8 Korean correctly.
-  const url = URL.createObjectURL(new Blob(['﻿' + text], { type: 'text/csv;charset=utf-8' }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
 
 // ---- small pieces ----------------------------------------------------------
 
@@ -627,8 +603,17 @@ export default function DatasetsPanel() {
                     </button>
                     <button
                       type="button" disabled={cases.length === 0}
-                      title="CSV 로 내려받기"
-                      onClick={() => download(`${selected.dataset_nm}.csv`, toCsv(cases))}
+                      onClick={() =>
+                        // 템플릿과 같은 파일 — 받은 그대로 고쳐서 올리기 표에 붙여 넣는다.
+                        downloadBytes(
+                          `${selected.dataset_nm}.xlsx`,
+                          casesWorkbook(
+                            cases.map((c) => toFields(parseCaseInput(c.input_data), c.expected_output, c.case_type)),
+                            folderNames,
+                          ),
+                          XLSX_MIME,
+                        )
+                      }
                       className="h-8 border-l border-line px-2.5 text-xs text-ink transition-colors hover:bg-surface-3 disabled:opacity-50"
                     >
                       내려받기

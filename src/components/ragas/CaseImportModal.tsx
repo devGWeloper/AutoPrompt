@@ -110,6 +110,26 @@ function expand(f: Fields): Fields {
   };
 }
 
+/**
+ * The one workbook shape for cases: the empty template and a dataset's download
+ * are the same file, so whatever is downloaded can be edited and pasted back.
+ */
+export function casesWorkbook(rows: Fields[], folders: string[]): Uint8Array {
+  const catCol = COLS.findIndex((x) => x.key === 'category');
+  return writeXlsx([
+    {
+      name: '케이스',
+      rows: [COLS.map((x) => x.label), ...rows.map((f) => COLS.map((x) => f[x.key]))],
+      widths: COLS.map((x) => x.xlsxWidth),
+      header: true,
+      list: folders.length
+        ? { col: catCol, sheet: '폴더', count: folders.length, toRow: rows.length + TEMPLATE_ROWS }
+        : undefined,
+    },
+    ...(folders.length ? [{ name: '폴더', rows: folders.map((f) => [f]), widths: [24] }] : []),
+  ]);
+}
+
 const CELL =
   'block h-8 w-full bg-transparent px-2 py-1.5 leading-5 text-ink placeholder:text-muted-soft ' +
   'focus:bg-surface focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-accent';
@@ -212,18 +232,7 @@ export default function CaseImportModal({
   }
 
   function downloadTemplate() {
-    const catCol = COLS.findIndex((x) => x.key === 'category');
-    const bytes = writeXlsx([
-      {
-        name: '케이스',
-        rows: [COLS.map((x) => x.label)],
-        widths: COLS.map((x) => x.xlsxWidth),
-        header: true,
-        list: folders.length ? { col: catCol, sheet: '폴더', count: folders.length, toRow: TEMPLATE_ROWS } : undefined,
-      },
-      ...(folders.length ? [{ name: '폴더', rows: folders.map((f) => [f]), widths: [24] }] : []),
-    ]);
-    downloadBytes(`${targetName || '데이터셋'}_템플릿.xlsx`, bytes, XLSX_MIME);
+    downloadBytes(`${targetName || '데이터셋'}_템플릿.xlsx`, casesWorkbook([], folders), XLSX_MIME);
   }
 
   async function save() {
