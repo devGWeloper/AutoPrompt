@@ -415,7 +415,7 @@ export default function DatasetsPanel() {
     const res = await api.post<{ deleted: number }>(`/datasets/${selDataset}/cases/delete`, { case_ids: ids });
     if (editId != null && ids.includes(editId)) setEditId(null);
     setPicked(new Set());
-    setToast({ text: `${res.deleted}건 삭제` });
+    setToast({ text: `케이스 ${res.deleted}건을 삭제했습니다` });
     loadCases();
     reloadCats();
     reload();
@@ -437,7 +437,7 @@ export default function DatasetsPanel() {
     if (editId != null && ids.includes(editId)) setEditId(null);
     setPicked(new Set());
     setToast({
-      text: `${res.moved}건 → ${folderLabel(to)}`,
+      text: `케이스 ${res.moved}건을 ${to === UNFILED ? '폴더 없음으로' : `'${to}' 폴더로`} 옮겼습니다`,
       undo: () => guard(async () => {
         setToast(null);
         for (const [t, group] of from) {
@@ -445,6 +445,8 @@ export default function DatasetsPanel() {
         }
         loadCases();
         reloadCats();
+        // Undo that just makes the toast vanish reads as "did anything happen?".
+        setToast({ text: `케이스 ${ids.length}건을 원래 폴더로 되돌렸습니다` });
       }),
     });
     loadCases();
@@ -467,8 +469,10 @@ export default function DatasetsPanel() {
   function onImported(res: CaseBulkResult) {
     setToast({
       text:
-        `${res.created}건 추가` +
-        (res.folders_created.length ? ` · 새 폴더 ${res.folders_created.join(', ')}` : ''),
+        `케이스 ${res.created}건을 추가했습니다` +
+        (res.folders_created.length
+          ? ` · 새 폴더 ${res.folders_created.map((f) => `'${f}'`).join(', ')} 생성`
+          : ''),
     });
     loadCases();
     reloadCats();
@@ -878,19 +882,33 @@ export default function DatasetsPanel() {
           role="status"
           onMouseEnter={() => setToastHover(true)}
           onMouseLeave={() => setToastHover(false)}
-          className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom,0px))] left-1/2 z-40 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-4 rounded-md bg-ink-strong px-4 py-2.5 text-sm text-white shadow-modal"
+          className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom,0px))] left-1/2 z-40 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-2.5 rounded-md border border-line bg-surface py-2.5 pl-3.5 pr-2 text-sm text-ink shadow-modal"
         >
-          <span className="min-w-0 truncate">{toast.text}</span>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden className="shrink-0 text-ok">
+            <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.4" />
+            <path d="M5.25 8.25 7.1 10l3.65-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span className="min-w-0 truncate pr-1.5">{toast.text}</span>
           {toast.undo && (
             <button
               type="button"
               disabled={busy}
               onClick={toast.undo}
-              className="shrink-0 text-xs font-semibold text-white/70 transition-colors hover:text-white disabled:opacity-50"
+              className="shrink-0 rounded-sm border-l border-line px-2.5 py-0.5 text-[13px] font-medium text-accent transition-colors hover:text-accent-deep disabled:opacity-50"
             >
               되돌리기
             </button>
           )}
+          <button
+            type="button"
+            aria-label="닫기"
+            onClick={() => setToast(null)}
+            className="shrink-0 rounded-full p-1 text-muted-soft transition-colors hover:bg-surface-3 hover:text-ink"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
         </div>
       )}
 
