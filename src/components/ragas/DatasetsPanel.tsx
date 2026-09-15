@@ -33,6 +33,27 @@ function strayTitle(c: DatasetCategory): string | undefined {
   return c.type_id === null && c.type_cd !== UNFILED ? '폴더로 등록되지 않은 값' : undefined;
 }
 
+/** Row selection checkbox. indeterminate is a DOM property, not an attribute,
+ * so it is set through the ref. */
+function PickBox({
+  checked, indeterminate, onChange, label,
+}: { checked: boolean; indeterminate?: boolean; onChange: () => void; label: string }) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = !!indeterminate;
+  }, [indeterminate]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      aria-label={label}
+      checked={checked}
+      onChange={onChange}
+      className="h-3.5 w-3.5 shrink-0 cursor-pointer accent-accent"
+    />
+  );
+}
+
 function FieldsEditor({
   value, onChange, autoFocus, categories,
 }: { value: Fields; onChange: (f: Fields) => void; autoFocus?: boolean; categories: string[] }) {
@@ -178,6 +199,7 @@ export default function DatasetsPanel() {
   const [renameVal, setRenameVal] = useState('');
   const [busy, setBusy] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [picked, setPicked] = useState<Set<number>>(new Set());
   // Escape must not commit the rename that the resulting blur would otherwise save.
   const cancelRename = useRef(false);
   const cancelFolder = useRef(false);
@@ -197,8 +219,10 @@ export default function DatasetsPanel() {
   // the folder with it — a folder name means nothing in the next dataset.
   useEffect(() => {
     setEditId(null); setAdding(false); setDraft(EMPTY); setQuery(''); setNotice(null);
-    setFolder(null); setNewFolder(null); setFolderEditId(null);
+    setFolder(null); setNewFolder(null); setFolderEditId(null); setPicked(new Set());
   }, [selDataset]);
+  // A selection made in one folder must not be acted on from another.
+  useEffect(() => { setPicked(new Set()); }, [folder]);
 
   // Only registered folders can be filed into. A value that is on cases but has
   // no folder (a CSV import) is visible in the sidebar, but it is not something
@@ -258,6 +282,35 @@ export default function DatasetsPanel() {
     const p = parseCaseInput(c.input_data);
     return !(p.groundTruth ?? c.expected_output ?? '').trim();
   }).length;
+
+  // Actions only ever touch picked rows that are on screen — a search that hides
+  // a picked case also takes it out of the delete.
+  const pickedRows = rows.filter((r) => picked.has(r.c.case_id));
+  const allPicked = rows.length > 0 && pickedRows.length === rows.length;
+
+  function togglePick(ids: number[], on: boolean) {
+    setPicked((cur) => {
+      const next = new Set(cur);
+      for (const id of ids) {
+        if (on) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }
+
+  function downloadCases(list: TestCase[], suffix: string | null) {
+    if (!selected) return;
+    downloadBytes(
+      `${selected.dataset_nm}${suffix ? `_${suffix}` : ''}.xlsx`,
+      // 템플릿과 같은 파일 — 받은 그대로 고쳐서 올리기 표에 붙여 넣는다.
+      casesWorkbook(
+        list.map((c) => toFields(parseCaseInput(c.input_data), c.expected_output, c.case_type)),
+        folderNames,
+      ),
+      XLSX_MIME,
+    );
+  }
 
   async function guard(fn: () => Promise<void>) {
     setBusy(true); setError(null);
@@ -337,6 +390,18 @@ export default function DatasetsPanel() {
     if (selDataset == null) return;
     await api.del(`/datasets/${selDataset}/cases/${id}`);
     if (editId === id) setEditId(null);
+    loadCases();
+    reloadCats();
+    reload();
+  });
+
+  const delPicked = () => guard(async () => {
+    if (selDataset == null || pickedRows.length === 0) return;
+    const ids = pickedRows.map((r) => r.c.case_id);
+    const res = await api.post<{ deleted: number }>(`/datasets/${selDataset}/cases/delete`, { case_ids: ids });
+    if (editId != null && ids.includes(editId)) setEditId(null);
+    setPicked(new Set());
+    setNotice(`${res.deleted}건 삭제`);
     loadCases();
     reloadCats();
     reload();
@@ -602,18 +667,9 @@ export default function DatasetsPanel() {
                       올리기
                     </button>
                     <button
-                      type="button" disabled={cases.length === 0}
-                      onClick={() =>
-                        // 템플릿과 같은 파일 — 받은 그대로 고쳐서 올리기 표에 붙여 넣는다.
-                        downloadBytes(
-                          `${selected.dataset_nm}.xlsx`,
-                          casesWorkbook(
-                            cases.map((c) => toFields(parseCaseInput(c.input_data), c.expected_output, c.case_type)),
-                            folderNames,
-                          ),
-                          XLSX_MIME,
-                        )
-                      }
+                      type="button" disabled={inFolder.length === 0}
+                      // 폴더를 고른 화면이면 그 폴더만 — 보고 있는 것이 받아진다.
+                      onClick={() => downloadCases(inFolder, folder === null ? null : folderLabel(folder))}
                       className="h-8 border-l border-line px-2.5 text-xs text-ink transition-colors hover:bg-surface-3 disabled:opacity-50"
                     >
                       내려받기
@@ -662,41 +718,83 @@ export default function DatasetsPanel() {
                   {cases.length === 0 ? '—' : '검색 결과 없음'}
                 </div>
               ) : (
+                <>
+                <div className="flex h-10 items-center gap-2.5 border-b border-line px-4">
+                  <label className="flex cursor-pointer items-center gap-2.5 text-xs text-muted">
+                    <PickBox
+                      label="전체 선택"
+                      checked={allPicked}
+                      indeterminate={pickedRows.length > 0 && !allPicked}
+                      onChange={() => setPicked(allPicked ? new Set() : new Set(rows.map((r) => r.c.case_id)))}
+                    />
+                    {pickedRows.length > 0
+                      ? <span><span className="font-semibold tabular-nums text-ink">{pickedRows.length}</span>건 선택</span>
+                      : '전체 선택'}
+                  </label>
+                  {pickedRows.length > 0 && (
+                    <span className="ml-auto flex items-center gap-1.5">
+                      <Button variant="ghost" size="sm" onClick={() => setPicked(new Set())}>해제</Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => downloadCases(pickedRows.map((r) => r.c), `선택${pickedRows.length}건`)}
+                      >
+                        내려받기
+                      </Button>
+                      <DeleteButton label={`${pickedRows.length}건 삭제`} onConfirm={delPicked} />
+                    </span>
+                  )}
+                </div>
                 <ul className="divide-y divide-line">
-                  {groups.map(({ cat, items }) => (
+                  {groups.map(({ cat, items }) => {
+                    const ids = items.map((i) => i.c.case_id);
+                    const nPicked = ids.filter((id) => picked.has(id)).length;
+                    return (
                     <Fragment key={cat}>
                       {/* 카테고리가 바뀌는 자리의 가로 구분선. 이름을 얹은 까닭은
                           선만으로는 무엇과 무엇이 갈렸는지 말하지 않기 때문이고,
                           폴더를 하나 고른 화면에는 갈릴 것이 없어 서지 않는다. */}
                       {folder === null && (
-                        <li className="flex items-baseline gap-2 border-b border-line bg-surface-2 px-4 py-1.5">
+                        <li className="flex items-center gap-2.5 border-b border-line bg-surface-2 px-4 py-1.5">
+                          <PickBox
+                            label={`${folderLabel(cat)} 전체 선택`}
+                            checked={nPicked === ids.length}
+                            indeterminate={nPicked > 0 && nPicked < ids.length}
+                            onChange={() => togglePick(ids, nPicked < ids.length)}
+                          />
                           <span className="text-[11px] font-semibold text-ink">{folderLabel(cat)}</span>
                           <span className="font-mono text-[10px] tabular-nums text-muted-soft">{items.length}</span>
                         </li>
                       )}
                       {items.map(({ c, p, n }) => {
                         const open = editId === c.case_id;
+                        const on = picked.has(c.case_id);
                         const gt = (p.groundTruth ?? c.expected_output ?? '').trim();
                         return (
                           <li key={c.case_id}>
-                            {/* 질문과 정답 두 칸은 줄마다 같은 자리에서 시작한다 —
-                                정답 칸은 길이와 상관없이 제 칸 왼쪽 끝에서 시작. */}
-                            <button
-                              type="button"
-                              onClick={() => openEdit(c)}
-                              className="grid w-full grid-cols-[14px_22px_minmax(0,1fr)_minmax(0,1fr)] items-start gap-x-2.5 px-4 py-2.5 text-left transition-colors hover:bg-surface-2/60"
-                            >
-                              <Chevron open={open} className="mt-0.5" />
-                              <span className="mt-px font-mono text-[11px] tabular-nums text-muted">{n}</span>
-                              <span className={cn('min-w-0 text-sm text-ink', open ? 'break-words font-medium' : 'truncate')}>
-                                {p.question || <span className="text-muted">(질문 없음)</span>}
-                              </span>
-                              <span className="mt-0.5 min-w-0 truncate text-xs text-muted">
-                                {open ? '' : gt ? oneLine(gt) : <span className="text-muted-soft">정답 없음</span>}
-                              </span>
-                            </button>
+                            <div className={cn('flex items-start transition-colors hover:bg-surface-2/60', on && 'bg-surface-2/70')}>
+                              <label className="flex shrink-0 cursor-pointer pb-2.5 pl-4 pr-1 pt-[13px]">
+                                <PickBox label="선택" checked={on} onChange={() => togglePick([c.case_id], !on)} />
+                              </label>
+                              {/* 질문과 정답 두 칸은 줄마다 같은 자리에서 시작한다 —
+                                  정답 칸은 길이와 상관없이 제 칸 왼쪽 끝에서 시작. */}
+                              <button
+                                type="button"
+                                onClick={() => openEdit(c)}
+                                className="grid min-w-0 flex-1 grid-cols-[14px_22px_minmax(0,1fr)_minmax(0,1fr)] items-start gap-x-2.5 py-2.5 pl-2 pr-4 text-left"
+                              >
+                                <Chevron open={open} className="mt-0.5" />
+                                <span className="mt-px font-mono text-[11px] tabular-nums text-muted">{n}</span>
+                                <span className={cn('min-w-0 text-sm text-ink', open ? 'break-words font-medium' : 'truncate')}>
+                                  {p.question || <span className="text-muted">(질문 없음)</span>}
+                                </span>
+                                <span className="mt-0.5 min-w-0 truncate text-xs text-muted">
+                                  {open ? '' : gt ? oneLine(gt) : <span className="text-muted-soft">정답 없음</span>}
+                                </span>
+                              </button>
+                            </div>
                             {open && (
-                              <div className="px-4 pb-3.5 pl-12">
+                              <div className="px-4 pb-3.5 pl-[4.5rem]">
                                 <FieldsEditor value={edit} onChange={setEdit} categories={folderNames} />
                                 <div className="mt-3 flex items-center gap-2">
                                   <Button variant="ghost" size="sm" onClick={() => duplicate(c)}>복제</Button>
@@ -714,8 +812,10 @@ export default function DatasetsPanel() {
                         );
                       })}
                     </Fragment>
-                  ))}
+                    );
+                  })}
                 </ul>
+                </>
               )}
             </>
           )}

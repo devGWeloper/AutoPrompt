@@ -203,6 +203,120 @@ export function writeXlsx(sheets: XlsxSheet[]): Uint8Array {
   ]);
 }
 
+// ---- reading ---------------------------------------------------------------
+
+async function inflateRaw(data: Uint8Array): Promise<Uint8Array> {
+  if (typeof DecompressionStream === 'undefined') {
+    throw new Error('이 브라우저는 xlsx 압축 해제를 지원하지 않습니다 — 표에 복사해 붙여 넣으세요');
+  }
+  const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+/** Entries of a zip, read through its central directory (sizes there are
+ * reliable even when the local headers defer them to a data descriptor). */
+async function unzip(buf: ArrayBuffer): Promise<Map<string, Uint8Array>> {
+  const bytes = new Uint8Array(buf);
+  const v = new DataView(buf);
+  let eocd = -1;
+  for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 22 - 0xffff); i--) {
+    if (v.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('xlsx 파일이 아닙니다');
+  const count = v.getUint16(eocd + 10, true);
+  let p = v.getUint32(eocd + 16, true);
+  const td = new TextDecoder();
+  const out = new Map<string, Uint8Array>();
+  for (let n = 0; n < count; n++) {
+    if (v.getUint32(p, true) !== 0x02014b50) throw new Error('손상된 xlsx 파일입니다');
+    const method = v.getUint16(p + 10, true);
+    const csize = v.getUint32(p + 20, true);
+    const nlen = v.getUint16(p + 28, true);
+    const xlen = v.getUint16(p + 30, true);
+    const clen = v.getUint16(p + 32, true);
+    const local = v.getUint32(p + 42, true);
+    const name = td.decode(bytes.subarray(p + 46, p + 46 + nlen));
+    p += 46 + nlen + xlen + clen;
+    const start = local + 30 + v.getUint16(local + 26, true) + v.getUint16(local + 28, true);
+    const raw = bytes.subarray(start, start + csize);
+    if (method === 0) out.set(name, raw);
+    else if (method === 8) out.set(name, await inflateRaw(raw));
+    // Other methods never appear in workbooks Excel writes; skip rather than fail.
+  }
+  return out;
+}
+
+const els = (node: Document | Element, tag: string) => Array.from(node.getElementsByTagNameNS('*', tag));
+
+function colIndex(ref: string): number {
+  let n = 0;
+  for (const ch of ref.replace(/[0-9$]/g, '').toUpperCase()) n = n * 26 + (ch.charCodeAt(0) - 64);
+  return n - 1;
+}
+
+/** Text of a string item, rich-text runs included, phonetic hints left out. */
+function itemText(si: Element): string {
+  return els(si, 't')
+    .filter((t) => (t.parentElement?.localName ?? '') !== 'rPh')
+    .map((t) => t.textContent ?? '')
+    .join('');
+}
+
+/**
+ * The first sheet of a workbook as a grid of strings, one array per row with
+ * blank rows kept in place. Values come as Excel stored them; numbers are not
+ * reformatted, which is right for a sheet of text cells.
+ */
+export async function readXlsx(buf: ArrayBuffer): Promise<string[][]> {
+  const files = await unzip(buf);
+  const td = new TextDecoder();
+  const xml = (path: string) => {
+    const b = files.get(path);
+    return b ? new DOMParser().parseFromString(td.decode(b), 'application/xml') : null;
+  };
+
+  const wb = xml('xl/workbook.xml');
+  const first = wb ? els(wb, 'sheet')[0] : undefined;
+  if (!first) throw new Error('시트가 없는 xlsx 파일입니다');
+  const rid = first.getAttributeNS(REL, 'id') ?? first.getAttribute('r:id');
+  const rel = els(xml('xl/_rels/workbook.xml.rels') ?? new Document(), 'Relationship').find(
+    (r) => r.getAttribute('Id') === rid,
+  );
+  const target = rel?.getAttribute('Target') ?? 'worksheets/sheet1.xml';
+  const sheet = xml(target.startsWith('/') ? target.slice(1) : `xl/${target}`);
+  if (!sheet) throw new Error('시트를 읽지 못했습니다');
+
+  const sst = xml('xl/sharedStrings.xml');
+  const shared = sst ? els(sst, 'si').map(itemText) : [];
+
+  const grid: string[][] = [];
+  let nextRow = 0;
+  for (const row of els(sheet, 'row')) {
+    const r = Number(row.getAttribute('r')) - 1;
+    const ri = Number.isInteger(r) && r >= 0 ? r : nextRow;
+    nextRow = ri + 1;
+    const cells: string[] = [];
+    let nextCol = 0;
+    for (const c of els(row, 'c')) {
+      const ref = c.getAttribute('r');
+      const ci = ref ? colIndex(ref) : nextCol;
+      nextCol = ci + 1;
+      const t = c.getAttribute('t');
+      const val = els(c, 'v')[0]?.textContent ?? '';
+      let s: string;
+      if (t === 's') s = shared[Number(val)] ?? '';
+      else if (t === 'inlineStr') s = els(c, 'is')[0] ? itemText(els(c, 'is')[0]) : '';
+      else if (t === 'b') s = val === '1' ? 'TRUE' : 'FALSE';
+      else s = val;
+      while (cells.length < ci) cells.push('');
+      cells[ci] = s;
+    }
+    while (grid.length < ri) grid.push([]);
+    grid[ri] = cells;
+  }
+  return grid;
+}
+
 export function downloadBytes(filename: string, bytes: Uint8Array, type: string): void {
   const url = URL.createObjectURL(new Blob([bytes], { type }));
   const a = document.createElement('a');

@@ -6,7 +6,7 @@ import Modal from '@/components/ui/Modal';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import type { CaseBulkResult } from '@/lib/types';
-import { downloadBytes, writeXlsx, XLSX_MIME } from '@/lib/xlsx';
+import { downloadBytes, readXlsx, writeXlsx, XLSX_MIME } from '@/lib/xlsx';
 import { EMPTY, parseCaseInput, toPayload, type Fields } from './caseFields';
 import { DatasetSelect, DownloadIcon, ErrBox, errText, UNFILED, useDatasetCategories, useFlowDatasets } from './shared';
 
@@ -221,9 +221,18 @@ export default function CaseImportModal({
     focusCell(r + 1, c);
   }
 
-  async function openCsv(file: File) {
-    const text = (await file.text()).replace(/^﻿/, '');
-    const grid = parseDelimited(text, ',').filter((row) => row.some((v) => v.trim()));
+  async function openFile(file: File) {
+    setError(null);
+    let raw: string[][];
+    try {
+      raw = /\.xlsx$/i.test(file.name)
+        ? await readXlsx(await file.arrayBuffer())
+        : parseDelimited((await file.text()).replace(/^﻿/, ''), ',');
+    } catch (e) {
+      setError(errText(e));
+      return;
+    }
+    const grid = raw.filter((row) => row.some((v) => v.trim()));
     if (!grid.length) return;
     const header = headerKeys(grid[0]);
     let n = rows.length;
@@ -289,15 +298,15 @@ export default function CaseImportModal({
             <input
               ref={fileRef}
               type="file"
-              accept=".csv,text/csv"
+              accept=".xlsx,.csv"
               className="hidden"
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 e.target.value = ''; // re-selecting the same file must fire again
-                if (f) openCsv(f);
+                if (f) openFile(f);
               }}
             />
-            <Button variant="ghost" size="sm" onClick={() => fileRef.current?.click()}>CSV 열기</Button>
+            <Button variant="ghost" size="sm" onClick={() => fileRef.current?.click()}>파일 열기</Button>
             <Button variant="secondary" size="sm" onClick={downloadTemplate}>
               <DownloadIcon /> 엑셀 템플릿
             </Button>

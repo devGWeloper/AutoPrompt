@@ -250,6 +250,32 @@ export async function createCases(
   }, { commit: true });
 }
 
+/** Delete several cases of one dataset at once. Ids from another dataset are
+ * ignored by the DATASET_ID condition rather than reported. */
+export async function deleteCases(datasetId: number, caseIds: number[] | undefined): Promise<{ deleted: number }> {
+  await requireDataset(datasetId);
+  const ids = Array.from(new Set((Array.isArray(caseIds) ? caseIds : []).map(Number).filter(Number.isInteger)));
+  if (!ids.length) throw badRequest("삭제할 케이스가 없습니다");
+  return withConn(async (conn) => {
+    let deleted = 0;
+    // Oracle caps an IN list at 1000 expressions.
+    for (let i = 0; i < ids.length; i += 500) {
+      const binds: Record<string, unknown> = { did: datasetId };
+      const names = ids.slice(i, i + 500).map((id, j) => {
+        binds[`c${j}`] = id;
+        return `:c${j}`;
+      });
+      // Past results keep their rows: PTX_RUN_DET.CASE_ID is ON DELETE SET NULL.
+      const res = await conn.execute(
+        `DELETE FROM PTX_DATASET_DET WHERE DATASET_ID = :did AND CASE_ID IN (${names.join(", ")})`,
+        binds,
+      );
+      deleted += res.rowsAffected ?? 0;
+    }
+    return { deleted };
+  }, { commit: true });
+}
+
 export async function updateCase(datasetId: number, caseId: number, payload: CaseUpdate): Promise<TestCase> {
   return withConn(async (conn) => {
     const existing = await fetchCase(conn, datasetId, caseId);
