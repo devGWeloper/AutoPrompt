@@ -1148,25 +1148,29 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
                 </span>
               )}
               {isClosed && showScores && (
-                <span className={cn('flex shrink-0 items-center justify-end gap-2', scoreW)}>
-                  {/* O/X and the RAGAS mean stand on their own — a verdict and a
-                      graded score answer different questions, so neither is
-                      folded into the other. Both can be present at once. */}
-                  {r.exact_match != null && <OxBadge value={r.exact_match} />}
-                  {mean != null && (
-                    <span className="font-mono text-xs tabular-nums text-muted">
-                      RAGAS <span className="font-semibold text-ink">{fmt3(mean)}</span>
-                    </span>
-                  )}
-                  {r.exact_match == null && mean == null && (
-                    r.error_msg
-                      ? <span className="text-[11px] text-bad" title={r.error_msg}>오류</span>
-                      : <span className="text-[11px] text-muted">{!settled ? '채점 중…' : cancelled ? '채점 안 함' : '점수 없음'}</span>
-                  )}
+                <span className={cn('flex shrink-0 flex-col items-end gap-0.5', scoreW)}>
+                  <span className="flex items-center justify-end gap-2">
+                    {/* O/X and the RAGAS mean stand on their own — a verdict and a
+                        graded score answer different questions, so neither is
+                        folded into the other. Both can be present at once. */}
+                    {r.exact_match != null && <OxBadge value={r.exact_match} />}
+                    {mean != null && (
+                      <span className="font-mono text-xs tabular-nums text-muted">
+                        RAGAS <span className="font-semibold text-ink">{fmt3(mean)}</span>
+                      </span>
+                    )}
+                    {r.exact_match == null && mean == null && (
+                      r.error_msg
+                        ? <span className="text-[11px] text-bad" title={r.error_msg}>오류</span>
+                        : <span className="whitespace-nowrap text-[11px] text-muted">{!settled ? '채점 중…' : cancelled ? '채점 안 함' : '점수 없음'}</span>
+                    )}
+                  </span>
                   {/* A row that scored *something* can still have a failed metric
-                      behind it — the badge above would otherwise read as success. */}
+                      behind it — the badge above would otherwise read as success.
+                      판정 배지 아래 제 줄에 선다: 같은 줄에 두면 좁은 점수 칸에서
+                      글자가 한 자씩 세로로 감겼다. */}
                   {(r.exact_match != null || mean != null) && r.answer != null && r.error_msg && (
-                    <span className="text-[11px] text-bad" title={r.error_msg}>일부 실패</span>
+                    <span className="whitespace-nowrap text-[11px] leading-none text-bad" title={r.error_msg}>일부 실패</span>
                   )}
                 </span>
               )}
