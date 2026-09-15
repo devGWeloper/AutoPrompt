@@ -151,7 +151,7 @@ function KeyRow({ stat, open, onToggle }: { stat: KeyStat; open: boolean; onTogg
         </td>
         <td className="whitespace-nowrap border-b border-line px-3 py-2 text-right align-middle font-mono text-xs tabular-nums">
           <span className="font-semibold text-bad">{fails}</span>
-          <span className="text-muted-soft">/{stat.total}</span>
+          <span className="text-muted">/{stat.total}</span>
         </td>
         <td className="border-b border-line px-3 py-2 align-middle">
           <StatusCounts counts={stat.counts} />

@@ -160,11 +160,13 @@ const STATUS: Record<FieldStatus, StatusStyle> = {
   },
 };
 
-/** 어긋난 낱말에 얹는 색. 칸 전체를 칠하지 않으니 한 단계 진한 톤을 쓴다. */
+/** 어긋난 낱말에 얹는 색. 실제값 칸은 이미 soft 면이 깔려 있어 soft2 로는 면과
+ * 구분이 안 된다 — 테두리 톤(line)까지 올리고 굵게 둔다. 기대값 쪽은 면이 없으니
+ * 같은 톤이라도 충분히 선다. */
 const MARK: Record<'ok' | 'bad' | 'warn', string> = {
-  ok: 'bg-ok-soft2 text-ok',
-  bad: 'bg-bad-soft2 text-bad',
-  warn: 'bg-warn-soft2 text-warn',
+  ok: 'bg-ok-line font-semibold text-ok',
+  bad: 'bg-bad-line font-semibold text-bad',
+  warn: 'bg-warn-line font-semibold text-warn',
 };
 
 /** 접힌 가지가 무엇을 감추고 있는지 고를 때의 순서 — 누락이 가장 무겁고 '추가'가
@@ -187,7 +189,7 @@ const MARKABLE = 600;
 
 /** 값이 아예 없는 쪽 — 빈 칸으로 두면 '빈 문자열이 왔다'로도 읽힌다. */
 function Absent({ children }: { children: string }) {
-  return <span className="font-sans text-[11px] text-muted opacity-70">{children}</span>;
+  return <span className="font-sans text-[11px] text-muted">{children}</span>;
 }
 
 /** 값·키를 집어가는 자리. 줄에 손을 올리기 전에는 보이지 않는다 — 표의 모든 칸이
@@ -259,7 +261,7 @@ function ToggleButton({
         'inline-flex h-6 items-center gap-1.5 rounded-sm border px-2 text-[11px] font-medium transition disabled:cursor-default disabled:opacity-40',
         on
           ? 'border-accent-line bg-accent-soft text-accent'
-          : 'border-line bg-surface text-muted enabled:hover:bg-surface-2 enabled:hover:text-ink',
+          : 'border-line-strong bg-surface text-body enabled:hover:bg-surface-2 enabled:hover:text-ink',
       )}
     >
       <span
@@ -381,9 +383,9 @@ function SectionRow({
 }) {
   return (
     <tr>
-      <td colSpan={cols} className="border-b border-line bg-surface-2 px-3 py-1">
+      <td colSpan={cols} className="border-y border-line-strong bg-surface-3 px-3 py-1.5">
         <span className="flex flex-wrap items-baseline gap-x-2.5 text-[11px]">
-          <span className={cn('font-semibold', tier === 'bad' ? 'text-bad' : 'text-muted')}>
+          <span className={cn('font-semibold', tier === 'bad' ? 'text-bad' : 'text-body')}>
             {TIER_LABEL[tier]} <span className="font-mono tabular-nums">{count}</span>
           </span>
           {children}
@@ -434,11 +436,11 @@ function KeyCell({
   children?: ReactNode;
 }) {
   return (
-    <td className={cn(CELL, COL, 'border-l-[3px] font-mono', dim ? 'text-muted' : 'text-ink', rail)}>
+    <td className={cn(CELL, COL, 'border-l-[3px] font-mono', dim ? 'text-body' : 'text-ink', rail !== 'border-l-transparent' && 'font-semibold', rail)}>
       <span className="flex items-baseline gap-1" style={depth ? { paddingLeft: depth * 12 } : undefined}>
         {gutter && <span className="w-3.5 shrink-0 self-center">{lead}</span>}
         <span className="min-w-0 break-all" title={path || undefined}>
-          {prefix && <span className="text-muted-soft">{prefix}</span>}
+          {prefix && <span className="font-normal text-muted">{prefix}</span>}
           {label || <span className="text-muted">(전체)</span>}
         </span>
         {children}
@@ -499,7 +501,7 @@ function ValueCell({
 }) {
   const edge = cn(CELL, !last && COL);
   const eq = same && (
-    <span className="mr-1.5 select-none text-muted-soft" title="기대값과 실제값이 같음">=</span>
+    <span className="mr-1.5 select-none text-muted" title="기대값과 실제값이 같음">=</span>
   );
   if (text === null) {
     return (
@@ -513,16 +515,16 @@ function ValueCell({
     return (
       <td colSpan={span} className={cn(edge, 'font-mono', fill)}>
         {eq}
-        <span className="text-muted-soft">&quot;&quot;</span>
+        <span className="text-muted">&quot;&quot;</span>
       </td>
     );
   }
   const long = text.length > LONG;
   const pretty = expanded && !segs ? prettyValue(text) : null;
   return (
-    <td colSpan={span} className={cn(edge, 'group/v relative break-words font-mono', !segs && fill, dim && 'text-muted')}>
+    <td colSpan={span} className={cn(edge, 'group/v relative break-words font-mono', fill, dim && 'text-muted')}>
       {typeTag && (
-        <span className="mb-0.5 block font-sans text-[10px] font-semibold uppercase tracking-[0.4px] opacity-70">
+        <span className="mb-0.5 block font-sans text-[10px] font-semibold uppercase tracking-[0.4px]">
           {jsonTypeOf(text)}
         </span>
       )}
@@ -584,7 +586,7 @@ function GroupRow<T extends Pathed>({
   const bad = countBad(row, statusOf);
   const s = STATUS[worst];
   return (
-    <tr className="group cursor-pointer bg-surface-2/40 transition-colors hover:bg-surface-2" onClick={onToggle}>
+    <tr className="group cursor-pointer bg-surface-2 transition-colors hover:bg-surface-3" onClick={onToggle}>
       <KeyCell
         path={row.path}
         label={row.label}
@@ -885,7 +887,7 @@ function FieldTable({ m }: { m: StructuredMatch }) {
               <col style={{ width: '35%' }} />
               <col style={{ width: '35%' }} />
             </colgroup>
-            <thead className="sticky top-0 z-10 bg-surface-2 text-left text-[10px] uppercase tracking-[0.6px] text-muted">
+            <thead className="sticky top-0 z-10 bg-surface-3 text-left text-[10px] uppercase tracking-[0.6px] text-body">
               <tr>
                 <th className={cn('border-b border-line px-3 py-2 font-semibold', COL)}>키</th>
                 <th className={cn('border-b border-line px-3 py-2 font-semibold', COL)}>기대값</th>
@@ -957,7 +959,7 @@ export function MatchDiff({ row }: { row: RagasResultRow }) {
             {/* '키 3/12' 는 '키 3개'로 읽힌다 — 맞은 수라고 적는다. */}
             <span className="font-sans">일치 </span>
             <span className="font-semibold text-ink">{fields.matched}</span>
-            <span className="text-muted-soft">/{fields.total}</span>
+            <span className="text-muted">/{fields.total}</span>
           </span>
         )}
         <span className="ml-auto flex items-center gap-2">
@@ -1143,7 +1145,7 @@ function PairFieldRow({
   const dim = pairTier(r) === 'blank';
   const warnOnly = [r.a, r.b].every((f) => !f || f.status === 'match' || f.status === 'extra');
   const cell = (f: FieldResult | undefined, last?: boolean) => {
-    if (!f) return <td className={cn(CELL, !last && COL, 'text-muted-soft')}>—</td>;
+    if (!f) return <td className={cn(CELL, !last && COL, 'text-muted')}>—</td>;
     // 맞은 쪽은 값을 되풀이하지 않고 맞았다고만 적는다 — 그래야 같은 줄에서 틀린
     // 쪽의 값이 혼자 선다. 값 자체는 바로 왼쪽 기대값이고, 툴팁에도 남는다.
     if (f.status === 'match') {
@@ -1337,7 +1339,7 @@ export function FieldCompareTable({
               <col style={{ width: '26%' }} />
               <col style={{ width: '26%' }} />
             </colgroup>
-            <thead className="sticky top-0 z-10 bg-surface-2 text-left text-[10px] uppercase tracking-[0.6px] text-muted">
+            <thead className="sticky top-0 z-10 bg-surface-3 text-left text-[10px] uppercase tracking-[0.6px] text-body">
               <tr>
                 <th className={cn('border-b border-line px-3 py-2 font-semibold', COL)}>키</th>
                 <th className={cn('border-b border-line px-3 py-2 font-semibold', COL)}>기대값</th>
