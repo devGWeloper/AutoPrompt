@@ -250,29 +250,72 @@ export async function createCases(
   }, { commit: true });
 }
 
+function caseIdList(caseIds: number[] | undefined, emptyMsg: string): number[] {
+  const ids = Array.from(new Set((Array.isArray(caseIds) ? caseIds : []).map(Number).filter(Number.isInteger)));
+  if (!ids.length) throw badRequest(emptyMsg);
+  return ids;
+}
+
+/** Run one statement per slice of ids, handing it the `IN (...)` bind list.
+ * Oracle caps an IN list at 1000 expressions. Returns the summed row count. */
+async function byIdChunks(
+  ids: number[],
+  run: (inList: string, binds: Record<string, unknown>) => Promise<number | undefined>,
+): Promise<number> {
+  let total = 0;
+  for (let i = 0; i < ids.length; i += 500) {
+    const binds: Record<string, unknown> = {};
+    const names = ids.slice(i, i + 500).map((id, j) => {
+      binds[`c${j}`] = id;
+      return `:c${j}`;
+    });
+    total += (await run(names.join(", "), binds)) ?? 0;
+  }
+  return total;
+}
+
 /** Delete several cases of one dataset at once. Ids from another dataset are
  * ignored by the DATASET_ID condition rather than reported. */
 export async function deleteCases(datasetId: number, caseIds: number[] | undefined): Promise<{ deleted: number }> {
   await requireDataset(datasetId);
-  const ids = Array.from(new Set((Array.isArray(caseIds) ? caseIds : []).map(Number).filter(Number.isInteger)));
-  if (!ids.length) throw badRequest("삭제할 케이스가 없습니다");
+  const ids = caseIdList(caseIds, "삭제할 케이스가 없습니다");
   return withConn(async (conn) => {
-    let deleted = 0;
-    // Oracle caps an IN list at 1000 expressions.
-    for (let i = 0; i < ids.length; i += 500) {
-      const binds: Record<string, unknown> = { did: datasetId };
-      const names = ids.slice(i, i + 500).map((id, j) => {
-        binds[`c${j}`] = id;
-        return `:c${j}`;
-      });
-      // Past results keep their rows: PTX_RUN_DET.CASE_ID is ON DELETE SET NULL.
-      const res = await conn.execute(
-        `DELETE FROM PTX_DATASET_DET WHERE DATASET_ID = :did AND CASE_ID IN (${names.join(", ")})`,
-        binds,
-      );
-      deleted += res.rowsAffected ?? 0;
-    }
+    // Past results keep their rows: PTX_RUN_DET.CASE_ID is ON DELETE SET NULL.
+    const deleted = await byIdChunks(ids, async (inList, binds) =>
+      (await conn.execute(
+        `DELETE FROM PTX_DATASET_DET WHERE DATASET_ID = :did AND CASE_ID IN (${inList})`,
+        { ...binds, did: datasetId },
+      )).rowsAffected,
+    );
     return { deleted };
+  }, { commit: true });
+}
+
+/** Move several cases into one folder, or out to 폴더 없음 (NORMAL). Only a
+ * registered folder is a destination — the same rule as the case editor. */
+export async function moveCases(
+  datasetId: number,
+  caseIds: number[] | undefined,
+  caseType: string | undefined,
+): Promise<{ moved: number }> {
+  await requireDataset(datasetId);
+  const ids = caseIdList(caseIds, "이동할 케이스가 없습니다");
+  const to = (caseType ?? "").trim() || "NORMAL";
+  return withConn(async (conn) => {
+    if (to !== "NORMAL") {
+      const found = await conn.execute(
+        `SELECT 1 FROM PTX_CASETYPE_MAS WHERE DATASET_ID = :did AND TYPE_CD = :cd`,
+        { did: datasetId, cd: to },
+      );
+      if (!(found.rows ?? []).length) throw notFound(`등록되지 않은 폴더입니다: ${to}`);
+    }
+    const moved = await byIdChunks(ids, async (inList, binds) =>
+      (await conn.execute(
+        `UPDATE PTX_DATASET_DET SET TYPE_CD = :cd WHERE DATASET_ID = :did AND CASE_ID IN (${inList})`,
+        { ...binds, did: datasetId, cd: to },
+      )).rowsAffected,
+    );
+    return { moved };
   }, { commit: true });
 }
 

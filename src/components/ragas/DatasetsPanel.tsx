@@ -287,6 +287,10 @@ export default function DatasetsPanel() {
   // a picked case also takes it out of the delete.
   const pickedRows = rows.filter((r) => picked.has(r.c.case_id));
   const allPicked = rows.length > 0 && pickedRows.length === rows.length;
+  // Checkboxes stay out of sight until a row is hovered; once anything is picked
+  // they all show, since from then on the list is being chosen from.
+  const selecting = pickedRows.length > 0;
+  const pickReveal = selecting ? '' : 'opacity-0 group-hover/case:opacity-100 focus-within:opacity-100';
 
   function togglePick(ids: number[], on: boolean) {
     setPicked((cur) => {
@@ -405,6 +409,18 @@ export default function DatasetsPanel() {
     loadCases();
     reloadCats();
     reload();
+  });
+
+  const movePicked = (to: string) => guard(async () => {
+    if (selDataset == null || pickedRows.length === 0) return;
+    const ids = pickedRows.map((r) => r.c.case_id);
+    const res = await api.post<{ moved: number }>(`/datasets/${selDataset}/cases/move`, { case_ids: ids, case_type: to });
+    // An open editor would still show the old folder and save it back.
+    if (editId != null && ids.includes(editId)) setEditId(null);
+    setPicked(new Set());
+    setNotice(`${res.moved}건 → ${folderLabel(to)}`);
+    loadCases();
+    reloadCats();
   });
 
   /** Copy a case into the add form — building near-identical cases is the common
@@ -651,6 +667,42 @@ export default function DatasetsPanel() {
                     </span>
                   )}
                 </div>
+                {/* 고르는 동안에는 같은 줄이 선택 도구로 바뀐다 — 목록 위에 막대를
+                    끼워 넣으면 첫 체크 순간 목록이 한 줄 밀려 내려간다. */}
+                {selecting ? (
+                <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                  <label className="flex h-8 cursor-pointer items-center gap-2.5 text-xs text-muted">
+                    <PickBox
+                      label="전체 선택"
+                      checked={allPicked}
+                      indeterminate={!allPicked}
+                      onChange={() => setPicked(allPicked ? new Set() : new Set(rows.map((r) => r.c.case_id)))}
+                    />
+                    <span><span className="font-semibold tabular-nums text-ink">{pickedRows.length}</span> / {rows.length}건</span>
+                  </label>
+                  <span className="ml-auto flex flex-wrap items-center gap-1.5">
+                    <Select
+                      value=""
+                      disabled={busy}
+                      onChange={(e) => { if (e.target.value) movePicked(e.target.value); }}
+                      className="h-8 w-36 text-xs"
+                    >
+                      <option value="" disabled>폴더 이동</option>
+                      {folderNames.map((f) => <option key={f} value={f}>{f}</option>)}
+                      <option value={UNFILED}>폴더 없음</option>
+                    </Select>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => downloadCases(pickedRows.map((r) => r.c), `선택${pickedRows.length}건`)}
+                    >
+                      내려받기
+                    </Button>
+                    <DeleteButton label={`${pickedRows.length}건 삭제`} onConfirm={delPicked} />
+                    <Button variant="ghost" size="sm" onClick={() => setPicked(new Set())}>해제</Button>
+                  </span>
+                </div>
+                ) : (
                 <div className="mt-2.5 flex flex-wrap items-center gap-2">
                   <Input
                     value={query}
@@ -692,6 +744,7 @@ export default function DatasetsPanel() {
                     {adding ? '닫기' : '케이스 추가'}
                   </Button>
                 </div>
+                )}
               </div>
 
               {notice && (
@@ -719,32 +772,6 @@ export default function DatasetsPanel() {
                 </div>
               ) : (
                 <>
-                <div className="flex h-10 items-center gap-2.5 border-b border-line px-4">
-                  <label className="flex cursor-pointer items-center gap-2.5 text-xs text-muted">
-                    <PickBox
-                      label="전체 선택"
-                      checked={allPicked}
-                      indeterminate={pickedRows.length > 0 && !allPicked}
-                      onChange={() => setPicked(allPicked ? new Set() : new Set(rows.map((r) => r.c.case_id)))}
-                    />
-                    {pickedRows.length > 0
-                      ? <span><span className="font-semibold tabular-nums text-ink">{pickedRows.length}</span>건 선택</span>
-                      : '전체 선택'}
-                  </label>
-                  {pickedRows.length > 0 && (
-                    <span className="ml-auto flex items-center gap-1.5">
-                      <Button variant="ghost" size="sm" onClick={() => setPicked(new Set())}>해제</Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => downloadCases(pickedRows.map((r) => r.c), `선택${pickedRows.length}건`)}
-                      >
-                        내려받기
-                      </Button>
-                      <DeleteButton label={`${pickedRows.length}건 삭제`} onConfirm={delPicked} />
-                    </span>
-                  )}
-                </div>
                 <ul className="divide-y divide-line">
                   {groups.map(({ cat, items }) => {
                     const ids = items.map((i) => i.c.case_id);
@@ -755,13 +782,15 @@ export default function DatasetsPanel() {
                           선만으로는 무엇과 무엇이 갈렸는지 말하지 않기 때문이고,
                           폴더를 하나 고른 화면에는 갈릴 것이 없어 서지 않는다. */}
                       {folder === null && (
-                        <li className="flex items-center gap-2.5 border-b border-line bg-surface-2 px-4 py-1.5">
-                          <PickBox
-                            label={`${folderLabel(cat)} 전체 선택`}
-                            checked={nPicked === ids.length}
-                            indeterminate={nPicked > 0 && nPicked < ids.length}
-                            onChange={() => togglePick(ids, nPicked < ids.length)}
-                          />
+                        <li className="group/case flex items-center gap-2.5 border-b border-line bg-surface-2 px-4 py-1.5">
+                          <span className={cn('flex transition-opacity', pickReveal)}>
+                            <PickBox
+                              label={`${folderLabel(cat)} 전체 선택`}
+                              checked={nPicked === ids.length}
+                              indeterminate={nPicked > 0 && nPicked < ids.length}
+                              onChange={() => togglePick(ids, nPicked < ids.length)}
+                            />
+                          </span>
                           <span className="text-[11px] font-semibold text-ink">{folderLabel(cat)}</span>
                           <span className="font-mono text-[10px] tabular-nums text-muted-soft">{items.length}</span>
                         </li>
@@ -772,8 +801,8 @@ export default function DatasetsPanel() {
                         const gt = (p.groundTruth ?? c.expected_output ?? '').trim();
                         return (
                           <li key={c.case_id}>
-                            <div className={cn('flex items-start transition-colors hover:bg-surface-2/60', on && 'bg-surface-2/70')}>
-                              <label className="flex shrink-0 cursor-pointer pb-2.5 pl-4 pr-1 pt-[13px]">
+                            <div className={cn('group/case flex items-start transition-colors hover:bg-surface-2/60', on && 'bg-surface-2/70')}>
+                              <label className={cn('flex shrink-0 cursor-pointer pb-2.5 pl-4 pr-1 pt-[13px] transition-opacity', pickReveal)}>
                                 <PickBox label="선택" checked={on} onChange={() => togglePick([c.case_id], !on)} />
                               </label>
                               {/* 질문과 정답 두 칸은 줄마다 같은 자리에서 시작한다 —
