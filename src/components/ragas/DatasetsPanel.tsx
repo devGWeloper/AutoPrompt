@@ -188,7 +188,17 @@ export default function DatasetsPanel() {
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  // 결과가 화면에서 사라지는 작업(이동 · 삭제 · 올리기)만 잠깐 알린다. 남겨 두고
+  // 닫게 하는 줄은 작업할 때마다 치워야 할 일이 하나 더 생길 뿐이었다.
+  const [toast, setToast] = useState<{ text: string; undo?: () => void } | null>(null);
+  const [toastHover, setToastHover] = useState(false);
+  useEffect(() => {
+    if (!toast || toastHover) return;
+    const t = setTimeout(() => setToast(null), toast.undo ? 6000 : 3000);
+    return () => clearTimeout(t);
+  }, [toast, toastHover]);
+  // A toast that unmounts under the pointer never fires mouseleave.
+  useEffect(() => { if (!toast) setToastHover(false); }, [toast]);
 
   const [query, setQuery] = useState('');
   const [adding, setAdding] = useState(false);
@@ -218,7 +228,7 @@ export default function DatasetsPanel() {
   // Leaving a dataset drops whatever was half-edited in the previous one, and
   // the folder with it — a folder name means nothing in the next dataset.
   useEffect(() => {
-    setEditId(null); setAdding(false); setDraft(EMPTY); setQuery(''); setNotice(null);
+    setEditId(null); setAdding(false); setDraft(EMPTY); setQuery(''); setToast(null);
     setFolder(null); setNewFolder(null); setFolderEditId(null); setPicked(new Set());
   }, [selDataset]);
   // A selection made in one folder must not be acted on from another.
@@ -405,7 +415,7 @@ export default function DatasetsPanel() {
     const res = await api.post<{ deleted: number }>(`/datasets/${selDataset}/cases/delete`, { case_ids: ids });
     if (editId != null && ids.includes(editId)) setEditId(null);
     setPicked(new Set());
-    setNotice(`${res.deleted}건 삭제`);
+    setToast({ text: `${res.deleted}건 삭제` });
     loadCases();
     reloadCats();
     reload();
@@ -413,12 +423,30 @@ export default function DatasetsPanel() {
 
   const movePicked = (to: string) => guard(async () => {
     if (selDataset == null || pickedRows.length === 0) return;
+    const did = selDataset;
     const ids = pickedRows.map((r) => r.c.case_id);
-    const res = await api.post<{ moved: number }>(`/datasets/${selDataset}/cases/move`, { case_ids: ids, case_type: to });
+    // Where each case came from, so undo can put every one back — a selection
+    // can span several folders.
+    const from = new Map<string, number[]>();
+    for (const { c } of pickedRows) {
+      const t = c.case_type || UNFILED;
+      from.set(t, [...(from.get(t) ?? []), c.case_id]);
+    }
+    const res = await api.post<{ moved: number }>(`/datasets/${did}/cases/move`, { case_ids: ids, case_type: to });
     // An open editor would still show the old folder and save it back.
     if (editId != null && ids.includes(editId)) setEditId(null);
     setPicked(new Set());
-    setNotice(`${res.moved}건 → ${folderLabel(to)}`);
+    setToast({
+      text: `${res.moved}건 → ${folderLabel(to)}`,
+      undo: () => guard(async () => {
+        setToast(null);
+        for (const [t, group] of from) {
+          await api.post(`/datasets/${did}/cases/move`, { case_ids: group, case_type: t, allow_unregistered: true });
+        }
+        loadCases();
+        reloadCats();
+      }),
+    });
     loadCases();
     reloadCats();
   });
@@ -437,10 +465,11 @@ export default function DatasetsPanel() {
   }
 
   function onImported(res: CaseBulkResult) {
-    setNotice(
-      `${res.created}건 추가` +
-      (res.folders_created.length ? ` · 새 폴더 ${res.folders_created.join(', ')}` : ''),
-    );
+    setToast({
+      text:
+        `${res.created}건 추가` +
+        (res.folders_created.length ? ` · 새 폴더 ${res.folders_created.join(', ')}` : ''),
+    });
     loadCases();
     reloadCats();
     reload();
@@ -747,13 +776,6 @@ export default function DatasetsPanel() {
                 )}
               </div>
 
-              {notice && (
-                <div className="flex items-start gap-2 border-b border-line bg-surface-2/50 px-4 py-2.5 text-xs text-muted">
-                  <span className="min-w-0 flex-1 break-words">{notice}</span>
-                  <button type="button" className="shrink-0 hover:text-ink" onClick={() => setNotice(null)}>닫기</button>
-                </div>
-              )}
-
               {adding && (
                 <div className="border-b border-line bg-surface-2/40 px-4 py-3.5">
                   <FieldsEditor value={draft} onChange={setDraft} autoFocus categories={folderNames} />
@@ -850,6 +872,27 @@ export default function DatasetsPanel() {
           )}
         </Card>
       </div>
+
+      {toast && (
+        <div
+          role="status"
+          onMouseEnter={() => setToastHover(true)}
+          onMouseLeave={() => setToastHover(false)}
+          className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom,0px))] left-1/2 z-40 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-4 rounded-md bg-ink-strong px-4 py-2.5 text-sm text-white shadow-modal"
+        >
+          <span className="min-w-0 truncate">{toast.text}</span>
+          {toast.undo && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={toast.undo}
+              className="shrink-0 text-xs font-semibold text-white/70 transition-colors hover:text-white disabled:opacity-50"
+            >
+              되돌리기
+            </button>
+          )}
+        </div>
+      )}
 
       {importing && selected && (
         <CaseImportModal

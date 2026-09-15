@@ -292,17 +292,20 @@ export async function deleteCases(datasetId: number, caseIds: number[] | undefin
 }
 
 /** Move several cases into one folder, or out to 폴더 없음 (NORMAL). Only a
- * registered folder is a destination — the same rule as the case editor. */
+ * registered folder is a destination — the same rule as the case editor —
+ * except when undoing a move, which must be able to put cases back under a
+ * value that was on them without ever being a folder. */
 export async function moveCases(
   datasetId: number,
   caseIds: number[] | undefined,
   caseType: string | undefined,
+  allowUnregistered = false,
 ): Promise<{ moved: number }> {
   await requireDataset(datasetId);
   const ids = caseIdList(caseIds, "이동할 케이스가 없습니다");
   const to = (caseType ?? "").trim() || "NORMAL";
   return withConn(async (conn) => {
-    if (to !== "NORMAL") {
+    if (to !== "NORMAL" && !allowUnregistered) {
       const found = await conn.execute(
         `SELECT 1 FROM PTX_CASETYPE_MAS WHERE DATASET_ID = :did AND TYPE_CD = :cd`,
         { did: datasetId, cd: to },
