@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import type { RagasRunDetail, RagasRunSummary } from '@/lib/types';
 import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummaryDashboard';
+import { AbKeyBreakdown, KeyBreakdown } from './KeyBreakdown';
 import { CaseCompareTable } from './CompareTable';
 import { CaseTable, compareSideLabel, EmptyState, fmtDt, runTargetTitle, scoredMetrics } from './shared';
 
@@ -116,6 +117,20 @@ export default function LastRunPreview({ kind }: { kind: Kind }) {
           <CompareSummaryDashboard detailA={detailA} detailB={detailB} />
         ) : (
           scoredMetrics(detailA).length > 0 && <SingleRunSummaryDashboard detail={detailA} />
+        )
+      )}
+      {/* 어느 키가 깨졌는지(또는 A·B 를 갈랐는지)는 케이스를 펼치기 전에 읽힌다.
+          아무 키도 어긋나지 않은 실행에서는 그려지지 않는다. */}
+      {open && ready && detailA && (
+        paired && detailB ? (
+          <AbKeyBreakdown
+            aRows={detailA.results}
+            bRows={detailB.results}
+            nameA={compareSideLabel(detailA)}
+            nameB={compareSideLabel(detailB)}
+          />
+        ) : (
+          <KeyBreakdown rows={detailA.results} />
         )
       )}
       <Card className="overflow-hidden">

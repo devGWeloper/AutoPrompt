@@ -15,6 +15,7 @@ import { formatModelPair, formatModelSnapshot } from '@/lib/modelSnapshot';
 import type { RagasRunDetail, RagasRunSummary } from '@/lib/types';
 import { CaseCompareTable } from './CompareTable';
 import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummaryDashboard';
+import { AbKeyBreakdown, KeyBreakdown } from './KeyBreakdown';
 import {
   CaseTable, DownloadIcon, ErrBox, errText, fmt2, fmt3, fmtDt, folderLabel, hasTextSelection, runMean, runTargetLabel,
   compareSideLabel, runModelDetail, runTitle, runTitleParts, scoredMetrics, SegToggle, TrashIcon, UNSCORED_LABEL,
@@ -792,6 +793,9 @@ function AbCompareView({ aId, bId }: { aId: number; bId: number }) {
   return (
     <div className="space-y-4">
       <CompareSummaryDashboard detailA={a} detailB={b} />
+      {/* 케이스를 하나씩 펼쳐 A·B 를 견주기 전에, 데이터셋 전체에서 어느 키가 두
+          버전을 갈랐는지부터. 갈린 키가 없으면 서지 않는다. */}
+      <AbKeyBreakdown aRows={a.results} bRows={b.results} nameA={compareSideLabel(a)} nameB={compareSideLabel(b)} />
       <div className="overflow-hidden rounded-sm border border-line bg-surface">
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
           <h3 className="mr-1 text-sm font-semibold text-ink">Compare Detail</h3>
@@ -822,6 +826,7 @@ function RagasRunDetailView({ ragasId }: { ragasId: number }) {
   return (
     <div className="space-y-4">
       {scoredMetrics(detail).length > 0 && <SingleRunSummaryDashboard detail={detail} />}
+      <KeyBreakdown rows={detail.results} />
       <div className="overflow-hidden rounded-sm border border-line bg-surface">
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
           <h3 className="mr-1 text-sm font-semibold text-ink">Single Detail</h3>

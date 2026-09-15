@@ -9,6 +9,7 @@ import { ApiError, api } from '@/lib/api';
 import { clearActiveRun, readActiveRun, saveActiveRun, type ActiveSingleRun } from '@/lib/activeRun';
 import { connectRagasRunStream as connectRagasRunWs } from '@/lib/sse-client';
 import { SingleRunSummaryDashboard } from './RunSummaryDashboard';
+import { KeyBreakdown } from './KeyBreakdown';
 import LastRunPreview from './LastRunPreview';
 import {
   ALL_METRICS,
@@ -553,6 +554,8 @@ export default function SingleRunPanel() {
               {/* Anything scored at all — runMean is RAGAS-only, so gating on it
                   would drop the dashboard for a 정답 일치 only run. */}
               {scoredMetrics(detail).length > 0 && <SingleRunSummaryDashboard detail={detail} />}
+              {/* 어떤 키가 자주 깨졌나 — 케이스 목록을 열기 전에 답하는 판. */}
+              <KeyBreakdown rows={detail.results} />
               <Card>
                 <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
                   <h3 className="mr-1 text-sm font-semibold text-ink">Results Detail</h3>

@@ -184,6 +184,11 @@ export type FieldStatus =
 export interface FieldResult {
   /** Dotted path from the root — `slots.date`, `items[0].id`, `""` at the root. */
   path: string;
+  /** The same path as its own pieces — `["items", "[0]", "id"]`, empty at the
+   * root. Display only, and the reason it is carried rather than re-derived:
+   * the table indents and groups by depth, and a key that itself contains a dot
+   * would make splitting `path` on screen a guess. */
+  segs: string[];
   status: FieldStatus;
   /** One-line display forms; null on the side that has no value at all. */
   expected: string | null;
@@ -223,10 +228,10 @@ function leafText(v: unknown, quoted = false): string {
   return JSON.stringify(v) ?? "null";
 }
 
-function walk(actual: unknown, expected: unknown, path: string, out: FieldResult[]): void {
+function walk(actual: unknown, expected: unknown, path: string, segs: string[], out: FieldResult[]): void {
   const row = (status: FieldStatus): void => {
     const q = status === "type";
-    out.push({ path, status, expected: leafText(expected, q), actual: leafText(actual, q) });
+    out.push({ path, segs, status, expected: leafText(expected, q), actual: leafText(actual, q) });
   };
 
   if (typeName(actual) !== typeName(expected)) return row("type");
@@ -237,10 +242,12 @@ function walk(actual: unknown, expected: unknown, path: string, out: FieldResult
     const n = Math.max(actual.length, expected.length);
     if (n === 0) return row("match");
     for (let i = 0; i < n; i++) {
-      const p = `${path}[${i}]`;
-      if (i >= expected.length) out.push({ path: p, status: "extra", expected: null, actual: leafText(actual[i]) });
-      else if (i >= actual.length) out.push({ path: p, status: "missing", expected: leafText(expected[i]), actual: null });
-      else walk(actual[i], expected[i], p, out);
+      const seg = `[${i}]`;
+      const p = `${path}${seg}`;
+      const s = [...segs, seg];
+      if (i >= expected.length) out.push({ path: p, segs: s, status: "extra", expected: null, actual: leafText(actual[i]) });
+      else if (i >= actual.length) out.push({ path: p, segs: s, status: "missing", expected: leafText(expected[i]), actual: null });
+      else walk(actual[i], expected[i], p, s, out);
     }
     return;
   }
@@ -254,9 +261,10 @@ function walk(actual: unknown, expected: unknown, path: string, out: FieldResult
     if (keys.length === 0) return row("match");
     for (const k of keys) {
       const p = path ? `${path}.${k}` : k;
-      if (!(k in a)) out.push({ path: p, status: "missing", expected: leafText(e[k]), actual: null });
-      else if (!(k in e)) out.push({ path: p, status: "extra", expected: null, actual: leafText(a[k]) });
-      else walk(a[k], e[k], p, out);
+      const s = [...segs, k];
+      if (!(k in a)) out.push({ path: p, segs: s, status: "missing", expected: leafText(e[k]), actual: null });
+      else if (!(k in e)) out.push({ path: p, segs: s, status: "extra", expected: null, actual: leafText(a[k]) });
+      else walk(a[k], e[k], p, s, out);
     }
     return;
   }
@@ -284,7 +292,7 @@ export function structuredMatch(
   if (a.value === undefined || e.value === undefined) return null;
   if (!isContainer(a.value) && !isContainer(e.value)) return null;
   const fields: FieldResult[] = [];
-  walk(a.value, e.value, "", fields);
+  walk(a.value, e.value, "", [], fields);
   const matched = fields.filter((f) => f.status === "match").length;
   return { fields, matched, total: fields.length, ok: matched === fields.length };
 }
