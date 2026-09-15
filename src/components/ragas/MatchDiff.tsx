@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useMemo, useState, type ReactNode } from 'react';
 import {
   comparablePair,
   structuredMatch,
@@ -9,7 +9,7 @@ import {
   type StructuredMatch,
 } from '@/lib/exactMatch';
 import { buildFieldTree, flattenTree, worstStatus, type Pathed, type TreeRow } from '@/lib/fieldTree';
-import { byImportance, FAIL_WEIGHT, tierOf, type Tier } from '@/lib/fieldOrder';
+import { byImportance, FAIL_WEIGHT, TIER_ORDER, tierOf, type Tier } from '@/lib/fieldOrder';
 import { diffWords, type DiffPair, type DiffSeg } from '@/lib/textDiff';
 import { cn } from '@/lib/cn';
 import type { RagasResultRow } from '@/lib/types';
@@ -237,8 +237,6 @@ function IconCopy({ text, className }: { text: string; className?: string }) {
  * 구조 그대로, 트리로. 앞의 것이 읽는 순서고 뒤의 것이 쓰인 순서다. */
 type SortMode = 'importance' | 'written';
 
-const TIER_LABEL: Record<Tier, string> = { bad: '오류', value: '값 있음', blank: '값 없음' };
-
 /** 끄고 켜는 버튼. 체크 모양인 까닭은 둘이 서로를 끄지 않기 때문이다 — 하나만
  * 고르는 장치(세그먼트)는 이미 바로 옆 정렬이 쓰고 있다. 버튼에 붙은 수는 이
  * 버튼이 다루는 줄이 몇 개인지를 누르기 전에 말하고, 0 이면 누를 것이 없다. */
@@ -337,7 +335,7 @@ function TableToolbar({
         </span>
       )}
       <span className="ml-auto flex flex-wrap items-center gap-2">
-        {sort === 'written' && groups > 0 && (
+        {groups > 1 && (
           <button
             type="button"
             onClick={onToggleAll}
@@ -371,30 +369,6 @@ function TableToolbar({
   );
 }
 
-/** 층이 바뀌는 자리의 한 줄 머리. 줄이 왜 이 차례로 섰는지를 표 안에서 말한다 —
- * 머리 없이 순서만 바꾸면 '기대 정답과 차례가 다르다'가 버그로 읽힌다. */
-function SectionRow({
-  tier, count, cols, children,
-}: {
-  tier: Tier;
-  count: number;
-  cols: number;
-  children?: ReactNode;
-}) {
-  return (
-    <tr>
-      <td colSpan={cols} className="border-y border-line-strong bg-surface-3 px-3 py-1">
-        <span className="flex flex-wrap items-baseline gap-x-2.5 text-xs">
-          <span className={cn('font-semibold', tier === 'bad' ? 'text-bad' : 'text-body')}>
-            {TIER_LABEL[tier]} <span className="font-mono tabular-nums">{count}</span>
-          </span>
-          {children}
-        </span>
-      </td>
-    </tr>
-  );
-}
-
 /** 걸러낸 뒤 아무 줄도 남지 않았을 때. 빈 표는 '비교할 것이 없다'로도 읽힌다. */
 function NoRows({ children }: { children: string }) {
   return <div className="px-3 py-6 text-center text-xs text-muted">{children}</div>;
@@ -405,26 +379,57 @@ function NoRows({ children }: { children: string }) {
 const ROOMY = 6;
 
 // ---------------------------------------------------------------------------
-// 열 폭 — 표가 담긴 것만큼만 넓어지게
+// 표의 모양 — 부모 객체별 묶음, 값은 한 칸
 // ---------------------------------------------------------------------------
 
 /**
- * 화면 폭을 다 채우는 표는 한눈에 들어오지 않는다 — `200` 같은 짧은 값이 500px 짜리
- * 칸에 떠 있고, 키에서 값까지 눈이 한참 건너가다 어느 줄의 값인지 놓친다. 그래서
- * 열마다 실제로 담길 글자 길이를 재서 폭을 정하고, 패널도 그 합만큼만 넓어진다.
+ * 키 경로를 줄마다 통째로 적으면(`result.items[0].name`) 같은 앞마디가 스무 번
+ * 되풀이되고, 정작 달라지는 끝마디가 묻힌다. 그래서 줄은 부모 객체 아래에 묶이고
+ * 키 칸에는 끝마디만 선다 — 부모 경로는 묶음 머리줄에 한 번.
  *
- * 값 열은 가장 긴 값이 아니라 대부분(90%)의 값에 맞춘다 — 긴 값 하나가 표 전체를
- * 다시 벌리지 않고, 그 값은 제 칸에서 줄을 바꾸다 세 줄로 접힌다. 키 열은 가장 긴
- * 경로에 맞추되 상한이 있다(넘치면 끊어 감긴다). 폭은 여전히 표 단위로 한 번만
- * 정해지므로 위아래 줄의 칸은 어긋나지 않는다.
+ * 값도 한 칸이다. 기대값과 실제값을 떨어진 두 열에 두면 눈이 좌우로 오가며 짝을
+ * 맞춰야 했다. 맞은 줄은 값 하나, 틀린 줄은 `기대 → 실제` 한 줄(길면 위아래로
+ * 쌓아서)로 붙여 적고, 판정은 오른쪽 끝 좁은 칸에 모여 세로로 훑인다.
  */
-const REM_PER_CH = { mono: 0.5, sans: 0.47 };
-/** px-3 양쪽 + 세로 헤어라인. */
-const CELL_PAD_REM = 1.6;
-/** 키 칸에 늘 붙는 것 — 레일 3px 과 줄에 손을 올리면 서는 복사 아이콘. */
-const KEY_CHROME_REM = 1.5;
-const KEY_CH: readonly [number, number] = [8, 30];
-const VAL_CH: readonly [number, number] = [12, 44];
+
+/** `items[0].name` → 부모 `items[0]` · 끝마디 `name`. */
+function splitPath(segs: string[]): { parent: string; leaf: string } {
+  const parent = segs
+    .slice(0, -1)
+    .reduce((p, s) => (!p ? s : s.startsWith('[') ? p + s : `${p}.${s}`), '');
+  return { parent, leaf: segs[segs.length - 1] ?? '' };
+}
+
+interface KeyGroup<T> {
+  parent: string;
+  items: T[];
+}
+
+/** 부모 객체별 묶음. 원래 순서면 묶음도 줄도 나온 차례대로. 오류 먼저면 묶음 안의
+ * 줄을 중요도로 세우고, 묶음은 맨 앞 줄이 가장 무거운 것부터 선다. */
+function groupByParent<T extends Pathed>(
+  items: T[],
+  importance: boolean,
+  tierFn: (t: T) => Tier,
+  weightFn: (t: T) => number,
+): KeyGroup<T>[] {
+  const byParent = new Map<string, T[]>();
+  for (const it of items) {
+    const { parent } = splitPath(it.segs);
+    const cur = byParent.get(parent);
+    if (cur) cur.push(it);
+    else byParent.set(parent, [it]);
+  }
+  const groups = [...byParent].map(([parent, rows]) => ({
+    parent,
+    items: importance ? byImportance(rows, tierFn, weightFn) : rows,
+  }));
+  if (!importance) return groups;
+  return groups
+    .map((g, i) => ({ g, i, t: TIER_ORDER.indexOf(tierFn(g.items[0])), w: weightFn(g.items[0]) }))
+    .sort((a, b) => a.t - b.t || b.w - a.w || a.i - b.i)
+    .map((x) => x.g);
+}
 
 /** 한글·한자는 라틴 글자의 두 배 가까이 넓다. */
 function visualLen(s: string): number {
@@ -433,42 +438,180 @@ function visualLen(s: string): number {
   return n;
 }
 
-function p90(ns: number[]): number {
-  if (!ns.length) return 0;
-  const s = [...ns].sort((a, b) => a - b);
-  return s[Math.min(s.length - 1, Math.floor(s.length * 0.9))];
+/** 키 칸 폭(rem). 끝마디만 서므로 가장 긴 끝마디에 맞추고, 상한을 넘으면 감긴다.
+ * 모노 글자 폭 + 칸 여백 + 레일·복사 아이콘 + 묶음 들여쓰기. */
+function keyColRem(labels: string[]): number {
+  const ch = Math.min(28, Math.max(6, ...labels.map(visualLen)));
+  return ch * 0.5 + 1.6 + 1.5 + 0.75;
 }
 
-const clampCh = (v: number, [lo, hi]: readonly [number, number]) => Math.min(hi, Math.max(lo, v));
-
-interface ColSizing {
-  /** colgroup 에 그대로 넣는 비율. */
-  cols: string[];
-  /** 패널 최대 폭. 조작 줄이 들어갈 자리(minRem)보다 좁아지지는 않는다. */
-  maxWidth: string;
-}
-
-function sizeColumns(
-  keys: string[],
-  keyExtraRem: number,
-  valueCols: string[][],
-  minRem: number,
-): ColSizing {
-  const keyRem =
-    clampCh(Math.max(0, ...keys.map(visualLen)), KEY_CH) * REM_PER_CH.mono + CELL_PAD_REM + KEY_CHROME_REM + keyExtraRem;
-  const valRems = valueCols.map(
-    (col) => clampCh(p90(col.map(visualLen)), VAL_CH) * REM_PER_CH.sans + CELL_PAD_REM,
+/** 묶음 머리줄 — 부모 경로 한 번, 키 수, 그 아래 오류. 눌러서 접는다. */
+function ParentRow({
+  parent, count, cols, collapsed, onToggle, children,
+}: {
+  parent: string;
+  count: number;
+  cols: number;
+  collapsed: boolean;
+  onToggle: () => void;
+  children?: ReactNode;
+}) {
+  return (
+    <tr className="cursor-pointer" onClick={onToggle}>
+      <td colSpan={cols} className="border-b border-line bg-surface-2 px-3 py-1 transition-colors hover:bg-surface-3">
+        <span className="flex flex-wrap items-center gap-x-2.5 text-xs">
+          <Chevron open={!collapsed} />
+          <span className="break-all font-mono font-semibold text-ink">{parent || '(최상위)'}</span>
+          <span className="text-muted">
+            <span className="font-mono tabular-nums">{count}</span>개
+          </span>
+          {children}
+        </span>
+      </td>
+    </tr>
   );
-  const widths = [keyRem, ...valRems];
-  const total = widths.reduce((a, b) => a + b, 0);
-  return {
-    cols: widths.map((w) => `${((w / total) * 100).toFixed(2)}%`),
-    maxWidth: `${Math.max(total, minRem).toFixed(1)}rem`,
-  };
 }
 
-/** 값이 없는 칸이 실제로 적는 말 — 폭을 잴 때도 그 글자로 잰다. */
-const orAbsent = (v: string | null, label: string) => v ?? label;
+/** 이 길이까지는 값을 한 줄에 붙여 적는다. 넘으면 위아래로 쌓는다. */
+const INLINE = 40;
+
+type Tone = 'plain' | 'bad' | 'warn';
+const TONE_TEXT: Record<Tone, string> = { plain: 'text-ink', bad: 'text-bad', warn: 'text-warn' };
+
+/** 값 한 토막. 틀린 쪽은 글자색으로, 어긋난 낱말은 그 위에 한 번 더 칠한다. */
+function Val({
+  text, segs, tone, absent, dim, typeTag, clamp,
+}: {
+  text: string | null;
+  segs: DiffSeg[] | null;
+  tone: Tone;
+  absent: string;
+  dim?: boolean;
+  /** 타입 다름 줄 — 값 앞에 JSON 타입 이름을 단다. */
+  typeTag?: boolean;
+  clamp?: boolean;
+}) {
+  if (text === null) return <Absent>{absent}</Absent>;
+  // 빈 문자열은 글자 없이 그리면 칸이 깨진 것처럼 보인다.
+  if (text.trim() === '') return <span className="text-muted">&quot;&quot;</span>;
+  return (
+    <span className={cn('min-w-0 break-words', dim ? 'text-muted' : TONE_TEXT[tone], clamp && 'line-clamp-3')}>
+      {typeTag && <span className="mr-1 font-mono text-[11px] font-semibold text-muted">{jsonTypeOf(text)}</span>}
+      {segs
+        ? segs.map((s, i) =>
+            s.same ? (
+              <span key={i}>{s.text}</span>
+            ) : (
+              <mark key={i} className={cn('rounded-[2px] px-px', MARK[tone === 'plain' ? 'ok' : tone])}>
+                {s.text}
+              </mark>
+            ),
+          )
+        : text}
+    </span>
+  );
+}
+
+function OkMark() {
+  return (
+    <span className="inline-flex items-center gap-0.5 whitespace-nowrap text-xs font-medium text-ok">
+      <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden>
+        <path d="M3 8.5l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      일치
+    </span>
+  );
+}
+
+interface DeltaPart {
+  /** 위아래로 쌓을 때 줄 머리(기대 · 실제 · A · B). */
+  label: string;
+  /** 한 줄로 붙일 때 값 앞에 붙는 표시 — A/B 비교의 사이드만. */
+  tag?: string;
+  /** 맞은 사이드 — 값을 되풀이하지 않고 일치 표시만. */
+  ok?: boolean;
+  text: string | null;
+  segs: DiffSeg[] | null;
+  tone: Tone;
+  absent: string;
+}
+
+/** 틀린 줄의 값 칸: 짧으면 `기대 → 실제` (A/B 는 `기대 → A 값 · B 값`) 한 줄,
+ * 하나라도 길면 줄 머리를 단 채 위아래로. */
+function Delta({ parts, typeTag, clamp }: { parts: DeltaPart[]; typeTag?: boolean; clamp: boolean }) {
+  const short = parts.every(
+    (p) => p.ok || ((p.text ?? p.absent).length <= INLINE && !(p.text ?? '').includes('\n')),
+  );
+  const val = (p: DeltaPart) =>
+    p.ok ? <OkMark /> : <Val text={p.text} segs={p.segs} tone={p.tone} absent={p.absent} typeTag={typeTag} clamp={clamp} />;
+  if (short) {
+    return (
+      <span className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+        {parts.map((p, i) => (
+          <Fragment key={i}>
+            {i === 1 && <span aria-hidden className="select-none text-muted-soft">→</span>}
+            {i > 1 && <span aria-hidden className="select-none text-muted-soft">·</span>}
+            {p.tag && <span className="font-mono text-[11px] font-semibold text-muted">{p.tag}</span>}
+            {val(p)}
+          </Fragment>
+        ))}
+      </span>
+    );
+  }
+  return (
+    <span className="grid grid-cols-[2rem_minmax(0,1fr)] items-baseline gap-x-2 gap-y-1">
+      {parts.map((p, i) => (
+        <Fragment key={i}>
+          <span className="text-[11px] font-semibold text-muted">{p.label}</span>
+          {val(p)}
+        </Fragment>
+      ))}
+    </span>
+  );
+}
+
+/** 맞은 줄의 값 하나. 펼치면 객체·배열은 들여쓴 모양으로. */
+function SameValue({
+  text, dim, clamp, expanded,
+}: { text: string | null; dim?: boolean; clamp: boolean; expanded: boolean }) {
+  if (text === null) return <Absent>—</Absent>;
+  const pretty = expanded ? prettyValue(text) : null;
+  if (pretty) {
+    return <pre className="whitespace-pre-wrap break-words font-mono text-[12.5px] leading-relaxed text-ink">{pretty}</pre>;
+  }
+  return <Val text={text} segs={null} tone="plain" absent="" dim={dim} clamp={clamp} />;
+}
+
+/** 값 칸 — 긴 값 접기/펴기와 복사를 줄마다 한 번만. */
+function ValueTd({
+  long, expanded, onToggle, copy, children,
+}: {
+  long: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+  copy: string | null;
+  children: ReactNode;
+}) {
+  return (
+    <td className={cn(CELL, COL, 'group/v relative tabular-nums')}>
+      {children}
+      {long && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onToggle(); }}
+          className="mt-1 block font-sans text-xs text-muted underline decoration-line-strong underline-offset-2 hover:text-ink"
+        >
+          {expanded ? '접기' : '더 보기'}
+        </button>
+      )}
+      {copy && <IconCopy text={copy} className="absolute right-1 top-1 opacity-0 transition-opacity group-hover/v:opacity-100" />}
+    </td>
+  );
+}
+
+const isLong = (...texts: (string | null | undefined)[]) => texts.some((t) => (t?.length ?? 0) > LONG);
+
+const TH = 'border-b border-line px-3 py-1.5 font-semibold';
 
 // ---------------------------------------------------------------------------
 // 표의 부품 — 단일 표와 A/B 표가 같은 것을 쓴다
@@ -481,14 +624,6 @@ interface KeyView {
   prefix?: string;
   depth?: number;
   gutter?: boolean;
-}
-
-/** 평면 보기의 키 — 경로 전체를 적되 눈이 가는 곳은 끝마디여야 한다. 들여쓰기가
- * 없으니 앞마디를 지우면 `id` 가 어느 `id` 인지 알 길이 없고, 앞마디를 또렷이
- * 두면 스무 줄이 같은 접두사로 시작해 정작 달라지는 끝이 묻힌다. */
-function flatKey(path: string, segs: string[]): KeyView {
-  const label = segs[segs.length - 1] ?? '';
-  return { label, prefix: path.slice(0, path.length - label.length) };
 }
 
 function KeyCell({
@@ -735,10 +870,13 @@ function useKeyTable<T extends Pathed>(
       return !needle || t.path.toLowerCase().includes(needle);
     });
   }, [items, tierFn, badOnly, hideBlank, q]);
-  const sorted = useMemo(() => byImportance(shown, tierFn, weightFn), [shown, tierFn, weightFn]);
-  const tree = useMemo(() => buildFieldTree(shown), [shown]);
-  const treeRows = useMemo(() => flattenTree(tree, collapsed), [tree, collapsed]);
-  const groups = useMemo(() => groupPaths(tree), [tree]);
+  const grouped = useMemo(
+    () => groupByParent(shown, sort === 'importance', tierFn, weightFn),
+    [shown, sort, tierFn, weightFn],
+  );
+  // 최상위 키만 있는 표는 묶을 것이 없다 — 머리줄 없이 줄만 선다.
+  const headed = grouped.length > 1 || (grouped[0]?.parent ?? '') !== '';
+  const groupKeys = headed ? grouped.map((g) => g.parent) : [];
 
   const toolbar = (
     <TableToolbar
@@ -753,44 +891,41 @@ function useKeyTable<T extends Pathed>(
       onSort={setSort}
       q={q}
       onQ={setQ}
-      groups={groups.length}
-      allCollapsed={groups.length > 0 && groups.every((p) => collapsed.has(p))}
-      onToggleAll={() => setCollapsed((cur) => (groups.every((p) => cur.has(p)) ? new Set() : new Set(groups)))}
+      groups={groupKeys.length}
+      allCollapsed={groupKeys.length > 0 && groupKeys.every((p) => collapsed.has(p))}
+      onToggleAll={() => setCollapsed((cur) => (groupKeys.every((p) => cur.has(p)) ? new Set() : new Set(groupKeys)))}
     />
   );
 
-  /** 오류 먼저 보기의 줄들 — 층이 바뀌는 자리마다 머리 한 줄. 오류 층의 머리는
-   * 층이 하나뿐이어도 선다: '오류만 보기'를 켠 표에서도 무슨 종류가 몇인지는
-   * 남아야 한다. */
-  const flatBody = (
-    row: (t: T) => ReactNode,
-    detail: (inTier: T[]) => ReactNode,
-    sections: boolean,
+  /** 묶음 머리줄과 그 아래 줄들. 접힌 묶음도 머리줄에서 오류는 말한다. */
+  const body = (
+    row: (it: T, label: string, depth: number) => ReactNode,
+    summary: (items: T[]) => ReactNode,
     cols: number,
   ): ReactNode[] => {
-    const body: ReactNode[] = [];
-    const tiers = new Set(sorted.map(tierFn));
-    let last: Tier | null = null;
-    for (const t of sorted) {
-      const tier = tierFn(t);
-      if (sections && tier !== last && (tiers.size > 1 || tier === 'bad')) {
-        const inTier = sorted.filter((x) => tierFn(x) === tier);
-        body.push(
-          <SectionRow key={'§' + tier} tier={tier} count={inTier.length} cols={cols}>
-            {tier === 'bad' && detail(inTier)}
-          </SectionRow>,
+    const out: ReactNode[] = [];
+    for (const g of grouped) {
+      const shut = headed && collapsed.has(g.parent);
+      if (headed) {
+        out.push(
+          <ParentRow
+            key={'§' + g.parent}
+            parent={g.parent}
+            count={g.items.length}
+            cols={cols}
+            collapsed={shut}
+            onToggle={() => toggleGroup(g.parent)}
+          >
+            {summary(g.items)}
+          </ParentRow>,
         );
       }
-      last = tier;
-      body.push(row(t));
+      if (!shut) for (const it of g.items) out.push(row(it, splitPath(it.segs).leaf, headed ? 1 : 0));
     }
-    return body;
+    return out;
   };
 
-  return {
-    sort, q, open, toggleValue, collapsed, toggleGroup, groups,
-    shown, treeRows, toolbar, flatBody,
-  };
+  return { q, open, toggleValue, shown, toolbar, body };
 }
 
 // ---------------------------------------------------------------------------
@@ -799,13 +934,12 @@ function useKeyTable<T extends Pathed>(
 
 const fieldTier = (f: FieldResult): Tier => tierOf(f.status === 'match', f.expected, f.actual);
 const fieldWeight = (f: FieldResult) => FAIL_WEIGHT[f.status];
-const fieldStatus = (f: FieldResult) => f.status;
-
 function FieldRow({
-  f, view, expanded, onExpand,
+  f, label, depth, expanded, onExpand,
 }: {
   f: FieldResult;
-  view: KeyView;
+  label: string;
+  depth: number;
   expanded: boolean;
   onExpand: () => void;
 }) {
@@ -814,59 +948,38 @@ function FieldRow({
   // 같은 값 두 개를 통째로 붉히는 대신 어긋난 낱말만 — 긴 문장에서 어디가
   // 갈렸는지 사람이 눈으로 찾던 일을 표가 한다.
   const marks = useMemo(() => markPair(f.expected, f.actual, f.status === 'diff'), [f]);
-  const type = f.status === 'type';
+  const long = isLong(f.expected, f.actual);
+  const clamp = long && !expanded;
   return (
     <tr className="group transition-colors hover:bg-surface-2/70">
-      <KeyCell path={f.path} rail={s.rail} dim={dim} {...view}>
-        {f.status !== 'match' && <StatusChip status={f.status} />}
-      </KeyCell>
-      {/* 맞은 줄은 값이 하나다 — 같은 글자를 두 칸에 두 번 쓰면 표 폭의 절반이
-          반복이 되고, 값이 둘로 갈린 줄이 도리어 묻힌다. */}
-      {f.status === 'match' ? (
-        <ValueCell
-          text={f.actual}
-          absentLabel=""
-          segs={null}
-          tone="ok"
-          fill=""
-          dim={dim}
-          same
-          span={2}
-          expanded={expanded}
-          onToggle={onExpand}
-          last
-        />
-      ) : (
-        <>
-          <ValueCell
-            text={f.expected}
-            absentLabel="기대에 없음"
-            segs={marks ? marks.left : null}
-            tone="ok"
-            fill={s.expected}
-            typeTag={type}
-            expanded={expanded}
-            onToggle={onExpand}
+      <KeyCell path={f.path} label={label} depth={depth} rail={s.rail} dim={dim} />
+      <ValueTd long={long} expanded={expanded} onToggle={onExpand} copy={f.actual ?? f.expected}>
+        {f.status === 'match' ? (
+          <SameValue text={f.actual} dim={dim} clamp={clamp} expanded={expanded} />
+        ) : (
+          <Delta
+            typeTag={f.status === 'type'}
+            clamp={clamp}
+            parts={[
+              { label: '기대', text: f.expected, segs: marks ? marks.left : null, tone: 'plain', absent: '기대에 없음' },
+              {
+                label: '실제',
+                text: f.actual,
+                segs: marks ? marks.right : null,
+                tone: f.status === 'extra' ? 'warn' : 'bad',
+                absent: '응답에 없음',
+              },
+            ]}
           />
-          <ValueCell
-            text={f.actual}
-            absentLabel="응답에 없음"
-            segs={marks ? marks.right : null}
-            tone={f.status === 'extra' ? 'warn' : 'bad'}
-            fill={s.actual}
-            typeTag={type}
-            expanded={expanded}
-            onToggle={onExpand}
-            last
-          />
-        </>
-      )}
+        )}
+      </ValueTd>
+      <td className={cn(CELL, 'text-right')}>{f.status !== 'match' && <StatusChip status={f.status} />}</td>
     </tr>
   );
 }
 
-/** 키 옆의 상태 칩 — 어긋난 줄에만. 따로 '결과' 열을 두면 스무 줄이 '일치'
- * 글자로 폭을 차지하고, 레일 색·층 머리가 이미 한 말을 한 번 더 한다. */
+/** 판정 칸의 상태 칩 — 어긋난 줄에만. 맞은 줄까지 '일치'를 적으면 스무 줄이 같은
+ * 글자로 차서, 틀린 줄이 도리어 묻힌다. */
 function StatusChip({ status }: { status: FieldStatus }) {
   const s = STATUS[status];
   return (
@@ -891,68 +1004,33 @@ function KindCounts({ rows }: { rows: FieldResult[] }) {
   );
 }
 
-/** 키 단위 판정표.
+/** 키 단위 판정표 — 키 · 값 · 판정 세 칸, 부모 객체별로 묶어서.
  *
- * 기본은 '오류 먼저': 틀린 키가 맨 위(무거운 종류부터), 그 아래 값이 있는 키,
- * 맨 아래 양쪽 다 비어 있는 키. 층마다 머리 한 줄이 서서 차례가 왜 이런지를
- * 말한다. '원래 순서'로 돌리면 기대 정답에 적힌 차례와 구조 그대로 트리가 된다.
+ * 기본은 '오류 먼저': 묶음 안에서 틀린 키가 위(무거운 종류부터), 그 아래 값이
+ * 있는 키, 맨 아래 빈 키. 묶음도 틀린 키를 가진 것이 앞선다. '원래 순서'는 기대
+ * 정답에 적힌 차례 그대로.
  *
- * 열 너비는 고정 비율이다. 자동 폭은 값 하나가 길어질 때마다 열이 통째로 밀려,
- * 위아래 줄의 기대값·실제값이 서로 어긋난 자리에 서게 된다. */
-function fieldSizing(m: StructuredMatch): ColSizing {
-  // 어긋난 줄은 키 옆에 상태 칩(값 다름 · 타입 다름 …)을 단다 — 그 자리까지 잰다.
-  const anyBad = m.fields.some((f) => f.status !== 'match');
-  return sizeColumns(
-    m.fields.map((f) => f.path),
-    anyBad ? 4 : 0,
-    [
-      m.fields.map((f) => orAbsent(f.expected, '기대에 없음')),
-      m.fields.map((f) => orAbsent(f.actual, '응답에 없음')),
-    ],
-    m.total >= ROOMY ? 42 : 36,
-  );
-}
-
-function FieldTable({ m, sizing }: { m: StructuredMatch; sizing: ColSizing }) {
+ * 키 칸 폭은 표 단위로 한 번(가장 긴 끝마디), 판정 칸은 고정, 값 칸이 나머지를
+ * 다 쓴다 — 위아래 줄의 칸이 어긋나지 않는다. */
+function FieldTable({ m }: { m: StructuredMatch }) {
   const t = useKeyTable(m.fields, fieldTier, fieldWeight);
   const roomy = m.total >= ROOMY;
+  const keyRem = useMemo(() => keyColRem(m.fields.map((f) => splitPath(f.segs).leaf)), [m.fields]);
 
-  const body =
-    t.sort === 'importance'
-      ? t.flatBody(
-          (f) => (
-            <FieldRow
-              key={f.path}
-              f={f}
-              view={flatKey(f.path, f.segs)}
-              expanded={t.open.has(f.path)}
-              onExpand={() => t.toggleValue(f.path)}
-            />
-          ),
-          (rows) => <KindCounts rows={rows} />,
-          roomy,
-          3,
-        )
-      : t.treeRows.map((r) =>
-          r.item ? (
-            <FieldRow
-              key={r.path}
-              f={r.item}
-              view={{ label: r.label, depth: r.depth, gutter: t.groups.length > 0 }}
-              expanded={t.open.has(r.path)}
-              onExpand={() => t.toggleValue(r.path)}
-            />
-          ) : (
-            <GroupRow
-              key={r.path}
-              row={r}
-              collapsed={t.collapsed.has(r.path)}
-              span={2}
-              onToggle={() => t.toggleGroup(r.path)}
-              statusOf={fieldStatus}
-            />
-          ),
-        );
+  const body = t.body(
+    (f, label, depth) => (
+      <FieldRow
+        key={f.path}
+        f={f}
+        label={label}
+        depth={depth}
+        expanded={t.open.has(f.path)}
+        onExpand={() => t.toggleValue(f.path)}
+      />
+    ),
+    (rows) => <KindCounts rows={rows} />,
+    3,
+  );
 
   return (
     <div>
@@ -961,15 +1039,19 @@ function FieldTable({ m, sizing }: { m: StructuredMatch; sizing: ColSizing }) {
         <NoRows>{t.q.trim() ? '검색과 맞는 키가 없습니다' : '해당하는 키가 없습니다'}</NoRows>
       ) : (
         <div className="max-h-[36rem] overflow-auto">
-          <table className="w-full min-w-[560px] table-fixed border-separate border-spacing-0 text-[13px] leading-normal">
+          <table className="w-full min-w-[520px] table-fixed border-separate border-spacing-0 text-[13px] leading-normal">
             <colgroup>
-              {sizing.cols.map((w, i) => <col key={i} style={{ width: w }} />)}
+              <col style={{ width: `${keyRem}rem` }} />
+              <col />
+              <col style={{ width: '5.5rem' }} />
             </colgroup>
             <thead className="sticky top-0 z-10 bg-surface-3 text-left text-xs text-body">
               <tr>
-                <th className={cn('border-b border-line px-3 py-1.5 font-semibold', COL)}>키</th>
-                <th className={cn('border-b border-line px-3 py-1.5 font-semibold', COL)}>기대값</th>
-                <th className="border-b border-line px-3 py-1.5 font-semibold">실제값</th>
+                <th className={cn(TH, COL)}>키</th>
+                <th className={cn(TH, COL)}>
+                  값 <span className="ml-1 font-normal text-muted">기대 → 실제</span>
+                </th>
+                <th className={cn(TH, 'text-right')}>판정</th>
               </tr>
             </thead>
             <tbody className="[&>tr:last-child>td]:border-b-0">{body}</tbody>
@@ -1020,14 +1102,9 @@ export function MatchDiff({ row }: { row: RagasResultRow }) {
   );
   const diff = useMemo(() => diffWords(pair.left, pair.right), [pair.left, pair.right]);
   const [raw, setRaw] = useState(false);
-  const sizing = useMemo(() => (fields ? fieldSizing(fields) : null), [fields]);
 
   return (
-    // 키별 표일 때만 패널이 표만큼 좁아진다 — 원본 보기는 두 칸 나란히라 넓게 쓴다.
-    <div
-      className="overflow-hidden rounded-md border border-line bg-surface"
-      style={sizing && !raw ? { maxWidth: sizing.maxWidth } : undefined}
-    >
+    <div className="overflow-hidden rounded-md border border-line bg-surface">
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-line bg-surface-2 px-3 py-2">
         <span className="eyebrow">채점 대상 · 기대 정답</span>
         {/* 키별 표에는 변수 이름을 적을 자리가 없다 — 무엇을 채점했는지는 어느
@@ -1050,8 +1127,8 @@ export function MatchDiff({ row }: { row: RagasResultRow }) {
           <ElapsedTag ms={row.elapsed_ms} />
         </span>
       </div>
-      {fields && sizing && !raw ? (
-        <FieldTable m={fields} sizing={sizing} />
+      {fields && !raw ? (
+        <FieldTable m={fields} />
       ) : (
         <div className="grid divide-y divide-line sm:grid-cols-2 sm:divide-x sm:divide-y-0">
           <Pane
@@ -1180,12 +1257,6 @@ const AB_LABEL: Record<AbVerdict, string> = {
   b: 'B만 맞음',
 };
 
-/** 트리 보기의 가지 줄 톤을 고르는 데만 쓰는 상태 — 한쪽이라도 어긋났으면 그 종류로. */
-function pairStatus(r: PairRow): FieldStatus {
-  const st = [r.a?.status, r.b?.status].filter(Boolean) as FieldStatus[];
-  return st.reduce<FieldStatus>((worst, s) => (rankOf(s) > rankOf(worst) ? s : worst), 'match');
-}
-
 const pairTier = (r: PairRow): Tier =>
   tierOf(abVerdict(r) === 'same-ok', r.expected, r.a?.actual ?? null, r.b?.actual ?? null);
 
@@ -1213,13 +1284,14 @@ function VerdictCounts({ rows }: { rows: PairRow[] }) {
   );
 }
 
-/** A/B 표의 한 줄. 어느 쪽이 맞았는지는 키 옆의 작은 표시 하나로 — 값 칸을 읽지
- * 않고 세로로 훑기만 해도 갈린 자리가 보여야 한다. */
+/** A/B 표의 한 줄. 값 칸은 `기대 → A ✓ · B 500` 한 줄, 누가 맞았는지는 오른쪽 끝
+ * 판정 칸에 — 값 칸을 읽지 않고 세로로 훑기만 해도 갈린 자리가 보인다. */
 function PairFieldRow({
-  r, view, expanded, onExpand,
+  r, label, depth, expanded, onExpand,
 }: {
   r: PairRow;
-  view: KeyView;
+  label: string;
+  depth: number;
   expanded: boolean;
   onExpand: () => void;
 }) {
@@ -1227,85 +1299,59 @@ function PairFieldRow({
   const bad = v !== 'same-ok';
   const dim = pairTier(r) === 'blank';
   const warnOnly = [r.a, r.b].every((f) => !f || f.status === 'match' || f.status === 'extra');
-  const cell = (f: FieldResult | undefined, last?: boolean) => {
-    if (!f) return <td className={cn(CELL, !last && COL, 'text-muted')}>—</td>;
-    // 맞은 쪽은 값을 되풀이하지 않고 맞았다고만 적는다 — 그래야 같은 줄에서 틀린
-    // 쪽의 값이 혼자 선다. 값 자체는 바로 왼쪽 기대값이고, 툴팁에도 남는다.
-    if (f.status === 'match') {
-      return (
-        <td className={cn(CELL, !last && COL)} title={f.actual ?? undefined}>
-          <span className="inline-flex items-center gap-1 text-xs font-medium text-ok">
-            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden>
-              <path d="M3 8.5l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            일치
-          </span>
-        </td>
-      );
-    }
+  const long = isLong(r.expected, r.a?.actual, r.b?.actual);
+  const clamp = long && !expanded;
+  // 맞은 쪽은 값을 되풀이하지 않고 일치 표시만 — 그래야 같은 줄에서 틀린 쪽의 값이
+  // 혼자 선다. 값 자체는 바로 앞 기대값이다.
+  const side = (tag: 'A' | 'B', f: FieldResult | undefined): DeltaPart => {
+    if (!f) return { label: tag, tag, text: null, segs: null, tone: 'plain', absent: '—' };
+    if (f.status === 'match') return { label: tag, tag, ok: true, text: f.actual, segs: null, tone: 'plain', absent: '' };
     const mark = markPair(r.expected, f.actual, f.status === 'diff');
-    return (
-      <ValueCell
-        text={f.actual}
-        absentLabel="응답에 없음"
-        segs={mark ? mark.right : null}
-        tone={f.status === 'extra' ? 'warn' : 'bad'}
-        fill={STATUS[f.status].actual}
-        dim={dim}
-        expanded={expanded}
-        onToggle={onExpand}
-        last={last}
-      />
-    );
+    return {
+      label: tag,
+      tag,
+      text: f.actual,
+      segs: mark ? mark.right : null,
+      tone: f.status === 'extra' ? 'warn' : 'bad',
+      absent: '응답에 없음',
+    };
   };
   return (
     <tr className="group transition-colors hover:bg-surface-2/70">
       <KeyCell
         path={r.path}
+        label={label}
+        depth={depth}
         dim={dim}
         rail={!bad ? 'border-l-transparent' : warnOnly ? 'border-l-warn-vivid' : 'border-l-bad-vivid'}
-        {...view}
-      >
-        {(v === 'a' || v === 'b') && (
+      />
+      <ValueTd long={long} expanded={expanded} onToggle={onExpand} copy={r.expected}>
+        {v === 'same-ok' ? (
+          <SameValue text={r.expected} dim={dim} clamp={clamp} expanded={expanded} />
+        ) : (
+          <Delta
+            typeTag={[r.a, r.b].some((f) => f?.status === 'type')}
+            clamp={clamp}
+            parts={[
+              { label: '기대', text: r.expected, segs: null, tone: 'plain', absent: '기대에 없음' },
+              side('A', r.a),
+              side('B', r.b),
+            ]}
+          />
+        )}
+      </ValueTd>
+      <td className={cn(CELL, 'text-right')}>
+        {bad && (
           <span
-            title={AB_LABEL[v]}
-            className="shrink-0 rounded-sm border border-ok-line bg-ok-soft px-1 py-px font-sans text-[11px] font-semibold text-ok"
+            className={cn(
+              'whitespace-nowrap rounded-full px-1.5 py-px text-[11px] font-semibold',
+              v === 'same-bad' ? (warnOnly ? STATUS.extra.chip : BAD_CHIP) : 'border border-ok-line bg-ok-soft text-ok',
+            )}
           >
-            {v.toUpperCase()}
+            {AB_LABEL[v]}
           </span>
         )}
-      </KeyCell>
-      {/* 두 사이드가 다 맞은 줄은 기대값·A·B 가 한 글자다 — 세 번 쓰지 않고 한 칸으로. */}
-      {v === 'same-ok' ? (
-        <ValueCell
-          text={r.expected}
-          absentLabel="기대에 없음"
-          segs={null}
-          tone="ok"
-          fill=""
-          dim={dim}
-          same
-          span={3}
-          expanded={expanded}
-          onToggle={onExpand}
-          last
-        />
-      ) : (
-        <>
-          <ValueCell
-            text={r.expected}
-            absentLabel="기대에 없음"
-            segs={null}
-            tone="ok"
-            fill=""
-            typeTag={[r.a, r.b].some((f) => f?.status === 'type')}
-            expanded={expanded}
-            onToggle={onExpand}
-          />
-          {cell(r.a)}
-          {cell(r.b, true)}
-        </>
-      )}
+      </td>
     </tr>
   );
 }
@@ -1355,64 +1401,28 @@ export function FieldCompareTable({
   }, [aText, bText, expected, unwrapA, unwrapB]);
 
   const t = useKeyTable(all, pairTier, pairWeight);
-  // 맞은 사이드 칸은 값 대신 '일치'만 적는다 — 폭도 그 글자로 잰다.
-  const sideText = (f: FieldResult | undefined) =>
-    !f ? '—' : f.status === 'match' ? '일치' : orAbsent(f.actual, '응답에 없음');
-  const sizing = useMemo(
-    () =>
-      sizeColumns(
-        all.map((r) => r.path),
-        1.5, // A · B 표시
-        [all.map((r) => orAbsent(r.expected, '기대에 없음')), all.map((r) => sideText(r.a)), all.map((r) => sideText(r.b))],
-        48,
-      ),
-    // sideText 는 all 에서만 읽는다.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [all],
-  );
+  const keyRem = useMemo(() => keyColRem(all.map((r) => splitPath(r.segs).leaf)), [all]);
   if (all.length === 0) return null;
   const roomy = all.length >= ROOMY;
   const quiet = all.every((r) => abVerdict(r) === 'same-ok');
 
-  const body =
-    t.sort === 'importance'
-      ? t.flatBody(
-          (r) => (
-            <PairFieldRow
-              key={r.path}
-              r={r}
-              view={flatKey(r.path, r.segs)}
-              expanded={t.open.has(r.path)}
-              onExpand={() => t.toggleValue(r.path)}
-            />
-          ),
-          (rows) => <VerdictCounts rows={rows} />,
-          roomy,
-          4,
-        )
-      : t.treeRows.map((row) =>
-          row.item ? (
-            <PairFieldRow
-              key={row.path}
-              r={row.item}
-              view={{ label: row.label, depth: row.depth, gutter: t.groups.length > 0 }}
-              expanded={t.open.has(row.path)}
-              onExpand={() => t.toggleValue(row.path)}
-            />
-          ) : (
-            <GroupRow
-              key={row.path}
-              row={row}
-              collapsed={t.collapsed.has(row.path)}
-              span={3}
-              onToggle={() => t.toggleGroup(row.path)}
-              statusOf={pairStatus}
-            />
-          ),
-        );
+  const body = t.body(
+    (r, label, depth) => (
+      <PairFieldRow
+        key={r.path}
+        r={r}
+        label={label}
+        depth={depth}
+        expanded={t.open.has(r.path)}
+        onExpand={() => t.toggleValue(r.path)}
+      />
+    ),
+    (rows) => <VerdictCounts rows={rows} />,
+    3,
+  );
 
   return (
-    <div className={cn('overflow-hidden rounded-md border border-line bg-surface', className)} style={{ maxWidth: sizing.maxWidth }}>
+    <div className={cn('overflow-hidden rounded-md border border-line bg-surface', className)}>
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-line bg-surface-2 px-3 py-2">
         <span className="eyebrow">키별 판정</span>
         <span className="text-xs text-muted">
@@ -1430,16 +1440,19 @@ export function FieldCompareTable({
         <NoRows>{t.q.trim() ? '검색과 맞는 키가 없습니다' : '해당하는 키가 없습니다'}</NoRows>
       ) : (
         <div className="max-h-[36rem] overflow-auto">
-          <table className="w-full min-w-[620px] table-fixed border-separate border-spacing-0 text-[13px] leading-normal">
+          <table className="w-full min-w-[560px] table-fixed border-separate border-spacing-0 text-[13px] leading-normal">
             <colgroup>
-              {sizing.cols.map((w, i) => <col key={i} style={{ width: w }} />)}
+              <col style={{ width: `${keyRem}rem` }} />
+              <col />
+              <col style={{ width: '6.5rem' }} />
             </colgroup>
             <thead className="sticky top-0 z-10 bg-surface-3 text-left text-xs text-body">
               <tr>
-                <th className={cn('border-b border-line px-3 py-1.5 font-semibold', COL)}>키</th>
-                <th className={cn('border-b border-line px-3 py-1.5 font-semibold', COL)}>기대값</th>
-                <th className={cn('truncate border-b border-line px-3 py-1.5 font-semibold', COL)}>A · {nameA}</th>
-                <th className="truncate border-b border-line px-3 py-1.5 font-semibold">B · {nameB}</th>
+                <th className={cn(TH, COL)}>키</th>
+                <th className={cn(TH, COL, 'truncate')}>
+                  값 <span className="ml-1 font-normal text-muted">기대 → A · {nameA} · B · {nameB}</span>
+                </th>
+                <th className={cn(TH, 'text-right')}>판정</th>
               </tr>
             </thead>
             <tbody className="[&>tr:last-child>td]:border-b-0">{body}</tbody>
@@ -1466,7 +1479,7 @@ export function valueFields(text: string | null | undefined, unwrapBody: boolean
 
 const noStatus = (): FieldStatus => 'match';
 
-function ValueTable({ fields, sizing }: { fields: FieldResult[]; sizing: ColSizing }) {
+function ValueTable({ fields }: { fields: FieldResult[] }) {
   const [q, setQ] = useState('');
   const [collapsed, toggleGroup, setCollapsed] = useToggleSet();
   const [open, toggleValue] = useToggleSet();
@@ -1519,7 +1532,8 @@ function ValueTable({ fields, sizing }: { fields: FieldResult[]; sizing: ColSizi
         <div className="max-h-[36rem] overflow-auto">
           <table className="w-full min-w-[420px] table-fixed border-separate border-spacing-0 text-[13px] leading-normal">
             <colgroup>
-              {sizing.cols.map((w, i) => <col key={i} style={{ width: w }} />)}
+              <col style={{ width: '32%' }} />
+              <col style={{ width: '68%' }} />
             </colgroup>
             <thead className="sticky top-0 z-10 bg-surface-3 text-left text-xs text-body">
               <tr>
@@ -1591,15 +1605,8 @@ export function ValuePanel({
   const fields = useMemo(() => valueFields(text, unwrapBody), [text, unwrapBody]);
   const pretty = useMemo(() => prettyValue(text) ?? text, [text]);
   const [raw, setRaw] = useState(false);
-  const sizing = useMemo(
-    () => (fields ? sizeColumns(fields.map((f) => f.path), 0, [fields.map((f) => f.actual ?? '')], 30) : null),
-    [fields],
-  );
   return (
-    <div
-      className="min-w-0 overflow-hidden rounded-md border border-line bg-surface"
-      style={sizing && !raw ? { maxWidth: sizing.maxWidth } : undefined}
-    >
+    <div className="min-w-0 overflow-hidden rounded-md border border-line bg-surface">
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-line bg-surface-2 px-3 py-2">
         <span className="eyebrow">{label}</span>
         {tag && <TraceTag name={tag} />}
@@ -1614,8 +1621,8 @@ export function ValuePanel({
           <CopyButton text={text} />
         </span>
       </div>
-      {fields && sizing && !raw ? (
-        <ValueTable fields={fields} sizing={sizing} />
+      {fields && !raw ? (
+        <ValueTable fields={fields} />
       ) : (
         <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-xs leading-relaxed text-ink">
           {pretty}
