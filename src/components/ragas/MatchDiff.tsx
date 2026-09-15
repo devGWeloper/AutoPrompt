@@ -9,6 +9,7 @@ import {
   type StructuredMatch,
 } from '@/lib/exactMatch';
 import { buildFieldTree, flattenTree, worstStatus, type Pathed, type TreeRow } from '@/lib/fieldTree';
+import { byImportance, FAIL_WEIGHT, tierOf, type Tier } from '@/lib/fieldOrder';
 import { diffWords, type DiffPair, type DiffSeg } from '@/lib/textDiff';
 import { cn } from '@/lib/cn';
 import type { RagasResultRow } from '@/lib/types';
@@ -223,134 +224,224 @@ function IconCopy({ text, className }: { text: string; className?: string }) {
   );
 }
 
+
 // ---------------------------------------------------------------------------
-// 걸러 보기 — 머리줄의 숫자가 곧 버튼이다
+// 보기 조작 — 정렬 하나, 끄고 켜는 버튼 둘
 // ---------------------------------------------------------------------------
 
-/** 표에 무엇을 남길지. 상태 이름 하나면 그 상태만. */
-type RowFilter = 'all' | 'bad' | FieldStatus;
+/** 오류 먼저(기본) — 무엇 때문에 X 인지부터. 원래 순서 — 기대 정답에 적힌 차례와
+ * 구조 그대로, 트리로. 앞의 것이 읽는 순서고 뒤의 것이 쓰인 순서다. */
+type SortMode = 'importance' | 'written';
 
-function keepStatus(s: FieldStatus, filter: RowFilter): boolean {
-  if (filter === 'all') return true;
-  if (filter === 'bad') return s !== 'match';
-  return s === filter;
-}
+const TIER_LABEL: Record<Tier, string> = { bad: '오류', value: '값 있음', blank: '값 없음' };
 
-/** 같은 수를 한 번은 요약으로 한 번은 필터 막대로 두 줄에 걸쳐 적는 대신,
- * 세어 놓은 숫자를 그대로 누르게 한다. 누른 칩을 다시 누르면 전체로 돌아온다. */
-function FilterChip({
-  active, tone, count, label, onClick, title,
+/** 끄고 켜는 버튼. 체크 모양인 까닭은 둘이 서로를 끄지 않기 때문이다 — 하나만
+ * 고르는 장치(세그먼트)는 이미 바로 옆 정렬이 쓰고 있다. 버튼에 붙은 수는 이
+ * 버튼이 다루는 줄이 몇 개인지를 누르기 전에 말하고, 0 이면 누를 것이 없다. */
+function ToggleButton({
+  on, onClick, label, count,
 }: {
-  active: boolean;
-  tone?: string;
-  count: number;
-  label: string;
+  on: boolean;
   onClick: () => void;
-  title?: string;
+  label: string;
+  count: number;
 }) {
+  const disabled = count === 0 && !on;
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-pressed={active}
-      title={title}
+      aria-pressed={on}
+      disabled={disabled}
       className={cn(
-        'inline-flex items-baseline gap-1 rounded-sm border px-1.5 py-px text-[11px] font-medium transition',
-        active ? 'border-line-strong bg-surface-3 text-ink' : cn('border-transparent hover:bg-surface-3', tone ?? 'text-muted'),
+        'inline-flex h-6 items-center gap-1.5 rounded-sm border px-2 text-[11px] font-medium transition disabled:cursor-default disabled:opacity-40',
+        on
+          ? 'border-accent-line bg-accent-soft text-accent'
+          : 'border-line bg-surface text-muted enabled:hover:bg-surface-2 enabled:hover:text-ink',
       )}
     >
+      <span
+        aria-hidden
+        className={cn(
+          'flex h-3 w-3 items-center justify-center rounded-[3px] border',
+          on ? 'border-accent bg-accent text-accent-fg' : 'border-line-strong bg-surface',
+        )}
+      >
+        {on && (
+          <svg width="8" height="8" viewBox="0 0 16 16" fill="none">
+            <path d="M3 8.5l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </span>
       {label}
       <span className="font-mono tabular-nums">{count}</span>
     </button>
   );
 }
 
-/** 표 위 한 줄: 몇 개 중 몇 개가 맞았고 틀린 것은 어떤 종류인지 — 그리고 그
- * 숫자를 누르면 표가 거기에 맞춰 줄어든다. 일치/불일치 배지만으로는 "키 하나
- * 때문인지 전부 어긋났는지"를 알 수 없다. */
-function FieldFilterBar({
-  m, filter, onFilter,
-}: {
-  m: StructuredMatch;
-  filter: RowFilter;
-  onFilter: (f: RowFilter) => void;
-}) {
-  const counts = FAIL_KINDS
-    .map((k) => [k, m.fields.filter((f) => f.status === k).length] as const)
-    .filter(([, n]) => n > 0);
-  const bad = m.total - m.matched;
-  const pick = (f: RowFilter) => onFilter(filter === f ? 'all' : f);
+function SortToggle({ value, onChange }: { value: SortMode; onChange: (v: SortMode) => void }) {
+  const opts: [SortMode, string][] = [['importance', '오류 먼저'], ['written', '원래 순서']];
   return (
-    <span className="flex flex-wrap items-center gap-x-0.5 gap-y-1 text-[11px]">
-      <button
-        type="button"
-        onClick={() => onFilter('all')}
-        aria-pressed={filter === 'all'}
-        title="전체 키"
-        className={cn(
-          'rounded-sm border px-1.5 py-px font-mono tabular-nums transition',
-          filter === 'all' ? 'border-line-strong bg-surface-3' : 'border-transparent hover:bg-surface-3',
-        )}
-      >
-        <span className="font-sans font-medium text-muted">키 </span>
-        <span className="font-semibold text-ink">{m.matched}</span>
-        <span className="text-muted-soft">/{m.total}</span>
-      </button>
-      {counts.length > 0 && <span aria-hidden className="mx-1 h-2.5 w-px self-center bg-line-strong" />}
-      {/* 종류가 둘 이상일 때만 합계가 따로 설 값이 있다 — 하나뿐이면 그 칩이
-          곧 '어긋남 전부'다. */}
-      {counts.length > 1 && (
-        <FilterChip
-          active={filter === 'bad'}
-          tone="text-bad"
-          count={bad}
-          label="어긋남"
-          onClick={() => pick('bad')}
-          title="일치한 키를 숨긴다"
-        />
-      )}
-      {counts.map(([k, n]) => (
-        <FilterChip
-          key={k}
-          active={filter === k}
-          tone={STATUS[k].text}
-          count={n}
-          label={STATUS[k].label}
-          onClick={() => pick(k)}
-        />
+    <span className="inline-flex shrink-0 items-stretch gap-0.5 rounded-md border border-line bg-surface-3 p-0.5">
+      {opts.map(([v, label]) => (
+        <button
+          key={v}
+          type="button"
+          onClick={() => onChange(v)}
+          aria-pressed={value === v}
+          className={cn(
+            'rounded-sm px-2 py-0.5 text-[11px] font-semibold transition',
+            value === v ? 'bg-surface text-accent shadow-seg' : 'text-muted hover:text-ink',
+          )}
+        >
+          {label}
+        </button>
       ))}
     </span>
   );
 }
 
+/** 표 바로 위 조작 줄. 왼쪽은 무엇을 남길지(버튼 둘), 오른쪽은 어떻게 늘어놓을지
+ * (검색·정렬). 걸러낸 줄 수도 여기서 말한다 — 표가 짧아진 이유가 버튼인지 실제로
+ * 키가 그것뿐인지 헷갈리면 안 된다. */
+function TableToolbar({
+  badOnly, onBadOnly, badCount, hideBlank, onHideBlank, blankCount, hidden,
+  sort, onSort, q, onQ, groups, allCollapsed, onToggleAll,
+}: {
+  badOnly: boolean;
+  onBadOnly: (v: boolean) => void;
+  badCount: number;
+  hideBlank: boolean;
+  onHideBlank: (v: boolean) => void;
+  blankCount: number;
+  hidden: number;
+  sort: SortMode;
+  onSort: (v: SortMode) => void;
+  q: string;
+  onQ: (v: string) => void;
+  groups: number;
+  allCollapsed: boolean;
+  onToggleAll: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-line bg-surface px-3 py-1.5">
+      <ToggleButton on={badOnly} onClick={() => onBadOnly(!badOnly)} label="오류만 보기" count={badCount} />
+      <ToggleButton on={hideBlank} onClick={() => onHideBlank(!hideBlank)} label="빈 값 숨기기" count={blankCount} />
+      {hidden > 0 && (
+        <span className="text-[11px] text-muted">
+          <span className="font-mono tabular-nums">{hidden}</span>개 숨김
+        </span>
+      )}
+      <span className="ml-auto flex flex-wrap items-center gap-2">
+        {sort === 'written' && groups > 0 && (
+          <button
+            type="button"
+            onClick={onToggleAll}
+            className="h-6 rounded-sm border border-line px-2 text-[11px] text-muted transition hover:bg-surface-2 hover:text-ink"
+          >
+            {allCollapsed ? '모두 펼치기' : '모두 접기'}
+          </button>
+        )}
+        <span className="relative">
+          <input
+            value={q}
+            onChange={(e) => onQ(e.target.value)}
+            placeholder="키 검색"
+            spellCheck={false}
+            className="h-6 w-32 rounded-sm border border-line bg-surface-2 pl-2 pr-5 font-mono text-[11px] text-ink outline-none transition placeholder:font-sans placeholder:text-muted-soft focus:border-accent-line focus:bg-surface focus:shadow-ring"
+          />
+          {q && (
+            <button
+              type="button"
+              onClick={() => onQ('')}
+              aria-label="검색 지우기"
+              className="absolute right-1 top-1/2 -translate-y-1/2 px-0.5 text-[11px] leading-none text-muted hover:text-ink"
+            >
+              ×
+            </button>
+          )}
+        </span>
+        <SortToggle value={sort} onChange={onSort} />
+      </span>
+    </div>
+  );
+}
+
+/** 층이 바뀌는 자리의 한 줄 머리. 줄이 왜 이 차례로 섰는지를 표 안에서 말한다 —
+ * 머리 없이 순서만 바꾸면 '기대 정답과 차례가 다르다'가 버그로 읽힌다. */
+function SectionRow({
+  tier, count, cols, children,
+}: {
+  tier: Tier;
+  count: number;
+  cols: number;
+  children?: ReactNode;
+}) {
+  return (
+    <tr>
+      <td colSpan={cols} className="border-b border-line bg-surface-2 px-3 py-1">
+        <span className="flex flex-wrap items-baseline gap-x-2.5 text-[11px]">
+          <span className={cn('font-semibold', tier === 'bad' ? 'text-bad' : 'text-muted')}>
+            {TIER_LABEL[tier]} <span className="font-mono tabular-nums">{count}</span>
+          </span>
+          {children}
+        </span>
+      </td>
+    </tr>
+  );
+}
+
+/** 걸러낸 뒤 아무 줄도 남지 않았을 때. 빈 표는 '비교할 것이 없다'로도 읽힌다. */
+function NoRows({ children }: { children: string }) {
+  return <div className="px-3 py-6 text-center text-xs text-muted">{children}</div>;
+}
+
+/** 이만큼은 돼야 조작 줄과 층 머리가 제 몫을 한다. 키 서너 개짜리 표에 버튼 둘과
+ * 머리 셋을 얹으면 조작이 내용보다 커진다 — 그런 표는 정렬만 해서 그대로 보인다. */
+const ROOMY = 6;
+
 // ---------------------------------------------------------------------------
 // 표의 부품 — 단일 표와 A/B 표가 같은 것을 쓴다
 // ---------------------------------------------------------------------------
 
-/** 키 칸. 들여쓰기가 구조를 말하므로 경로 전체가 아니라 이 줄이 가진 마디만
- * 적는다 — 스무 줄이 같은 접두사를 되풀이하면 정작 달라지는 끝마디가 묻힌다.
- * 전체 경로는 툴팁으로 남고, 손을 올리면 집어갈 수 있다. */
+/** 키 칸이 받는 모양. 평면 보기는 앞마디(prefix)를 흐리게 붙이고, 트리 보기는
+ * 깊이만큼 들여쓴다. */
+interface KeyView {
+  label: string;
+  prefix?: string;
+  depth?: number;
+  gutter?: boolean;
+}
+
+/** 평면 보기의 키 — 경로 전체를 적되 눈이 가는 곳은 끝마디여야 한다. 들여쓰기가
+ * 없으니 앞마디를 지우면 `id` 가 어느 `id` 인지 알 길이 없고, 앞마디를 또렷이
+ * 두면 스무 줄이 같은 접두사로 시작해 정작 달라지는 끝이 묻힌다. */
+function flatKey(path: string, segs: string[]): KeyView {
+  const label = segs[segs.length - 1] ?? '';
+  return { label, prefix: path.slice(0, path.length - label.length) };
+}
+
 function KeyCell({
-  row, rail, gutter, lead, children,
-}: {
-  row: { path: string; label: string; depth: number };
+  path, label, prefix, depth = 0, gutter, rail, dim, lead, children,
+}: KeyView & {
+  path: string;
   rail: string;
-  /** 가지가 하나라도 있는 표에서는 잎 줄도 셰브런 자리를 비워 둔다 — 그래야
-   * 같은 깊이의 가지와 잎이 한 선에 선다. */
-  gutter: boolean;
+  /** 값 없는 줄은 키 이름까지 한 발 물러난다. */
+  dim?: boolean;
   lead?: ReactNode;
   children?: ReactNode;
 }) {
   return (
-    <td className={cn(CELL, COL, 'border-l-[3px] font-mono text-ink', rail)}>
-      <span className="flex items-baseline gap-1" style={{ paddingLeft: row.depth * 12 }}>
+    <td className={cn(CELL, COL, 'border-l-[3px] font-mono', dim ? 'text-muted' : 'text-ink', rail)}>
+      <span className="flex items-baseline gap-1" style={depth ? { paddingLeft: depth * 12 } : undefined}>
         {gutter && <span className="w-3.5 shrink-0 self-center">{lead}</span>}
-        <span className="min-w-0 break-all" title={row.path || undefined}>
-          {row.label || <span className="text-muted">(전체)</span>}
+        <span className="min-w-0 break-all" title={path || undefined}>
+          {prefix && <span className="text-muted-soft">{prefix}</span>}
+          {label || <span className="text-muted">(전체)</span>}
         </span>
         {children}
-        {row.path && (
-          <IconCopy text={row.path} className="ml-auto shrink-0 self-start opacity-0 transition-opacity group-hover:opacity-100" />
+        {path && (
+          <IconCopy text={path} className="ml-auto shrink-0 self-start opacity-0 transition-opacity group-hover:opacity-100" />
         )}
       </span>
     </td>
@@ -358,7 +449,7 @@ function KeyCell({
 }
 
 function ValueCell({
-  text, absentLabel, segs, tone, fill, expanded, onToggle, last,
+  text, absentLabel, segs, tone, fill, dim, expanded, onToggle, last,
 }: {
   text: string | null;
   absentLabel: string;
@@ -366,6 +457,7 @@ function ValueCell({
   segs: DiffSeg[] | null;
   tone: 'ok' | 'bad' | 'warn';
   fill: string;
+  dim?: boolean;
   expanded: boolean;
   onToggle: () => void;
   last?: boolean;
@@ -377,9 +469,17 @@ function ValueCell({
       </td>
     );
   }
+  // 빈 문자열은 글자 없이 그리면 칸이 깨진 것처럼 보인다 — 빈 값이라고 적는다.
+  if (text.trim() === '') {
+    return (
+      <td className={cn(CELL, !last && COL, 'font-mono', fill)}>
+        <span className="text-muted-soft">&quot;&quot;</span>
+      </td>
+    );
+  }
   const long = text.length > LONG;
   return (
-    <td className={cn(CELL, !last && COL, 'group/v relative break-words font-mono', !segs && fill)}>
+    <td className={cn(CELL, !last && COL, 'group/v relative break-words font-mono', !segs && fill, dim && 'text-muted')}>
       <div className={cn(!expanded && long && 'line-clamp-2')}>
         {segs
           ? segs.map((s, i) =>
@@ -417,14 +517,12 @@ function countBad<T extends Pathed>(row: TreeRow<T>, statusOf: (item: T) => Fiel
   return n;
 }
 
-/** 접었다 펴는 가지 줄. 접혀 있어도 아래에 무엇이 있는지는 말한다 — 조용한 가지는
- * 그 아래 실패가 없는 것으로 읽힌다. */
+/** 트리 보기에서 접었다 펴는 가지 줄. 접혀 있어도 아래에 무엇이 있는지는 말한다 —
+ * 조용한 가지는 그 아래 실패가 없는 것으로 읽힌다. */
 function GroupRow<T extends Pathed>({
-  row, cols, collapsed, onToggle, statusOf,
+  row, collapsed, onToggle, statusOf,
 }: {
   row: TreeRow<T>;
-  /** 요약을 걸칠 가운데 칸 수 (단일 2, 비교 3). */
-  cols: number;
   collapsed: boolean;
   onToggle: () => void;
   statusOf: (item: T) => FieldStatus;
@@ -435,18 +533,20 @@ function GroupRow<T extends Pathed>({
   return (
     <tr className="group cursor-pointer bg-surface-2/40 transition-colors hover:bg-surface-2" onClick={onToggle}>
       <KeyCell
-        row={row}
+        path={row.path}
+        label={row.label}
+        depth={row.depth}
         gutter
         rail={worst === 'match' ? 'border-l-transparent' : s.rail}
         lead={<Chevron open={!collapsed} />}
       />
-      <td className={cn(CELL, COL)} colSpan={cols}>
+      <td className={cn(CELL, COL)} colSpan={2}>
         <span className="text-[11px] text-muted">
           하위 <span className="font-mono tabular-nums">{row.leaves}</span>개
           {bad > 0 && (
             <span className={cn('font-medium', s.text)}>
-              {' · '}
-              {worst === 'extra' ? '추가' : '어긋남'} <span className="font-mono tabular-nums">{bad}</span>
+              {' · 오류 '}
+              <span className="font-mono tabular-nums">{bad}</span>
             </span>
           )}
         </span>
@@ -460,66 +560,6 @@ function GroupRow<T extends Pathed>({
       </td>
     </tr>
   );
-}
-
-/** 표 안쪽 얇은 조작 줄 — 키가 많을 때만 선다. 키 이름으로 좁히고, 가지를 한
- * 번에 접는다. 걸러낸 줄 수는 여기서 말한다: 표가 짧아진 이유가 필터인지 실제로
- * 키가 그것뿐인지 헷갈리면 안 된다. */
-function TableToolbar({
-  q, onQ, groups, allCollapsed, onToggleAll, hidden, onClearFilter,
-}: {
-  q: string;
-  onQ: (v: string) => void;
-  groups: number;
-  allCollapsed: boolean;
-  onToggleAll: () => void;
-  hidden: number;
-  onClearFilter?: () => void;
-}) {
-  return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface px-3 py-1.5">
-      <input
-        value={q}
-        onChange={(e) => onQ(e.target.value)}
-        placeholder="키 검색"
-        spellCheck={false}
-        className="h-6 w-36 rounded-sm border border-line bg-surface-2 px-2 font-mono text-[11px] text-ink outline-none transition placeholder:font-sans placeholder:text-muted-soft focus:border-accent-line focus:bg-surface focus:shadow-ring"
-      />
-      {q && (
-        <button type="button" onClick={() => onQ('')} className="text-[11px] text-muted hover:text-ink">
-          지우기
-        </button>
-      )}
-      {hidden > 0 && (
-        <span className="text-[11px] text-muted">
-          <span className="font-mono tabular-nums">{hidden}</span>개 숨김
-          {onClearFilter && (
-            <button
-              type="button"
-              onClick={onClearFilter}
-              className="ml-1.5 underline decoration-line-strong underline-offset-2 hover:text-ink"
-            >
-              전체 보기
-            </button>
-          )}
-        </span>
-      )}
-      {groups > 0 && (
-        <button
-          type="button"
-          onClick={onToggleAll}
-          className="ml-auto rounded-sm border border-line px-1.5 py-0.5 text-[11px] text-muted transition hover:bg-surface-2 hover:text-ink"
-        >
-          {allCollapsed ? '모두 펼치기' : '모두 접기'}
-        </button>
-      )}
-    </div>
-  );
-}
-
-/** 걸러낸 뒤 아무 줄도 남지 않았을 때. 빈 표는 '비교할 것이 없다'로도 읽힌다. */
-function NoRows({ children }: { children: string }) {
-  return <div className="px-3 py-6 text-center text-xs text-muted">{children}</div>;
 }
 
 /** 가지 줄의 경로 모음 — '모두 접기'가 무엇을 접을지. */
@@ -542,47 +582,124 @@ function markPair(a: string | null, b: string | null, on: boolean): DiffPair | n
   return d.identical ? null : d;
 }
 
-/** 길어서 접어 둔 값 중 어느 줄이 펴져 있는지 — 한 줄의 값 칸 둘은 같이 펴진다. */
-function useExpanded() {
-  const [open, setOpen] = useState<Set<string>>(() => new Set());
-  const toggle = (path: string) =>
-    setOpen((cur) => { const n = new Set(cur); if (n.has(path)) n.delete(path); else n.add(path); return n; });
-  return { open, toggle };
+function useToggleSet() {
+  const [set, setSet] = useState<Set<string>>(() => new Set());
+  const toggle = (key: string) =>
+    setSet((cur) => { const n = new Set(cur); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+  return [set, toggle, setSet] as const;
 }
 
-function useCollapsed() {
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-  const toggle = (path: string) =>
-    setCollapsed((cur) => { const n = new Set(cur); if (n.has(path)) n.delete(path); else n.add(path); return n; });
-  return { collapsed, setCollapsed, toggle };
+/** 두 표가 공유하는 보기 상태와 그 결과. 무엇을 남기고(버튼 둘·검색) 어떻게
+ * 늘어놓을지(정렬)가 한 곳에서 정해져, 단일 표와 A/B 표가 같은 규칙으로 선다.
+ * `tierFn`·`weightFn` 은 모듈 수준 상수여야 한다 — 렌더마다 새로 만들면 메모가
+ * 매번 풀린다. */
+function useKeyTable<T extends Pathed>(
+  items: T[],
+  tierFn: (t: T) => Tier,
+  weightFn: (t: T) => number,
+) {
+  const [sort, setSort] = useState<SortMode>('importance');
+  const [badOnly, setBadOnly] = useState(false);
+  const [hideBlank, setHideBlank] = useState(false);
+  const [q, setQ] = useState('');
+  const [collapsed, toggleGroup, setCollapsed] = useToggleSet();
+  const [open, toggleValue] = useToggleSet();
+
+  const badCount = useMemo(() => items.filter((t) => tierFn(t) === 'bad').length, [items, tierFn]);
+  const blankCount = useMemo(() => items.filter((t) => tierFn(t) === 'blank').length, [items, tierFn]);
+  const shown = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return items.filter((t) => {
+      const tier = tierFn(t);
+      if (badOnly && tier !== 'bad') return false;
+      if (hideBlank && tier === 'blank') return false;
+      return !needle || t.path.toLowerCase().includes(needle);
+    });
+  }, [items, tierFn, badOnly, hideBlank, q]);
+  const sorted = useMemo(() => byImportance(shown, tierFn, weightFn), [shown, tierFn, weightFn]);
+  const tree = useMemo(() => buildFieldTree(shown), [shown]);
+  const treeRows = useMemo(() => flattenTree(tree, collapsed), [tree, collapsed]);
+  const groups = useMemo(() => groupPaths(tree), [tree]);
+
+  const toolbar = (
+    <TableToolbar
+      badOnly={badOnly}
+      onBadOnly={setBadOnly}
+      badCount={badCount}
+      hideBlank={hideBlank}
+      onHideBlank={setHideBlank}
+      blankCount={blankCount}
+      hidden={items.length - shown.length}
+      sort={sort}
+      onSort={setSort}
+      q={q}
+      onQ={setQ}
+      groups={groups.length}
+      allCollapsed={groups.length > 0 && groups.every((p) => collapsed.has(p))}
+      onToggleAll={() => setCollapsed((cur) => (groups.every((p) => cur.has(p)) ? new Set() : new Set(groups)))}
+    />
+  );
+
+  /** 오류 먼저 보기의 줄들 — 층이 바뀌는 자리마다 머리 한 줄. 오류 층의 머리는
+   * 층이 하나뿐이어도 선다: '오류만 보기'를 켠 표에서도 무슨 종류가 몇인지는
+   * 남아야 한다. */
+  const flatBody = (row: (t: T) => ReactNode, detail: (inTier: T[]) => ReactNode, sections: boolean): ReactNode[] => {
+    const body: ReactNode[] = [];
+    const tiers = new Set(sorted.map(tierFn));
+    let last: Tier | null = null;
+    for (const t of sorted) {
+      const tier = tierFn(t);
+      if (sections && tier !== last && (tiers.size > 1 || tier === 'bad')) {
+        const inTier = sorted.filter((x) => tierFn(x) === tier);
+        body.push(
+          <SectionRow key={'§' + tier} tier={tier} count={inTier.length} cols={4}>
+            {tier === 'bad' && detail(inTier)}
+          </SectionRow>,
+        );
+      }
+      last = tier;
+      body.push(row(t));
+    }
+    return body;
+  };
+
+  return {
+    sort, q, open, toggleValue, collapsed, toggleGroup, groups,
+    shown, treeRows, toolbar, flatBody,
+  };
 }
 
 // ---------------------------------------------------------------------------
 // 단일 실행 — 키별 판정표
 // ---------------------------------------------------------------------------
 
+const fieldTier = (f: FieldResult): Tier => tierOf(f.status === 'match', f.expected, f.actual);
+const fieldWeight = (f: FieldResult) => FAIL_WEIGHT[f.status];
+const fieldStatus = (f: FieldResult) => f.status;
+
 function FieldRow({
-  row, gutter, expanded, onExpand,
+  f, view, expanded, onExpand,
 }: {
-  row: TreeRow<FieldResult>;
-  gutter: boolean;
+  f: FieldResult;
+  view: KeyView;
   expanded: boolean;
   onExpand: () => void;
 }) {
-  const f = row.item as FieldResult;
   const s = STATUS[f.status];
+  const dim = fieldTier(f) === 'blank';
   // 같은 값 두 개를 통째로 붉히는 대신 어긋난 낱말만 — 긴 문장에서 어디가
   // 갈렸는지 사람이 눈으로 찾던 일을 표가 한다.
   const marks = useMemo(() => markPair(f.expected, f.actual, f.status === 'diff'), [f]);
   return (
     <tr className="group transition-colors hover:bg-surface-2/70">
-      <KeyCell row={row} gutter={gutter} rail={s.rail} />
+      <KeyCell path={f.path} rail={s.rail} dim={dim} {...view} />
       <ValueCell
         text={f.expected}
         absentLabel="기대에 없음"
         segs={marks ? marks.left : null}
         tone="ok"
         fill={s.expected}
+        dim={dim}
         expanded={expanded}
         onToggle={onExpand}
       />
@@ -592,6 +709,7 @@ function FieldRow({
         segs={marks ? marks.right : null}
         tone={f.status === 'extra' ? 'warn' : 'bad'}
         fill={s.actual}
+        dim={dim}
         expanded={expanded}
         onToggle={onExpand}
       />
@@ -604,61 +722,81 @@ function FieldRow({
   );
 }
 
-const fieldStatus = (f: FieldResult) => f.status;
+/** 오류 층 머리에 붙는 종류별 수 — 누락 2 · 값 다름 6. */
+function KindCounts({ rows }: { rows: FieldResult[] }) {
+  return (
+    <>
+      {FAIL_KINDS.map((k) => [k, rows.filter((f) => f.status === k).length] as const)
+        .filter(([, n]) => n > 0)
+        .map(([k, n]) => (
+          <span key={k} className={cn('font-medium', STATUS[k].text)}>
+            {STATUS[k].label} <span className="font-mono tabular-nums">{n}</span>
+          </span>
+        ))}
+    </>
+  );
+}
 
-/** 키 단위 판정표. 기대 정답에 적힌 순서 그대로, 온 구조 그대로 읽히고, 어긋난
- * 줄만 색을 갖는다 — 왼쪽 톤 레일과 어긋난 낱말, 그리고 결과 칩.
+/** 키 단위 판정표.
+ *
+ * 기본은 '오류 먼저': 틀린 키가 맨 위(무거운 종류부터), 그 아래 값이 있는 키,
+ * 맨 아래 양쪽 다 비어 있는 키. 층마다 머리 한 줄이 서서 차례가 왜 이런지를
+ * 말한다. '원래 순서'로 돌리면 기대 정답에 적힌 차례와 구조 그대로 트리가 된다.
  *
  * 열 너비는 고정 비율이다. 자동 폭은 값 하나가 길어질 때마다 열이 통째로 밀려,
- * 위아래 줄의 기대값·실제값이 서로 어긋난 자리에 서게 된다 — 나란히 읽으라고
- * 만든 표에서 그것만은 일어나면 안 된다. */
-function FieldTable({
-  m, filter, onFilter,
-}: {
-  m: StructuredMatch;
-  filter: RowFilter;
-  onFilter: (f: RowFilter) => void;
-}) {
-  const [q, setQ] = useState('');
-  const { collapsed, setCollapsed, toggle: toggleGroup } = useCollapsed();
-  const { open, toggle: toggleValue } = useExpanded();
+ * 위아래 줄의 기대값·실제값이 서로 어긋난 자리에 서게 된다. */
+function FieldTable({ m }: { m: StructuredMatch }) {
+  const t = useKeyTable(m.fields, fieldTier, fieldWeight);
+  const roomy = m.total >= ROOMY;
 
-  const shown = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    return m.fields.filter(
-      (f) => keepStatus(f.status, filter) && (!needle || f.path.toLowerCase().includes(needle)),
-    );
-  }, [m.fields, filter, q]);
-  const tree = useMemo(() => buildFieldTree(shown), [shown]);
-  const rows = useMemo(() => flattenTree(tree, collapsed), [tree, collapsed]);
-  const groups = useMemo(() => groupPaths(tree), [tree]);
-  const hidden = m.total - shown.length;
+  const body =
+    t.sort === 'importance'
+      ? t.flatBody(
+          (f) => (
+            <FieldRow
+              key={f.path}
+              f={f}
+              view={flatKey(f.path, f.segs)}
+              expanded={t.open.has(f.path)}
+              onExpand={() => t.toggleValue(f.path)}
+            />
+          ),
+          (rows) => <KindCounts rows={rows} />,
+          roomy,
+        )
+      : t.treeRows.map((r) =>
+          r.item ? (
+            <FieldRow
+              key={r.path}
+              f={r.item}
+              view={{ label: r.label, depth: r.depth, gutter: t.groups.length > 0 }}
+              expanded={t.open.has(r.path)}
+              onExpand={() => t.toggleValue(r.path)}
+            />
+          ) : (
+            <GroupRow
+              key={r.path}
+              row={r}
+              collapsed={t.collapsed.has(r.path)}
+              onToggle={() => t.toggleGroup(r.path)}
+              statusOf={fieldStatus}
+            />
+          ),
+        );
 
   return (
     <div>
-      {(m.total >= 8 || groups.length > 0) && (
-        <TableToolbar
-          q={q}
-          onQ={setQ}
-          groups={groups.length}
-          allCollapsed={groups.length > 0 && groups.every((p) => collapsed.has(p))}
-          onToggleAll={() =>
-            setCollapsed((cur) => (groups.every((p) => cur.has(p)) ? new Set() : new Set(groups)))
-          }
-          hidden={hidden}
-          onClearFilter={filter !== 'all' ? () => onFilter('all') : undefined}
-        />
-      )}
-      {rows.length === 0 ? (
-        <NoRows>{q.trim() ? '검색과 맞는 키가 없습니다' : '해당하는 키가 없습니다'}</NoRows>
+      {roomy && t.toolbar}
+      {t.shown.length === 0 ? (
+        <NoRows>{t.q.trim() ? '검색과 맞는 키가 없습니다' : '해당하는 키가 없습니다'}</NoRows>
       ) : (
-        <div className="max-h-96 overflow-auto">
+        <div className="max-h-[28rem] overflow-auto">
           <table className="w-full min-w-[560px] table-fixed border-separate border-spacing-0 text-xs">
             <colgroup>
-              <col style={{ width: '24%' }} />
+              <col style={{ width: '26%' }} />
               <col style={{ width: '30%' }} />
               <col style={{ width: '30%' }} />
-              <col style={{ width: '16%' }} />
+              <col style={{ width: '14%' }} />
             </colgroup>
             <thead className="sticky top-0 z-10 bg-surface-2 text-left text-[10px] uppercase tracking-[0.6px] text-muted">
               <tr>
@@ -668,28 +806,7 @@ function FieldTable({
                 <th className="border-b border-line px-3 py-2 font-semibold">결과</th>
               </tr>
             </thead>
-            <tbody className="[&>tr:last-child>td]:border-b-0">
-              {rows.map((r) =>
-                r.item ? (
-                  <FieldRow
-                    key={r.path}
-                    row={r}
-                    gutter={groups.length > 0}
-                    expanded={open.has(r.path)}
-                    onExpand={() => toggleValue(r.path)}
-                  />
-                ) : (
-                  <GroupRow
-                    key={r.path}
-                    row={r}
-                    cols={2}
-                    collapsed={collapsed.has(r.path)}
-                    onToggle={() => toggleGroup(r.path)}
-                    statusOf={fieldStatus}
-                  />
-                ),
-              )}
-            </tbody>
+            <tbody className="[&>tr:last-child>td]:border-b-0">{body}</tbody>
           </table>
         </div>
       )}
@@ -737,12 +854,6 @@ export function MatchDiff({ row }: { row: RagasResultRow }) {
   );
   const diff = useMemo(() => diffWords(pair.left, pair.right), [pair.left, pair.right]);
   const [raw, setRaw] = useState(false);
-  // 키가 많고 어긋난 것이 있으면 어긋난 줄부터 연다 — 스무 줄 중 두 줄을 찾으러
-  // 스크롤을 내리는 것이 이 표에서 가장 자주 하는 일이었다. 짧은 표는 그대로
-  // 둔다: 여덟 줄은 한눈에 들어오고, 걸러 놓으면 무엇이 맞았는지가 사라진다.
-  const [filter, setFilter] = useState<RowFilter>(() =>
-    fields && !fields.ok && fields.total >= 10 ? 'bad' : 'all',
-  );
 
   return (
     <div className="overflow-hidden rounded-md border border-line bg-surface">
@@ -755,10 +866,10 @@ export function MatchDiff({ row }: { row: RagasResultRow }) {
           <span aria-hidden className="h-3 w-px self-center bg-line-strong" />
         )}
         {row.exact_match != null && <OxBadge value={row.exact_match} />}
-        {fields && !raw && <FieldFilterBar m={fields} filter={filter} onFilter={setFilter} />}
-        {fields && raw && (
+        {fields && (
           <span className="font-mono text-[11px] tabular-nums text-muted">
-            키 <span className="font-semibold text-ink">{fields.matched}</span>
+            <span className="font-sans">키 </span>
+            <span className="font-semibold text-ink">{fields.matched}</span>
             <span className="text-muted-soft">/{fields.total}</span>
           </span>
         )}
@@ -768,7 +879,7 @@ export function MatchDiff({ row }: { row: RagasResultRow }) {
         </span>
       </div>
       {fields && !raw ? (
-        <FieldTable m={fields} filter={filter} onFilter={setFilter} />
+        <FieldTable m={fields} />
       ) : (
         <div className="grid divide-y divide-line sm:grid-cols-2 sm:divide-x sm:divide-y-0">
           <Pane
@@ -809,7 +920,7 @@ export function DiffAgainst({
 
 /** 어긋난 키 이름만 한 줄로. A/B 비교에는 판정표를 두 벌 놓을 자리가 없어서,
  * 어느 키가 갈렸는지까지만 각 사이드 위에 적는다. 맞은 실행에서는 아무것도
- * 그리지 않는다 — 빈 줄이 곧 '어긋난 키 없음'이다. */
+ * 그리지 않는다 — 빈 줄이 곧 '어긋난 키 없음'이다. 무거운 종류가 앞에 선다. */
 export function FieldDiffLine({
   text, expected, unwrapBody, className,
 }: {
@@ -823,7 +934,7 @@ export function FieldDiffLine({
     [text, expected, unwrapBody],
   );
   if (!m || m.ok) return null;
-  const bad = m.fields.filter((f) => f.status !== 'match');
+  const bad = byImportance(m.fields.filter((f) => f.status !== 'match'), fieldTier, fieldWeight);
   const rest = bad.slice(8);
   return (
     <span className={cn('flex flex-wrap items-baseline gap-x-1.5 gap-y-1 text-[11px]', className)}>
@@ -877,8 +988,8 @@ interface PairRow extends Pathed {
   b?: FieldResult;
 }
 
-/** 이 키에서 둘이 어떻게 갈렸나. 비교 화면이 답해야 하는 유일한 질문이라 필터도
- * 행 표시도 전부 이 값 하나에서 나온다. */
+/** 이 키에서 둘이 어떻게 갈렸나. 비교 화면이 답해야 하는 유일한 질문이라 정렬도
+ * 행 표시도 이 값 하나에서 나온다. */
 type AbVerdict = 'same-ok' | 'same-bad' | 'a' | 'b';
 
 function abVerdict(r: PairRow): AbVerdict {
@@ -897,34 +1008,56 @@ const AB_LABEL: Record<AbVerdict, string> = {
   b: 'B만 맞음',
 };
 
-type AbFilter = 'all' | AbVerdict;
-
-/** 가지 줄의 톤을 고르는 데만 쓰는 상태 — 한쪽이라도 어긋났으면 그 종류로 선다. */
+/** 트리 보기의 가지 줄 톤을 고르는 데만 쓰는 상태 — 한쪽이라도 어긋났으면 그 종류로. */
 function pairStatus(r: PairRow): FieldStatus {
   const st = [r.a?.status, r.b?.status].filter(Boolean) as FieldStatus[];
   return st.reduce<FieldStatus>((worst, s) => (rankOf(s) > rankOf(worst) ? s : worst), 'match');
 }
 
+const pairTier = (r: PairRow): Tier =>
+  tierOf(abVerdict(r) === 'same-ok', r.expected, r.a?.actual ?? null, r.b?.actual ?? null);
+
+/** 오류 층 안에서는 갈린 키가 둘 다 틀린 키보다 먼저 — 비교 화면은 두 버전의
+ * 차이를 보러 온 곳이고, 둘 다 틀린 키는 버전과 상관없이 틀린 것이다. */
+const pairWeight = (r: PairRow): number => {
+  const v = abVerdict(r);
+  return v === 'a' || v === 'b' ? 2 : v === 'same-bad' ? 1 : 0;
+};
+
+const VERDICT_TONE: [AbVerdict, string][] = [['a', 'text-ok'], ['b', 'text-ok'], ['same-bad', 'text-bad']];
+
+/** A만 맞음 1 · B만 맞음 2 · 둘 다 불일치 1 — 머리줄과 오류 층 머리가 같이 쓴다. */
+function VerdictCounts({ rows }: { rows: PairRow[] }) {
+  return (
+    <>
+      {VERDICT_TONE.map(([k, tone]) => [k, tone, rows.filter((r) => abVerdict(r) === k).length] as const)
+        .filter(([, , n]) => n > 0)
+        .map(([k, tone, n]) => (
+          <span key={k} className={cn('font-medium', tone)}>
+            {AB_LABEL[k]} <span className="font-mono tabular-nums">{n}</span>
+          </span>
+        ))}
+    </>
+  );
+}
+
 /** A/B 표의 한 줄. 어느 쪽이 맞았는지는 키 옆의 작은 표시 하나로 — 값 칸을 읽지
  * 않고 세로로 훑기만 해도 갈린 자리가 보여야 한다. */
 function PairFieldRow({
-  row, gutter, expanded, onExpand,
+  r, view, expanded, onExpand,
 }: {
-  row: TreeRow<PairRow>;
-  gutter: boolean;
+  r: PairRow;
+  view: KeyView;
   expanded: boolean;
   onExpand: () => void;
 }) {
-  const r = row.item as PairRow;
   const v = abVerdict(r);
   const bad = v !== 'same-ok';
+  const dim = pairTier(r) === 'blank';
   const warnOnly = [r.a, r.b].every((f) => !f || f.status === 'match' || f.status === 'extra');
-  const marks = {
-    a: markPair(r.expected, r.a?.actual ?? null, r.a?.status === 'diff'),
-    b: markPair(r.expected, r.b?.actual ?? null, r.b?.status === 'diff'),
-  };
-  const cell = (f: FieldResult | undefined, mark: DiffPair | null, last?: boolean) => {
+  const cell = (f: FieldResult | undefined, last?: boolean) => {
     if (!f) return <td className={cn(CELL, !last && COL, 'text-muted-soft')}>—</td>;
+    const mark = markPair(r.expected, f.actual, f.status === 'diff');
     return (
       <ValueCell
         text={f.actual}
@@ -932,6 +1065,7 @@ function PairFieldRow({
         segs={mark ? mark.right : null}
         tone={f.status === 'extra' ? 'warn' : 'bad'}
         fill={STATUS[f.status].actual}
+        dim={dim}
         expanded={expanded}
         onToggle={onExpand}
         last={last}
@@ -941,24 +1075,32 @@ function PairFieldRow({
   return (
     <tr className="group transition-colors hover:bg-surface-2/70">
       <KeyCell
-        row={row}
-        gutter={gutter}
+        path={r.path}
+        dim={dim}
         rail={!bad ? 'border-l-transparent' : warnOnly ? 'border-l-warn-vivid' : 'border-l-bad-vivid'}
+        {...view}
       >
         {(v === 'a' || v === 'b') && (
           <span
             title={AB_LABEL[v]}
-            className="shrink-0 rounded-sm border border-ok-line bg-ok-soft px-1 py-px text-[10px] font-semibold text-ok"
+            className="shrink-0 rounded-sm border border-ok-line bg-ok-soft px-1 py-px font-sans text-[10px] font-semibold text-ok"
           >
             {v.toUpperCase()}
           </span>
         )}
       </KeyCell>
-      <td className={cn(CELL, COL, 'break-words font-mono', bad ? 'text-ok' : 'text-muted')}>
-        {r.expected === null ? <Absent>기대에 없음</Absent> : r.expected}
-      </td>
-      {cell(r.a, marks.a)}
-      {cell(r.b, marks.b, true)}
+      <ValueCell
+        text={r.expected}
+        absentLabel="기대에 없음"
+        segs={null}
+        tone="ok"
+        fill={bad ? 'text-ok' : ''}
+        dim={dim}
+        expanded={expanded}
+        onToggle={onExpand}
+      />
+      {cell(r.a)}
+      {cell(r.b, true)}
     </tr>
   );
 }
@@ -967,13 +1109,11 @@ function PairFieldRow({
  * A/B 한 케이스의 키별 판정 — 한 표에 네 칸(키 · 기대값 · A · B).
  *
  * 사이드마다 표를 한 벌씩 놓는 대신 하나로 합친 까닭은, 비교에서 읽고 싶은 것이
- * "A 가 맞았나"가 아니라 "어느 키에서 둘이 갈렸나"이기 때문이다 — 같은 줄에
- * 나란히 놓여야 그게 한눈에 보인다. 기대값은 두 사이드가 같은 것을 보므로 한 번만
- * 적는다(그래서 이 표가 뜨면 위의 기대 정답 상자는 하지 않을 말을 반복하지 않게
- * 물러난다).
+ * "A 가 맞았나"가 아니라 "어느 키에서 둘이 갈렸나"이기 때문이다. 기대값은 두
+ * 사이드가 같은 것을 보므로 한 번만 적는다(그래서 이 표가 뜨면 위의 기대 정답
+ * 상자는 물러난다).
  *
- * 머리줄의 셋 — A만 맞음 · B만 맞음 · 둘 다 불일치 — 은 세어 놓은 수이자 필터다.
- * 키가 서른 개인 페이로드에서 갈린 두 개를 찾는 일이 이 화면에서 제일 잦다.
+ * 정렬과 버튼은 단일 표와 같다. 오류 층 안에서만 차례가 다르다 — 갈린 키가 먼저.
  *
  * 두 사이드 모두 JSON 이 아니면 null — 그때는 예전처럼 원문 diff 가 답한다.
  */
@@ -991,12 +1131,12 @@ export function FieldCompareTable({
   /** 머리줄 오른쪽 끝에 얹을 것 — 보기 전환 토글이 여기 선다. */
   trailing?: ReactNode;
 }) {
-  const all = useMemo<PairRow[] | null>(() => {
+  const all = useMemo<PairRow[]>(() => {
     const ma = structuredMatch(aText ?? '', expected ?? '', { unwrapBody: unwrapA });
     const mb = structuredMatch(bText ?? '', expected ?? '', { unwrapBody: unwrapB });
-    if (!ma && !mb) return null;
-    // A 가 본 순서를 그대로 따르고, A 에 없던 키만 뒤에 붙인다 — 기대 정답에 적힌
-    // 차례가 곧 A 의 차례라, 두 사이드를 합쳐도 읽는 순서가 바뀌지 않는다.
+    if (!ma && !mb) return [];
+    // A 가 본 순서를 그대로 따르고, A 에 없던 키만 뒤에 붙인다 — '원래 순서'가
+    // 기대 정답에 적힌 차례로 읽히게.
     const byPath = new Map<string, PairRow>();
     const put = (f: FieldResult, side: 'a' | 'b') => {
       const cur = byPath.get(f.path) ?? { path: f.path, segs: f.segs, expected: f.expected };
@@ -1009,87 +1149,65 @@ export function FieldCompareTable({
     return [...byPath.values()];
   }, [aText, bText, expected, unwrapA, unwrapB]);
 
-  const [filter, setFilter] = useState<AbFilter>('all');
-  const [q, setQ] = useState('');
-  const { collapsed, setCollapsed, toggle: toggleGroup } = useCollapsed();
-  const { open, toggle: toggleValue } = useExpanded();
+  const t = useKeyTable(all, pairTier, pairWeight);
+  if (all.length === 0) return null;
+  const roomy = all.length >= ROOMY;
+  const quiet = all.every((r) => abVerdict(r) === 'same-ok');
 
-  const counts = useMemo(() => {
-    const c: Record<AbVerdict, number> = { 'same-ok': 0, 'same-bad': 0, a: 0, b: 0 };
-    all?.forEach((r) => { c[abVerdict(r)]++; });
-    return c;
-  }, [all]);
-  const shown = useMemo(() => {
-    if (!all) return [];
-    const needle = q.trim().toLowerCase();
-    return all.filter(
-      (r) => (filter === 'all' || abVerdict(r) === filter) && (!needle || r.path.toLowerCase().includes(needle)),
-    );
-  }, [all, filter, q]);
-  const tree = useMemo(() => buildFieldTree(shown), [shown]);
-  const rows = useMemo(() => flattenTree(tree, collapsed), [tree, collapsed]);
-  const groups = useMemo(() => groupPaths(tree), [tree]);
-
-  if (!all) return null;
-  const hidden = all.length - shown.length;
-  const pick = (f: AbFilter) => setFilter(filter === f ? 'all' : f);
-  const chips: [AbVerdict, string][] = [['a', 'text-ok'], ['b', 'text-ok'], ['same-bad', 'text-bad']];
-  const quiet = counts.a + counts.b + counts['same-bad'] === 0;
+  const body =
+    t.sort === 'importance'
+      ? t.flatBody(
+          (r) => (
+            <PairFieldRow
+              key={r.path}
+              r={r}
+              view={flatKey(r.path, r.segs)}
+              expanded={t.open.has(r.path)}
+              onExpand={() => t.toggleValue(r.path)}
+            />
+          ),
+          (rows) => <VerdictCounts rows={rows} />,
+          roomy,
+        )
+      : t.treeRows.map((row) =>
+          row.item ? (
+            <PairFieldRow
+              key={row.path}
+              r={row.item}
+              view={{ label: row.label, depth: row.depth, gutter: t.groups.length > 0 }}
+              expanded={t.open.has(row.path)}
+              onExpand={() => t.toggleValue(row.path)}
+            />
+          ) : (
+            <GroupRow
+              key={row.path}
+              row={row}
+              collapsed={t.collapsed.has(row.path)}
+              onToggle={() => t.toggleGroup(row.path)}
+              statusOf={pairStatus}
+            />
+          ),
+        );
 
   return (
     <div className={cn('overflow-hidden rounded-md border border-line bg-surface', className)}>
-      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 border-b border-line bg-surface-2 px-3 py-2">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-line bg-surface-2 px-3 py-2">
         <span className="eyebrow">키별 판정</span>
-        <button
-          type="button"
-          onClick={() => setFilter('all')}
-          aria-pressed={filter === 'all'}
-          title="전체 키"
-          className={cn(
-            'ml-1 rounded-sm border px-1.5 py-px text-[11px] transition',
-            filter === 'all' ? 'border-line-strong bg-surface-3' : 'border-transparent hover:bg-surface-3',
-          )}
-        >
-          <span className="text-muted">키 </span>
-          <span className="font-mono font-semibold tabular-nums text-ink">{all.length}</span>
-        </button>
-        <span aria-hidden className="mx-1 h-3 w-px self-center bg-line-strong" />
+        <span className="text-[11px] text-muted">
+          키 <span className="font-mono font-semibold tabular-nums text-ink">{all.length}</span>
+        </span>
+        <span aria-hidden className="h-3 w-px self-center bg-line-strong" />
         {/* 갈린 키가 이 표의 요점이다 — 없으면 없다고 먼저 말한다. */}
-        {quiet ? (
-          <span className="text-[11px] text-muted">A·B 동일</span>
-        ) : (
-          chips
-            .filter(([k]) => counts[k] > 0)
-            .map(([k, tone]) => (
-              <FilterChip
-                key={k}
-                active={filter === k}
-                tone={tone}
-                count={counts[k]}
-                label={AB_LABEL[k]}
-                onClick={() => pick(k)}
-              />
-            ))
-        )}
+        <span className="flex flex-wrap items-baseline gap-x-2.5 text-[11px]">
+          {quiet ? <span className="text-muted">A·B 동일</span> : <VerdictCounts rows={all} />}
+        </span>
         {trailing && <span className="ml-auto">{trailing}</span>}
       </div>
-      {(all.length >= 8 || groups.length > 0) && (
-        <TableToolbar
-          q={q}
-          onQ={setQ}
-          groups={groups.length}
-          allCollapsed={groups.length > 0 && groups.every((p) => collapsed.has(p))}
-          onToggleAll={() =>
-            setCollapsed((cur) => (groups.every((p) => cur.has(p)) ? new Set() : new Set(groups)))
-          }
-          hidden={hidden}
-          onClearFilter={filter !== 'all' ? () => setFilter('all') : undefined}
-        />
-      )}
-      {rows.length === 0 ? (
-        <NoRows>{q.trim() ? '검색과 맞는 키가 없습니다' : '해당하는 키가 없습니다'}</NoRows>
+      {roomy && t.toolbar}
+      {t.shown.length === 0 ? (
+        <NoRows>{t.q.trim() ? '검색과 맞는 키가 없습니다' : '해당하는 키가 없습니다'}</NoRows>
       ) : (
-        <div className="max-h-96 overflow-auto">
+        <div className="max-h-[28rem] overflow-auto">
           <table className="w-full min-w-[620px] table-fixed border-separate border-spacing-0 text-xs">
             <colgroup>
               <col style={{ width: '22%' }} />
@@ -1105,28 +1223,7 @@ export function FieldCompareTable({
                 <th className="truncate border-b border-line px-3 py-2 font-semibold">B · {nameB}</th>
               </tr>
             </thead>
-            <tbody className="[&>tr:last-child>td]:border-b-0">
-              {rows.map((r) =>
-                r.item ? (
-                  <PairFieldRow
-                    key={r.path}
-                    row={r}
-                    gutter={groups.length > 0}
-                    expanded={open.has(r.path)}
-                    onExpand={() => toggleValue(r.path)}
-                  />
-                ) : (
-                  <GroupRow
-                    key={r.path}
-                    row={r}
-                    cols={2}
-                    collapsed={collapsed.has(r.path)}
-                    onToggle={() => toggleGroup(r.path)}
-                    statusOf={pairStatus}
-                  />
-                ),
-              )}
-            </tbody>
+            <tbody className="[&>tr:last-child>td]:border-b-0">{body}</tbody>
           </table>
         </div>
       )}
