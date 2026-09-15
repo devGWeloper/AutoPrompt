@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   comparablePair,
   structuredMatch,
@@ -387,9 +387,10 @@ const ROOMY = 6;
  * 되풀이되고, 정작 달라지는 끝마디가 묻힌다. 그래서 줄은 부모 객체 아래에 묶이고
  * 키 칸에는 끝마디만 선다 — 부모 경로는 묶음 머리줄에 한 번.
  *
- * 값도 한 칸이다. 기대값과 실제값을 떨어진 두 열에 두면 눈이 좌우로 오가며 짝을
- * 맞춰야 했다. 맞은 줄은 값 하나, 틀린 줄은 `기대 → 실제` 한 줄(길면 위아래로
- * 쌓아서)로 붙여 적고, 판정은 오른쪽 끝 좁은 칸에 모여 세로로 훑인다.
+ * 기대값과 실제값은 나란한 두 칸이다 — 한 칸에 `기대 → 실제` 로 붙였더니 서로
+ * 견주는 표로 읽히지 않았다. 대신 맞은 실제값 칸은 값을 되풀이하지 않고 `=` 하나만
+ * 두고, 틀린 칸에만 면을 깐다. 세로로 훑으면 색 있는 칸이 곧 틀린 자리고, 판정은
+ * 오른쪽 끝 좁은 칸에 모인다.
  */
 
 /** `items[0].name` → 부모 `items[0]` · 끝마디 `name`. */
@@ -472,9 +473,6 @@ function ParentRow({
   );
 }
 
-/** 이 길이까지는 값을 한 줄에 붙여 적는다. 넘으면 위아래로 쌓는다. */
-const INLINE = 40;
-
 type Tone = 'plain' | 'bad' | 'warn';
 const TONE_TEXT: Record<Tone, string> = { plain: 'text-ink', bad: 'text-bad', warn: 'text-warn' };
 
@@ -512,63 +510,18 @@ function Val({
   );
 }
 
-function OkMark() {
+/** 기대값과 같은 칸 — 값을 되풀이하지 않고 `=` 하나. 같은 글자를 두 칸에 두 번
+ * 쓰면 틀린 칸이 도리어 묻힌다. */
+function SameMark() {
   return (
-    <span className="inline-flex items-center gap-0.5 whitespace-nowrap text-xs font-medium text-ok">
-      <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden>
-        <path d="M3 8.5l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-      일치
+    <span className="select-none font-mono text-muted-soft" title="기대값과 같음">
+      =
     </span>
   );
 }
 
-interface DeltaPart {
-  /** 위아래로 쌓을 때 줄 머리(기대 · 실제 · A · B). */
-  label: string;
-  /** 한 줄로 붙일 때 값 앞에 붙는 표시 — A/B 비교의 사이드만. */
-  tag?: string;
-  /** 맞은 사이드 — 값을 되풀이하지 않고 일치 표시만. */
-  ok?: boolean;
-  text: string | null;
-  segs: DiffSeg[] | null;
-  tone: Tone;
-  absent: string;
-}
-
-/** 틀린 줄의 값 칸: 짧으면 `기대 → 실제` (A/B 는 `기대 → A 값 · B 값`) 한 줄,
- * 하나라도 길면 줄 머리를 단 채 위아래로. */
-function Delta({ parts, typeTag, clamp }: { parts: DeltaPart[]; typeTag?: boolean; clamp: boolean }) {
-  const short = parts.every(
-    (p) => p.ok || ((p.text ?? p.absent).length <= INLINE && !(p.text ?? '').includes('\n')),
-  );
-  const val = (p: DeltaPart) =>
-    p.ok ? <OkMark /> : <Val text={p.text} segs={p.segs} tone={p.tone} absent={p.absent} typeTag={typeTag} clamp={clamp} />;
-  if (short) {
-    return (
-      <span className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-        {parts.map((p, i) => (
-          <Fragment key={i}>
-            {i === 1 && <span aria-hidden className="select-none text-muted-soft">→</span>}
-            {i > 1 && <span aria-hidden className="select-none text-muted-soft">·</span>}
-            {p.tag && <span className="font-mono text-[11px] font-semibold text-muted">{p.tag}</span>}
-            {val(p)}
-          </Fragment>
-        ))}
-      </span>
-    );
-  }
-  return (
-    <span className="grid grid-cols-[2rem_minmax(0,1fr)] items-baseline gap-x-2 gap-y-1">
-      {parts.map((p, i) => (
-        <Fragment key={i}>
-          <span className="text-[11px] font-semibold text-muted">{p.label}</span>
-          {val(p)}
-        </Fragment>
-      ))}
-    </span>
-  );
-}
+/** 틀린 실제값 칸의 면. 누락도 빈 칸이 아니라 틀린 칸이라 같은 면을 깐다. */
+const missFill = (s: FieldStatus) => (s === 'missing' ? 'bg-bad-soft' : STATUS[s].actual);
 
 /** 맞은 줄의 값 하나. 펼치면 객체·배열은 들여쓴 모양으로. */
 function SameValue({
@@ -584,16 +537,17 @@ function SameValue({
 
 /** 값 칸 — 긴 값 접기/펴기와 복사를 줄마다 한 번만. */
 function ValueTd({
-  long, expanded, onToggle, copy, children,
+  long, expanded, onToggle, copy, className, children,
 }: {
   long: boolean;
   expanded: boolean;
   onToggle: () => void;
   copy: string | null;
+  className?: string;
   children: ReactNode;
 }) {
   return (
-    <td className={cn(CELL, COL, 'group/v relative tabular-nums')}>
+    <td className={cn(CELL, COL, 'group/v relative tabular-nums', className)}>
       {children}
       {long && (
         <button
@@ -948,28 +902,43 @@ function FieldRow({
   // 같은 값 두 개를 통째로 붉히는 대신 어긋난 낱말만 — 긴 문장에서 어디가
   // 갈렸는지 사람이 눈으로 찾던 일을 표가 한다.
   const marks = useMemo(() => markPair(f.expected, f.actual, f.status === 'diff'), [f]);
-  const long = isLong(f.expected, f.actual);
-  const clamp = long && !expanded;
+  const ok = f.status === 'match';
+  const type = f.status === 'type';
+  const clampOf = (t: string | null) => isLong(t) && !expanded;
   return (
     <tr className="group transition-colors hover:bg-surface-2/70">
       <KeyCell path={f.path} label={label} depth={depth} rail={s.rail} dim={dim} />
-      <ValueTd long={long} expanded={expanded} onToggle={onExpand} copy={f.actual ?? f.expected}>
-        {f.status === 'match' ? (
-          <SameValue text={f.actual} dim={dim} clamp={clamp} expanded={expanded} />
+      <ValueTd long={isLong(f.expected)} expanded={expanded} onToggle={onExpand} copy={f.expected}>
+        {ok ? (
+          <SameValue text={f.expected ?? f.actual} dim={dim} clamp={clampOf(f.expected)} expanded={expanded} />
         ) : (
-          <Delta
-            typeTag={f.status === 'type'}
-            clamp={clamp}
-            parts={[
-              { label: '기대', text: f.expected, segs: marks ? marks.left : null, tone: 'plain', absent: '기대에 없음' },
-              {
-                label: '실제',
-                text: f.actual,
-                segs: marks ? marks.right : null,
-                tone: f.status === 'extra' ? 'warn' : 'bad',
-                absent: '응답에 없음',
-              },
-            ]}
+          <Val
+            text={f.expected}
+            segs={marks ? marks.left : null}
+            tone="plain"
+            absent="기대에 없음"
+            typeTag={type}
+            clamp={clampOf(f.expected)}
+          />
+        )}
+      </ValueTd>
+      <ValueTd
+        long={!ok && isLong(f.actual)}
+        expanded={expanded}
+        onToggle={onExpand}
+        copy={ok ? null : f.actual}
+        className={ok ? undefined : missFill(f.status)}
+      >
+        {ok ? (
+          <SameMark />
+        ) : (
+          <Val
+            text={f.actual}
+            segs={marks ? marks.right : null}
+            tone={f.status === 'extra' ? 'warn' : 'bad'}
+            absent="응답에 없음"
+            typeTag={type}
+            clamp={clampOf(f.actual)}
           />
         )}
       </ValueTd>
@@ -1029,7 +998,7 @@ function FieldTable({ m }: { m: StructuredMatch }) {
       />
     ),
     (rows) => <KindCounts rows={rows} />,
-    3,
+    4,
   );
 
   return (
@@ -1043,14 +1012,14 @@ function FieldTable({ m }: { m: StructuredMatch }) {
             <colgroup>
               <col style={{ width: `${keyRem}rem` }} />
               <col />
+              <col />
               <col style={{ width: '5.5rem' }} />
             </colgroup>
             <thead className="sticky top-0 z-10 bg-surface-3 text-left text-xs text-body">
               <tr>
                 <th className={cn(TH, COL)}>키</th>
-                <th className={cn(TH, COL)}>
-                  값 <span className="ml-1 font-normal text-muted">기대 → 실제</span>
-                </th>
+                <th className={cn(TH, COL)}>기대값</th>
+                <th className={cn(TH, COL)}>실제값</th>
                 <th className={TH}>판정</th>
               </tr>
             </thead>
@@ -1284,8 +1253,9 @@ function VerdictCounts({ rows }: { rows: PairRow[] }) {
   );
 }
 
-/** A/B 표의 한 줄. 값 칸은 `기대 → A ✓ · B 500` 한 줄, 누가 맞았는지는 오른쪽 끝
- * 판정 칸에 — 값 칸을 읽지 않고 세로로 훑기만 해도 갈린 자리가 보인다. */
+/** A/B 표의 한 줄 — 기대값 하나 옆에 A · B 실제값이 나란히. 맞은 사이드는 `=`,
+ * 틀린 사이드만 면을 깔고, 누가 맞았는지는 오른쪽 끝 판정 칸에 — 세로로 훑기만
+ * 해도 갈린 자리가 보인다. */
 function PairFieldRow({
   r, label, depth, expanded, onExpand,
 }: {
@@ -1299,22 +1269,38 @@ function PairFieldRow({
   const bad = v !== 'same-ok';
   const dim = pairTier(r) === 'blank';
   const warnOnly = [r.a, r.b].every((f) => !f || f.status === 'match' || f.status === 'extra');
-  const long = isLong(r.expected, r.a?.actual, r.b?.actual);
-  const clamp = long && !expanded;
-  // 맞은 쪽은 값을 되풀이하지 않고 일치 표시만 — 그래야 같은 줄에서 틀린 쪽의 값이
-  // 혼자 선다. 값 자체는 바로 앞 기대값이다.
-  const side = (tag: 'A' | 'B', f: FieldResult | undefined): DeltaPart => {
-    if (!f) return { label: tag, tag, text: null, segs: null, tone: 'plain', absent: '—' };
-    if (f.status === 'match') return { label: tag, tag, ok: true, text: f.actual, segs: null, tone: 'plain', absent: '' };
+  const type = [r.a, r.b].some((f) => f?.status === 'type');
+  const clampOf = (t: string | null) => isLong(t) && !expanded;
+  // 맞은 쪽은 값을 되풀이하지 않고 `=` 만 — 그래야 같은 줄에서 틀린 쪽의 값이 혼자
+  // 선다. 값 자체는 왼쪽 기대값이다.
+  const sideCell = (f: FieldResult | undefined) => {
+    if (!f) return <td className={cn(CELL, COL, 'text-muted')}>—</td>;
+    if (f.status === 'match') {
+      return (
+        <td className={cn(CELL, COL)}>
+          <SameMark />
+        </td>
+      );
+    }
     const mark = markPair(r.expected, f.actual, f.status === 'diff');
-    return {
-      label: tag,
-      tag,
-      text: f.actual,
-      segs: mark ? mark.right : null,
-      tone: f.status === 'extra' ? 'warn' : 'bad',
-      absent: '응답에 없음',
-    };
+    return (
+      <ValueTd
+        long={isLong(f.actual)}
+        expanded={expanded}
+        onToggle={onExpand}
+        copy={f.actual}
+        className={missFill(f.status)}
+      >
+        <Val
+          text={f.actual}
+          segs={mark ? mark.right : null}
+          tone={f.status === 'extra' ? 'warn' : 'bad'}
+          absent="응답에 없음"
+          typeTag={type}
+          clamp={clampOf(f.actual)}
+        />
+      </ValueTd>
+    );
   };
   return (
     <tr className="group transition-colors hover:bg-surface-2/70">
@@ -1325,21 +1311,15 @@ function PairFieldRow({
         dim={dim}
         rail={!bad ? 'border-l-transparent' : warnOnly ? 'border-l-warn-vivid' : 'border-l-bad-vivid'}
       />
-      <ValueTd long={long} expanded={expanded} onToggle={onExpand} copy={r.expected}>
+      <ValueTd long={isLong(r.expected)} expanded={expanded} onToggle={onExpand} copy={r.expected}>
         {v === 'same-ok' ? (
-          <SameValue text={r.expected} dim={dim} clamp={clamp} expanded={expanded} />
+          <SameValue text={r.expected} dim={dim} clamp={clampOf(r.expected)} expanded={expanded} />
         ) : (
-          <Delta
-            typeTag={[r.a, r.b].some((f) => f?.status === 'type')}
-            clamp={clamp}
-            parts={[
-              { label: '기대', text: r.expected, segs: null, tone: 'plain', absent: '기대에 없음' },
-              side('A', r.a),
-              side('B', r.b),
-            ]}
-          />
+          <Val text={r.expected} segs={null} tone="plain" absent="기대에 없음" typeTag={type} clamp={clampOf(r.expected)} />
         )}
       </ValueTd>
+      {sideCell(r.a)}
+      {sideCell(r.b)}
       <td className={CELL}>
         {bad && (
           <span
@@ -1357,14 +1337,12 @@ function PairFieldRow({
 }
 
 /**
- * A/B 한 케이스의 키별 판정 — 한 표에 네 칸(키 · 기대값 · A · B).
+ * A/B 한 케이스의 키별 판정 — 한 표에 키 · 기대값 · A · B · 판정.
  *
- * 사이드마다 표를 한 벌씩 놓는 대신 하나로 합친 까닭은, 비교에서 읽고 싶은 것이
- * "A 가 맞았나"가 아니라 "어느 키에서 둘이 갈렸나"이기 때문이다. 기대값은 두
- * 사이드가 같은 것을 보므로 한 번만 적는다(그래서 이 표가 뜨면 위의 기대 정답
- * 상자는 물러난다).
- *
- * 정렬과 버튼은 단일 표와 같다. 오류 층 안에서만 차례가 다르다 — 갈린 키가 먼저.
+ * 기대값은 두 사이드가 같은 것을 보므로 한 번만 적고, 그 옆에 A · B 의 실제값이
+ * 나란히 선다. 사이드마다 표를 따로 두면 같은 키가 좌우 다른 높이에 서서 두
+ * 버전을 견줄 수 없다. 정렬 · 묶음 · 버튼은 단일 표와 같고, 오류 안에서만 갈린
+ * 키가 둘 다 틀린 키보다 먼저 선다.
  *
  * 두 사이드 모두 JSON 이 아니면 null — 그때는 예전처럼 원문 diff 가 답한다.
  */
@@ -1418,7 +1396,7 @@ export function FieldCompareTable({
       />
     ),
     (rows) => <VerdictCounts rows={rows} />,
-    3,
+    5,
   );
 
   return (
@@ -1440,17 +1418,23 @@ export function FieldCompareTable({
         <NoRows>{t.q.trim() ? '검색과 맞는 키가 없습니다' : '해당하는 키가 없습니다'}</NoRows>
       ) : (
         <div className="max-h-[36rem] overflow-auto">
-          <table className="w-full min-w-[560px] table-fixed border-separate border-spacing-0 text-[13px] leading-normal">
+          <table className="w-full min-w-[640px] table-fixed border-separate border-spacing-0 text-[13px] leading-normal">
             <colgroup>
               <col style={{ width: `${keyRem}rem` }} />
+              <col />
+              <col />
               <col />
               <col style={{ width: '6.5rem' }} />
             </colgroup>
             <thead className="sticky top-0 z-10 bg-surface-3 text-left text-xs text-body">
               <tr>
                 <th className={cn(TH, COL)}>키</th>
+                <th className={cn(TH, COL)}>기대값</th>
                 <th className={cn(TH, COL, 'truncate')}>
-                  값 <span className="ml-1 font-normal text-muted">기대 → A · {nameA} · B · {nameB}</span>
+                  <span className="font-mono">A</span> <span className="font-normal text-muted">{nameA}</span>
+                </th>
+                <th className={cn(TH, COL, 'truncate')}>
+                  <span className="font-mono">B</span> <span className="font-normal text-muted">{nameB}</span>
                 </th>
                 <th className={TH}>판정</th>
               </tr>
