@@ -19,7 +19,7 @@ import { CaseCompareTable } from './CompareTable';
 import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import { AbKeyBreakdown, KeyBreakdown } from './KeyBreakdown';
 import {
-  CaseTable, DownloadIcon, ErrBox, errText, fmt2, fmt3, fmtDt, runDurationText, RunDurationTag, usePickedCases, folderLabel, hasTextSelection, runMean, runTargetLabel,
+  CaseTable, DownloadIcon, ErrBox, errText, fmt2, fmt3, fmtDt, RunDurationStack, RunDurationTag, usePickedCases, folderLabel, hasTextSelection, runMean, runTargetLabel,
   compareSideLabel, runModelDetail, runTitle, runTitleParts, scoredMetrics, SegToggle, TrashIcon, UNSCORED_LABEL,
 } from './shared';
 import RerunButton from './RerunButton';
@@ -454,7 +454,7 @@ export default function RecordsPanel() {
                       ex={r.exact_match != null ? Number(r.exact_match) : null}
                       unscored={single.unscored}
                     />
-                    <TD className="whitespace-nowrap font-mono text-xs tabular-nums text-muted">{runDurationText(r) ?? '—'}</TD>
+                    <TD className="whitespace-nowrap font-mono text-xs tabular-nums text-muted"><RunDurationStack runs={[r]} /></TD>
                     <TD className="whitespace-nowrap text-xs text-muted" title={r.created_dt}>{fmtDt(r.created_dt)}</TD>
                     <RowActionsCell
                       csvHref={`${API_BASE}/ragas-runs/${r.ragas_run_id}/export?fmt=csv`}
@@ -497,7 +497,7 @@ export default function RecordsPanel() {
                     exB={g.b.exact_match != null ? Number(g.b.exact_match) : null}
                     unscored={pair.unscored}
                   />
-                  <TD className="whitespace-nowrap font-mono text-xs tabular-nums text-muted">{runDurationText(g.a, g.b) ?? '—'}</TD>
+                  <TD className="whitespace-nowrap font-mono text-xs tabular-nums text-muted"><RunDurationStack runs={[g.a, g.b]} /></TD>
                   <TD className="whitespace-nowrap text-xs text-muted" title={g.a.created_dt}>{fmtDt(g.a.created_dt)}</TD>
                   <RowActionsCell
                     csvHref={`${API_BASE}/ragas-runs/ab/${g.groupId}/export?fmt=csv`}

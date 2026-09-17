@@ -83,14 +83,42 @@ export function runDurationText(...runs: Timed[]): string | null {
 /** 결과 카드 머리줄의 '전체 소요'. 케이스마다의 시간은 각 줄에 있고, 이것은 실행
  * 한 번을 통째로 기다린 시간이다. */
 export function RunDurationTag({ runs, className }: { runs: Timed[]; className?: string }) {
-  const text = runDurationText(...runs);
-  if (text === null) return null;
+  const ms = runSpanMs(...runs);
+  if (ms === null) return null;
+  const min = fmtMinutes(ms);
   return (
     <span
-      className={cn('inline-flex items-center gap-1 whitespace-nowrap text-muted', className)}
+      className={cn('inline-flex flex-col items-end whitespace-nowrap leading-tight text-muted', className)}
       title="실행 시작 → 종료"
     >
-      전체 소요 <span className="font-mono font-semibold tabular-nums text-ink">{text}</span>
+      <span>
+        전체 소요 <span className="font-mono font-semibold tabular-nums text-ink">{fmtDuration(ms)}</span>
+      </span>
+      {min && <span className="font-mono text-[10.5px] tabular-nums text-muted-soft">{min}</span>}
+    </span>
+  );
+}
+
+/** 초 아래에 붙이는 분 · 시간 표기 — 60초가 넘어 분으로 가늠할 필요가 있을 때만.
+ * 가늠용이라 초는 정수로 적는다(정확한 값은 바로 위 줄이 말한다). */
+export function fmtMinutes(ms: number): string | null {
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return null;
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  return h > 0 ? `${h}시간 ${m}분 ${s}초` : `${m}분 ${s}초`;
+}
+
+/** 목록 칸의 소요시간 — 초, 그리고 필요하면 그 아래 분. */
+export function RunDurationStack({ runs }: { runs: Timed[] }) {
+  const ms = runSpanMs(...runs);
+  if (ms === null) return <span className="text-muted">—</span>;
+  const min = fmtMinutes(ms);
+  return (
+    <span className="flex flex-col leading-tight">
+      <span>{fmtDuration(ms)}</span>
+      {min && <span className="text-[10.5px] text-muted-soft">{min}</span>}
     </span>
   );
 }
