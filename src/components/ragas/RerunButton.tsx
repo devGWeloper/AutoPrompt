@@ -32,7 +32,9 @@ export default function RerunButton({
   const compare = detailB != null;
   const n = mismatchCount(detail, detailB);
   const picked = picking ? Array.from(picking.picked) : [];
-  if (n === 0 && picked.length === 0) return null;
+  // 고를 수 있는 목록이 있으면 '선택 재테스트' 는 늘 서 있다 — 아무것도 고르지 않았을
+  // 때 숨겨 두면, 케이스를 골라야 그런 기능이 있다는 걸 알게 되는 순서가 거꾸로다.
+  if (n === 0 && !picking) return null;
 
   async function start(e: MouseEvent, caseIds?: number[]) {
     e.stopPropagation();
@@ -65,12 +67,18 @@ export default function RerunButton({
           {err}
         </span>
       )}
-      {picked.length > 0 && (
+      {picking && (
         <RerunChip
           busy={busy === 'picked'}
-          disabled={busy !== null}
+          disabled={busy !== null || picked.length === 0}
           onClick={(e) => start(e, picked)}
-          title={compare ? '고른 케이스로 A·B 를 같은 조건에서 다시 실행' : '고른 케이스만 같은 조건으로 다시 실행'}
+          title={
+            picked.length === 0
+              ? '아래 케이스 목록에서 체크한 케이스만 다시 실행합니다'
+              : compare
+                ? '고른 케이스로 A·B 를 같은 조건에서 다시 실행'
+                : '고른 케이스만 같은 조건으로 다시 실행'
+          }
           label="선택 재테스트"
           count={picked.length}
           tone="accent"
@@ -104,12 +112,14 @@ function RerunChip({
   count: number;
   tone: 'accent' | 'bad';
 }) {
+  // 툴팁은 감싸개에 단다 — 비활성 버튼에는 브라우저가 툴팁을 띄우지 않아, 아직 고른
+  // 케이스가 없을 때 '무엇을 하는 버튼인지' 를 말할 길이 없어진다.
   return (
+    <span title={title} className="inline-flex shrink-0">
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      title={title}
       className={cn(
         'group inline-flex h-7 shrink-0 items-center gap-1.5 rounded-sm border border-line-strong bg-surface pl-2 pr-1 text-xs font-medium text-ink',
         'shadow-[0_1px_0_rgba(17,24,39,0.04)] transition-colors hover:border-muted-soft hover:bg-surface-2',
@@ -129,11 +139,12 @@ function RerunChip({
       <span
         className={cn(
           'rounded-[4px] px-1.5 py-px font-mono text-[11px] font-semibold tabular-nums',
-          tone === 'accent' ? 'bg-accent-soft text-accent' : 'bg-bad-soft text-bad',
+          count === 0 ? 'bg-surface-3 text-muted' : tone === 'accent' ? 'bg-accent-soft text-accent' : 'bg-bad-soft text-bad',
         )}
       >
         {count}
       </span>
     </button>
+    </span>
   );
 }

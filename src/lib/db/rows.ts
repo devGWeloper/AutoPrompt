@@ -40,6 +40,13 @@ export function tsCol(col: string): string {
   return `TO_CHAR(${col}, 'YYYY-MM-DD"T"HH24:MI:SS') AS ${col}`;
 }
 
+/** tsCol 과 같되 밀리초까지 — 실행 전체 소요시간을 소수점 둘째 자리까지 재려면 초
+ * 단위로 잘린 시각으로는 늘 .00 이 된다. TIMESTAMP 컬럼(START_TM · END_TM)에만
+ * 쓴다: DATE 컬럼에 FF 를 붙이면 ORA-01821 이 난다. */
+export function tsColMs(col: string): string {
+  return `TO_CHAR(${col}, 'YYYY-MM-DD"T"HH24:MI:SS.FF3') AS ${col}`;
+}
+
 /**
  * Run an INSERT ... RETURNING <pk> INTO :out_id and return the new id. ``sql``
  * must end with the RETURNING clause binding :out_id; other binds are passed in.
@@ -137,8 +144,8 @@ export const RUN_COLS = [
   "ENDPOINT_URL",
   ...RUN_SCORE_COLS,
   "ERROR_CTN",
-  tsCol("START_TM"),
-  tsCol("END_TM"),
+  tsColMs("START_TM"),
+  tsColMs("END_TM"),
   "USER_ID",
   tsCol("CRT_TM"),
 ].join(", ");
