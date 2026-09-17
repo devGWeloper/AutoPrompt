@@ -24,3 +24,10 @@ export function intParam(value: string | null | undefined, name: string): number
   if (!Number.isFinite(n)) throw badRequest(`invalid ${name}`);
   return Math.trunc(n);
 }
+
+/** 재테스트 요청의 `case_ids` — 없으면 null(불일치 케이스로 돌린다). */
+export function caseIdsField(body: unknown): number[] | null {
+  const v = (body as { case_ids?: unknown } | null)?.case_ids;
+  if (!Array.isArray(v)) return null;
+  return v.map(Number).filter((n) => Number.isInteger(n));
+}

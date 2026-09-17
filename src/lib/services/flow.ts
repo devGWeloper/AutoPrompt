@@ -227,6 +227,38 @@ async function mismatchCaseIds(conn: OracleConnection, datasetId: number, runIds
   return ids;
 }
 
+/** 고른 케이스만 다시 돌릴 때. 원래 실행에 있었고 아직 데이터셋에 남아 있는 것만
+ * 받는다 — 다른 실행의 케이스 id 를 끼워 넣어도 그 실행 밖으로는 나가지 않는다. */
+async function pickedCaseIds(
+  conn: OracleConnection,
+  datasetId: number,
+  runIds: number[],
+  caseIds: number[],
+): Promise<number[]> {
+  const uniq = [...new Set(caseIds)];
+  if (!uniq.length) throw badRequest("다시 돌릴 케이스를 고르세요");
+  if (uniq.length > 1000) throw badRequest("한 번에 1000건까지 다시 돌릴 수 있습니다");
+  const binds: Record<string, unknown> = { did: datasetId };
+  const runNames = runIds.map((id, i) => {
+    binds[`r${i}`] = id;
+    return `:r${i}`;
+  });
+  const caseNames = uniq.map((id, i) => {
+    binds[`c${i}`] = id;
+    return `:c${i}`;
+  });
+  const res = await conn.execute(
+    `SELECT DISTINCT r.CASE_ID
+       FROM PTX_RUN_DET r
+       JOIN PTX_DATASET_DET c ON c.CASE_ID = r.CASE_ID AND c.DATASET_ID = :did
+      WHERE r.RUN_ID IN (${runNames.join(", ")}) AND r.CASE_ID IN (${caseNames.join(", ")})`,
+    binds,
+  );
+  const ids = ((res.rows ?? []) as Record<string, unknown>[]).map((r) => Number(r.CASE_ID));
+  if (!ids.length) throw badRequest("고른 케이스가 데이터셋에 남아 있지 않습니다");
+  return ids;
+}
+
 /** A PENDING copy of `src` limited to `ids`: same prompt version, dataset,
  * metrics and pinned models. The endpoint is not stored on a PENDING row; the
  * client streams it with the source run's endpoint. */
@@ -257,14 +289,17 @@ async function insertRerun(
   return id;
 }
 
-/** A new run over only the cases a finished Single run got 불일치 on. */
-export async function createMismatchRerun(sourceRunId: number): Promise<RagasRunOut> {
+/** A new run over only the cases a finished Single run got 불일치 on — or, when
+ * `caseIds` is given, over exactly the cases the user picked. */
+export async function createMismatchRerun(sourceRunId: number, caseIds?: number[] | null): Promise<RagasRunOut> {
   return withConn(async (conn, oracle) => {
     const src = await fetchRun(conn, sourceRunId);
     if (!src) throw notFound("ragas run not found");
     if (src.ab_group_id != null) throw badRequest("Compare 실행은 A·B 를 함께 다시 돌립니다");
     const name = await rerunDatasetName(conn, src);
-    const ids = await mismatchCaseIds(conn, src.dataset_id, [sourceRunId]);
+    const ids = caseIds
+      ? await pickedCaseIds(conn, src.dataset_id, [sourceRunId], caseIds)
+      : await mismatchCaseIds(conn, src.dataset_id, [sourceRunId]);
     const id = await insertRerun(conn, oracle, src, name, ids);
     return (await fetchRun(conn, id))!;
   }, { commit: true });
@@ -274,6 +309,7 @@ export async function createMismatchRerun(sourceRunId: number): Promise<RagasRun
  * 불일치 on. Each side keeps its own prompt version and models. */
 export async function createAbMismatchRerun(
   groupId: number,
+  caseIds?: number[] | null,
 ): Promise<{ ragas_run_a_id: number; ragas_run_b_id: number }> {
   return withConn(async (conn, oracle) => {
     const res = await conn.execute(
@@ -285,7 +321,9 @@ export async function createAbMismatchRerun(
     const a = (await fetchRun(conn, runIds[0]))!;
     const b = (await fetchRun(conn, runIds[1]))!;
     const name = await rerunDatasetName(conn, a);
-    const ids = await mismatchCaseIds(conn, a.dataset_id, runIds);
+    const ids = caseIds
+      ? await pickedCaseIds(conn, a.dataset_id, runIds, caseIds)
+      : await mismatchCaseIds(conn, a.dataset_id, runIds);
     const idA = await insertRerun(conn, oracle, a, name, ids);
     const idB = await insertRerun(conn, oracle, b, name, ids);
     await conn.execute(`UPDATE PTX_RUN_MAS SET AB_GROUP_ID = :g WHERE RUN_ID IN (:a, :b)`, {

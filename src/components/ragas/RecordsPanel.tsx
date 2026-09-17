@@ -19,7 +19,7 @@ import { CaseCompareTable } from './CompareTable';
 import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import { AbKeyBreakdown, KeyBreakdown } from './KeyBreakdown';
 import {
-  CaseTable, DownloadIcon, ErrBox, errText, fmt2, fmt3, fmtDt, runDurationText, RunDurationTag, folderLabel, hasTextSelection, runMean, runTargetLabel,
+  CaseTable, DownloadIcon, ErrBox, errText, fmt2, fmt3, fmtDt, runDurationText, RunDurationTag, usePickedCases, folderLabel, hasTextSelection, runMean, runTargetLabel,
   compareSideLabel, runModelDetail, runTitle, runTitleParts, scoredMetrics, SegToggle, TrashIcon, UNSCORED_LABEL,
 } from './shared';
 import RerunButton from './RerunButton';
@@ -793,6 +793,7 @@ function RunsPager({
 function AbCompareView({ aId, bId, manual }: { aId: number; bId: number; manual?: boolean }) {
   const [a, setA] = useState<RagasRunDetail | null>(null);
   const [b, setB] = useState<RagasRunDetail | null>(null);
+  const picking = usePickedCases(aId);
   useEffect(() => {
     api.get<RagasRunDetail>(`/ragas-runs/${aId}`).then(setA).catch(() => setA(null));
     api.get<RagasRunDetail>(`/ragas-runs/${bId}`).then(setB).catch(() => setB(null));
@@ -816,11 +817,11 @@ function AbCompareView({ aId, bId, manual }: { aId: number; bId: number; manual?
             <RunDurationTag runs={[a, b]} />
             <span>·</span>
             <span>Engine {a.engine ?? '—'}</span>
-            {!manual && <RerunButton detail={a} detailB={b} />}
+            {!manual && <RerunButton detail={a} detailB={b} picking={picking} />}
           </span>
         </div>
         <div className="p-4">
-          <CaseCompareTable detailA={a} detailB={b} defaultAllOpen={false} />
+          <CaseCompareTable detailA={a} detailB={b} defaultAllOpen={false} picking={manual ? undefined : picking} />
         </div>
       </div>
     </div>
@@ -836,6 +837,7 @@ function RagasRunDetailView({ ragasId, manual }: { ragasId: number; manual?: boo
   const [detail, setDetail] = useState<RagasRunDetail | null>(null);
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState<string | null>(null);
+  const picking = usePickedCases(ragasId);
   useEffect(() => { setAdded(null); api.get<RagasRunDetail>(`/ragas-runs/${ragasId}`).then(setDetail).catch(() => setDetail(null)); }, [ragasId]);
   if (!detail) return <div className="p-4 text-xs text-muted">불러오는 중…</div>;
 
@@ -879,7 +881,7 @@ function RagasRunDetailView({ ragasId, manual }: { ragasId: number; manual?: boo
             <Button variant="secondary" size="sm" className="ml-1" disabled={seed.length === 0} onClick={() => setAdding(true)}>
               데이터셋에 추가
             </Button>
-            {!manual && <RerunButton detail={detail} />}
+            {!manual && <RerunButton detail={detail} picking={picking} />}
           </span>
         </div>
         {added && (
@@ -889,7 +891,7 @@ function RagasRunDetailView({ ragasId, manual }: { ragasId: number; manual?: boo
           </div>
         )}
         <div className="p-4">
-          <CaseTable detail={detail} defaultAllOpen={false} />
+          <CaseTable detail={detail} defaultAllOpen={false} picking={manual ? undefined : picking} />
         </div>
       </div>
       {adding && (

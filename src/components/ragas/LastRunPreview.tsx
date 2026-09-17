@@ -10,7 +10,9 @@ import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummary
 import { AbKeyBreakdown, KeyBreakdown } from './KeyBreakdown';
 import { CaseCompareTable } from './CompareTable';
 import RerunButton from './RerunButton';
-import { CaseTable, compareSideLabel, EmptyState, fmtDt, RunDurationTag, runTargetTitle, scoredMetrics } from './shared';
+import {
+  CaseTable, compareSideLabel, EmptyState, fmtDt, RunDurationTag, runTargetTitle, scoredMetrics, usePickedCases,
+} from './shared';
 
 /**
  * The most recent finished run of this kind, on the run screen while nothing is
@@ -79,6 +81,7 @@ export default function LastRunPreview({ kind }: { kind: Kind }) {
   const [open, setOpen] = useState(true);
   const [detailA, setDetailA] = useState<RagasRunDetail | null>(null);
   const [detailB, setDetailB] = useState<RagasRunDetail | null>(null);
+  const picking = usePickedCases(detailA?.ragas_run_id);
 
   useEffect(() => {
     api
@@ -164,7 +167,7 @@ export default function LastRunPreview({ kind }: { kind: Kind }) {
           </span>
         </button>
         {ready && detailA && !head.is_manual && (
-          <RerunButton detail={detailA} detailB={paired ? detailB : null} className="shrink-0 pr-4" />
+          <RerunButton detail={detailA} detailB={paired ? detailB : null} picking={picking} className="shrink-0 pr-4" />
         )}
         </div>
 
@@ -175,9 +178,14 @@ export default function LastRunPreview({ kind }: { kind: Kind }) {
             ) : (
               <div className="overflow-hidden rounded-sm border border-line bg-surface">
                 {paired && detailB ? (
-                  <CaseCompareTable detailA={detailA} detailB={detailB} defaultAllOpen={false} />
+                  <CaseCompareTable
+                    detailA={detailA}
+                    detailB={detailB}
+                    defaultAllOpen={false}
+                    picking={head.is_manual ? undefined : picking}
+                  />
                 ) : (
-                  <CaseTable detail={detailA} defaultAllOpen={false} />
+                  <CaseTable detail={detailA} defaultAllOpen={false} picking={head.is_manual ? undefined : picking} />
                 )}
               </div>
             )}

@@ -13,6 +13,7 @@ import {
 } from '@/lib/types';
 import {
   AnswerBox, caseMean, Chevron, CollapseAllStrip, CopyButton, DisclosureHeader, ElapsedTag, fmt3, fmtElapsed,
+  PickAll, PickCheck, type Picking,
   compareSideLabel, OxBadge, PendingHint, AnswerPreview, TraceValueBox,
 } from './shared';
 import {
@@ -374,6 +375,7 @@ export function CaseCompareTable({
   labelB,
   scored,
   defaultAllOpen = false,
+  picking,
 }: {
   detailA: RagasRunDetail;
   detailB: RagasRunDetail;
@@ -385,6 +387,8 @@ export function CaseCompareTable({
   labelB?: string;
   scored?: boolean;
   defaultAllOpen?: boolean;
+  /** 있으면 케이스마다 고르기 상자가 선다 — 고른 케이스로 A·B 를 함께 재테스트. */
+  picking?: Picking;
 }) {
   const byA = new Map(detailA.results.map((r) => [r.case_id, r] as const));
   const byB = new Map(detailB.results.map((r) => [r.case_id, r] as const));
@@ -425,7 +429,11 @@ export function CaseCompareTable({
   return (
     <div className="divide-y divide-line">
       {ids.length > 1 && (
-        <CollapseAllStrip allClosed={allClosed} onToggle={() => setOpened(allClosed ? new Set(keys) : new Set())} />
+        <CollapseAllStrip
+          allClosed={allClosed}
+          onToggle={() => setOpened(allClosed ? new Set(keys) : new Set())}
+          lead={picking && <PickAll picking={picking} ids={ids.filter((c): c is number => c != null)} />}
+        />
       )}
       {ids.map((cid) => {
         const key = String(cid);
@@ -449,6 +457,17 @@ export function CaseCompareTable({
         return (
           <div key={key}>
             <DisclosureHeader open={!isClosed} onToggle={() => toggle(key)}>
+              {picking && (
+                <span className="mt-1 flex w-3.5 shrink-0">
+                  {cid != null && (
+                    <PickCheck
+                      checked={picking.picked.has(cid)}
+                      onChange={(on) => picking.toggle(cid, on)}
+                      label="재테스트할 케이스로 선택"
+                    />
+                  )}
+                </span>
+              )}
               <Chevron open={!isClosed} className="mt-1" />
               <span className={cn('min-w-0 flex-1 text-sm text-ink', isClosed ? 'truncate' : 'whitespace-pre-wrap break-words font-medium')}>
                 {q}

@@ -67,18 +67,19 @@ export function runSpanMs(...runs: Timed[]): number | null {
   return ms >= 0 ? ms : null;
 }
 
-/** 실행 전체 소요시간 표기. 케이스 한 건(`fmtElapsed`)과 달리 분 · 시간까지 올라간다 —
- * 수백 초를 초로만 적으면 한눈에 가늠이 되지 않는다. */
+/** 실행 전체 소요시간 표기. 케이스 한 건(`fmtElapsed`)과 달리 분 · 시간까지 올라가되,
+ * 초는 늘 소수점 둘째 자리까지 적는다 — 실행끼리 나란히 견주는 값이라 자릿수가
+ * 들쭉날쭉하면 비교가 흐려진다. */
 export function fmtDuration(ms: number): string {
-  if (ms < 10_000) return `${(ms / 1000).toFixed(1)}초`;
-  const sec = Math.round(ms / 1000);
-  if (sec < 60) return `${sec}초`;
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  if (m < 60) return s ? `${m}분 ${s}초` : `${m}분`;
-  const h = Math.floor(m / 60);
-  const mm = m % 60;
-  return mm ? `${h}시간 ${mm}분` : `${h}시간`;
+  // 1/100초 단위 정수로 먼저 반올림한다 — 초를 따로 반올림하면 59.996초가
+  // '0분 60.00초'로 적힌다.
+  const cs = Math.round(ms / 10);
+  const h = Math.floor(cs / 360_000);
+  const m = Math.floor((cs % 360_000) / 6000);
+  const s = ((cs % 6000) / 100).toFixed(2);
+  if (h > 0) return `${h}시간 ${m}분 ${s}초`;
+  if (m > 0) return `${m}분 ${s}초`;
+  return `${s}초`;
 }
 
 /** 목록 칸에 그대로 넣는 글자 — 잴 수 없으면 null. */
@@ -979,9 +980,79 @@ export function DisclosureHeader({
   );
 }
 
-export function CollapseAllStrip({ allClosed, onToggle }: { allClosed: boolean; onToggle: () => void }) {
+/** 재테스트할 케이스를 고른 상태. 결과 카드 머리줄의 재테스트 버튼과 그 아래 케이스
+ * 목록이 함께 쓰므로 둘을 품은 쪽이 갖는다. 다른 실행을 보게 되면 비운다. */
+export function usePickedCases(resetKey: unknown) {
+  const [picked, setPicked] = useState<Set<number>>(() => new Set());
+  useEffect(() => {
+    setPicked(new Set());
+  }, [resetKey]);
+  const toggle = useCallback((id: number, on: boolean) => {
+    setPicked((cur) => {
+      const next = new Set(cur);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+  const setAll = useCallback((ids: number[], on: boolean) => setPicked(on ? new Set(ids) : new Set()), []);
+  const clear = useCallback(() => setPicked(new Set()), []);
+  return { picked, toggle, setAll, clear };
+}
+export type Picking = ReturnType<typeof usePickedCases>;
+
+/** 케이스 줄의 고르기 상자. 줄 머리를 누르면 펼쳐지므로 클릭 · 키 입력이 거기까지
+ * 올라가지 않게 막는다. */
+export function PickCheck({
+  checked, indeterminate, onChange, label,
+}: { checked: boolean; indeterminate?: boolean; onChange: (on: boolean) => void; label: string }) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = !!indeterminate;
+  }, [indeterminate]);
   return (
-    <div className="flex justify-end bg-surface-2/60 px-4 py-1.5">
+    <input
+      ref={ref}
+      type="checkbox"
+      aria-label={label}
+      title={label}
+      checked={checked}
+      onChange={(e) => onChange(e.target.checked)}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+      className="h-3.5 w-3.5 shrink-0 cursor-pointer accent-accent"
+    />
+  );
+}
+
+/** 목록 위 띠의 전체 고르기. 고른 수가 있으면 그 수를 적는다. */
+export function PickAll({ picking, ids }: { picking: Picking; ids: number[] }) {
+  const n = ids.filter((id) => picking.picked.has(id)).length;
+  return (
+    <label className="inline-flex cursor-pointer items-center gap-2 text-[11px] font-medium text-muted hover:text-ink">
+      <PickCheck
+        checked={n > 0 && n === ids.length}
+        indeterminate={n > 0 && n < ids.length}
+        onChange={(on) => picking.setAll(ids, on)}
+        label="전체 선택"
+      />
+      {n > 0 ? (
+        <span>
+          <span className="font-mono tabular-nums text-ink">{n}</span>건 선택
+        </span>
+      ) : (
+        '전체 선택'
+      )}
+    </label>
+  );
+}
+
+export function CollapseAllStrip({
+  allClosed, onToggle, lead,
+}: { allClosed: boolean; onToggle: () => void; lead?: ReactNode }) {
+  return (
+    <div className="flex items-center justify-end gap-3 bg-surface-2/60 px-4 py-1.5">
+      {lead && <span className="mr-auto flex items-center">{lead}</span>}
       <button type="button" onClick={onToggle} className="text-[11px] font-medium text-muted hover:text-ink">
         {allClosed ? '모두 펼치기' : '모두 접기'}
       </button>
@@ -1148,7 +1219,16 @@ export function ScoreBars({
 // Answer-centric case view: each case is a collapsible block. The header line is
 // the question (plus its average score when collapsed); the body holds ground
 // truth, answer, and the per-metric score bars.
-export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: { detail: RagasRunDetail; bordered?: boolean; scored?: boolean; defaultAllOpen?: boolean }) {
+export function CaseTable({
+  detail, bordered, scored, defaultAllOpen = false, picking,
+}: {
+  detail: RagasRunDetail;
+  bordered?: boolean;
+  scored?: boolean;
+  defaultAllOpen?: boolean;
+  /** 있으면 케이스마다 고르기 상자가 선다 — 고른 케이스만 재테스트. */
+  picking?: Picking;
+}) {
   // A cancelled run keeps whatever it scored before the stop, so its cases are
   // shown with scores like any other run — the ones that never got there say so.
   const cancelled = detail.status === 'CANCELLED';
@@ -1163,6 +1243,8 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
   const anyMean = detail.results.some((r) => caseMean(r) != null);
   const scoreW = anyMean ? 'w-[150px]' : 'w-[76px]';
   const ids = detail.results.map((r) => r.ragas_result_id);
+  // 재테스트는 데이터셋 케이스 단위라, 케이스 id 가 없는 줄은 고를 수 없다.
+  const pickable = detail.results.filter((r) => r.case_id != null).map((r) => r.case_id!);
   const [opened, setOpened] = useState<Set<number>>(() =>
     defaultAllOpen ? new Set(ids) : new Set()
   );
@@ -1172,7 +1254,11 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
   const list = (
     <div className="divide-y divide-line">
       {ids.length > 1 && (
-        <CollapseAllStrip allClosed={allClosed} onToggle={() => setOpened(allClosed ? new Set(ids) : new Set())} />
+        <CollapseAllStrip
+          allClosed={allClosed}
+          onToggle={() => setOpened(allClosed ? new Set(ids) : new Set())}
+          lead={picking && <PickAll picking={picking} ids={pickable} />}
+        />
       )}
       {detail.results.map((r) => {
         const isClosed = !opened.has(r.ragas_result_id);
@@ -1186,6 +1272,17 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
         return (
           <div key={r.ragas_result_id}>
             <DisclosureHeader open={!isClosed} onToggle={() => toggle(r.ragas_result_id)}>
+              {picking && (
+                <span className="mt-1 flex w-3.5 shrink-0">
+                  {r.case_id != null && (
+                    <PickCheck
+                      checked={picking.picked.has(r.case_id)}
+                      onChange={(on) => picking.toggle(r.case_id!, on)}
+                      label="재테스트할 케이스로 선택"
+                    />
+                  )}
+                </span>
+              )}
               <Chevron open={!isClosed} className="mt-1" />
               <span className={cn('min-w-0 flex-1 text-sm text-ink', isClosed ? 'truncate' : 'whitespace-pre-wrap break-words font-medium')}>
                 {r.question ?? '—'}

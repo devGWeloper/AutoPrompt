@@ -37,16 +37,24 @@ function endpointOf(d: RagasRunDetail, endpoints: Endpoint[]): Endpoint {
   return ep;
 }
 
-export async function startMismatchRerun(d: RagasRunDetail, endpoints: Endpoint[]): Promise<ActiveSingleRun> {
+/** `caseIds` 가 있으면 고른 케이스만, 없으면 불일치 케이스만 다시 돌린다. */
+export async function startMismatchRerun(
+  d: RagasRunDetail,
+  endpoints: Endpoint[],
+  caseIds?: number[],
+): Promise<ActiveSingleRun> {
   const ep = endpointOf(d, endpoints);
-  const r = await api.post<{ ragas_run_id: number }>(`/ragas-runs/${d.ragas_run_id}/rerun`, {});
+  const r = await api.post<{ ragas_run_id: number }>(
+    `/ragas-runs/${d.ragas_run_id}/rerun`,
+    caseIds ? { case_ids: caseIds } : {},
+  );
   const active: ActiveSingleRun = {
     runId: r.ragas_run_id,
     endpointId: ep.endpoint_id,
     baseUrl: null,
     scoreOn: d.metrics !== '[]',
     nodeNm: d.node_nm ?? '',
-    verLabel: `#${d.ragas_run_id} 불일치 재테스트`,
+    verLabel: `#${d.ragas_run_id} ${caseIds ? '선택' : '불일치'} 재테스트`,
   };
   saveActiveRun('single', active);
   return active;
@@ -56,13 +64,14 @@ export async function startAbMismatchRerun(
   a: RagasRunDetail,
   b: RagasRunDetail,
   endpoints: Endpoint[],
+  caseIds?: number[],
 ): Promise<ActiveCompareRun> {
   if (a.ab_group_id == null) throw new Error('Compare 실행이 아닙니다');
   const epA = endpointOf(a, endpoints);
   const epB = endpointOf(b, endpoints);
   const r = await api.post<{ ragas_run_a_id: number; ragas_run_b_id: number }>(
     `/ragas-runs/ab/${a.ab_group_id}/rerun`,
-    {},
+    caseIds ? { case_ids: caseIds } : {},
   );
   const active: ActiveCompareRun = {
     runIdA: r.ragas_run_a_id,

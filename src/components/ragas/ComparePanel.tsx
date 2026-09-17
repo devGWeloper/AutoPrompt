@@ -30,6 +30,7 @@ import {
   InlineField,
   ErrBox,
   RunDurationTag,
+  usePickedCases,
   PROMPT_TARGET_ENABLED,
   EvalOptions,
   ScoreToggle,
@@ -161,6 +162,8 @@ export default function ComparePanel() {
   const [status, setStatus] = useState('idle');
   const [detailA, setDetailA] = useState<RagasRunDetail | null>(null);
   const [detailB, setDetailB] = useState<RagasRunDetail | null>(null);
+  // 끝난 비교의 케이스 목록에서 고른 것 — 새 비교가 뜨면 비운다.
+  const picking = usePickedCases(detailA?.ragas_run_id);
   const [error, setError] = useState<string | null>(null);
   // Live streaming: answers for both versions trickle in, then scores fill in.
   const [liveA, setLiveA] = useState<RagasResultRow[]>([]);
@@ -635,12 +638,12 @@ export default function ComparePanel() {
                 <CompareVerdict detailA={detailA} detailB={detailB} />
                 <RunDurationTag runs={[detailA, detailB]} />
                 <span>Engine {detailA.engine ?? '—'}</span>
-                <RerunButton detail={detailA} detailB={detailB} />
+                <RerunButton detail={detailA} detailB={detailB} picking={picking} />
               </span>
             </div>
             <div className="p-4">
               <div className="overflow-hidden rounded-sm border border-line bg-surface">
-                <CaseCompareTable detailA={detailA} detailB={detailB} labelA={dispLabel(labA)} labelB={dispLabel(labB)} />
+                <CaseCompareTable detailA={detailA} detailB={detailB} labelA={dispLabel(labA)} labelB={dispLabel(labB)} picking={picking} />
               </div>
             </div>
           </Card>

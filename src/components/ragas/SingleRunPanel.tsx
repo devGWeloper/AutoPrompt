@@ -43,6 +43,7 @@ import {
   ScoreBars,
   ElapsedTag,
   RunDurationTag,
+  usePickedCases,
   AnswerBox,
   PendingHint,
   SAMPLE_MESSAGE,
@@ -150,6 +151,8 @@ export default function SingleRunPanel() {
   const [scoreOn, setScoreOn] = useState(true);
   const [status, setStatus] = useState('idle');
   const [detail, setDetail] = useState<RagasRunDetail | null>(null);
+  // 끝난 실행의 케이스 목록에서 고른 것 — 새 실행이 뜨면 비운다.
+  const rerunPick = usePickedCases(detail?.ragas_run_id);
   const [error, setError] = useState<string | null>(null);
   // Live streaming state: results trickle in (answers first, then scores).
   const [live, setLive] = useState<RagasResultRow[]>([]);
@@ -672,12 +675,12 @@ export default function SingleRunPanel() {
                     <span>Engine {detail.engine ?? '—'}</span>
                     <span>·</span>
                     <span>{detail.results.length} case{detail.results.length === 1 ? '' : 's'}</span>
-                    <RerunButton detail={detail} className="ml-1" />
+                    <RerunButton detail={detail} picking={rerunPick} className="ml-1" />
                   </span>
                 </div>
                 <div className="p-4">
                   <div className="overflow-hidden rounded-sm border border-line bg-surface">
-                    <CaseTable detail={detail} />
+                    <CaseTable detail={detail} picking={rerunPick} />
                   </div>
                 </div>
               </Card>
