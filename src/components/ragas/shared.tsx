@@ -67,19 +67,11 @@ export function runSpanMs(...runs: Timed[]): number | null {
   return ms >= 0 ? ms : null;
 }
 
-/** 실행 전체 소요시간 표기. 케이스 한 건(`fmtElapsed`)과 달리 분 · 시간까지 올라가되,
- * 초는 늘 소수점 둘째 자리까지 적는다 — 실행끼리 나란히 견주는 값이라 자릿수가
- * 들쭉날쭉하면 비교가 흐려진다. */
+/** 실행 전체 소요시간 표기 — 케이스 한 건(`fmtElapsed`)과 같은 단위로, 초 · 소수점
+ * 둘째 자리. 분으로 올려 적으면 케이스 시간(초)과 단위가 달라 둘을 나란히 읽을 수
+ * 없다. */
 export function fmtDuration(ms: number): string {
-  // 1/100초 단위 정수로 먼저 반올림한다 — 초를 따로 반올림하면 59.996초가
-  // '0분 60.00초'로 적힌다.
-  const cs = Math.round(ms / 10);
-  const h = Math.floor(cs / 360_000);
-  const m = Math.floor((cs % 360_000) / 6000);
-  const s = ((cs % 6000) / 100).toFixed(2);
-  if (h > 0) return `${h}시간 ${m}분 ${s}초`;
-  if (m > 0) return `${m}분 ${s}초`;
-  return `${s}초`;
+  return `${(ms / 1000).toFixed(2)}초`;
 }
 
 /** 목록 칸에 그대로 넣는 글자 — 잴 수 없으면 null. */
