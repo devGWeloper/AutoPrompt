@@ -782,14 +782,17 @@ function indentedJson(text: string): string | null {
  * 모서리. 어떤 칸은 상자이고 어떤 칸은 맨글자이면, 무엇이 한 덩어리인지부터
  * 헷갈린다. */
 export function CasePanel({
-  title, trailing, children,
+  title, trailing, flush, children,
 }: {
   title: ReactNode;
   trailing?: ReactNode;
+  /** 케이스 본문의 한 상자 안에 다른 패널과 나란히 설 때 — 테두리는 바깥 상자가
+   * 두르고, 여기서는 구분선만 남는다. */
+  flush?: boolean;
   children: ReactNode;
 }) {
   return (
-    <div className="min-w-0 overflow-hidden rounded-md border border-line bg-surface">
+    <div className={cn('min-w-0 overflow-hidden bg-surface', !flush && 'rounded-md border border-line')}>
       <div className="flex items-center gap-2 border-b border-line bg-surface-2 px-3 py-2">
         {title}
         {trailing && <span className="ml-auto flex items-center gap-2">{trailing}</span>}
@@ -855,10 +858,10 @@ export function CopyButton({ text }: { text: string }) {
 /** The intermediate variable this case was judged on — the endpoint's response
  * never carried it, so without this block there is no way to see what the O/X
  * was decided from, or to author the expected answer (copy it and edit). */
-export function TraceValueBox({ row }: { row: RagasResultRow }) {
+export function TraceValueBox({ row, flush }: { row: RagasResultRow; flush?: boolean }) {
   if (!row.trace_value) return null;
   return (
-    <div className="min-w-0 overflow-hidden rounded-md border border-line bg-surface">
+    <div className={cn('min-w-0 overflow-hidden bg-surface', !flush && 'rounded-md border border-line')}>
       <div className="flex items-center gap-1.5 border-b border-line bg-surface-2 px-3 py-2">
         <PaneLabel tone="left">채점 대상</PaneLabel>
         <span className="truncate rounded-sm border border-line px-1 py-px font-mono text-[10px] text-muted">
@@ -991,8 +994,11 @@ export function ScoreBars({
   cancelled,
   settled,
   verdict = false,
+  flush,
 }: {
   row: RagasResultRow;
+  /** 케이스 본문의 한 상자 안에 설 때 — 바깥 상자가 테두리를 두른다. */
+  flush?: boolean;
   /** Action Test 판정도 여기 적는다. 케이스 목록에서는 끈다 — 접힌 줄과 판정표 머리가
    * 이미 O/X 를 말한다. 판정을 말할 곳이 이 상자뿐인 화면(직접 호출 결과)에서만 켠다. */
   verdict?: boolean;
@@ -1003,29 +1009,31 @@ export function ScoreBars({
   settled?: boolean;
 }) {
   const shown = scoredMetrics(row);
+  // 상자 안에 들어갈 때는 한 줄짜리 알림도 다른 패널과 같은 여백을 갖는다.
+  const msg = (node: ReactNode) => (flush ? <div className="px-3 py-2">{node}</div> : node);
   if (!shown.length) {
     // The scorer's own failure — an answer arrived and the message is about
     // judging it. Said first: it is the only case here with something to report.
     if (row.answer != null && row.error_msg) {
-      return <span className="text-[11px] text-bad">채점 실패 — {row.error_msg}</span>;
+      return msg(<span className="text-[11px] text-bad">채점 실패 — {row.error_msg}</span>);
     }
     // A failed call. AnswerBox already prints the message, so this line only has
     // to say why there is no score.
     if (row.error_msg) {
-      return <span className="text-[11px] text-muted">답변 실패 — 채점하지 않음</span>;
+      return msg(<span className="text-[11px] text-muted">답변 실패 — 채점하지 않음</span>);
     }
     // Nothing wrong was recorded, so whether a score is still coming depends
     // entirely on whether the run is still going. Guessing from the row alone —
     // as this used to — leaves a finished run sitting on '채점 중…' forever.
-    if (!settled) return <span className="text-[11px] text-muted">채점 중…</span>;
-    if (cancelled) return <span className="text-[11px] text-muted">실행 취소 — 채점하지 않음</span>;
+    if (!settled) return msg(<span className="text-[11px] text-muted">채점 중…</span>);
+    if (cancelled) return msg(<span className="text-[11px] text-muted">실행 취소 — 채점하지 않음</span>);
     // A call that came back 200 with nothing in it. It is not an error anyone
     // reported, and it is not a pending score — it is an empty answer, which is
     // its own finding and the one thing the old wording hid.
-    return (
+    return msg(
       <span className="text-[11px] text-muted">
         {row.answer == null ? '답변이 비어 있음 — 채점하지 않음' : '채점되지 않음'}
-      </span>
+      </span>,
     );
   }
   // Action Test 판정은 (verdict 가 아니면) 여기 다시 적지 않는다 — 접힌 줄과 바로 위
@@ -1035,11 +1043,12 @@ export function ScoreBars({
   const ragas = items.filter((m) => m !== EXACT_MATCH);
   const partial = row.answer != null && !!row.error_msg;
   if (!items.length) {
-    return partial ? <p className="text-[11px] text-bad">채점 실패 — {row.error_msg}</p> : null;
+    return partial ? msg(<p className="text-[11px] text-bad">채점 실패 — {row.error_msg}</p>) : null;
   }
   const mean = caseMean(row);
   return (
     <CasePanel
+      flush={flush}
       title={<span className="eyebrow">{ragas.length ? (verdict ? '평가 결과' : 'RAGAS') : 'Action Test'}</span>}
       trailing={
         mean != null && ragas.length > 1 ? (
@@ -1142,12 +1151,13 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
                   따라 떠다니지 않고 고정 폭 칸을 차지한다. 시간은 그 칸의 왼쪽
                   끝에서 시작해, 자릿수가 달라도 숫자의 머리가 한 줄로 선다.
                   빈 값이어도 칸은 남아서 위아래 줄의 같은 것이 같은 자리에 온다. */}
-              {isClosed && (
-                <span className="mt-0.5 w-[76px] shrink-0 text-left">
-                  <ElapsedTag ms={r.elapsed_ms} />
-                </span>
-              )}
-              {isClosed && showScores && (
+              {/* 시간과 판정은 펼친 뒤에도 그대로 머리줄에 남는다 — 펼치는
+                  순간 사라졌다가 아래 상자 어딘가에 다시 나오면, 케이스마다
+                  어느 상자에서 읽어야 하는지가 달라진다. */}
+              <span className="mt-0.5 w-[76px] shrink-0 text-left">
+                <ElapsedTag ms={r.elapsed_ms} />
+              </span>
+              {showScores && (
                 <span className={cn('flex shrink-0 flex-col items-end gap-0.5', scoreW)}>
                   <span className="flex items-center justify-end gap-2">
                     {/* O/X and the RAGAS mean stand on their own — a verdict and a
@@ -1176,45 +1186,48 @@ export function CaseTable({ detail, bordered, scored, defaultAllOpen = false }: 
               )}
             </DisclosureHeader>
             {!isClosed && (
-              <div className="space-y-3 px-4 pb-3.5 pl-10">
-                {/* 기대 정답이 있으면 채점 대상 바로 옆에 놓고 다른 곳만 칠한다 —
-                    O/X 를 눈으로 다시 검산하지 않아도 된다. 정답이 없는 실행은
-                    비교할 짝이 없으니 채점 대상만 보여준다. */}
-                {r.ground_truth ? (
-                  <MatchDiff row={r} />
-                ) : keyed ? (
-                  <ValuePanel
-                    text={scored!}
-                    unwrapBody={!r.trace_value}
-                    label={r.trace_value ? '채점 대상' : '답변'}
-                    tag={r.trace_value ? r.trace_var_nm || 'trace' : null}
-                    trailing={<><ElapsedTag ms={r.elapsed_ms} />{addExpected}</>}
-                  />
-                ) : (
-                  <TraceValueBox row={r} />
-                )}
-                {/* 답변이 곧 채점 대상이면 위 판정표가 이미 그것이다. 중간 변수를 채점했거나
-                    호출이 실패했을 때만 따로 편다 — 위 칸과 같은 상자 모양으로. 중간
-                    변수를 채점한 케이스에서는 '답변'이 채점 대상과 헷갈리지 않게
-                    '최종 답변'이라 부른다. 시간은 위 판정표 머리에 이미 있으면 되풀이하지
-                    않는다. */}
-                {/* 키 · 값 표가 곧 답변이면(중간 변수 없음) 원문을 한 번 더 적지 않는다. */}
-                {(!r.ground_truth || r.trace_value || !!r.error_msg) &&
-                  !(keyed && !r.trace_value && !r.error_msg) && (
-                  <CasePanel
-                    title={<span className="eyebrow">{r.trace_value ? '최종 답변' : '답변'}</span>}
-                    trailing={
-                      <>
-                        {!r.ground_truth && !keyed && <ElapsedTag ms={r.elapsed_ms} />}
-                        {!keyed && addExpected}
-                        {r.answer && <CopyButton text={r.answer} />}
-                      </>
-                    }
-                  >
-                    <AnswerBox text={r.answer} error={r.error_msg} settled={settled} />
-                  </CasePanel>
-                )}
-                {showScores && <ScoreBars row={r} cancelled={cancelled} settled={settled} />}
+              // 펼친 본문은 한 단 들어간 회색 바닥 위에 선다 — 흰 줄들 사이에서
+              // 어디까지가 이 케이스인지 경계가 보인다. 그 위의 패널들은 저마다
+              // 테두리를 두르는 대신 한 상자 안에서 구분선으로만 갈린다.
+              <div className="border-t border-line bg-surface-2 px-4 py-3 pl-10">
+                <div className="min-w-0 divide-y divide-line overflow-hidden rounded-md border border-line bg-surface">
+                  {/* 기대 정답이 있으면 채점 대상 바로 옆에 놓고 다른 곳만 칠한다 —
+                      O/X 를 눈으로 다시 검산하지 않아도 된다. 정답이 없는 실행은
+                      비교할 짝이 없으니 채점 대상만 보여준다. */}
+                  {r.ground_truth ? (
+                    <MatchDiff row={r} flush />
+                  ) : keyed ? (
+                    <ValuePanel
+                      text={scored!}
+                      unwrapBody={!r.trace_value}
+                      label={r.trace_value ? '채점 대상' : '답변'}
+                      tag={r.trace_value ? r.trace_var_nm || 'trace' : null}
+                      trailing={addExpected}
+                      flush
+                    />
+                  ) : (
+                    <TraceValueBox row={r} flush />
+                  )}
+                  {/* 답변이 곧 채점 대상이면 위 판정표가 이미 그것이다. 중간 변수를
+                      채점했거나 호출이 실패했을 때만 따로 편다. 시간은 머리줄이 이미
+                      말했으므로 되풀이하지 않는다. */}
+                  {(!r.ground_truth || r.trace_value || !!r.error_msg) &&
+                    !(keyed && !r.trace_value && !r.error_msg) && (
+                    <CasePanel
+                      flush
+                      title={<span className="eyebrow">{r.trace_value ? '최종 답변' : '답변'}</span>}
+                      trailing={
+                        <>
+                          {!keyed && addExpected}
+                          {r.answer && <CopyButton text={r.answer} />}
+                        </>
+                      }
+                    >
+                      <AnswerBox text={r.answer} error={r.error_msg} settled={settled} />
+                    </CasePanel>
+                  )}
+                  {showScores && <ScoreBars row={r} cancelled={cancelled} settled={settled} flush />}
+                </div>
               </div>
             )}
           </div>

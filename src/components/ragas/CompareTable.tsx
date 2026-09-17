@@ -22,9 +22,9 @@ import AddExpectedButton from './AddExpectedButton';
 
 /** The expected answer, once, above both sides — it is the same text for A and
  * B, and repeating it under each would push the two answers apart. */
-function GroundTruthBox({ text, trailing }: { text: string; trailing?: ReactNode }) {
+function GroundTruthBox({ text, trailing, flush }: { text: string; trailing?: ReactNode; flush?: boolean }) {
   return (
-    <div className="mb-3 overflow-hidden rounded-md border border-line bg-surface">
+    <div className={cn('overflow-hidden bg-surface', !flush && 'mb-3 rounded-md border border-line')}>
       <div className="flex items-center gap-2 border-b border-line bg-surface-2 px-3 py-2">
         <PaneLabel tone="right">기대 정답</PaneLabel>
         <span className="ml-auto flex items-center gap-2">
@@ -45,7 +45,7 @@ function GroundTruthBox({ text, trailing }: { text: string; trailing?: ReactNode
  * be read against the same yardstick instead of against each other by eye.
  */
 function SideBox({
-  side, label, tone, row, gt, settled, raw = true,
+  side, label, tone, row, gt, settled, raw = true, flush,
 }: {
   side: 'A' | 'B';
   label: string;
@@ -60,6 +60,8 @@ function SideBox({
    * 그조차 접는다.
    */
   raw?: boolean;
+  /** 케이스 본문의 한 상자 안에 설 때. */
+  flush?: boolean;
 }) {
   const scored = row?.trace_value ?? row?.answer ?? null;
   const diffable = gt !== null && scored !== null;
@@ -74,7 +76,8 @@ function SideBox({
     // the eye finds the rail, not a two-letter word inside a sentence.
     <div
       className={cn(
-        'min-w-0 rounded-md border border-line border-l-2 bg-surface-2 p-3',
+        'min-w-0 border-l-2 bg-surface p-3',
+        !flush && 'rounded-md border border-line',
         tone === 'accent' ? 'border-l-accent' : 'border-l-muted/50',
       )}
     >
@@ -294,10 +297,13 @@ function CaseScoreBars({
   b,
   cancelled,
   settled,
+  flush,
 }: {
   a?: RagasResultRow;
   b?: RagasResultRow;
   cancelled?: boolean;
+  /** 케이스 본문의 한 상자 안에 설 때. */
+  flush?: boolean;
   /** Both runs have reached a terminal state — see `ScoreBars`. */
   settled?: boolean;
 }) {
@@ -327,7 +333,8 @@ function CaseScoreBars({
     return (
       <div
         className={cn(
-          'mt-3 text-[11px]',
+          'text-[11px]',
+          flush ? 'px-3 py-2' : 'mt-3',
           failed.length ? 'text-bad' : 'text-muted',
         )}
       >
@@ -336,10 +343,12 @@ function CaseScoreBars({
     );
   }
   if (!rows.length) {
-    return failedMsg ? <p className="mt-3 text-[11px] text-bad">채점 실패 — {failedMsg}</p> : null;
+    return failedMsg ? (
+      <p className={cn('text-[11px] text-bad', flush ? 'px-3 py-2' : 'mt-3')}>채점 실패 — {failedMsg}</p>
+    ) : null;
   }
   return (
-    <div className="mt-3 overflow-hidden rounded-md border border-line bg-surface">
+    <div className={cn('overflow-hidden bg-surface', !flush && 'mt-3 rounded-md border border-line')}>
       <div className="border-b border-line bg-surface-2 px-3 py-2">
         <span className="eyebrow">RAGAS 비교</span>
       </div>
@@ -433,6 +442,9 @@ export function CaseCompareTable({
         const scoredB = b?.trace_value ?? b?.answer;
         const keyed = !isClosed && canCompareFields(scoredA, scoredB, gt, !a?.trace_value, !b?.trace_value);
         const raw = rawKeys.has(key);
+        // 판정표가 선 화면에서 사이드 상자가 실제로 말할 것이 있는가 — 중간 변수를
+        // 채점했거나 호출이 실패했을 때만이다.
+        const sidesShown = !(keyed && !raw) || [a, b].some((x) => !!x?.trace_value || !!x?.error_msg);
 
         return (
           <div key={key}>
@@ -464,7 +476,9 @@ export function CaseCompareTable({
                   one blended number. */}
               {/* 폭은 위에서 목록 단위로 정해 모든 줄이 같이 쓴다. 칸 안에서는
                   왼쪽 맞춤이라 시간·판정·RAGAS 의 머리가 한 선에 선다. */}
-              {isClosed && (
+              {/* 시간과 판정은 펼친 뒤에도 머리줄에 남는다 — 아래 표로 옮겨 다니면
+                  케이스마다 어디서 읽어야 하는지가 달라진다. */}
+              {(
                 <div className={cn('flex shrink-0 flex-col items-start gap-1', railW)}>
                   <ElapsedPair a={a} b={b} />
                   {showScores && (
@@ -510,36 +524,44 @@ export function CaseCompareTable({
               )}
             </DisclosureHeader>
             {!isClosed && (
-              <div className="px-4 pb-3.5 pl-10">
-                {/* 키별 판정표가 서면 기대 정답 상자와 사이드별 어긋난 키 줄은
-                    물러난다 — 같은 것을 세 번 말하는 대신, 두 사이드를 한 줄에
-                    놓고 보는 표가 그 자리를 대신한다. 토글은 그 둘 사이를 오가고,
-                    JSON 이 아닌 케이스에는 고를 것이 없어 서지 않는다. */}
-                {keyed && !raw ? (
-                  <FieldCompareTable
-                    className="mb-3"
-                    aText={scoredA}
-                    bText={scoredB}
-                    expected={gt}
-                    unwrapA={!a?.trace_value}
-                    unwrapB={!b?.trace_value}
-                    nameA={nameA}
-                    nameB={nameB}
-                    trailing={<ViewToggle raw={raw} onRaw={(v) => setRaw(key, v)} />}
-                  />
-                ) : (
-                  gt && (
-                    <GroundTruthBox
-                      text={gt}
-                      trailing={keyed ? <ViewToggle raw={raw} onRaw={(v) => setRaw(key, v)} /> : undefined}
+              // 단일 실행과 같은 규칙: 한 단 들어간 회색 바닥 위에 한 상자.
+              <div className="border-t border-line bg-surface-2 px-4 py-3 pl-10">
+                <div className="min-w-0 divide-y divide-line overflow-hidden rounded-md border border-line bg-surface">
+                  {/* 키별 판정표가 서면 기대 정답 상자와 사이드별 어긋난 키 줄은
+                      물러난다 — 같은 것을 세 번 말하는 대신, 두 사이드를 한 줄에
+                      놓고 보는 표가 그 자리를 대신한다. */}
+                  {keyed && !raw ? (
+                    <FieldCompareTable
+                      flush
+                      aText={scoredA}
+                      bText={scoredB}
+                      expected={gt}
+                      unwrapA={!a?.trace_value}
+                      unwrapB={!b?.trace_value}
+                      nameA={nameA}
+                      nameB={nameB}
+                      trailing={<ViewToggle raw={raw} onRaw={(v) => setRaw(key, v)} />}
                     />
-                  )
-                )}
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <SideBox side="A" label={nameA} tone="neutral" row={a} gt={gt} settled={settled} raw={!keyed || raw} />
-                  <SideBox side="B" label={nameB} tone="accent" row={b} gt={gt} settled={settled} raw={!keyed || raw} />
+                  ) : (
+                    gt && (
+                      <GroundTruthBox
+                        flush
+                        text={gt}
+                        trailing={keyed ? <ViewToggle raw={raw} onRaw={(v) => setRaw(key, v)} /> : undefined}
+                      />
+                    )
+                  )}
+                  {/* 판정표가 이미 두 사이드를 말한 화면에서는, 사이드 상자에 남는
+                      것이 배지와 시간뿐이라 빈 상자 둘이 자리만 차지했다 — 따로
+                      적을 것(중간 변수 · 오류)이 있을 때만 선다. */}
+                  {sidesShown && (
+                    <div className="grid grid-cols-1 divide-y divide-line sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+                      <SideBox flush side="A" label={nameA} tone="neutral" row={a} gt={gt} settled={settled} raw={!keyed || raw} />
+                      <SideBox flush side="B" label={nameB} tone="accent" row={b} gt={gt} settled={settled} raw={!keyed || raw} />
+                    </div>
+                  )}
+                  {showScores && <CaseScoreBars flush a={a} b={b} cancelled={cancelled} settled={settled} />}
                 </div>
-                {showScores && <CaseScoreBars a={a} b={b} cancelled={cancelled} settled={settled} />}
               </div>
             )}
           </div>

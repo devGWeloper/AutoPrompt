@@ -13,7 +13,7 @@ import { byImportance, FAIL_WEIGHT, TIER_ORDER, tierOf, type Tier } from '@/lib/
 import { diffWords, type DiffPair, type DiffSeg } from '@/lib/textDiff';
 import { cn } from '@/lib/cn';
 import type { RagasResultRow } from '@/lib/types';
-import { AnswerBox, Chevron, CopyButton, ElapsedTag, OxBadge, TraceTag } from './shared';
+import { AnswerBox, Chevron, CopyButton, OxBadge, TraceTag } from './shared';
 
 /**
  * What was scored, next to what it was supposed to be.
@@ -308,7 +308,7 @@ function SortToggle({ value, onChange }: { value: SortMode; onChange: (v: SortMo
  * 키가 그것뿐인지 헷갈리면 안 된다. */
 function TableToolbar({
   badOnly, onBadOnly, badCount, hideBlank, onHideBlank, blankCount, hidden,
-  sort, onSort, q, onQ, groups, allCollapsed, onToggleAll,
+  sort, onSort, q, onQ, groups, allCollapsed, onToggleAll, lead, trailing, compact,
 }: {
   badOnly: boolean;
   onBadOnly: (v: boolean) => void;
@@ -324,17 +324,29 @@ function TableToolbar({
   groups: number;
   allCollapsed: boolean;
   onToggleAll: () => void;
+  /** 표 위 막대는 하나뿐이다 — 패널 제목과 판정 요약이 여기 함께 선다. */
+  lead?: ReactNode;
+  trailing?: ReactNode;
+  /** 줄 몇 개짜리 표 — 거르고 정렬할 것이 없으니 조작은 접고 제목만 남는다. */
+  compact?: boolean;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-line bg-surface px-3 py-1.5">
-      <ToggleButton on={badOnly} onClick={() => onBadOnly(!badOnly)} label="오류만 보기" count={badCount} />
-      <ToggleButton on={hideBlank} onClick={() => onHideBlank(!hideBlank)} label="빈 값 숨기기" count={blankCount} />
-      {hidden > 0 && (
-        <span className="text-xs text-muted">
-          <span className="font-mono tabular-nums">{hidden}</span>개 숨김
-        </span>
+    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-line bg-surface-2 px-3 py-1.5">
+      {lead}
+      {!compact && (
+        <>
+          <ToggleButton on={badOnly} onClick={() => onBadOnly(!badOnly)} label="오류만 보기" count={badCount} />
+          <ToggleButton on={hideBlank} onClick={() => onHideBlank(!hideBlank)} label="빈 값 숨기기" count={blankCount} />
+          {hidden > 0 && (
+            <span className="text-xs text-muted">
+              <span className="font-mono tabular-nums">{hidden}</span>개 숨김
+            </span>
+          )}
+        </>
       )}
       <span className="ml-auto flex flex-wrap items-center gap-2">
+        {!compact && (
+          <>
         {groups > 1 && (
           <button
             type="button"
@@ -364,6 +376,9 @@ function TableToolbar({
           )}
         </span>
         <SortToggle value={sort} onChange={onSort} />
+          </>
+        )}
+        {trailing}
       </span>
     </div>
   );
@@ -440,10 +455,12 @@ function visualLen(s: string): number {
 }
 
 /** 키 칸 폭(rem). 끝마디만 서므로 가장 긴 끝마디에 맞추고, 상한을 넘으면 감긴다.
- * 모노 글자 폭 + 칸 여백 + 레일·복사 아이콘 + 묶음 들여쓰기. */
-function keyColRem(labels: string[]): number {
+ * 모노 글자 폭 + 칸 여백 + 레일·복사 아이콘 + 묶음 들여쓰기, 그리고 어긋난 줄이
+ * 있으면 그 옆에 서는 상태 칩('값 다름'·'타입 다름')의 자리까지. 칩 자리를 빼고
+ * 재면 좁아진 칸에서 키 이름이 한 글자씩 세로로 쪼개진다. */
+function keyColRem(labels: string[], chipRem = 0): number {
   const ch = Math.min(28, Math.max(6, ...labels.map(visualLen)));
-  return ch * 0.5 + 1.6 + 1.5 + 0.75;
+  return ch * 0.5 + 1.6 + 1.5 + 0.75 + chipRem;
 }
 
 /** 묶음 머리줄 — 부모 경로 한 번, 키 수, 그 아래 오류. 눌러서 접는다. */
@@ -594,7 +611,7 @@ function KeyCell({
     <td className={cn(CELL, COL, 'border-l-[3px] font-mono', dim ? 'text-body' : 'text-ink', rail !== 'border-l-transparent' && 'font-semibold', rail)}>
       <span className="flex items-baseline gap-1" style={depth ? { paddingLeft: depth * 12 } : undefined}>
         {gutter && <span className="w-3.5 shrink-0 self-center">{lead}</span>}
-        <span className="min-w-0 break-all" title={path || undefined}>
+        <span className="min-w-0 break-words" title={path || undefined}>
           {prefix && <span className="font-normal text-muted">{prefix}</span>}
           {label || <span className="text-muted">(전체)</span>}
         </span>
@@ -832,7 +849,7 @@ function useKeyTable<T extends Pathed>(
   const headed = grouped.length > 1 || (grouped[0]?.parent ?? '') !== '';
   const groupKeys = headed ? grouped.map((g) => g.parent) : [];
 
-  const toolbar = (
+  const toolbar = (lead?: ReactNode, trailing?: ReactNode, compact?: boolean) => (
     <TableToolbar
       badOnly={badOnly}
       onBadOnly={setBadOnly}
@@ -848,6 +865,9 @@ function useKeyTable<T extends Pathed>(
       groups={groupKeys.length}
       allCollapsed={groupKeys.length > 0 && groupKeys.every((p) => collapsed.has(p))}
       onToggleAll={() => setCollapsed((cur) => (groupKeys.every((p) => cur.has(p)) ? new Set() : new Set(groupKeys)))}
+      lead={lead}
+      trailing={trailing}
+      compact={compact}
     />
   );
 
@@ -907,7 +927,9 @@ function FieldRow({
   const clampOf = (t: string | null) => isLong(t) && !expanded;
   return (
     <tr className="group transition-colors hover:bg-surface-2/70">
-      <KeyCell path={f.path} label={label} depth={depth} rail={s.rail} dim={dim} />
+      <KeyCell path={f.path} label={label} depth={depth} rail={s.rail} dim={dim}>
+        {f.status !== 'match' && <StatusChip status={f.status} />}
+      </KeyCell>
       <ValueTd long={isLong(f.expected)} expanded={expanded} onToggle={onExpand} copy={f.expected}>
         {ok ? (
           <SameValue text={f.expected ?? f.actual} dim={dim} clamp={clampOf(f.expected)} expanded={expanded} />
@@ -942,13 +964,12 @@ function FieldRow({
           />
         )}
       </ValueTd>
-      <td className={CELL}>{f.status !== 'match' && <StatusChip status={f.status} />}</td>
     </tr>
   );
 }
 
-/** 판정 칸의 상태 칩 — 어긋난 줄에만. 맞은 줄까지 '일치'를 적으면 스무 줄이 같은
- * 글자로 차서, 틀린 줄이 도리어 묻힌다. */
+/** 키 옆의 상태 칩 — 어긋난 줄에만. 따로 '판정' 열을 두면 스무 줄이 빈 칸으로
+ * 남으면서 정작 값이 쓸 폭을 가져간다. */
 function StatusChip({ status }: { status: FieldStatus }) {
   const s = STATUS[status];
   return (
@@ -981,10 +1002,17 @@ function KindCounts({ rows }: { rows: FieldResult[] }) {
  *
  * 키 칸 폭은 표 단위로 한 번(가장 긴 끝마디), 판정 칸은 고정, 값 칸이 나머지를
  * 다 쓴다 — 위아래 줄의 칸이 어긋나지 않는다. */
-function FieldTable({ m }: { m: StructuredMatch }) {
+function FieldTable({ m, lead, trailing }: { m: StructuredMatch; lead?: ReactNode; trailing?: ReactNode }) {
   const t = useKeyTable(m.fields, fieldTier, fieldWeight);
   const roomy = m.total >= ROOMY;
-  const keyRem = useMemo(() => keyColRem(m.fields.map((f) => splitPath(f.segs).leaf)), [m.fields]);
+  const keyRem = useMemo(
+    () =>
+      keyColRem(
+        m.fields.map((f) => splitPath(f.segs).leaf),
+        m.fields.some((f) => f.status !== 'match') ? 5 : 0,
+      ),
+    [m.fields],
+  );
 
   const body = t.body(
     (f, label, depth) => (
@@ -998,29 +1026,31 @@ function FieldTable({ m }: { m: StructuredMatch }) {
       />
     ),
     (rows) => <KindCounts rows={rows} />,
-    4,
+    3,
   );
 
   return (
     <div>
-      {roomy && t.toolbar}
+      {/* 표 위 막대는 하나다 — 패널 머리줄과 조작 줄을 겹겹이 쌓으면 정작 표가 설
+          자리가 없다. 줄 몇 개짜리 표에서는 조작이 접히고 제목만 남는다. */}
+      {t.toolbar(lead, trailing, !roomy)}
       {t.shown.length === 0 ? (
         <NoRows>{t.q.trim() ? '검색과 맞는 키가 없습니다' : '해당하는 키가 없습니다'}</NoRows>
       ) : (
-        <div className="max-h-[36rem] overflow-auto">
-          <table className="w-full min-w-[520px] table-fixed border-separate border-spacing-0 text-[13px] leading-normal">
+        // 안쪽 세로 스크롤은 두지 않는다 — 페이지 스크롤 안에 스크롤이 또 생기면
+        // 표를 읽다 말고 어느 쪽을 굴릴지부터 골라야 한다.
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[460px] table-fixed border-separate border-spacing-0 text-[13px] leading-normal">
             <colgroup>
               <col style={{ width: `${keyRem}rem` }} />
               <col />
               <col />
-              <col style={{ width: '5.5rem' }} />
             </colgroup>
             <thead className="sticky top-0 z-10 bg-surface-3 text-left text-xs text-body">
               <tr>
                 <th className={cn(TH, COL)}>키</th>
                 <th className={cn(TH, COL)}>기대값</th>
-                <th className={cn(TH, COL)}>실제값</th>
-                <th className={TH}>판정</th>
+                <th className={TH}>실제값</th>
               </tr>
             </thead>
             <tbody className="[&>tr:last-child>td]:border-b-0">{body}</tbody>
@@ -1055,7 +1085,7 @@ export function ViewToggle({ raw, onRaw }: { raw: boolean; onRaw: (v: boolean) =
   );
 }
 
-export function MatchDiff({ row }: { row: RagasResultRow }) {
+export function MatchDiff({ row, flush }: { row: RagasResultRow; flush?: boolean }) {
   const scoredRaw = row.trace_value ?? row.answer ?? '';
   const expectedRaw = row.ground_truth ?? '';
   // A traced variable is compared whole: its own `body` key is data, not an
@@ -1072,45 +1102,56 @@ export function MatchDiff({ row }: { row: RagasResultRow }) {
   const diff = useMemo(() => diffWords(pair.left, pair.right), [pair.left, pair.right]);
   const [raw, setRaw] = useState(false);
 
-  return (
-    <div className="overflow-hidden rounded-md border border-line bg-surface">
-      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-line bg-surface-2 px-3 py-2">
-        <span className="eyebrow">채점 대상 · 기대 정답</span>
-        {/* 키별 표에는 변수 이름을 적을 자리가 없다 — 무엇을 채점했는지는 어느
-            보기에서든 이 줄이 말한다. */}
-        {row.trace_value && <TraceTag name={row.trace_var_nm} />}
-        {(row.exact_match != null || fields) && (
-          <span aria-hidden className="h-3 w-px self-center bg-line-strong" />
-        )}
-        {row.exact_match != null && <OxBadge value={row.exact_match} />}
-        {fields && (
-          <span className="font-mono text-xs tabular-nums text-muted">
-            {/* '키 3/12' 는 '키 3개'로 읽힌다 — 맞은 수라고 적는다. */}
-            <span className="font-sans">일치 </span>
-            <span className="font-semibold text-ink">{fields.matched}</span>
-            <span className="text-muted">/{fields.total}</span>
-          </span>
-        )}
-        <span className="ml-auto flex items-center gap-2">
-          {fields && <ViewToggle raw={raw} onRaw={setRaw} />}
-          <ElapsedTag ms={row.elapsed_ms} />
+  // 제목 · 판정 · 키 수는 한 덩어리로 다닌다: 키별 보기에서는 표 막대 안으로
+  // 들어가고, 원본 보기에서는 제 머리줄이 된다.
+  const head = (
+    <>
+      <span className="eyebrow">채점 대상 · 기대 정답</span>
+      {/* 키별 표에는 변수 이름을 적을 자리가 없다 — 무엇을 채점했는지는 어느
+          보기에서든 이 줄이 말한다. */}
+      {row.trace_value && <TraceTag name={row.trace_var_nm} />}
+      {(row.exact_match != null || fields) && (
+        <span aria-hidden className="h-3 w-px self-center bg-line-strong" />
+      )}
+      {row.exact_match != null && <OxBadge value={row.exact_match} />}
+      {fields && (
+        <span className="font-mono text-xs tabular-nums text-muted">
+          {/* '키 3/12' 는 '키 3개'로 읽힌다 — 맞은 수라고 적는다. */}
+          <span className="font-sans">일치 </span>
+          <span className="font-semibold text-ink">{fields.matched}</span>
+          <span className="text-muted">/{fields.total}</span>
         </span>
-      </div>
+      )}
+    </>
+  );
+
+  return (
+    <div className={cn('overflow-hidden bg-surface', !flush && 'rounded-md border border-line')}>
       {fields && !raw ? (
-        <FieldTable m={fields} />
+        <FieldTable m={fields} lead={head} trailing={<ViewToggle raw={raw} onRaw={setRaw} />} />
       ) : (
-        <div className="grid divide-y divide-line sm:grid-cols-2 sm:divide-x sm:divide-y-0">
-          <Pane
-            label={row.trace_value ? '채점 대상' : '답변'}
-            tag={row.trace_value ? row.trace_var_nm || 'trace' : null}
-            raw={scoredRaw}
-            segs={diff.left}
-            tone="left"
-            mono={pair.json}
-            empty={<AnswerBox text={row.answer} error={row.error_msg} />}
-          />
-          <Pane label="기대 정답" raw={expectedRaw} segs={diff.right} tone="right" mono={pair.json} />
-        </div>
+        <>
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-line bg-surface-2 px-3 py-1.5">
+            {head}
+            {fields && (
+              <span className="ml-auto">
+                <ViewToggle raw={raw} onRaw={setRaw} />
+              </span>
+            )}
+          </div>
+          <div className="grid divide-y divide-line sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+            <Pane
+              label={row.trace_value ? '채점 대상' : '답변'}
+              tag={row.trace_value ? row.trace_var_nm || 'trace' : null}
+              raw={scoredRaw}
+              segs={diff.left}
+              tone="left"
+              mono={pair.json}
+              empty={<AnswerBox text={row.answer} error={row.error_msg} />}
+            />
+            <Pane label="기대 정답" raw={expectedRaw} segs={diff.right} tone="right" mono={pair.json} />
+          </div>
+        </>
       )}
     </div>
   );
@@ -1310,7 +1351,21 @@ function PairFieldRow({
         depth={depth}
         dim={dim}
         rail={!bad ? 'border-l-transparent' : warnOnly ? 'border-l-warn-vivid' : 'border-l-bad-vivid'}
-      />
+      >
+        {/* 어느 쪽이 맞았는지는 키 옆 칩 하나로. 따로 '판정' 열을 두면 좁은
+            상세보기에서 값이 쓸 폭을 그만큼 빼앗긴다. */}
+        {bad && (
+          <span
+            title={AB_LABEL[v]}
+            className={cn(
+              'shrink-0 self-center whitespace-nowrap rounded-full px-1.5 py-px font-sans text-[11px] font-semibold',
+              v === 'same-bad' ? (warnOnly ? STATUS.extra.chip : BAD_CHIP) : 'border border-ok-line bg-ok-soft text-ok',
+            )}
+          >
+            {v === 'same-bad' ? '둘 다' : v.toUpperCase()}
+          </span>
+        )}
+      </KeyCell>
       <ValueTd long={isLong(r.expected)} expanded={expanded} onToggle={onExpand} copy={r.expected}>
         {v === 'same-ok' ? (
           <SameValue text={r.expected} dim={dim} clamp={clampOf(r.expected)} expanded={expanded} />
@@ -1320,18 +1375,6 @@ function PairFieldRow({
       </ValueTd>
       {sideCell(r.a)}
       {sideCell(r.b)}
-      <td className={CELL}>
-        {bad && (
-          <span
-            className={cn(
-              'whitespace-nowrap rounded-full px-1.5 py-px text-[11px] font-semibold',
-              v === 'same-bad' ? (warnOnly ? STATUS.extra.chip : BAD_CHIP) : 'border border-ok-line bg-ok-soft text-ok',
-            )}
-          >
-            {AB_LABEL[v]}
-          </span>
-        )}
-      </td>
     </tr>
   );
 }
@@ -1347,7 +1390,7 @@ function PairFieldRow({
  * 두 사이드 모두 JSON 이 아니면 null — 그때는 예전처럼 원문 diff 가 답한다.
  */
 export function FieldCompareTable({
-  aText, bText, expected, unwrapA, unwrapB, nameA, nameB, className, trailing,
+  aText, bText, expected, unwrapA, unwrapB, nameA, nameB, className, trailing, flush,
 }: {
   aText: string | null | undefined;
   bText: string | null | undefined;
@@ -1357,6 +1400,8 @@ export function FieldCompareTable({
   nameA: string;
   nameB: string;
   className?: string;
+  /** 케이스 본문의 한 상자 안에 설 때. */
+  flush?: boolean;
   /** 머리줄 오른쪽 끝에 얹을 것 — 보기 전환 토글이 여기 선다. */
   trailing?: ReactNode;
 }) {
@@ -1379,7 +1424,10 @@ export function FieldCompareTable({
   }, [aText, bText, expected, unwrapA, unwrapB]);
 
   const t = useKeyTable(all, pairTier, pairWeight);
-  const keyRem = useMemo(() => keyColRem(all.map((r) => splitPath(r.segs).leaf)), [all]);
+  const keyRem = useMemo(
+    () => keyColRem(all.map((r) => splitPath(r.segs).leaf), all.some((r) => abVerdict(r) !== 'same-ok') ? 3.2 : 0),
+    [all],
+  );
   if (all.length === 0) return null;
   const roomy = all.length >= ROOMY;
   const quiet = all.every((r) => abVerdict(r) === 'same-ok');
@@ -1396,35 +1444,37 @@ export function FieldCompareTable({
       />
     ),
     (rows) => <VerdictCounts rows={rows} />,
-    5,
+    4,
+  );
+
+  // 단일 표와 같은 규칙: 제목과 조작이 한 막대에, 판정 열은 없다.
+  const head = (
+    <>
+      <span className="eyebrow">키별 판정</span>
+      <span className="text-xs text-muted">
+        키 <span className="font-mono font-semibold tabular-nums text-ink">{all.length}</span>
+      </span>
+      <span aria-hidden className="h-3 w-px self-center bg-line-strong" />
+      {/* 갈린 키가 이 표의 요점이다 — 없으면 없다고 먼저 말한다. */}
+      <span className="flex flex-wrap items-baseline gap-x-2.5 text-xs">
+        {quiet ? <span className="text-muted">A·B 동일</span> : <VerdictCounts rows={all} />}
+      </span>
+    </>
   );
 
   return (
-    <div className={cn('overflow-hidden rounded-md border border-line bg-surface', className)}>
-      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-line bg-surface-2 px-3 py-2">
-        <span className="eyebrow">키별 판정</span>
-        <span className="text-xs text-muted">
-          키 <span className="font-mono font-semibold tabular-nums text-ink">{all.length}</span>
-        </span>
-        <span aria-hidden className="h-3 w-px self-center bg-line-strong" />
-        {/* 갈린 키가 이 표의 요점이다 — 없으면 없다고 먼저 말한다. */}
-        <span className="flex flex-wrap items-baseline gap-x-2.5 text-xs">
-          {quiet ? <span className="text-muted">A·B 동일</span> : <VerdictCounts rows={all} />}
-        </span>
-        {trailing && <span className="ml-auto">{trailing}</span>}
-      </div>
-      {roomy && t.toolbar}
+    <div className={cn('overflow-hidden bg-surface', !flush && 'rounded-md border border-line', className)}>
+      {t.toolbar(head, trailing, !roomy)}
       {t.shown.length === 0 ? (
         <NoRows>{t.q.trim() ? '검색과 맞는 키가 없습니다' : '해당하는 키가 없습니다'}</NoRows>
       ) : (
-        <div className="max-h-[36rem] overflow-auto">
-          <table className="w-full min-w-[640px] table-fixed border-separate border-spacing-0 text-[13px] leading-normal">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[520px] table-fixed border-separate border-spacing-0 text-[13px] leading-normal">
             <colgroup>
               <col style={{ width: `${keyRem}rem` }} />
               <col />
               <col />
               <col />
-              <col style={{ width: '6.5rem' }} />
             </colgroup>
             <thead className="sticky top-0 z-10 bg-surface-3 text-left text-xs text-body">
               <tr>
@@ -1433,10 +1483,9 @@ export function FieldCompareTable({
                 <th className={cn(TH, COL, 'truncate')}>
                   <span className="font-mono">A</span> <span className="font-normal text-muted">{nameA}</span>
                 </th>
-                <th className={cn(TH, COL, 'truncate')}>
+                <th className={cn(TH, 'truncate')}>
                   <span className="font-mono">B</span> <span className="font-normal text-muted">{nameB}</span>
                 </th>
-                <th className={TH}>판정</th>
               </tr>
             </thead>
             <tbody className="[&>tr:last-child>td]:border-b-0">{body}</tbody>
@@ -1463,7 +1512,7 @@ export function valueFields(text: string | null | undefined, unwrapBody: boolean
 
 const noStatus = (): FieldStatus => 'match';
 
-function ValueTable({ fields }: { fields: FieldResult[] }) {
+function ValueTable({ fields, lead, trailing }: { fields: FieldResult[]; lead?: ReactNode; trailing?: ReactNode }) {
   const [q, setQ] = useState('');
   const [collapsed, toggleGroup, setCollapsed] = useToggleSet();
   const [open, toggleValue] = useToggleSet();
@@ -1476,11 +1525,14 @@ function ValueTable({ fields }: { fields: FieldResult[] }) {
   const groups = useMemo(() => groupPaths(tree), [tree]);
   const allCollapsed = groups.length > 0 && groups.every((p) => collapsed.has(p));
 
+  const roomy = fields.length >= ROOMY;
+
   return (
     <div>
-      {fields.length >= ROOMY && (
-        <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface px-3 py-1.5">
-          {groups.length > 0 && (
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-line bg-surface-2 px-3 py-1.5">
+        {lead}
+        <span className="ml-auto flex flex-wrap items-center gap-2">
+          {roomy && groups.length > 0 && (
             <button
               type="button"
               onClick={() => setCollapsed(allCollapsed ? new Set() : new Set(groups))}
@@ -1489,31 +1541,34 @@ function ValueTable({ fields }: { fields: FieldResult[] }) {
               {allCollapsed ? '모두 펼치기' : '모두 접기'}
             </button>
           )}
-          <span className="relative ml-auto">
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="키 검색"
-              spellCheck={false}
-              className="h-7 w-40 rounded-sm border border-line bg-surface-2 pl-2 pr-5 font-mono text-xs text-ink outline-none transition placeholder:font-sans placeholder:text-muted-soft focus:border-accent-line focus:bg-surface focus:shadow-ring"
-            />
-            {q && (
-              <button
-                type="button"
-                onClick={() => setQ('')}
-                aria-label="검색 지우기"
-                className="absolute right-1 top-1/2 -translate-y-1/2 px-0.5 text-[11px] leading-none text-muted hover:text-ink"
-              >
-                ×
-              </button>
-            )}
-          </span>
-        </div>
-      )}
+          {roomy && (
+            <span className="relative">
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="키 검색"
+                spellCheck={false}
+                className="h-7 w-40 rounded-sm border border-line bg-surface-2 pl-2 pr-5 font-mono text-xs text-ink outline-none transition placeholder:font-sans placeholder:text-muted-soft focus:border-accent-line focus:bg-surface focus:shadow-ring"
+              />
+              {q && (
+                <button
+                  type="button"
+                  onClick={() => setQ('')}
+                  aria-label="검색 지우기"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 px-0.5 text-[11px] leading-none text-muted hover:text-ink"
+                >
+                  ×
+                </button>
+              )}
+            </span>
+          )}
+          {trailing}
+        </span>
+      </div>
       {shown.length === 0 ? (
         <NoRows>검색과 맞는 키가 없습니다</NoRows>
       ) : (
-        <div className="max-h-[36rem] overflow-auto">
+        <div className="overflow-x-auto">
           <table className="w-full min-w-[420px] table-fixed border-separate border-spacing-0 text-[13px] leading-normal">
             <colgroup>
               <col style={{ width: '32%' }} />
@@ -1578,39 +1633,52 @@ function ValueTable({ fields }: { fields: FieldResult[] }) {
  * JSON 이 아닌 값에는 쓰지 않는다(`valueFields` 가 null) — 그때는 원문 상자가 맞다.
  */
 export function ValuePanel({
-  text, unwrapBody, label, tag, trailing,
+  text, unwrapBody, label, tag, trailing, flush,
 }: {
   text: string;
   unwrapBody: boolean;
   label: string;
   tag?: string | null;
   trailing?: ReactNode;
+  /** 케이스 본문의 한 상자 안에 설 때. */
+  flush?: boolean;
 }) {
   const fields = useMemo(() => valueFields(text, unwrapBody), [text, unwrapBody]);
   const pretty = useMemo(() => prettyValue(text) ?? text, [text]);
   const [raw, setRaw] = useState(false);
-  return (
-    <div className="min-w-0 overflow-hidden rounded-md border border-line bg-surface">
-      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-line bg-surface-2 px-3 py-2">
-        <span className="eyebrow">{label}</span>
-        {tag && <TraceTag name={tag} />}
-        {fields && (
-          <span className="text-xs text-muted">
-            키 <span className="font-mono font-semibold tabular-nums text-ink">{fields.length}</span>
-          </span>
-        )}
-        <span className="ml-auto flex items-center gap-2">
-          {trailing}
-          {fields && <ViewToggle raw={raw} onRaw={setRaw} />}
-          <CopyButton text={text} />
+  const head = (
+    <>
+      <span className="eyebrow">{label}</span>
+      {tag && <TraceTag name={tag} />}
+      {fields && (
+        <span className="text-xs text-muted">
+          키 <span className="font-mono font-semibold tabular-nums text-ink">{fields.length}</span>
         </span>
-      </div>
+      )}
+    </>
+  );
+  const tools = (
+    <>
+      {trailing}
+      {fields && <ViewToggle raw={raw} onRaw={setRaw} />}
+      <CopyButton text={text} />
+    </>
+  );
+
+  return (
+    <div className={cn('min-w-0 overflow-hidden bg-surface', !flush && 'rounded-md border border-line')}>
       {fields && !raw ? (
-        <ValueTable fields={fields} />
+        <ValueTable fields={fields} lead={head} trailing={tools} />
       ) : (
-        <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-xs leading-relaxed text-ink">
-          {pretty}
-        </pre>
+        <>
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-line bg-surface-2 px-3 py-1.5">
+            {head}
+            <span className="ml-auto flex items-center gap-2">{tools}</span>
+          </div>
+          <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-xs leading-relaxed text-ink">
+            {pretty}
+          </pre>
+        </>
       )}
     </div>
   );
