@@ -51,6 +51,57 @@ export function fmtDt(iso: string): string {
   return d.startsWith(`${now.getFullYear()}-`) ? `${d.slice(5)} ${hm}` : `${d} ${hm}`;
 }
 
+/** 시작 · 종료 시각이 달린 실행. */
+type Timed = { started_dt: string | null; ended_dt: string | null } | null | undefined;
+
+/** 실행이 시작해서 끝나기까지(ms). 끝나지 않았거나 시각이 없으면 null.
+ * A/B 는 두 실행이 함께 돌므로 먼저 시작한 쪽부터 나중에 끝난 쪽까지 — 두 실행의
+ * 합이 아니라 기다린 시간이다. */
+export function runSpanMs(...runs: Timed[]): number | null {
+  if (!runs.length) return null;
+  const at = (v: string | null | undefined) => (v ? Date.parse(v.replace(' ', 'T')) : NaN);
+  const starts = runs.map((r) => at(r?.started_dt));
+  const ends = runs.map((r) => at(r?.ended_dt));
+  if ([...starts, ...ends].some(Number.isNaN)) return null;
+  const ms = Math.max(...ends) - Math.min(...starts);
+  return ms >= 0 ? ms : null;
+}
+
+/** 실행 전체 소요시간 표기. 케이스 한 건(`fmtElapsed`)과 달리 분 · 시간까지 올라간다 —
+ * 수백 초를 초로만 적으면 한눈에 가늠이 되지 않는다. */
+export function fmtDuration(ms: number): string {
+  if (ms < 10_000) return `${(ms / 1000).toFixed(1)}초`;
+  const sec = Math.round(ms / 1000);
+  if (sec < 60) return `${sec}초`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  if (m < 60) return s ? `${m}분 ${s}초` : `${m}분`;
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return mm ? `${h}시간 ${mm}분` : `${h}시간`;
+}
+
+/** 목록 칸에 그대로 넣는 글자 — 잴 수 없으면 null. */
+export function runDurationText(...runs: Timed[]): string | null {
+  const ms = runSpanMs(...runs);
+  return ms == null ? null : fmtDuration(ms);
+}
+
+/** 결과 카드 머리줄의 '전체 소요'. 케이스마다의 시간은 각 줄에 있고, 이것은 실행
+ * 한 번을 통째로 기다린 시간이다. */
+export function RunDurationTag({ runs, className }: { runs: Timed[]; className?: string }) {
+  const text = runDurationText(...runs);
+  if (text === null) return null;
+  return (
+    <span
+      className={cn('inline-flex items-center gap-1 whitespace-nowrap text-muted', className)}
+      title="실행 시작 → 종료"
+    >
+      전체 소요 <span className="font-mono font-semibold tabular-nums text-ink">{text}</span>
+    </span>
+  );
+}
+
 type Scored = { [K in RagasMetric]?: number | null };
 
 /**

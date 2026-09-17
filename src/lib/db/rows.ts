@@ -333,6 +333,8 @@ export function mapRagasRunSummary(r: Row): RagasRunSummary {
     context_recall: run.context_recall,
     answer_correctness: run.answer_correctness,
     error_msg: run.error_msg,
+    started_dt: run.started_dt,
+    ended_dt: run.ended_dt,
     created_dt: run.created_dt,
   };
 }

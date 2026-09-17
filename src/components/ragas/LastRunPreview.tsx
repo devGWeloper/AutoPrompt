@@ -10,7 +10,7 @@ import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummary
 import { AbKeyBreakdown, KeyBreakdown } from './KeyBreakdown';
 import { CaseCompareTable } from './CompareTable';
 import RerunButton from './RerunButton';
-import { CaseTable, compareSideLabel, EmptyState, fmtDt, runTargetTitle, scoredMetrics } from './shared';
+import { CaseTable, compareSideLabel, EmptyState, fmtDt, RunDurationTag, runTargetTitle, scoredMetrics } from './shared';
 
 /**
  * The most recent finished run of this kind, on the run screen while nothing is
@@ -156,8 +156,11 @@ export default function LastRunPreview({ kind }: { kind: Kind }) {
               {head.is_manual ? '직접 입력' : head.dataset_nm}
             </span>
           )}
-          <span className="ml-auto shrink-0 font-mono text-caption-mono text-muted-soft" title={head.created_dt}>
-            {fmtDt(head.created_dt)}
+          <span className="ml-auto flex shrink-0 items-center gap-2.5">
+            <RunDurationTag runs={pick.kind === 'compare' ? [pick.a, pick.b] : [head]} />
+            <span className="font-mono text-caption-mono text-muted-soft" title={head.created_dt}>
+              {fmtDt(head.created_dt)}
+            </span>
           </span>
         </button>
         {ready && detailA && !head.is_manual && (

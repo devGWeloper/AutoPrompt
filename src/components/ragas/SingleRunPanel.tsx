@@ -42,6 +42,7 @@ import {
   CaseTable,
   ScoreBars,
   ElapsedTag,
+  RunDurationTag,
   AnswerBox,
   PendingHint,
   SAMPLE_MESSAGE,
@@ -666,6 +667,8 @@ export default function SingleRunPanel() {
                   {detail.node_nm && <span className="font-medium text-ink">{detail.node_nm}</span>}
                   {detail.prompt_id && <Badge tone="neutral">{verLabel(detail.prompt_id)}</Badge>}
                   <span className="ml-auto flex items-center gap-2">
+                    <RunDurationTag runs={[detail]} />
+                    <span>·</span>
                     <span>Engine {detail.engine ?? '—'}</span>
                     <span>·</span>
                     <span>{detail.results.length} case{detail.results.length === 1 ? '' : 's'}</span>

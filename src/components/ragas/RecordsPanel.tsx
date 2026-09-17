@@ -19,7 +19,7 @@ import { CaseCompareTable } from './CompareTable';
 import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import { AbKeyBreakdown, KeyBreakdown } from './KeyBreakdown';
 import {
-  CaseTable, DownloadIcon, ErrBox, errText, fmt2, fmt3, fmtDt, folderLabel, hasTextSelection, runMean, runTargetLabel,
+  CaseTable, DownloadIcon, ErrBox, errText, fmt2, fmt3, fmtDt, runDurationText, RunDurationTag, folderLabel, hasTextSelection, runMean, runTargetLabel,
   compareSideLabel, runModelDetail, runTitle, runTitleParts, scoredMetrics, SegToggle, TrashIcon, UNSCORED_LABEL,
 } from './shared';
 import RerunButton from './RerunButton';
@@ -413,6 +413,7 @@ export default function RecordsPanel() {
               <TH className="w-14">#</TH>
               <TH>대상</TH><TH>데이터</TH><TH>유형</TH><TH>상태</TH><TH>엔진</TH>
               <SortTH k="avg" label="점수" sort={sort} onSort={toggleSort} />
+              <TH>소요</TH>
               <SortTH k="created" label="생성일시" sort={sort} onSort={toggleSort} />
               <TH className="w-16" />
             </TR>
@@ -453,6 +454,7 @@ export default function RecordsPanel() {
                       ex={r.exact_match != null ? Number(r.exact_match) : null}
                       unscored={single.unscored}
                     />
+                    <TD className="whitespace-nowrap font-mono text-xs tabular-nums text-muted">{runDurationText(r) ?? '—'}</TD>
                     <TD className="whitespace-nowrap text-xs text-muted" title={r.created_dt}>{fmtDt(r.created_dt)}</TD>
                     <RowActionsCell
                       csvHref={`${API_BASE}/ragas-runs/${r.ragas_run_id}/export?fmt=csv`}
@@ -495,6 +497,7 @@ export default function RecordsPanel() {
                     exB={g.b.exact_match != null ? Number(g.b.exact_match) : null}
                     unscored={pair.unscored}
                   />
+                  <TD className="whitespace-nowrap font-mono text-xs tabular-nums text-muted">{runDurationText(g.a, g.b) ?? '—'}</TD>
                   <TD className="whitespace-nowrap text-xs text-muted" title={g.a.created_dt}>{fmtDt(g.a.created_dt)}</TD>
                   <RowActionsCell
                     csvHref={`${API_BASE}/ragas-runs/ab/${g.groupId}/export?fmt=csv`}
@@ -504,7 +507,7 @@ export default function RecordsPanel() {
               );
             })}
             {groups.length === 0 && (
-              <TR><TD colSpan={10} className="py-10 text-center text-sm text-muted">
+              <TR><TD colSpan={11} className="py-10 text-center text-sm text-muted">
                 {ragas.length === 0 ? '실행 기록이 없습니다' : '검색 결과 없음'}
               </TD></TR>
             )}
@@ -810,6 +813,8 @@ function AbCompareView({ aId, bId, manual }: { aId: number; bId: number; manual?
           <Badge tone="accent">B · {compareSideLabel(b)}</Badge>
           <span className="ml-auto flex items-center gap-2">
             <ModelStamp text={formatModelPair(a.model_snapshot, b.model_snapshot)} />
+            <RunDurationTag runs={[a, b]} />
+            <span>·</span>
             <span>Engine {a.engine ?? '—'}</span>
             {!manual && <RerunButton detail={a} detailB={b} />}
           </span>
@@ -866,6 +871,8 @@ function RagasRunDetailView({ ragasId, manual }: { ragasId: number; manual?: boo
           )}
           <span className="ml-auto flex items-center gap-2">
             <ModelStamp text={formatModelSnapshot(detail.model_snapshot)} />
+            <RunDurationTag runs={[detail]} />
+            <span>·</span>
             <span>Engine {detail.engine ?? '—'}</span>
             <span>·</span>
             <span>{detail.results.length} case{detail.results.length === 1 ? '' : 's'}</span>

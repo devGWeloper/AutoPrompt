@@ -397,6 +397,9 @@ export interface RagasRunSummary {
   context_recall: number | null;
   answer_correctness: number | null;
   error_msg: string | null;
+  /** 실행 전체 소요시간을 목록에서 보여 주려고 싣는다 — 목록 SELECT 에 이미 있다. */
+  started_dt: string | null;
+  ended_dt: string | null;
   created_dt: string;
 }
 

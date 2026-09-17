@@ -29,6 +29,7 @@ import {
   InlineDivider,
   InlineField,
   ErrBox,
+  RunDurationTag,
   PROMPT_TARGET_ENABLED,
   EvalOptions,
   ScoreToggle,
@@ -632,6 +633,7 @@ export default function ComparePanel() {
               <Badge tone="accent">B · {dispLabel(labB)}</Badge>
               <span className="ml-auto flex items-center gap-2.5">
                 <CompareVerdict detailA={detailA} detailB={detailB} />
+                <RunDurationTag runs={[detailA, detailB]} />
                 <span>Engine {detailA.engine ?? '—'}</span>
                 <RerunButton detail={detailA} detailB={detailB} />
               </span>
