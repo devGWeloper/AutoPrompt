@@ -23,7 +23,7 @@ import { stageCallConfig, writeCallConfig } from "./callConfig";
 import * as agent from "./externalAgent";
 import { readTraceVar } from "./trace";
 import * as registry from "./runRegistry";
-import { avg, chosenMetrics, llmMetrics, parseCase, scoreCaseAsync, toScore } from "./ragas";
+import { chosenMetrics, llmMetrics, parseCase, scoreCaseAsync, toScore } from "./ragas";
 import type { CaseScore } from "./ragas";
 
 // ---- current flow (node list) ----
@@ -259,59 +259,61 @@ async function pickedCaseIds(
   return ids;
 }
 
-/** A PENDING copy of `src` limited to `ids`: same prompt version, dataset,
- * metrics and pinned models. The endpoint is not stored on a PENDING row; the
- * client streams it with the source run's endpoint. */
-async function insertRerun(
-  conn: OracleConnection,
-  oracle: OracleModule,
-  src: RagasRunOut,
-  datasetNm: string,
-  ids: number[],
-): Promise<number> {
-  const id = await insertReturningId(
-    conn,
-    oracle,
-    `INSERT INTO PTX_RUN_MAS (PROMPT_ID, DATASET_ID, DATASET_NM, TYPE_CD, STATUS_CD, METRIC_CTN, MODEL_CTN, USER_ID)
-     VALUES (:pid, :did, :dnm, :ctype, 'PENDING', :metrics, :models, :cby) RETURNING RUN_ID INTO :out_id`,
-    {
-      pid: src.prompt_id ?? null,
-      did: src.dataset_id,
-      dnm: datasetNm,
-      // Only some cases run, whatever the source covered — see createFlowRagasRun.
-      ctype: PICKED_CASES,
-      metrics: src.metrics,
-      models: src.model_snapshot ?? null,
-      cby: SYSTEM_USER,
-    },
+/** 끝나지 않은 실행은 다시 돌릴 수 없다 — 돌아가는 중인 실행의 결과 행을 지우면
+ * 진행 중인 스트림이 자기가 쓴 것을 잃는다. */
+const SETTLED = new Set(["DONE", "FAILED", "CANCELLED"]);
+
+/**
+ * 이 실행을 `ids` 만 다시 돌릴 수 있는 상태로 되돌린다 — 새 실행을 만들지 않고.
+ *
+ * 여기서는 아무것도 지우지 않는다. 실행 행을 PENDING 으로 돌려 스트림이 열리기를
+ * 기다리게 하고, 다시 돌릴 케이스 집합만 적어 둔다. 옛 결과를 실제로 치우는 건
+ * 스트림이 열려 setupRun 이 돌 때다 — 버튼만 누르고 창을 닫아 버려도 기록이
+ * 결과 없는 껍데기로 남지 않는다. 실행 단위 점수도 건드리지 않는다: 재실행이
+ * 끝나면 finalize 가 결과 행 전체에서 다시 내고, 끝나지 않으면 옛 점수가 옛
+ * 결과와 함께 그대로 맞아떨어진다.
+ *
+ * TYPE_CD 는 건드리지 않는다. 몇 건만 다시 돌렸다고 해서 이 실행이 덮는 범위가
+ * 바뀌는 건 아니다 — 여전히 같은 데이터셋(폴더)의 실행이다.
+ */
+async function resetForRerun(conn: OracleConnection, runId: number, ids: number[]): Promise<void> {
+  await conn.execute(
+    `UPDATE PTX_RUN_MAS SET STATUS_CD = 'PENDING', END_TM = NULL, ERROR_CTN = NULL WHERE RUN_ID = :id`,
+    { id: runId },
   );
-  RUN_SUBSETS.set(id, new Set(ids));
-  return id;
+  RUN_SUBSETS.set(runId, new Set(ids));
 }
 
-/** A new run over only the cases a finished Single run got 불일치 on — or, when
- * `caseIds` is given, over exactly the cases the user picked. */
+/**
+ * 이 실행을 그 자리에서 다시 돌린다 — 불일치였던 케이스만, 또는 `caseIds` 로
+ * 고른 케이스만. 새 기록이 생기지 않고 이 실행의 해당 케이스 결과가 덮인다.
+ *
+ * 새 실행을 만들지 않는 건 기록의 뜻 때문이다. 재실행은 "이 실행을 다시 해 본
+ * 것" 이지 별개의 실행이 아니라서, 목록에 한 줄이 더 서면 같은 조건의 실행이
+ * 두 개인 것처럼 읽히고 둘 중 어느 쪽이 지금 상태인지가 흐려진다.
+ */
 export async function createMismatchRerun(sourceRunId: number, caseIds?: number[] | null): Promise<RagasRunOut> {
-  return withConn(async (conn, oracle) => {
+  return withConn(async (conn) => {
     const src = await fetchRun(conn, sourceRunId);
     if (!src) throw notFound("ragas run not found");
     if (src.ab_group_id != null) throw badRequest("Compare 실행은 A·B 를 함께 다시 돌립니다");
-    const name = await rerunDatasetName(conn, src);
+    if (!SETTLED.has(src.status)) throw badRequest("아직 끝나지 않은 실행입니다");
+    await rerunDatasetName(conn, src);
     const ids = caseIds
       ? await pickedCaseIds(conn, src.dataset_id, [sourceRunId], caseIds)
       : await mismatchCaseIds(conn, src.dataset_id, [sourceRunId]);
-    const id = await insertRerun(conn, oracle, src, name, ids);
-    return (await fetchRun(conn, id))!;
+    await resetForRerun(conn, sourceRunId, ids);
+    return (await fetchRun(conn, sourceRunId))!;
   }, { commit: true });
 }
 
-/** A new A/B pair over the cases either side of a finished comparison got
- * 불일치 on. Each side keeps its own prompt version and models. */
+/** A·B 한 쌍을 그 자리에서 다시 돌린다 — 어느 한쪽이라도 불일치였던 케이스만.
+ * 두 사이드가 같은 집합을 돌려야 다시 비교가 되므로 집합은 하나다. */
 export async function createAbMismatchRerun(
   groupId: number,
   caseIds?: number[] | null,
 ): Promise<{ ragas_run_a_id: number; ragas_run_b_id: number }> {
-  return withConn(async (conn, oracle) => {
+  return withConn(async (conn) => {
     const res = await conn.execute(
       `SELECT RUN_ID FROM PTX_RUN_MAS WHERE AB_GROUP_ID = :g ORDER BY RUN_ID ASC`,
       { g: groupId },
@@ -320,18 +322,14 @@ export async function createAbMismatchRerun(
     if (runIds.length !== 2) throw notFound("compare run not found");
     const a = (await fetchRun(conn, runIds[0]))!;
     const b = (await fetchRun(conn, runIds[1]))!;
-    const name = await rerunDatasetName(conn, a);
+    if (!SETTLED.has(a.status) || !SETTLED.has(b.status)) throw badRequest("아직 끝나지 않은 실행입니다");
+    await rerunDatasetName(conn, a);
     const ids = caseIds
       ? await pickedCaseIds(conn, a.dataset_id, runIds, caseIds)
       : await mismatchCaseIds(conn, a.dataset_id, runIds);
-    const idA = await insertRerun(conn, oracle, a, name, ids);
-    const idB = await insertRerun(conn, oracle, b, name, ids);
-    await conn.execute(`UPDATE PTX_RUN_MAS SET AB_GROUP_ID = :g WHERE RUN_ID IN (:a, :b)`, {
-      g: idA,
-      a: idA,
-      b: idB,
-    });
-    return { ragas_run_a_id: idA, ragas_run_b_id: idB };
+    await resetForRerun(conn, a.ragas_run_id, ids);
+    await resetForRerun(conn, b.ragas_run_id, ids);
+    return { ragas_run_a_id: a.ragas_run_id, ragas_run_b_id: b.ragas_run_id };
   }, { commit: true });
 }
 
@@ -779,7 +777,6 @@ interface RunCtx {
    * answers. false skips the commit-race wait for the rest of the run. */
   traceSeen: boolean | null;
   pending: Pending[];
-  sums: Record<RagasMetric, number[]>;
   cancelled: boolean;
 }
 
@@ -847,6 +844,12 @@ async function setupRun(
   const cases = only
     ? (await loadCases(conn, run.dataset_id, null)).filter((c) => only.has(c.case_id))
     : await loadCases(conn, run.dataset_id, run.case_type);
+  // 이번에 돌릴 케이스의 옛 결과를 치우고 시작한다. 처음 도는 실행에는 지울 것이
+  // 없어 아무 일도 하지 않고, 제자리 재실행에서는 방금 다시 돌릴 케이스의 이전
+  // 결과만 사라진다 — 남겨 둔 케이스의 결과는 그대로다. 케이스 없는 오류 행
+  // (recordFailure) 은 어느 쪽이든 이번 실행이 대신하므로 같이 치운다.
+  await deleteResultsFor(conn, runId, cases.map((c) => c.case_id));
+  await conn.commit();
   emit({ event: "RUNNING", run_id: runId, total: cases.length, metrics });
 
   // No prompt version on the run (A/B pinned to two endpoints) → nothing to swap:
@@ -860,12 +863,28 @@ async function setupRun(
     }
   }
 
-  const sums = Object.fromEntries(ALL_METRICS.map((m) => [m, [] as number[]])) as Record<RagasMetric, number[]>;
   return {
     runId, engine, score, metrics, llm, exact, baseUrl, headers, side, cases, swapNode,
     models: run.model_snapshot,
-    traceSeen: null, pending: [], sums, cancelled: false,
+    traceSeen: null, pending: [], cancelled: false,
   };
+}
+
+/** 한 실행에서 이 케이스들의 결과 행을 치운다. Oracle 의 IN 목록 상한 때문에
+ * 500 개씩 끊어 돈다. */
+async function deleteResultsFor(conn: OracleConnection, runId: number, caseIds: number[]): Promise<void> {
+  await conn.execute(`DELETE FROM PTX_RUN_DET WHERE RUN_ID = :id AND CASE_ID IS NULL`, { id: runId });
+  for (let i = 0; i < caseIds.length; i += 500) {
+    const binds: Record<string, unknown> = { id: runId };
+    const names = caseIds.slice(i, i + 500).map((cid, j) => {
+      binds[`c${j}`] = cid;
+      return `:c${j}`;
+    });
+    await conn.execute(
+      `DELETE FROM PTX_RUN_DET WHERE RUN_ID = :id AND CASE_ID IN (${names.join(", ")})`,
+      binds,
+    );
+  }
 }
 
 async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx, emit: Emit, signal?: AbortSignal): Promise<void> {
@@ -938,7 +957,6 @@ async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx,
       ctx.exact && (captured !== null || !error)
         ? exactMatchScore(captured ? captured.ctn : answer, fields.groundTruth, { unwrapBody: !captured })
         : null;
-    if (em !== null) ctx.sums[EXACT_MATCH].push(em);
     const ttftCol = await hasColumn(conn, "PTX_RUN_DET", "TTFT_MS");
     const resultId = await insertReturningId(
       conn,
@@ -1019,7 +1037,6 @@ async function phase2(conn: OracleConnection, ctx: RunCtx, emit: Emit, signal?: 
           if (dec !== null) {
             sets.push(`${METRIC_COLS[m]} = :${m}`);
             binds[m] = dec;
-            ctx.sums[m].push(dec);
             stored = true;
           }
         }
@@ -1069,11 +1086,21 @@ async function finalize(conn: OracleConnection, ctx: RunCtx, emit: Emit): Promis
     emit({ event: "CANCELLED", run_id: ctx.runId });
     return;
   }
+  // 실행 단위 점수는 이 실행의 결과 행 전체에서 낸다. 방금 돌린 케이스만 세면
+  // 제자리 재실행에서 남겨 둔 케이스가 통째로 빠진 점수가 기록에 남는다 — 24건짜리
+  // 실행을 3건만 다시 돌리고 나면 그 3건의 평균이 실행 점수가 되어 버린다.
+  const avgRes = await conn.execute(
+    `SELECT ${ALL_METRICS.map((m) => `AVG(${METRIC_COLS[m]}) AS ${METRIC_COLS[m]}`).join(", ")}
+       FROM PTX_RUN_DET WHERE RUN_ID = :id`,
+    { id: ctx.runId },
+  );
+  const avgRow = (((avgRes.rows ?? []) as Record<string, unknown>[])[0] ?? {});
   const sets: string[] = [];
   const binds: Record<string, unknown> = { id: ctx.runId };
   const summary: Record<string, number | null> = {};
   for (const m of ALL_METRICS) {
-    const a = avg(ctx.sums[m]);
+    const raw = avgRow[METRIC_COLS[m]];
+    const a = raw == null || !Number.isFinite(Number(raw)) ? null : Number(raw);
     sets.push(`${METRIC_COLS[m]} = :${m}`);
     binds[m] = a;
     summary[m] = a;

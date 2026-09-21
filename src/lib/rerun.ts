@@ -5,7 +5,7 @@ import { saveActiveRun, type ActiveCompareRun, type ActiveSingleRun } from '@/li
 import type { Endpoint, RagasRunDetail } from '@/lib/types';
 
 /**
- * Fired when a re-test run has been created and saved as the tab's active run.
+ * Fired when a re-run has been armed and saved as the tab's active run.
  * The page switches to that tab; a mounted run panel attaches to the run, and
  * one that is not mounted yet resumes it from the saved active run on mount.
  */
@@ -37,7 +37,9 @@ function endpointOf(d: RagasRunDetail, endpoints: Endpoint[]): Endpoint {
   return ep;
 }
 
-/** `caseIds` 가 있으면 고른 케이스만, 없으면 불일치 케이스만 다시 돌린다. */
+/** 이 실행을 그 자리에서 다시 돌린다 — `caseIds` 가 있으면 고른 케이스만, 없으면
+ * 불일치 케이스만. 돌아오는 실행 id 는 원래 실행 그대로다: 새 기록이 생기지 않고
+ * 이 실행의 해당 케이스 결과가 덮인다. */
 export async function startMismatchRerun(
   d: RagasRunDetail,
   endpoints: Endpoint[],
@@ -54,7 +56,7 @@ export async function startMismatchRerun(
     baseUrl: null,
     scoreOn: d.metrics !== '[]',
     nodeNm: d.node_nm ?? '',
-    verLabel: `#${d.ragas_run_id} ${caseIds ? '선택' : '불일치'} 재테스트`,
+    verLabel: `#${d.ragas_run_id} ${caseIds ? '선택' : '불일치'} 재실행`,
   };
   saveActiveRun('single', active);
   return active;

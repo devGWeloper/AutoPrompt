@@ -10,9 +10,12 @@ import type { RagasRunDetail } from '@/lib/types';
 import { errText, useEndpoints, type Picking } from './shared';
 
 /**
- * 불일치 케이스만 같은 조건으로 다시 돌린다. 어디서 누르든(실행 직후 결과, 메인
- * 화면의 지난 실행, 실행 기록) 새 실행은 그 종류의 탭에서 실시간으로 진행된다 —
- * 버튼은 실행을 만들어 알리기만 하고, 스트림은 탭이 붙는다.
+ * 이 실행을 그 자리에서 다시 돌린다 — 불일치 케이스만, 또는 고른 케이스만.
+ *
+ * 새 실행이 아니라 재실행이다: 기록은 한 줄 그대로고 다시 돌린 케이스의 결과만
+ * 덮인다. 어디서 누르든(실행 직후 결과, 메인 화면의 지난 실행, 실행 기록) 진행은
+ * 그 종류의 탭에서 실시간으로 보인다 — 버튼은 실행을 되돌려 놓고 알리기만 하고,
+ * 스트림은 탭이 붙는다.
  *
  * `detailB` 가 있으면 Compare: 두 사이드 중 한쪽이라도 불일치였던 케이스로 A·B 를
  * 함께 다시 돌린다. 불일치가 없으면 아무것도 그리지 않는다.
@@ -74,12 +77,12 @@ export default function RerunButton({
           onClick={(e) => start(e, picked)}
           title={
             picked.length === 0
-              ? '아래 케이스 목록에서 체크한 케이스만 다시 실행합니다'
+              ? '아래 케이스 목록에서 체크한 케이스만 이 기록 안에서 다시 실행합니다'
               : compare
-                ? '고른 케이스로 A·B 를 같은 조건에서 다시 실행'
-                : '고른 케이스만 같은 조건으로 다시 실행'
+                ? '고른 케이스로 A·B 를 이 기록 안에서 다시 실행 — 해당 케이스 결과가 덮입니다'
+                : '고른 케이스만 이 기록 안에서 다시 실행 — 해당 케이스 결과가 덮입니다'
           }
-          label="선택 재테스트"
+          label="선택 재실행"
           count={picked.length}
           tone="accent"
         />
@@ -89,8 +92,12 @@ export default function RerunButton({
           busy={busy === 'mismatch'}
           disabled={busy !== null}
           onClick={(e) => start(e)}
-          title={compare ? 'A·B 중 한쪽이라도 불일치였던 케이스만 같은 조건으로 다시 실행' : '불일치 케이스만 같은 조건으로 다시 실행'}
-          label="불일치 재테스트"
+          title={
+            compare
+              ? 'A·B 중 한쪽이라도 불일치였던 케이스만 이 기록 안에서 다시 실행 — 새 기록이 생기지 않고 해당 케이스 결과가 덮입니다'
+              : '불일치 케이스만 이 기록 안에서 다시 실행 — 새 기록이 생기지 않고 해당 케이스 결과가 덮입니다'
+          }
+          label="불일치 재실행"
           count={n}
           tone="bad"
         />
@@ -99,7 +106,7 @@ export default function RerunButton({
   );
 }
 
-/** 재테스트 버튼 한 벌 — 선택 · 불일치 둘이 같은 모양으로 선다. 수 배지의 색만
+/** 재실행 버튼 한 벌 — 선택 · 불일치 둘이 같은 모양으로 선다. 수 배지의 색만
  * 다르다(선택은 파랑, 불일치는 빨강). */
 function RerunChip({
   busy, disabled, onClick, title, label, count, tone,
