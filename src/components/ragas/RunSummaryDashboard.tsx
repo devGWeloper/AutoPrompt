@@ -68,8 +68,13 @@ function ScoreBadge({ score }: { score: number | null }) {
 export function SingleRunSummaryDashboard({ detail }: { detail: RagasRunDetail }) {
   const mean = runMean(detail);
   const shown = scoredMetrics(detail);
-  const emTotal = detail.results.filter((r) => r.exact_match != null).length;
-  const emHit = detail.results.filter((r) => r.exact_match != null && Number(r.exact_match) >= 0.5).length;
+  const emTotal = detail.results.filter((r) => r.exact_match != null || r.passed).length;
+  // 사람이 통과시킨 케이스도 맞은 것으로 센다 — 카드의 'N/M' 과 그 옆 비율 배지는
+  // 실행 단위 EXACT_VAL(서버가 통과를 반영해 다시 낸 값)에서 오므로, 여기만
+  // 채점 결과 그대로 세면 같은 카드 안에서 두 숫자가 어긋난다.
+  const emHit = detail.results.filter(
+    (r) => r.passed || (r.exact_match != null && Number(r.exact_match) >= 0.5),
+  ).length;
   // The summary card averages the RAGAS metrics only (정답 일치 has its own card,
   // and a 0/1 verdict does not belong in a mean), so it earns its place only when
   // there are at least two of them to average.

@@ -122,39 +122,53 @@ export function fmtDuration(ms: number): string {
 }
 
 /**
- * 결과 카드 머리줄의 '전체 소요'. 케이스마다의 시간은 각 줄에 있고, 이것은 실행
+ * 결과 카드 머리줄의 소요시간. 케이스마다의 시간은 각 줄에 있고, 이것은 실행
  * 한 번을 통째로 기다린 시간이다.
  *
- * 재실행을 거친 실행은 두 사실이 다 남는다: 위가 방금 돌린 구간, 아래가 처음
- * 돌렸을 때. 위만 적으면 불일치 3건을 다시 돌린 12초가 24건짜리 실행의 소요인
- * 것처럼 읽히고, 아래만 적으면 방금 무엇을 했는지가 사라진다.
+ * 한 줄에 한 사실만 둔다. 재실행한 적 없는 실행은 한 줄이고, 재실행을 거치면
+ * '마지막'과 '최초' 두 줄이다 — 둘 다 필요한 건, 위만 적으면 불일치 3건을 다시
+ * 돌린 12초가 24건짜리 실행의 소요처럼 읽히고 아래만 적으면 방금 무엇을 했는지가
+ * 사라지기 때문이다.
+ *
+ * 분 표기는 그 줄의 괄호 안에 붙인다. 제 줄을 주면 위아래의 '다른 시간' 들 사이에
+ * 끼어 네 번째 사실처럼 보이는데, 실은 바로 옆 숫자를 단위만 바꿔 적은 것이다.
  */
 export function RunDurationTag({ runs, className }: { runs: Timed[]; className?: string }) {
   const ms = runSpanMs(...runs);
   if (ms === null) return null;
-  const min = fmtMinutes(ms);
   const rerun = wasRerun(...runs);
   const firstMs = rerun ? runFirstSpanMs(...runs) : null;
   const firstAt = rerun ? firstStartedText(runs) : null;
   return (
     <span
       className={cn('inline-flex flex-col items-end whitespace-nowrap leading-tight text-muted', className)}
-      title={rerun ? '위: 마지막 재실행 구간 · 아래: 최초 실행 구간' : '실행 시작 → 종료'}
+      title={
+        rerun
+          ? '최초: 이 실행을 처음 돌렸을 때 · 마지막: 가장 최근 재실행 (다시 돌린 케이스만)'
+          : '실행 시작 → 종료'
+      }
     >
       <span>
-        {rerun ? '재실행 소요' : '전체 소요'}{' '}
+        {rerun ? '마지막 재실행' : '소요'}{' '}
         <span className="font-mono font-semibold tabular-nums text-ink">{fmtDuration(ms)}</span>
+        <Paren ms={ms} />
       </span>
-      {min && <span className="font-mono text-[10.5px] tabular-nums text-muted-soft">{min}</span>}
-      {rerun && (firstMs !== null || firstAt) && (
-        <span className="font-mono text-[10.5px] tabular-nums text-muted-soft">
-          최초 {firstMs !== null ? fmtDuration(firstMs) : ''}
-          {firstMs !== null && firstAt ? ' · ' : ''}
-          {firstAt ?? ''}
+      {rerun && firstMs !== null && (
+        <span className="text-[11px]">
+          최초 <span className="font-mono tabular-nums">{fmtDuration(firstMs)}</span>
+          <Paren ms={firstMs} />
+          {firstAt && <span className="ml-1 text-muted-soft">{firstAt}</span>}
         </span>
       )}
     </span>
   );
+}
+
+/** 60초를 넘을 때만 붙는 분 환산 — 바로 앞 숫자를 다시 적은 것이라 괄호 안에 둔다. */
+function Paren({ ms }: { ms: number }) {
+  const min = fmtMinutes(ms);
+  if (!min) return null;
+  return <span className="ml-1 text-[10.5px] text-muted-soft">({min})</span>;
 }
 
 /** 초 아래에 붙이는 분 · 시간 표기 — 60초가 넘어 분으로 가늠할 필요가 있을 때만.
@@ -189,7 +203,7 @@ export function RunDurationStack({ runs }: { runs: Timed[] }) {
           : undefined
       }
     >
-      <span>{fmtDuration(ms)}</span>
+      <span>{rerun ? `재실행 ${fmtDuration(ms)}` : fmtDuration(ms)}</span>
       {rerun && firstMs !== null ? (
         <span className="text-[10.5px] text-muted-soft">최초 {fmtDuration(firstMs)}</span>
       ) : (

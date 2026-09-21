@@ -40,9 +40,23 @@ const zero = (): Record<FieldStatus, number> => ({ match: 0, diff: 0, type: 0, m
  * 통째로 비교한다(자기 `body` 키는 봉투가 아니라 데이터다). 화면 여러 곳이
  * 같은 규칙을 따로 적고 있어, 집계도 그 규칙을 그대로 쓴다. */
 export function scoredFields(row: RagasResultRow) {
-  return structuredMatch(row.trace_value ?? row.answer ?? "", row.ground_truth ?? "", {
+  const m = structuredMatch(row.trace_value ?? row.answer ?? "", row.ground_truth ?? "", {
     unwrapBody: !row.trace_value,
   });
+  if (!m || !row.passed) return m;
+  // 사람이 통과시킨 케이스는 키가 다 맞은 것으로 친다. 통과 처리는 "이 건은 이대로
+  // 맞다" 는 판단이고, 그 판단 뒤에도 '누락 3건' 이 집계에 남아 있으면 이 판이
+  // 사람의 결론과 다른 말을 하게 된다 — 고치러 갈 곳을 가리키는 표인데 이미
+  // 고치지 않기로 한 것을 가리키는 셈이다.
+  //
+  // 케이스별 판정표는 이 함수를 쓰지 않는다. 펼쳐 보면 원래 무엇이 걸렸던 건지는
+  // 그대로 읽힌다 — 감춰지는 건 집계에서의 '실패' 취급뿐이다.
+  return {
+    ...m,
+    fields: m.fields.map((f) => (f.status === "match" ? f : { ...f, status: "match" as FieldStatus })),
+    matched: m.fields.length,
+    ok: true,
+  };
 }
 
 /** How many of these cases can be read key by key at all. Under two, the
