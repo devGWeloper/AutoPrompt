@@ -186,6 +186,8 @@ export default function DatasetsPanel() {
   const [cases, setCases] = useState<TestCase[]>([]);
   const [loading, setLoading] = useState(false);
   const [newName, setNewName] = useState('');
+  // 만들 때 적는 목적. 비워 두면 케이스가 들어오는 순간 LLM 이 채운다.
+  const [newDesc, setNewDesc] = useState('');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 결과가 화면에서 사라지는 작업(이동 · 삭제 · 올리기)만 잠깐 알린다. 남겨 두고
@@ -360,8 +362,12 @@ export default function DatasetsPanel() {
 
   const createDataset = () => guard(async () => {
     if (!newName.trim()) return;
-    const d = await api.post<{ dataset_id: number }>('/flow/datasets', { dataset_nm: newName.trim() });
+    const d = await api.post<{ dataset_id: number }>('/flow/datasets', {
+      dataset_nm: newName.trim(),
+      description: newDesc.trim() || null,
+    });
     setNewName('');
+    setNewDesc('');
     setCreating(false);
     reload();
     setSelDataset(d.dataset_id);
@@ -389,6 +395,37 @@ export default function DatasetsPanel() {
       setSuggesting(false);
     }
   });
+
+  /**
+   * 목적이 빈 데이터셋에 케이스가 들어오면 LLM 이 한 줄을 지어 저장한다.
+   *
+   * 데이터셋을 만드는 시점에는 케이스가 없어 요약할 거리가 없다 — 목적을 비워 둔
+   * 채 만들었다면 채울 수 있게 되는 순간이 바로 여기다. 사람이 쓴 목적은 건드리지
+   * 않는다: 비어 있을 때만 부른다.
+   *
+   * 실패는 조용히 넘긴다. 요약이 안 됐다고 방금 끝난 import 까지 실패한 것처럼
+   * 보이면, 정작 들어온 케이스를 의심하게 된다. LLM 이 설정되지 않은 환경에서는
+   * 400 이 돌아오고, 그 경우도 같은 길로 조용히 끝난다.
+   */
+  async function autoPurpose(id: number) {
+    try {
+      const r = await api.post<{ purpose: string }>(`/datasets/${id}/purpose`, {});
+      await api.put(`/datasets/${id}`, { description: r.purpose });
+      reload();
+      // 지어낸 문장을 말없이 앉혀 두지 않는다 — 내가 쓰지 않은 글이 내 데이터셋에
+      // 붙었다는 건 알려야 하고, 마음에 안 들면 그 자리에서 물릴 수 있어야 한다.
+      setToast({
+        text: `목적을 채웠습니다 — ${r.purpose}`,
+        undo: async () => {
+          await api.put(`/datasets/${id}`, { description: null });
+          reload();
+          setToast({ text: '목적을 지웠습니다' });
+        },
+      });
+    } catch {
+      // 조용히 둔다.
+    }
+  }
 
   const delDataset = (id: number) => guard(async () => {
     await api.del(`/datasets/${id}`);
@@ -494,6 +531,7 @@ export default function DatasetsPanel() {
     loadCases();
     reloadCats();
     reload();
+    if (selDataset != null && !(selected?.description ?? '').trim()) autoPurpose(selDataset);
   }
 
   return (
@@ -513,7 +551,7 @@ export default function DatasetsPanel() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => { setCreating((v) => !v); setNewName(''); }}
+              onClick={() => { setCreating((v) => !v); setNewName(''); setNewDesc(''); }}
             >
               {creating ? '취소' : '+ 새로 만들기'}
             </Button>
@@ -521,17 +559,41 @@ export default function DatasetsPanel() {
           <ul className="max-h-[70vh] space-y-0.5 overflow-y-auto p-1.5">
             {creating && (
               <li className="px-0.5 pb-1 pt-0.5">
-                <Input
-                  autoFocus
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') createDataset();
-                    if (e.key === 'Escape') { setCreating(false); setNewName(''); }
-                  }}
-                  placeholder="이름 입력 후 Enter"
-                  className="h-9 w-full text-sm"
-                />
+                {/* 수정 상자와 같은 모양 · 같은 순서다 — 만들 때 적는 목적과 나중에
+                    고치는 목적은 같은 값이라, 칸이 다르게 생길 이유가 없다. */}
+                <div className="rounded-sm border border-line bg-surface-2 p-2">
+                  <Input
+                    autoFocus
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') createDataset();
+                      if (e.key === 'Escape') { setCreating(false); setNewName(''); setNewDesc(''); }
+                    }}
+                    placeholder="이름"
+                    className="h-8 w-full text-sm"
+                  />
+                  <Textarea
+                    value={newDesc}
+                    onChange={(e) => setNewDesc(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Escape') { setCreating(false); setNewName(''); setNewDesc(''); } }}
+                    rows={2}
+                    placeholder="어떤 목적의 테스트인가 — 비워 두면 케이스를 넣을 때 LLM 이 채웁니다"
+                    className="mt-1.5 w-full text-xs"
+                  />
+                  <div className="mt-1.5 flex items-center justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => { setCreating(false); setNewName(''); setNewDesc(''); }}
+                    >
+                      취소
+                    </Button>
+                    <Button variant="secondary" size="sm" disabled={busy || !newName.trim()} onClick={createDataset}>
+                      만들기
+                    </Button>
+                  </div>
+                </div>
               </li>
             )}
             {datasets.map((d) => {
