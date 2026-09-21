@@ -1308,12 +1308,15 @@ export function OxBadge({ value, rate, passed }: { value: number | null; rate?: 
  * 건드리지 않는다 — 그 실행은 그때의 정답지로 채점된 사실이다.
  */
 export function TruthFixButton({
-  datasetId, caseId, truth, onDone,
+  datasetId, caseId, truth, side, onDone,
 }: {
   datasetId: number;
   caseId: number;
   /** 정답으로 삼을 값 — 채점 대상과 같은 것(중간 변수가 있으면 그것). */
   truth: string;
+  /** A·B 비교에서 어느 쪽 답인지. 정답은 두 사이드가 함께 쓰는 하나라, 어느 답으로
+   * 바꾸는 것인지가 툴팁에 적혀 있어야 한다. */
+  side?: 'A' | 'B';
   onDone?: () => void;
 }) {
   const [armed, setArmed] = useArmed();
@@ -1345,8 +1348,8 @@ export function TruthFixButton({
       title={
         err ??
         (done
-          ? '데이터셋의 정답을 이 답으로 바꿨습니다 — 이 기록은 그대로입니다'
-          : '데이터셋의 이 케이스 정답을 지금 답으로 바꿉니다. 지난 기록은 그대로 남습니다')
+          ? `데이터셋의 정답을 ${side ? side + ' 의 ' : ''}이 답으로 바꿨습니다 — 이 기록은 그대로입니다`
+          : `데이터셋의 이 케이스 정답을 ${side ? side + ' 의 ' : ''}지금 답으로 바꿉니다. 지난 기록은 그대로 남습니다`)
       }
       className={cn(
         'whitespace-nowrap rounded-sm border px-1.5 py-px text-[10.5px] font-medium transition-colors disabled:opacity-60',

@@ -14,7 +14,7 @@ import {
 import {
   AnswerBox, caseMean, Chevron, CollapseAllStrip, CopyButton, DisclosureHeader, ElapsedTag, fmt3, fmtElapsed,
   PickAll, PickCheck, type Picking,
-  compareSideLabel, OxBadge, PassButton, PendingHint, AnswerPreview, TraceValueBox,
+  compareSideLabel, OxBadge, PassButton, TruthFixButton, PendingHint, AnswerPreview, TraceValueBox,
 } from './shared';
 import {
   canCompareFields, DiffAgainst, FieldCompareTable, FieldDiffLine, PaneLabel, ValuePanel, valueFields, ViewToggle,
@@ -516,15 +516,20 @@ export function CaseCompareTable({
                           B <OxBadge value={b?.exact_match ?? null} passed={passedOf(b)} />
                         </div>
                       )}
-                      {/* 통과 처리는 사이드마다 따로 한다 — A 는 맞다고 보고 B 는
-                          아니라고 보는 경우가 이 화면의 본체다. */}
+                      {/* 불일치를 손으로 정리하는 두 갈래 — 답이 맞다고 보면 통과,
+                          정답지가 낡았다고 보면 그 답을 정답으로.
+                          사이드마다 제 줄을 쓴다: A 는 맞다고 보고 B 는 아니라고 보는
+                          경우가 이 화면의 본체라 둘이 따로 서야 하고, 한 줄에 네 단추를
+                          늘어놓으면 좁은 칸에서 글자가 감긴다. */}
                       {/* 스트리밍 중인 표에는 실행 id 가 없다 — 기록으로 남은 뒤에만 선다. */}
                       {settled && detailA.ragas_run_id != null && detailB.ragas_run_id != null && (
-                        <div className="flex items-center gap-1 whitespace-nowrap">
-                          {([['A', a, detailA], ['B', b, detailB]] as const).map(([side, row, det]) =>
-                            row && (row.exact_match === 0 || passedOf(row)) ? (
-                              <span key={side} className="flex items-center gap-0.5">
-                                <span className="text-[10px] font-semibold text-muted">{side}</span>
+                        <div className="flex flex-col gap-0.5 whitespace-nowrap">
+                          {([['A', a, detailA], ['B', b, detailB]] as const).map(([side, row, det]) => {
+                            if (!row || !(row.exact_match === 0 || passedOf(row))) return null;
+                            const answer = row.trace_value ?? row.answer;
+                            return (
+                              <span key={side} className="flex items-center gap-1">
+                                <span className="w-3 shrink-0 text-[10px] font-semibold text-muted">{side}</span>
                                 <PassButton
                                   runId={det.ragas_run_id}
                                   resultId={row.ragas_result_id}
@@ -534,9 +539,19 @@ export function CaseCompareTable({
                                     onPassChanged?.();
                                   }}
                                 />
+                                {/* 정답은 두 사이드가 함께 쓰는 하나다 — 어느 쪽 답으로
+                                    바꿀지가 곧 이 단추를 누가 누르느냐다. */}
+                                {det.dataset_id != null && row.case_id != null && !passedOf(row) && answer && (
+                                  <TruthFixButton
+                                    datasetId={det.dataset_id}
+                                    caseId={row.case_id}
+                                    truth={answer}
+                                    side={side}
+                                  />
+                                )}
                               </span>
-                            ) : null,
-                          )}
+                            );
+                          })}
                         </div>
                       )}
                       {(aMean != null || bMean != null) && (
