@@ -207,11 +207,13 @@ export default function DatasetsPanel() {
   const [edit, setEdit] = useState<Fields>(EMPTY);
   const [renameId, setRenameId] = useState<number | null>(null);
   const [renameVal, setRenameVal] = useState('');
+  // 이름과 같은 자리에서 고치는 설명 — '이 데이터셋은 무엇을 시험하나'.
+  const [descVal, setDescVal] = useState('');
+  const [suggesting, setSuggesting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [importing, setImporting] = useState(false);
   const [picked, setPicked] = useState<Set<number>>(new Set());
-  // Escape must not commit the rename that the resulting blur would otherwise save.
-  const cancelRename = useRef(false);
+  // Escape must not commit the folder rename that the resulting blur would save.
   const cancelFolder = useRef(false);
 
   const selected = datasets.find((d) => d.dataset_id === selDataset) ?? null;
@@ -365,12 +367,27 @@ export default function DatasetsPanel() {
     setSelDataset(d.dataset_id);
   });
 
-  const renameDataset = (id: number) => guard(async () => {
+  const saveDataset = (id: number) => guard(async () => {
     const nm = renameVal.trim();
-    setRenameId(null);
     if (!nm) return;
-    await api.put(`/datasets/${id}`, { dataset_nm: nm });
+    setRenameId(null);
+    // 빈 칸은 '' 가 아니라 null 로 지운다 — 설명이 없는 상태와 빈 문자열이
+    // 목록에서 같아 보여도, 나중에 값이 있는 줄만 세는 쪽에서는 다르다.
+    await api.put(`/datasets/${id}`, { dataset_nm: nm, description: descVal.trim() || null });
     reload();
+  });
+
+  /** 케이스를 LLM 에 보여 주고 목적 한 줄을 받아 설명칸에 채운다. 저장까지 하지는
+   * 않는다 — 받은 문장을 읽고 고칠 기회 없이 덮어쓰면, 손으로 써 둔 설명이 버튼
+   * 한 번에 사라진다. 저장은 옆의 저장 버튼이 한다. */
+  const suggestPurpose = (id: number) => guard(async () => {
+    setSuggesting(true);
+    try {
+      const r = await api.post<{ purpose: string }>(`/datasets/${id}/purpose`, {});
+      setDescVal(r.purpose);
+    } finally {
+      setSuggesting(false);
+    }
   });
 
   const delDataset = (id: number) => guard(async () => {
@@ -522,21 +539,46 @@ export default function DatasetsPanel() {
               if (renameId === d.dataset_id) {
                 return (
                   <li key={d.dataset_id} className="px-0.5 py-1">
-                    <Input
-                      autoFocus
-                      value={renameVal}
-                      onChange={(e) => setRenameVal(e.target.value)}
-                      onKeyDown={(e) => {
-                        // Both keys leave the field; onBlur is the single commit point.
-                        if (e.key === 'Escape') cancelRename.current = true;
-                        if (e.key === 'Enter' || e.key === 'Escape') e.currentTarget.blur();
-                      }}
-                      onBlur={() => {
-                        if (cancelRename.current) { cancelRename.current = false; setRenameId(null); return; }
-                        renameDataset(d.dataset_id);
-                      }}
-                      className="h-9 w-full text-sm"
-                    />
+                    {/* 이름과 목적을 한 자리에서 고친다 — 목적은 이름을 지을 때 같이
+                        떠오르는 값이지, 따로 찾아 들어가 적게 되는 값이 아니다.
+                        칸이 둘이라 blur 하나로 저장할 수 없어 저장/취소를 둔다. */}
+                    <div className="rounded-sm border border-line bg-surface-2 p-2">
+                      <Input
+                        autoFocus
+                        value={renameVal}
+                        onChange={(e) => setRenameVal(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') saveDataset(d.dataset_id);
+                          if (e.key === 'Escape') setRenameId(null);
+                        }}
+                        placeholder="이름"
+                        className="h-8 w-full text-sm"
+                      />
+                      <Textarea
+                        value={descVal}
+                        onChange={(e) => setDescVal(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Escape') setRenameId(null); }}
+                        rows={2}
+                        placeholder="어떤 목적의 테스트인가"
+                        className="mt-1.5 w-full text-xs"
+                      />
+                      <div className="mt-1.5 flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={busy || suggesting}
+                          onClick={() => suggestPurpose(d.dataset_id)}
+                          title="케이스를 LLM 에게 보여 주고 목적 한 줄을 받아 위 칸을 채웁니다 — 저장은 따로 눌러야 합니다"
+                        >
+                          {suggesting ? '요약 중…' : 'LLM 요약'}
+                        </Button>
+                        <span className="flex-1" />
+                        <Button variant="ghost" size="sm" onClick={() => setRenameId(null)}>취소</Button>
+                        <Button variant="secondary" size="sm" disabled={busy} onClick={() => saveDataset(d.dataset_id)}>
+                          저장
+                        </Button>
+                      </div>
+                    </div>
                   </li>
                 );
               }
@@ -552,8 +594,20 @@ export default function DatasetsPanel() {
                     >
                       {/* A hairline marker instead of a box per row — the list reads
                           as one list, and only the selected row draws a line. */}
-                      <span aria-hidden className={cn('h-4 w-0.5 shrink-0', on ? 'bg-primary' : 'bg-transparent')} />
-                      <span className="min-w-0 flex-1 truncate">{d.dataset_nm}</span>
+                      <span aria-hidden className={cn('w-0.5 shrink-0 self-stretch', on ? 'bg-primary' : 'bg-transparent')} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{d.dataset_nm}</span>
+                        {/* 목적 한 줄. 이름 아래 잔글씨로 붙어서, 목록을 훑는 동안
+                            '이게 무슨 데이터셋이었지' 를 열어 확인하지 않게 한다. */}
+                        {!!(d.description ?? '').trim() && (
+                          <span
+                            className="mt-0.5 block truncate text-[11px] font-normal text-muted"
+                            title={d.description ?? undefined}
+                          >
+                            {d.description}
+                          </span>
+                        )}
+                      </span>
                       <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted group-hover:invisible">
                         {d.case_count ?? '—'}
                       </span>
@@ -561,7 +615,7 @@ export default function DatasetsPanel() {
                     {/* Row actions take the count's place on hover rather than
                         covering the name with an opaque strip. */}
                     <span className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 group-hover:flex group-focus-within:flex">
-                      <IconBtn title="이름 변경" onClick={() => { setRenameId(d.dataset_id); setRenameVal(d.dataset_nm); }}>
+                      <IconBtn title="이름 · 목적 수정" onClick={() => { setRenameId(d.dataset_id); setRenameVal(d.dataset_nm); setDescVal(d.description ?? ''); }}>
                         <PencilIcon />
                       </IconBtn>
                       <IconDelete title="데이터셋 삭제" onConfirm={() => delDataset(d.dataset_id)} />
@@ -700,6 +754,11 @@ export default function DatasetsPanel() {
                     </span>
                   )}
                 </div>
+                {/* 제목 아래 목적 — 여기서는 자르지 않는다. 목록은 훑는 자리라 한 줄로
+                    줄이지만, 열어 둔 데이터셋은 문장을 끝까지 읽을 자리다. */}
+                {!!(selected.description ?? '').trim() && (
+                  <p className="mt-1 text-[11.5px] leading-snug text-muted">{selected.description}</p>
+                )}
                 {/* 고르는 동안에는 같은 줄이 선택 도구로 바뀐다 — 목록 위에 막대를
                     끼워 넣으면 첫 체크 순간 목록이 한 줄 밀려 내려간다. */}
                 {selecting ? (

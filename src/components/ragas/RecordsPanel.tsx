@@ -19,7 +19,7 @@ import { CaseCompareTable } from './CompareTable';
 import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import { AbKeyBreakdown, KeyBreakdown } from './KeyBreakdown';
 import {
-  CaseTable, DownloadIcon, ErrBox, errText, fmt2, fmt3, fmtDt, RunDurationStack, RunDurationTag, usePickedCases, folderLabel, hasTextSelection, runMean, runTargetLabel,
+  CaseTable, DatasetPurpose, DownloadIcon, ErrBox, errText, fmt2, fmt3, fmtDt, RunDurationStack, RunDurationTag, usePickedCases, folderLabel, hasTextSelection, runMean, runTargetLabel,
   compareSideLabel, runModelDetail, runTitle, runTitleParts, scoredMetrics, SegToggle, TrashIcon, UNSCORED_LABEL,
 } from './shared';
 import RerunButton from './RerunButton';
@@ -118,7 +118,7 @@ function TargetCell({
  * 다른 쪽의 부연이 아니라 나란한 두 사실이고, 5건짜리 폴더와 24건짜리 전체를
  * 흐린 잔글씨로 적어 두면 그걸 못 보고 점수를 나란히 놓게 된다. 나머지 칸
  * (유형·상태·엔진·시각)은 muted 로 남아서, 이 둘이 행의 내용이 된다. */
-function ScopeCell({ text, count }: { text: string | null; count: string | null }) {
+function ScopeCell({ text, count, desc }: { text: string | null; count: string | null; desc?: string | null }) {
   return (
     <TD title={[text, count].filter(Boolean).join(' ') || undefined}>
       {/* 건수는 shrink-0 이라 절대 안 잘린다. 한 문자열로 붙여 두면 좁은 칸에서
@@ -128,6 +128,9 @@ function ScopeCell({ text, count }: { text: string | null; count: string | null 
         <span className="truncate">{text ?? '—'}</span>
         {count && <span className="shrink-0">{count}</span>}
       </div>
+      {/* 데이터셋 설명 — 대상 칸의 둘째 줄과 같은 자리, 같은 크기다. 이름만으로는
+          '이 실행이 무엇을 시험한 것인가' 가 안 읽히는 데이터셋이 대부분이다. */}
+      <DatasetPurpose text={desc} className="mt-0.5 max-w-[16rem]" />
     </TD>
   );
 }
@@ -331,6 +334,9 @@ export default function RecordsPanel() {
         r.node_nm,
         r.version_no != null ? `v${r.version_no}` : null,
         r.dataset_nm,
+        // 설명으로도 찾힌다 — 기록을 다시 열 때 기억나는 건 데이터셋 이름보다
+        // '결제 취소 검증' 같은 목적인 쪽이 많다.
+        r.dataset_desc,
         r.case_type,
         r.first_question,
         `#${r.ragas_run_id}`,
@@ -445,7 +451,7 @@ export default function RecordsPanel() {
                       change={single.change}
                       changeHint={runModelDetail(r.model_snapshot)}
                     />
-                    <ScopeCell text={single.scope} count={single.count} />
+                    <ScopeCell text={single.scope} count={single.count} desc={r.is_manual ? null : r.dataset_desc} />
                     <TD><TypeText t="single" /></TD>
                     <TD><StatusText s={r.status} /></TD>
                     <TD className="text-xs text-muted">{r.engine === 'direct' ? '—' : (r.engine ?? '—')}</TD>
@@ -486,7 +492,7 @@ export default function RecordsPanel() {
                     change={pair.change}
                     changeHint={pair.changeHint}
                   />
-                  <ScopeCell text={pair.scope} count={pair.count} />
+                  <ScopeCell text={pair.scope} count={pair.count} desc={g.a.is_manual ? null : g.a.dataset_desc} />
                   <TD><TypeText t="compare" /></TD>
                   <TD><StatusText s={stat} /></TD>
                   <TD className="text-xs text-muted">{g.b.engine ?? '—'}</TD>
@@ -681,16 +687,23 @@ function RecordDetailDrawer({
         <DrawerResizer {...handleProps} dragging={dragging} />
         {/* Drawer Header */}
         <div className="flex items-center justify-between border-b border-line px-6 py-4">
-          <div className="flex items-center gap-3">
-            <h2 className="text-display-xs text-ink">
-              {isSingle ? (
-                <>Single <span className="font-mono text-xs font-normal text-muted">#{group.run.ragas_run_id}</span></>
-              ) : (
-                <>Compare <span className="font-mono text-xs font-normal text-muted">#{group.a.ragas_run_id}/#{group.b.ragas_run_id}</span></>
-              )}
-            </h2>
-            <TypeText t={isSingle ? 'single' : 'compare'} />
-            <StatusText s={isSingle ? group.run.status : (group.a.status === group.b.status ? group.a.status : `${group.a.status}/${group.b.status}`)} />
+          <div className="min-w-0">
+            <div className="flex items-center gap-3">
+              <h2 className="text-display-xs text-ink">
+                {isSingle ? (
+                  <>Single <span className="font-mono text-xs font-normal text-muted">#{group.run.ragas_run_id}</span></>
+                ) : (
+                  <>Compare <span className="font-mono text-xs font-normal text-muted">#{group.a.ragas_run_id}/#{group.b.ragas_run_id}</span></>
+                )}
+              </h2>
+              <TypeText t={isSingle ? 'single' : 'compare'} />
+              <StatusText s={isSingle ? group.run.status : (group.a.status === group.b.status ? group.a.status : `${group.a.status}/${group.b.status}`)} />
+            </div>
+            {/* 어떤 목적의 데이터로 돌린 실행인지 — 제목 바로 아래. */}
+            <DatasetPurpose
+              text={(isSingle ? group.run : group.a).is_manual ? null : (isSingle ? group.run : group.a).dataset_desc}
+              className="mt-1 max-w-[40rem]"
+            />
           </div>
 
           <div className="flex items-center gap-2">

@@ -322,6 +322,8 @@ export function mapRagasRunSummary(r: Row): RagasRunSummary {
     // DATASET_NM is a snapshot on the run itself (survives dataset deletion);
     // FIRST_QUESTION only comes from listRuns' SELECT.
     dataset_nm: str(r.DATASET_NM),
+    // DATASET_DESC 도 FIRST_QUESTION 과 같이 listRuns 의 SELECT 에서만 온다.
+    dataset_desc: str(r.DATASET_DESC),
     case_type: run.case_type,
     // CASE_CNT 도 FIRST_QUESTION 과 같이 listRuns 의 SELECT 에서만 온다.
     case_count: num(r.CASE_CNT),

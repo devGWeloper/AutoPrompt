@@ -20,6 +20,7 @@ import type {
   TestCase,
 } from "@/lib/types";
 import { writeAudit } from "./audit";
+import { chatJson, llmConfigured } from "./ragas/llmClient";
 
 // ---- datasets ----
 
@@ -478,4 +479,77 @@ export async function importCsv(datasetId: number, fileText: string, createdBy: 
   }
 
   return { created, skipped, errors };
+}
+
+// ---- 목적 한 줄 요약 ----
+
+/** 요약에 실어 보내는 케이스 수. 데이터셋이 무엇을 시험하는지는 앞머리 몇십 건이면
+ * 드러나고, 200건을 다 보내면 프롬프트만 길어지고 답은 같아진다. */
+const PURPOSE_SAMPLE = 24;
+/** 케이스 한 건에서 잘라 쓰는 글자 수 — 질문·정답 각각. */
+const PURPOSE_FIELD = 200;
+/** 돌려주는 한 줄의 상한. DESC_CTN 이 500자라 그 안에 넉넉히 들어간다. */
+const PURPOSE_MAX = 120;
+
+function clip(s: string, n: number): string {
+  const t = s.replace(/\s+/g, " ").trim();
+  return t.length > n ? `${t.slice(0, n)}…` : t;
+}
+
+/** 케이스 하나를 요약용 한 줄로. 질문과 정답, 그리고 폴더 이름 — 폴더는 사람이
+ * 이미 붙여 둔 분류라 목적을 가장 곧장 말해 주는 값이다. */
+function purposeLine(c: TestCase, i: number): string {
+  let question = c.input_data;
+  let truth = c.expected_output ?? "";
+  try {
+    const o = JSON.parse(c.input_data) as Record<string, unknown>;
+    if (o && typeof o === "object" && !Array.isArray(o)) {
+      if (o.question != null) question = String(o.question);
+      if (o.ground_truth != null) truth = String(o.ground_truth);
+    }
+  } catch {
+    // JSON 이 아니면 INPUT_CTN 전체가 질문이다 — parseCaseInput 과 같은 규칙.
+  }
+  const folder = c.case_type && c.case_type !== "NORMAL" ? ` [${c.case_type}]` : "";
+  const answer = truth ? `\n   정답: ${clip(truth, PURPOSE_FIELD)}` : "";
+  return `${i + 1}.${folder} ${clip(question, PURPOSE_FIELD)}${answer}`;
+}
+
+/**
+ * 이 데이터셋이 무엇을 시험하는 데이터인지 LLM 에게 한 줄로 물어본다.
+ *
+ * 저장하지 않고 문장만 돌려준다 — 설명은 사람이 읽고 고쳐서 저장하는 값이고,
+ * 버튼 한 번이 조용히 DESC_CTN 을 덮어쓰면 손으로 써 둔 설명이 사라진다.
+ * 화면은 이 문장을 설명 입력칸에 채워 넣고, 저장은 평소의 PUT 이 한다.
+ */
+export async function suggestDatasetPurpose(datasetId: number): Promise<{ purpose: string }> {
+  if (!llmConfigured()) {
+    throw badRequest("LLM 엔드포인트가 설정되어 있지 않습니다 (config.yml llm.endpoint)");
+  }
+  const all = await listCases(datasetId);
+  if (all.length === 0) throw badRequest("케이스가 없어 요약할 내용이 없습니다");
+
+  const sample = all.slice(0, PURPOSE_SAMPLE);
+  const folders = Array.from(
+    new Set(all.map((c) => c.case_type).filter((t) => t && t !== "NORMAL")),
+  );
+  const head = [
+    `전체 ${all.length}건 중 ${sample.length}건`,
+    folders.length ? `폴더: ${folders.join(", ")}` : null,
+  ].filter(Boolean).join(" · ");
+
+  const ds = await getDatasetDetail(datasetId);
+  const r = await chatJson<{ purpose?: string }>(
+    "당신은 LLM 평가 데이터셋을 보고 그 데이터셋이 무엇을 시험하는지 한 줄로 적는 사람입니다. " +
+      "반드시 JSON 으로만 답하세요.",
+    `아래는 평가 데이터셋 "${ds.dataset_nm}" 의 케이스입니다.\n` +
+      `${head}\n\n${sample.map(purposeLine).join("\n")}\n\n` +
+      `이 데이터셋이 어떤 목적의 테스트인지 한국어 한 문장(${PURPOSE_MAX}자 이내)으로 적으세요. ` +
+      `케이스를 나열하지 말고 공통된 시험 대상과 의도를 쓰세요. ` +
+      `"이 데이터셋은" 같은 머리말 없이 바로 시작하세요. ` +
+      `JSON 형식: {"purpose":"..."}`,
+  );
+  const purpose = clip(String(r.purpose ?? ""), PURPOSE_MAX);
+  if (!purpose) throw badRequest("요약을 받지 못했습니다 — 다시 시도해 주세요");
+  return { purpose };
 }

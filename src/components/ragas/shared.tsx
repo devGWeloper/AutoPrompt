@@ -638,6 +638,33 @@ export function DatasetSelect({ datasets, value, onChange }: { datasets: Dataset
   );
 }
 
+/** 데이터셋 설명 한 줄 — "이건 무엇을 시험하는 데이터인가". 이름이 말하지 못하는
+ * 목적이 여기 실린다. 비어 있으면 줄을 그리지 않는다: 설명 없는 데이터셋마다 빈
+ * 줄이 자리를 잡으면 목록이 성기게 벌어지고, 없다는 사실만 반복해서 보인다. */
+export function DatasetPurpose({ text, className }: { text: string | null | undefined; className?: string }) {
+  const t = (text ?? '').trim();
+  if (!t) return null;
+  return (
+    <div className={cn('truncate text-[11px] leading-tight text-muted', className)} title={t}>
+      {t}
+    </div>
+  );
+}
+
+/** 고른 데이터셋의 설명을 실행 조건 줄 아래에 붙인다. 조건 줄은 flex-wrap 이라
+ * basis-full 이 자기 줄을 만든다 — 컨트롤 사이에 끼워 넣으면 셀렉트와 실행 버튼
+ * 사이가 문장 하나만큼 벌어진다. */
+export function DatasetPurposeLine({ datasets, datasetId }: { datasets: Dataset[]; datasetId: number | null }) {
+  const text = datasets.find((d) => d.dataset_id === datasetId)?.description ?? null;
+  if (!(text ?? '').trim()) return null;
+  return (
+    <p className="basis-full text-[11.5px] leading-tight text-muted">
+      <span className="mr-1.5 text-muted-soft">목적</span>
+      {text}
+    </p>
+  );
+}
+
 /**
  * One dataset's folders, with how many cases each holds. Fetched per selection
  * rather than carried on the dataset list: it is only ever needed for the one

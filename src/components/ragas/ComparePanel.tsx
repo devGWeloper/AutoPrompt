@@ -24,6 +24,7 @@ import {
 import { CaseCompareTable, CompareVerdict } from './CompareTable';
 import {
   CategorySelect,
+  DatasetPurposeLine,
   DatasetSelect,
   EndpointSelect,
   InlineDivider,
@@ -505,6 +506,8 @@ export default function ComparePanel() {
             <StatusPill status={source === 'dataset' ? status : callStatus} />
             {modelErr && <span className="text-caption text-bad">{modelErr}</span>}
           </div>
+
+          {source === 'dataset' && <DatasetPurposeLine datasets={datasets} datasetId={datasetId} />}
         </div>
 
         {/* 채점은 자기 줄을 쓴다 — 지표가 켜지고 꺼질 때마다 위 줄이 접혀서 실행

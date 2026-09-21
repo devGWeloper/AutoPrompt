@@ -376,6 +376,9 @@ export interface RagasRunSummary {
   node_nm: string | null;
   version_no: string | null;
   dataset_nm: string | null;
+  /** 데이터셋 설명 — "무엇을 시험하는 데이터인가". 실행에 찍힌 스냅샷이 아니라
+   * 지금의 PTX_DATASET_MAS 에서 읽는다. 데이터셋이 지워졌으면 null 이다. */
+  dataset_desc: string | null;
   case_type: string | null;
   /** 이 실행이 실제로 돌린 케이스 수. 5건짜리 폴더 실행과 24건짜리 전체 실행이
    * 제목에서 갈리지 않으면, 나중에 점수를 나란히 놓고 잘못 읽게 된다. */
