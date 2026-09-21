@@ -15,6 +15,7 @@ import {
   AnswerBox, caseMean, Chevron, CollapseAllStrip, CopyButton, DisclosureHeader, ElapsedTag, fmt3, fmtElapsed,
   PickAll, PickCheck, type Picking,
   compareSideLabel, OxBadge, PassButton, TruthFixButton, PendingHint, AnswerPreview, TraceValueBox,
+  isRerunRow, RerunMark, RerunningMark,
 } from './shared';
 import {
   canCompareFields, DiffAgainst, FieldCompareTable, FieldDiffLine, PaneLabel, ValuePanel, valueFields, ViewToggle,
@@ -377,6 +378,7 @@ export function CaseCompareTable({
   defaultAllOpen = false,
   picking,
   onPassChanged,
+  rerunning,
 }: {
   detailA: RagasRunDetail;
   detailB: RagasRunDetail;
@@ -392,6 +394,9 @@ export function CaseCompareTable({
   picking?: Picking;
   /** 수동 통과 처리가 끝난 뒤 — 실행 단위 점수도 움직이므로 부모가 다시 읽는다. */
   onPassChanged?: () => void;
+  /** 지금 다시 돌고 있는 케이스들. 남겨 둔 결과는 자리를 지키고 이 줄들만
+   * '다시 도는 중' 으로 바뀐다 — 단일 실행 표와 같은 규칙이다. */
+  rerunning?: Set<number>;
 }) {
   const byA = new Map(detailA.results.map((r) => [r.case_id, r] as const));
   const byB = new Map(detailB.results.map((r) => [r.case_id, r] as const));
@@ -418,6 +423,10 @@ export function CaseCompareTable({
   const [passOverride, setPassOverride] = useState<Map<number, boolean>>(new Map());
   const passedOf = (r: RagasResultRow | undefined) =>
     r ? (passOverride.get(r.ragas_result_id) ?? r.passed) : false;
+  // 한쪽이라도 이번에 다시 돌았으면 그 케이스 줄은 재실행된 것이다 — 두 사이드는
+  // 늘 같은 집합을 돌기 때문에 사실상 둘 다이지만, 한쪽만 기록이 남은 경우도 있다.
+  const rowRerun = (cid: number | null) =>
+    isRerunRow(byA.get(cid) ?? {}, detailA) || isRerunRow(byB.get(cid) ?? {}, detailB);
 
   const keys = ids.map((cid) => String(cid));
   const [opened, setOpened] = useState<Set<string>>(() =>
@@ -480,6 +489,11 @@ export function CaseCompareTable({
               <span className={cn('min-w-0 flex-1 text-sm text-ink', isClosed ? 'truncate' : 'whitespace-pre-wrap break-words font-medium')}>
                 {q}
               </span>
+              {/* 단일 실행 표와 같은 규칙 — 남겨 둔 줄과 섞여 있으니 어느 것이 방금
+                  다시 돈 것인지는 그 줄 위에 적힌다. */}
+              {cid != null && rerunning?.has(cid)
+                ? <RerunningMark className="mt-1" />
+                : rowRerun(cid) && <RerunMark className="mt-1" />}
               {!isClosed && q !== '—' && (
                 <span className="mt-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                   <CopyButton text={q} />

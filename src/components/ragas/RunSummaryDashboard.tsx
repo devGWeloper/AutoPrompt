@@ -199,10 +199,15 @@ export function CompareSummaryDashboard({
   // Run-level EXACT_VAL is already the match rate (mean of the per-case 0/1).
   const exA = detailA.exact_match != null ? Number(detailA.exact_match) : null;
   const exB = detailB.exact_match != null ? Number(detailB.exact_match) : null;
-  // RAGAS decides the winner when it ran; a 정답 일치 only pair falls back to the
-  // match rate rather than showing no verdict at all.
+  // RAGAS decides the better side when it ran; a 정답 일치 only pair falls back to
+  // the match rate rather than showing nothing at all.
   const [cmpA, cmpB] = meanA != null || meanB != null ? [meanA, meanB] : [exA, exB];
-  const winner = cmpA != null && cmpB != null ? (cmpB > cmpA ? 'B' : cmpA > cmpB ? 'A' : 'TIE') : null;
+  const ahead = cmpA != null && cmpB != null ? (cmpB > cmpA ? 'B' : cmpA > cmpB ? 'A' : null) : null;
+  const heroCard = (side: 'A' | 'B') =>
+    cn(
+      'flex flex-col justify-between rounded-xl border bg-surface p-4 shadow-card',
+      ahead === side ? 'border-accent ring-1 ring-accent/25' : 'border-line',
+    );
   const headA = heroScore(meanA, exA);
   const headB = heroScore(meanB, exB);
   const headDelta = headA.score != null && headB.score != null ? headB.score - headA.score : null;
@@ -212,16 +217,10 @@ export function CompareSummaryDashboard({
       {/* 2 Hero Summary Cards Side by Side (Version A vs Version B) */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {/* Version A Hero Card */}
-        <div
-          className={cn(
-            'flex flex-col justify-between rounded-xl border bg-surface p-4 shadow-card',
-            winner === 'A' ? 'border-accent ring-1 ring-accent/25' : 'border-line'
-          )}
-        >
+        <div className={heroCard('A')}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Badge tone="neutral">A · {nameA}</Badge>
-              {winner === 'A' && <Badge tone="accent">🏆 Winner</Badge>}
             </div>
             <ScoreBadge score={headA.score} />
           </div>
@@ -246,16 +245,10 @@ export function CompareSummaryDashboard({
         </div>
 
         {/* Version B Hero Card */}
-        <div
-          className={cn(
-            'flex flex-col justify-between rounded-xl border bg-surface p-4 shadow-card',
-            winner === 'B' ? 'border-accent ring-1 ring-accent/25' : 'border-line'
-          )}
-        >
+        <div className={heroCard('B')}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Badge tone="accent">B · {nameB}</Badge>
-              {winner === 'B' && <Badge tone="accent">🏆 Winner</Badge>}
             </div>
             <div className="flex items-center gap-2">
               {/* Δ 는 두 카드가 크게 세운 그 숫자의 차이다 — 위는 일치율인데 Δ 만

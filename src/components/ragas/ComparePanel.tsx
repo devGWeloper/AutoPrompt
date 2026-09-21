@@ -169,6 +169,9 @@ export default function ComparePanel() {
   // Live streaming: answers for both versions trickle in, then scores fill in.
   const [liveA, setLiveA] = useState<RagasResultRow[]>([]);
   const [liveB, setLiveB] = useState<RagasResultRow[]>([]);
+  // 이번 패스가 도는 케이스들. null 이면 남겨 둔 줄이 없는 보통의 실행이라 표식을
+  // 달지 않는다 — 어차피 도는 것만 보이므로 '다시 도는 중' 이 군더더기다.
+  const [rerunning, setRerunning] = useState<Set<number> | null>(null);
   const [total, setTotal] = useState(0);
   // Server-declared metric list for this run — survives a refresh, unlike the form.
   const [runMetrics, setRunMetrics] = useState<RagasMetric[] | null>(null);
@@ -233,6 +236,10 @@ export default function ComparePanel() {
           if (m.event === 'RUNNING') {
             setTotal((t) => Math.max(t, m.total ?? 0));
             if (m.metrics) setRunMetrics(m.metrics);
+            // 두 사이드가 같은 집합을 돌므로 어느 쪽이 먼저 와도 결과는 같다.
+            setRerunning((cur) =>
+              cur === null ? null : new Set((m.case_ids ?? []).filter((x): x is number => x != null)),
+            );
           } else if (m.event === 'ANSWER' || m.event === 'SCORE') {
             setTotal((t) => Math.max(t, m.total));
             setLive((cur) => upsertResult(cur, m.result));
@@ -263,6 +270,7 @@ export default function ComparePanel() {
       waitDone(saved.runIdB, setLiveB, setDetailB, saved.side ? 'b' : null, saved.endpointB),
     ]);
     clearActiveRun('compare');
+    setRerunning(null);
     setStatus(ev.includes('FAILED') ? 'failed' : ev.includes('CANCELLED') ? 'cancelled' : 'done');
   }
 
@@ -281,14 +289,37 @@ export default function ComparePanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** Switch the panel onto a pair created elsewhere — a 불일치 re-test started
-   * from this panel's results, its last-run preview, or the records drawer. */
-  function follow(saved: ActiveCompareRun) {
+  /**
+   * Switch the panel onto a pair armed elsewhere — a 불일치 재실행 started from
+   * this panel's results, its last-run preview, or the records drawer.
+   *
+   * 재실행은 그 두 실행을 그 자리에서 다시 돌리는 것이라, 목록을 비우고 시작하면
+   * 방금까지 보던 줄들이 사라졌다가 몇 줄로 돌아온다. 스트림을 열기 **전에** 지금
+   * 기록을 읽어 깔아 둔다 — 서버는 스트림이 열릴 때 비로소 그 케이스들의 옛 줄을
+   * 지우므로, 이 순서에서만 옛 줄을 온전히 받을 수 있다.
+   */
+  async function follow(saved: ActiveCompareRun) {
     setError(null); setDetailA(null); setDetailB(null); setStatus('running');
-    setLiveA([]); setLiveB([]); setTotal(0); setRunMetrics(null); setCancelling(false);
+    setTotal(0); setRunMetrics(null); setCancelling(false);
     setSource('dataset');
     setScoreOn(saved.scoreOn);
     setRunLabels([saved.labelA, saved.labelB]);
+    let seeded = false;
+    try {
+      const [pa, pb] = await Promise.all([
+        api.get<RagasRunDetail>(`/ragas-runs/${saved.runIdA}`),
+        api.get<RagasRunDetail>(`/ragas-runs/${saved.runIdB}`),
+      ]);
+      if (pa.results.length || pb.results.length) {
+        setLiveA(pa.results);
+        setLiveB(pb.results);
+        setRerunning(new Set());
+        seeded = true;
+      }
+    } catch {
+      // 기록을 못 읽어도 실행은 돈다 — 예전처럼 빈 목록에서 채워 나간다.
+    }
+    if (!seeded) { setLiveA([]); setLiveB([]); setRerunning(null); }
     void attachBoth(saved);
   }
 
@@ -303,7 +334,7 @@ export default function ComparePanel() {
   async function run() {
     if (!canRun) return;
     setError(null); setDetailA(null); setDetailB(null); setStatus('running');
-    setLiveA([]); setLiveB([]); setTotal(0); setRunMetrics(null); setCancelling(false); runIdsRef.current = [];
+    setLiveA([]); setLiveB([]); setTotal(0); setRunMetrics(null); setCancelling(false); setRerunning(null); runIdsRef.current = [];
     // Only endpoint mode gives the two sides their own URL. Version and model
     // mode both run against the configured default endpoint — they vary the
     // prompt or the models, and the endpoint is held as it is.
@@ -615,6 +646,7 @@ export default function ComparePanel() {
                     detailB={{ results: liveB } as RagasRunDetail}
                     labelA={dispLabel(labA)} labelB={dispLabel(labB)}
                     scored={scoreOn}
+                    rerunning={rerunning ?? undefined}
                   />
                 </div>
               : <div className="py-8 text-center"><PendingHint label="답변 생성 중…" /></div>}
