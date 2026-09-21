@@ -326,6 +326,10 @@ export interface RagasResultRow {
    * when the endpoint answered in one body (nothing to time), and on every row
    * written before the column existed. */
   ttft_ms: number | null;
+  /** 채점은 불일치였지만 사람이 보고 통과시킨 케이스. exact_match 는 채점의 판정
+   * 그대로다 — 둘을 합쳐 읽어야 하는 곳(실행 점수 · 불일치 재실행)에서만 합친다. */
+  passed: boolean;
+  passed_dt: string | null;
 }
 
 export interface RagasRunOut {
@@ -361,6 +365,11 @@ export interface RagasRunOut {
   error_msg: string | null;
   started_dt: string | null;
   ended_dt: string | null;
+  /** 이 실행이 처음 돌았을 때의 구간. 재실행이 덮지 않는다 — started_dt/ended_dt 는
+   * 가장 최근 실행(= 마지막 재실행)이라, 이 둘이 없으면 "원래 이만큼 걸리던 실행"
+   * 이라는 사실이 첫 재실행에서 사라진다. 마이그레이션 전 DB 와 옛 행에서는 null. */
+  first_started_dt: string | null;
+  first_ended_dt: string | null;
   created_by: string;
   created_dt: string;
 }
@@ -403,6 +412,11 @@ export interface RagasRunSummary {
   /** 실행 전체 소요시간을 목록에서 보여 주려고 싣는다 — 목록 SELECT 에 이미 있다. */
   started_dt: string | null;
   ended_dt: string | null;
+  /** 이 실행이 처음 돌았을 때의 구간. 재실행이 덮지 않는다 — started_dt/ended_dt 는
+   * 가장 최근 실행(= 마지막 재실행)이라, 이 둘이 없으면 "원래 이만큼 걸리던 실행"
+   * 이라는 사실이 첫 재실행에서 사라진다. 마이그레이션 전 DB 와 옛 행에서는 null. */
+  first_started_dt: string | null;
+  first_ended_dt: string | null;
   created_dt: string;
 }
 

@@ -90,8 +90,14 @@ CREATE TABLE PTX_RUN_MAS (
     METRIC_CTN           CLOB,
     ENGINE_CD            VARCHAR2(20),
     ERROR_CTN            CLOB,
+    -- START_TM / END_TM 은 '가장 최근 실행' 구간이다. 불일치·선택 재실행은 새 기록을
+    -- 만들지 않고 이 실행을 그 자리에서 다시 돌리므로 여기가 다시 찍힌다.
     START_TM             TIMESTAMP,
     END_TM               TIMESTAMP,
+    -- 처음 돌았을 때의 구간. 한 번 채워지면 재실행이 덮지 않는다 — 24건을 처음
+    -- 돌린 338초와 불일치 3건만 다시 돌린 12초는 다른 사실이라 둘 다 남긴다.
+    FIRST_START_TM       TIMESTAMP,
+    FIRST_END_TM         TIMESTAMP,
     USER_ID              VARCHAR2(50) NOT NULL,
     CRT_TM               TIMESTAMP DEFAULT SYSTIMESTAMP,
     CONSTRAINT FK_PTX_RUN_MAS_PROMPT FOREIGN KEY (PROMPT_ID)
@@ -130,6 +136,13 @@ CREATE TABLE PTX_RUN_DET (
     -- 있어 큐 대기 + prefill 만 남는다. 스트리밍(text/event-stream) 응답에만
     -- 값이 있고, 한 덩어리로 답하는 엔드포인트에서는 NULL 이다.
     TTFT_MS              NUMBER,
+    -- 사람이 손으로 통과시킨 케이스. 채점은 불일치(EXACT_VAL=0)였지만 사람이 보고
+    -- 맞다고 판단한 경우다 — 표현만 다르거나, 정답지 쪽이 낡았거나.
+    -- EXACT_VAL 을 1 로 고쳐 쓰지 않는 건 기계의 판정과 사람의 판정을 섞지 않기
+    -- 위해서다: 원래 무엇이 걸렸는지가 남아야 정답지를 고칠지 판단할 수 있다.
+    -- 실행 단위 EXACT_VAL 과 불일치 재실행 대상은 이 값을 반영해 계산한다.
+    PASS_YN              CHAR(1),
+    PASS_TM              TIMESTAMP,
     CRT_TM               TIMESTAMP DEFAULT SYSTIMESTAMP,
     CONSTRAINT FK_PTX_RUN_DET_MAS FOREIGN KEY (RUN_ID)
         REFERENCES PTX_RUN_MAS(RUN_ID) ON DELETE CASCADE,

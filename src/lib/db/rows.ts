@@ -127,7 +127,7 @@ export const METRIC_COLS: Record<string, string> = {
 
 const RUN_SCORE_COLS = Object.values(METRIC_COLS);
 
-export const RUN_COLS = [
+const RUN_COLS = [
   "RUN_ID",
   "PROMPT_ID",
   "AB_GROUP_ID",
@@ -175,7 +175,40 @@ export const RESULT_COLS = [
  * null, so `mapRagasResult` needs no branch of its own.
  */
 export async function resultCols(conn: OracleConnection): Promise<string> {
-  return (await hasColumn(conn, "PTX_RUN_DET", "TTFT_MS")) ? `${RESULT_COLS}, TTFT_MS` : RESULT_COLS;
+  const cols = [RESULT_COLS];
+  if (await hasColumn(conn, "PTX_RUN_DET", "TTFT_MS")) cols.push("TTFT_MS");
+  // 수동 통과 처리 (sql/migrate_run_det_pass.sql). 없으면 통과시킨 케이스가
+  // 하나도 없는 것과 같이 보인다 — 버튼도 서지 않는다.
+  if (await hasColumn(conn, "PTX_RUN_DET", "PASS_YN")) cols.push("PASS_YN", tsCol("PASS_TM"));
+  return cols.join(", ");
+}
+
+/**
+ * 사람이 통과시킨 케이스를 1 로 친 '정답 일치' 값의 SQL 식.
+ *
+ * 채점 결과(EXACT_VAL)와 사람의 판단(PASS_YN)은 따로 저장하고, 합쳐 읽어야 하는
+ * 자리에서만 이 식으로 합친다 — 실행 단위 점수와 불일치 재실행 대상이 그 자리다.
+ * 컬럼이 없는 DB 에서는 채점 결과 그대로다.
+ */
+export async function effectiveExactExpr(conn: OracleConnection, alias = ""): Promise<string> {
+  const col = `${alias}EXACT_VAL`;
+  return (await hasColumn(conn, "PTX_RUN_DET", "PASS_YN"))
+    ? `CASE WHEN ${alias}PASS_YN = 'Y' THEN 1 ELSE ${col} END`
+    : col;
+}
+
+/**
+ * RUN_COLS plus the 최초 실행 구간, when this database has it.
+ *
+ * FIRST_START_TM / FIRST_END_TM arrive by migration (`sql/migrate_run_first_tm.sql`).
+ * Without them a run only remembers its most recent span — which is what every
+ * screen showed before re-runs existed — so the columns are read when present
+ * and simply absent otherwise, the same way TTFT_MS is.
+ */
+export async function runCols(conn: OracleConnection): Promise<string> {
+  return (await hasColumn(conn, "PTX_RUN_MAS", "FIRST_START_TM"))
+    ? `${RUN_COLS}, ${tsColMs("FIRST_START_TM")}, ${tsColMs("FIRST_END_TM")}`
+    : RUN_COLS;
 }
 
 export const MODEL_COLS = [
@@ -306,6 +339,9 @@ export function mapRagasRun(r: Row): RagasRunOut {
     error_msg: str(r.ERROR_CTN),
     started_dt: str(r.START_TM),
     ended_dt: str(r.END_TM),
+    // runCols() 가 붙였을 때만 온다 — 없는 DB 에서는 undefined → null.
+    first_started_dt: str(r.FIRST_START_TM),
+    first_ended_dt: str(r.FIRST_END_TM),
     created_by: String(r.USER_ID),
     created_dt: String(r.CRT_TM),
   };
@@ -344,6 +380,8 @@ export function mapRagasRunSummary(r: Row): RagasRunSummary {
     error_msg: run.error_msg,
     started_dt: run.started_dt,
     ended_dt: run.ended_dt,
+    first_started_dt: run.first_started_dt,
+    first_ended_dt: run.first_ended_dt,
     created_dt: run.created_dt,
   };
 }
@@ -373,6 +411,10 @@ export function mapRagasResult(r: Row): RagasResultRow {
     // Also null when the endpoint did not stream this call: no first token, so
     // nothing to time. Absent entirely until the migration runs.
     ttft_ms: num(r.TTFT_MS),
+    // 사람이 손으로 통과시킨 케이스. exact_match 는 채점이 내린 판정 그대로 남아
+    // 있어서, 무엇이 걸렸던 건지는 펼쳐 보면 여전히 읽을 수 있다.
+    passed: str(r.PASS_YN) === "Y",
+    passed_dt: str(r.PASS_TM),
   };
 }
 

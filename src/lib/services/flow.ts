@@ -1,7 +1,7 @@
 import { readConn, withConn } from "@/lib/db";
 import type { OracleConnection, OracleModule } from "@/lib/db";
 import { ApiError, badRequest, errorText, notFound } from "@/lib/http";
-import { METRIC_COLS, RUN_COLS, insertReturningId, mapRagasRun } from "@/lib/db/rows";
+import { METRIC_COLS, effectiveExactExpr, insertReturningId, mapRagasRun, runCols } from "@/lib/db/rows";
 import { hasColumn } from "@/lib/db/optionalColumn";
 import { ALL_METRICS, DIRECT_SINK_NM, EXACT_MATCH, PICKED_CASES, SYSTEM_USER } from "@/lib/types";
 import type {
@@ -88,7 +88,7 @@ async function runModels(
 }
 
 async function fetchRun(conn: OracleConnection, runId: number): Promise<RagasRunOut | null> {
-  const res = await conn.execute(`SELECT ${RUN_COLS} FROM PTX_RUN_MAS WHERE RUN_ID = :id`, { id: runId });
+  const res = await conn.execute(`SELECT ${await runCols(conn)} FROM PTX_RUN_MAS WHERE RUN_ID = :id`, { id: runId });
   const rows = (res.rows ?? []) as Record<string, unknown>[];
   return rows.length ? mapRagasRun(rows[0]) : null;
 }
@@ -215,11 +215,14 @@ async function mismatchCaseIds(conn: OracleConnection, datasetId: number, runIds
     binds[`r${i}`] = id;
     return `:r${i}`;
   });
+  // 사람이 통과시킨 케이스는 빠진다 — 손으로 맞다고 판단해 둔 것을 다시 돌려
+  // 또 불일치로 만들면, 그 판단이 매번 없던 일이 된다.
+  const exact = await effectiveExactExpr(conn, "r.");
   const res = await conn.execute(
     `SELECT DISTINCT r.CASE_ID
        FROM PTX_RUN_DET r
        JOIN PTX_DATASET_DET c ON c.CASE_ID = r.CASE_ID AND c.DATASET_ID = :did
-      WHERE r.RUN_ID IN (${names.join(", ")}) AND r.EXACT_VAL = 0`,
+      WHERE r.RUN_ID IN (${names.join(", ")}) AND ${exact} = 0`,
     binds,
   );
   const ids = ((res.rows ?? []) as Record<string, unknown>[]).map((r) => Number(r.CASE_ID));
@@ -826,10 +829,15 @@ async function setupRun(
   //
   // 엔드포인트도 여기서 찍는다. 행이 만들어질 때(PENDING)는 아직 어디로 보낼지
   // 정해지지 않았고 — 그건 실행을 시작하는 쪽이 고른다 — 이 시점에는 정해져 있다.
+  // FIRST_START_TM 은 비어 있을 때만 채운다 — 처음 돌 때 한 번 찍히고, 재실행은
+  // START_TM 만 다시 찍는다. 컬럼이 없는 DB 에서는 이 절이 빠지고 예전과 같이 돈다.
+  const firstTm = (await hasColumn(conn, "PTX_RUN_MAS", "FIRST_START_TM"))
+    ? ", FIRST_START_TM = NVL(FIRST_START_TM, SYSTIMESTAMP)"
+    : "";
   await conn.execute(
     `UPDATE PTX_RUN_MAS
         SET STATUS_CD = 'RUNNING', START_TM = SYSTIMESTAMP,
-            ENDPOINT_NM = :enm, ENDPOINT_URL = :eurl${score ? ", ENGINE_CD = :eng" : ""}
+            ENDPOINT_NM = :enm, ENDPOINT_URL = :eurl${score ? ", ENGINE_CD = :eng" : ""}${firstTm}
       WHERE RUN_ID = :id`,
     score
       ? { enm: endpointNm, eurl: endpointUrl ?? baseUrl, eng: llm.length ? engine : EXACT_ENGINE, id: runId }
@@ -1089,8 +1097,11 @@ async function finalize(conn: OracleConnection, ctx: RunCtx, emit: Emit): Promis
   // 실행 단위 점수는 이 실행의 결과 행 전체에서 낸다. 방금 돌린 케이스만 세면
   // 제자리 재실행에서 남겨 둔 케이스가 통째로 빠진 점수가 기록에 남는다 — 24건짜리
   // 실행을 3건만 다시 돌리고 나면 그 3건의 평균이 실행 점수가 되어 버린다.
+  const exactExpr = await effectiveExactExpr(conn);
   const avgRes = await conn.execute(
-    `SELECT ${ALL_METRICS.map((m) => `AVG(${METRIC_COLS[m]}) AS ${METRIC_COLS[m]}`).join(", ")}
+    `SELECT ${ALL_METRICS.map((m) =>
+      `AVG(${METRIC_COLS[m] === "EXACT_VAL" ? exactExpr : METRIC_COLS[m]}) AS ${METRIC_COLS[m]}`,
+    ).join(", ")}
        FROM PTX_RUN_DET WHERE RUN_ID = :id`,
     { id: ctx.runId },
   );
@@ -1105,8 +1116,11 @@ async function finalize(conn: OracleConnection, ctx: RunCtx, emit: Emit): Promis
     binds[m] = a;
     summary[m] = a;
   }
+  const firstEnd = (await hasColumn(conn, "PTX_RUN_MAS", "FIRST_END_TM"))
+    ? ", FIRST_END_TM = NVL(FIRST_END_TM, SYSTIMESTAMP)"
+    : "";
   await conn.execute(
-    `UPDATE PTX_RUN_MAS SET STATUS_CD = 'DONE', END_TM = SYSTIMESTAMP, ${sets.join(", ")} WHERE RUN_ID = :id`,
+    `UPDATE PTX_RUN_MAS SET STATUS_CD = 'DONE', END_TM = SYSTIMESTAMP${firstEnd}, ${sets.join(", ")} WHERE RUN_ID = :id`,
     binds,
   );
   await conn.commit();

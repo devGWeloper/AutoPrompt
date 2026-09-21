@@ -1,9 +1,11 @@
 import { readConn, withConn } from "@/lib/db";
 import type { OracleConnection } from "@/lib/db";
-import { conflict, notFound } from "@/lib/http";
+import { badRequest, conflict, notFound } from "@/lib/http";
+import { hasColumn } from "@/lib/db/optionalColumn";
 import {
   resultCols,
-  RUN_COLS,
+  effectiveExactExpr,
+  runCols,
   mapRagasResult,
   mapRagasRun,
   mapRagasRunSummary,
@@ -196,7 +198,7 @@ export async function resolvePromptLabels(
 
 export async function listRuns(): Promise<RagasRunSummary[]> {
   return readConn(async (conn) => {
-    // Scalar subqueries (not joins) so RUN_COLS' bare column names stay unambiguous.
+    // Scalar subqueries (not joins) so the run's bare column names stay unambiguous.
     // FIRST_QUESTION labels direct calls in the list (their run has no node/dataset
     // identity) and feeds the client-side search; 200 chars is plenty for both.
     // CASE_CNT 은 제목의 '5건' — 데이터셋 이름만으로는 폴더 하나만 돌린 실행과
@@ -206,7 +208,7 @@ export async function listRuns(): Promise<RagasRunSummary[]> {
     // 스냅샷으로 찍히는 값이 아니라 지금의 데이터셋에서 읽어 오므로, 설명을 고치면
     // 지난 기록의 설명도 같이 바뀌고 데이터셋이 지워지면 비어 있다.
     const res = await conn.execute(
-      `SELECT ${RUN_COLS},
+      `SELECT ${await runCols(conn)},
               (SELECT DBMS_LOB.SUBSTR(x.QUESTION_CTN, 200, 1) FROM PTX_RUN_DET x
                 WHERE x.RESULT_ID =
                       (SELECT MIN(y.RESULT_ID) FROM PTX_RUN_DET y
@@ -235,7 +237,7 @@ export async function listRuns(): Promise<RagasRunSummary[]> {
 
 export async function getRunDetail(runId: number): Promise<RagasRunDetail> {
   const detail = await readConn(async (conn) => {
-    const runRes = await conn.execute(`SELECT ${RUN_COLS} FROM PTX_RUN_MAS WHERE RUN_ID = :id`, { id: runId });
+    const runRes = await conn.execute(`SELECT ${await runCols(conn)} FROM PTX_RUN_MAS WHERE RUN_ID = :id`, { id: runId });
     const runRows = (runRes.rows ?? []) as Record<string, unknown>[];
     if (runRows.length === 0) return null;
     const run = mapRagasRun(runRows[0]);
@@ -291,5 +293,58 @@ export async function deleteRun(runId: number): Promise<void> {
       after: null,
       createdBy: SYSTEM_USER,
     });
+  }, { commit: true });
+}
+
+/**
+ * 케이스 한 건을 사람이 손으로 통과시키거나, 그 처리를 되돌린다.
+ *
+ * 채점 결과(EXACT_VAL)는 건드리지 않는다 — 원래 무엇이 걸렸던 건지가 남아야
+ * 정답지를 고칠지 판단할 수 있다. 대신 PASS_YN 을 세우고, 실행 단위 '정답 일치'
+ * 를 사람의 판단까지 반영해 다시 낸다(불일치 재실행 대상도 같은 식을 쓴다).
+ *
+ * 끝난 실행에서만 된다. 돌아가는 중인 실행은 이 행을 곧 지우고 다시 쓸 수 있어,
+ * 방금 누른 통과가 소리 없이 사라진다.
+ */
+export async function setResultPass(
+  runId: number,
+  resultId: number,
+  pass: boolean,
+): Promise<{ passed: boolean; exact_match: number | null }> {
+  return withConn(async (conn) => {
+    if (!(await hasColumn(conn, "PTX_RUN_DET", "PASS_YN"))) {
+      throw badRequest("이 DB 에는 수동 통과 컬럼이 없습니다 — sql/migrate_run_det_pass.sql 을 적용하세요");
+    }
+    const runRes = await conn.execute(`SELECT STATUS_CD FROM PTX_RUN_MAS WHERE RUN_ID = :id`, { id: runId });
+    const runRow = ((runRes.rows ?? []) as Record<string, unknown>[])[0];
+    if (!runRow) throw notFound("ragas run not found");
+    const status = String(runRow.STATUS_CD);
+    if (status === "RUNNING" || status === "PENDING" || status === "CANCELLING") {
+      throw badRequest("아직 끝나지 않은 실행입니다");
+    }
+    const upd = await conn.execute(
+      `UPDATE PTX_RUN_DET
+          SET PASS_YN = :yn, PASS_TM = ${pass ? "SYSTIMESTAMP" : "NULL"}
+        WHERE RESULT_ID = :rid AND RUN_ID = :runId`,
+      { yn: pass ? "Y" : null, rid: resultId, runId },
+    );
+    if (!upd.rowsAffected) throw notFound("result not found");
+
+    // 실행 단위 '정답 일치' 를 다시 낸다 — 통과 한 건이 늘면 기록의 점수도 같이
+    // 움직여야 목록과 상세가 서로 다른 말을 하지 않는다.
+    const exact = await effectiveExactExpr(conn);
+    await conn.execute(
+      `UPDATE PTX_RUN_MAS
+          SET EXACT_VAL = (SELECT AVG(${exact}) FROM PTX_RUN_DET WHERE RUN_ID = :id)
+        WHERE RUN_ID = :id`,
+      { id: runId },
+    );
+    const after = await conn.execute(
+      `SELECT EXACT_VAL FROM PTX_RUN_MAS WHERE RUN_ID = :id`,
+      { id: runId },
+    );
+    const row = ((after.rows ?? []) as Record<string, unknown>[])[0] ?? {};
+    const v = row.EXACT_VAL;
+    return { passed: pass, exact_match: v == null ? null : Number(v) };
   }, { commit: true });
 }

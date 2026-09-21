@@ -183,9 +183,22 @@ export default function LastRunPreview({ kind }: { kind: Kind }) {
                     detailB={detailB}
                     defaultAllOpen={false}
                     picking={head.is_manual ? undefined : picking}
+                    onPassChanged={() => {
+                      api.get<RagasRunDetail>(`/ragas-runs/${detailA.ragas_run_id}`).then(setDetailA).catch(() => {});
+                      api.get<RagasRunDetail>(`/ragas-runs/${detailB.ragas_run_id}`).then(setDetailB).catch(() => {});
+                    }}
                   />
                 ) : (
-                  <CaseTable detail={detailA} defaultAllOpen={false} picking={head.is_manual ? undefined : picking} />
+                  <CaseTable
+                    detail={detailA}
+                    defaultAllOpen={false}
+                    picking={head.is_manual ? undefined : picking}
+                    onPassChanged={() =>
+                      api.get<RagasRunDetail>(`/ragas-runs/${detailA.ragas_run_id}`)
+                        .then(setDetailA)
+                        .catch(() => {})
+                    }
+                  />
                 )}
               </div>
             )}

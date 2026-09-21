@@ -13,7 +13,11 @@ export const SINGLE_ATTACH_EVENT = 'ptx:single-attach';
 export const COMPARE_ATTACH_EVENT = 'ptx:compare-attach';
 
 function mismatchIds(d: RagasRunDetail | null | undefined): number[] {
-  return (d?.results ?? []).filter((r) => r.exact_match === 0 && r.case_id != null).map((r) => r.case_id!);
+  // 사람이 통과시킨 케이스는 세지 않는다 — 서버가 재실행 대상을 고를 때 쓰는
+  // 규칙과 같아야 버튼의 수와 실제로 도는 건수가 어긋나지 않는다.
+  return (d?.results ?? [])
+    .filter((r) => r.exact_match === 0 && !r.passed && r.case_id != null)
+    .map((r) => r.case_id!);
 }
 
 /** 불일치 cases a re-test would cover. With two runs, either side's — the same

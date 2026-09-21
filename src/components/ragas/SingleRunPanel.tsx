@@ -683,7 +683,7 @@ export default function SingleRunPanel() {
                 </div>
                 <div className="p-4">
                   <div className="overflow-hidden rounded-sm border border-line bg-surface">
-                    <CaseTable detail={detail} picking={rerunPick} />
+                    <CaseTable detail={detail} picking={rerunPick} onPassChanged={() => void settle(detail.ragas_run_id)} />
                   </div>
                 </div>
               </Card>

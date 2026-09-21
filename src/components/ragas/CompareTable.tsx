@@ -14,7 +14,7 @@ import {
 import {
   AnswerBox, caseMean, Chevron, CollapseAllStrip, CopyButton, DisclosureHeader, ElapsedTag, fmt3, fmtElapsed,
   PickAll, PickCheck, type Picking,
-  compareSideLabel, OxBadge, PendingHint, AnswerPreview, TraceValueBox,
+  compareSideLabel, OxBadge, PassButton, PendingHint, AnswerPreview, TraceValueBox,
 } from './shared';
 import {
   canCompareFields, DiffAgainst, FieldCompareTable, FieldDiffLine, PaneLabel, ValuePanel, valueFields, ViewToggle,
@@ -376,6 +376,7 @@ export function CaseCompareTable({
   scored,
   defaultAllOpen = false,
   picking,
+  onPassChanged,
 }: {
   detailA: RagasRunDetail;
   detailB: RagasRunDetail;
@@ -389,6 +390,8 @@ export function CaseCompareTable({
   defaultAllOpen?: boolean;
   /** 있으면 케이스마다 고르기 상자가 선다 — 고른 케이스로 A·B 를 함께 재테스트. */
   picking?: Picking;
+  /** 수동 통과 처리가 끝난 뒤 — 실행 단위 점수도 움직이므로 부모가 다시 읽는다. */
+  onPassChanged?: () => void;
 }) {
   const byA = new Map(detailA.results.map((r) => [r.case_id, r] as const));
   const byB = new Map(detailB.results.map((r) => [r.case_id, r] as const));
@@ -411,6 +414,11 @@ export function CaseCompareTable({
   // 실제로 무엇이 뜨는지 보고 그만큼만 잡아, 줄들은 정렬된 채로 오른쪽 끝까지 쓴다.
   const anyMean = showScores && ids.some((cid) => caseMean(byA.get(cid)) != null || caseMean(byB.get(cid)) != null);
   const railW = anyMean ? 'w-[248px]' : 'w-[180px]';
+  // 방금 뒤집은 통과 상태 — 부모가 다시 읽어 오기 전에도 그 줄은 즉시 바뀐다.
+  const [passOverride, setPassOverride] = useState<Map<number, boolean>>(new Map());
+  const passedOf = (r: RagasResultRow | undefined) =>
+    r ? (passOverride.get(r.ragas_result_id) ?? r.passed) : false;
+
   const keys = ids.map((cid) => String(cid));
   const [opened, setOpened] = useState<Set<string>>(() =>
     defaultAllOpen ? new Set(keys) : new Set()
@@ -502,10 +510,33 @@ export function CaseCompareTable({
                   <ElapsedPair a={a} b={b} />
                   {showScores && (
                     <>
-                      {(a?.exact_match != null || b?.exact_match != null) && (
+                      {(a?.exact_match != null || b?.exact_match != null || passedOf(a) || passedOf(b)) && (
                         <div className="flex items-center gap-1.5 whitespace-nowrap text-[10px] font-semibold text-muted">
-                          A <OxBadge value={a?.exact_match ?? null} />
-                          B <OxBadge value={b?.exact_match ?? null} />
+                          A <OxBadge value={a?.exact_match ?? null} passed={passedOf(a)} />
+                          B <OxBadge value={b?.exact_match ?? null} passed={passedOf(b)} />
+                        </div>
+                      )}
+                      {/* 통과 처리는 사이드마다 따로 한다 — A 는 맞다고 보고 B 는
+                          아니라고 보는 경우가 이 화면의 본체다. */}
+                      {/* 스트리밍 중인 표에는 실행 id 가 없다 — 기록으로 남은 뒤에만 선다. */}
+                      {settled && detailA.ragas_run_id != null && detailB.ragas_run_id != null && (
+                        <div className="flex items-center gap-1 whitespace-nowrap">
+                          {([['A', a, detailA], ['B', b, detailB]] as const).map(([side, row, det]) =>
+                            row && (row.exact_match === 0 || passedOf(row)) ? (
+                              <span key={side} className="flex items-center gap-0.5">
+                                <span className="text-[10px] font-semibold text-muted">{side}</span>
+                                <PassButton
+                                  runId={det.ragas_run_id}
+                                  resultId={row.ragas_result_id}
+                                  passed={passedOf(row)}
+                                  onDone={(next) => {
+                                    setPassOverride((cur) => new Map(cur).set(row.ragas_result_id, next));
+                                    onPassChanged?.();
+                                  }}
+                                />
+                              </span>
+                            ) : null,
+                          )}
                         </div>
                       )}
                       {(aMean != null || bMean != null) && (

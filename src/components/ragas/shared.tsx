@@ -1,6 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback, useEffect, useRef, useState,
+  type MouseEvent as ReactMouseEvent, type ReactNode,
+} from 'react';
 import { Select } from '@/components/ui/Field';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -51,20 +54,64 @@ export function fmtDt(iso: string): string {
   return d.startsWith(`${now.getFullYear()}-`) ? `${d.slice(5)} ${hm}` : `${d} ${hm}`;
 }
 
-/** 시작 · 종료 시각이 달린 실행. */
-type Timed = { started_dt: string | null; ended_dt: string | null } | null | undefined;
+/** 시작 · 종료 시각이 달린 실행. `first_*` 는 이 실행이 처음 돌았을 때의 구간으로,
+ * 재실행이 덮지 않는다 — 마이그레이션 전 DB 와 옛 행에서는 없다. */
+type Timed =
+  | {
+      started_dt: string | null;
+      ended_dt: string | null;
+      first_started_dt?: string | null;
+      first_ended_dt?: string | null;
+    }
+  | null
+  | undefined;
+
+const tsAt = (v: string | null | undefined) => (v ? Date.parse(v.replace(' ', 'T')) : NaN);
 
 /** 실행이 시작해서 끝나기까지(ms). 끝나지 않았거나 시각이 없으면 null.
  * A/B 는 두 실행이 함께 돌므로 먼저 시작한 쪽부터 나중에 끝난 쪽까지 — 두 실행의
  * 합이 아니라 기다린 시간이다. */
 export function runSpanMs(...runs: Timed[]): number | null {
+  return spanOf(runs, (r) => r?.started_dt, (r) => r?.ended_dt);
+}
+
+/** 이 실행이 **처음** 돌았을 때의 소요(ms). 재실행한 적이 없거나 컬럼이 없는 DB 면 null. */
+export function runFirstSpanMs(...runs: Timed[]): number | null {
+  return spanOf(runs, (r) => r?.first_started_dt, (r) => r?.first_ended_dt);
+}
+
+function spanOf(
+  runs: Timed[],
+  start: (r: Timed) => string | null | undefined,
+  end: (r: Timed) => string | null | undefined,
+): number | null {
   if (!runs.length) return null;
-  const at = (v: string | null | undefined) => (v ? Date.parse(v.replace(' ', 'T')) : NaN);
-  const starts = runs.map((r) => at(r?.started_dt));
-  const ends = runs.map((r) => at(r?.ended_dt));
+  const starts = runs.map((r) => tsAt(start(r)));
+  const ends = runs.map((r) => tsAt(end(r)));
   if ([...starts, ...ends].some(Number.isNaN)) return null;
   const ms = Math.max(...ends) - Math.min(...starts);
   return ms >= 0 ? ms : null;
+}
+
+/**
+ * 이 실행이 재실행을 거쳤나 — 최초 시작이 마지막 시작과 다르면.
+ *
+ * 두 값이 같으면 처음 돌고 그대로인 실행이라, 화면에 '최초' 와 '재실행' 을 나눠
+ * 적을 이유가 없다(같은 사실을 두 줄로 적게 된다).
+ */
+export function wasRerun(...runs: Timed[]): boolean {
+  return runs.some((r) => {
+    const first = tsAt(r?.first_started_dt);
+    const last = tsAt(r?.started_dt);
+    return !Number.isNaN(first) && !Number.isNaN(last) && last - first > 1000;
+  });
+}
+
+/** 최초 실행 시각 — 툴팁과 '최초' 줄에 적는다. */
+function firstStartedText(runs: Timed[]): string | null {
+  const at = runs.map((r) => r?.first_started_dt).filter(Boolean) as string[];
+  if (!at.length) return null;
+  return fmtDt(at.sort()[0]);
 }
 
 /** 실행 전체 소요시간 표기 — 케이스 한 건(`fmtElapsed`)과 같은 단위로, 초 · 소수점
@@ -74,27 +121,38 @@ export function fmtDuration(ms: number): string {
   return `${(ms / 1000).toFixed(2)}초`;
 }
 
-/** 목록 칸에 그대로 넣는 글자 — 잴 수 없으면 null. */
-export function runDurationText(...runs: Timed[]): string | null {
-  const ms = runSpanMs(...runs);
-  return ms == null ? null : fmtDuration(ms);
-}
-
-/** 결과 카드 머리줄의 '전체 소요'. 케이스마다의 시간은 각 줄에 있고, 이것은 실행
- * 한 번을 통째로 기다린 시간이다. */
+/**
+ * 결과 카드 머리줄의 '전체 소요'. 케이스마다의 시간은 각 줄에 있고, 이것은 실행
+ * 한 번을 통째로 기다린 시간이다.
+ *
+ * 재실행을 거친 실행은 두 사실이 다 남는다: 위가 방금 돌린 구간, 아래가 처음
+ * 돌렸을 때. 위만 적으면 불일치 3건을 다시 돌린 12초가 24건짜리 실행의 소요인
+ * 것처럼 읽히고, 아래만 적으면 방금 무엇을 했는지가 사라진다.
+ */
 export function RunDurationTag({ runs, className }: { runs: Timed[]; className?: string }) {
   const ms = runSpanMs(...runs);
   if (ms === null) return null;
   const min = fmtMinutes(ms);
+  const rerun = wasRerun(...runs);
+  const firstMs = rerun ? runFirstSpanMs(...runs) : null;
+  const firstAt = rerun ? firstStartedText(runs) : null;
   return (
     <span
       className={cn('inline-flex flex-col items-end whitespace-nowrap leading-tight text-muted', className)}
-      title="실행 시작 → 종료"
+      title={rerun ? '위: 마지막 재실행 구간 · 아래: 최초 실행 구간' : '실행 시작 → 종료'}
     >
       <span>
-        전체 소요 <span className="font-mono font-semibold tabular-nums text-ink">{fmtDuration(ms)}</span>
+        {rerun ? '재실행 소요' : '전체 소요'}{' '}
+        <span className="font-mono font-semibold tabular-nums text-ink">{fmtDuration(ms)}</span>
       </span>
       {min && <span className="font-mono text-[10.5px] tabular-nums text-muted-soft">{min}</span>}
+      {rerun && (firstMs !== null || firstAt) && (
+        <span className="font-mono text-[10.5px] tabular-nums text-muted-soft">
+          최초 {firstMs !== null ? fmtDuration(firstMs) : ''}
+          {firstMs !== null && firstAt ? ' · ' : ''}
+          {firstAt ?? ''}
+        </span>
+      )}
     </span>
   );
 }
@@ -110,15 +168,33 @@ export function fmtMinutes(ms: number): string | null {
   return h > 0 ? `${h}시간 ${m}분 ${s}초` : `${m}분 ${s}초`;
 }
 
-/** 목록 칸의 소요시간 — 초, 그리고 필요하면 그 아래 분. */
+/** 목록 칸의 소요시간 — 초, 그리고 그 아래 분(60초 이상) 또는 최초 실행 소요
+ * (재실행을 거친 실행). 좁은 칸이라 둘 중 하나만 서고, 전부는 툴팁에 있다. */
 export function RunDurationStack({ runs }: { runs: Timed[] }) {
   const ms = runSpanMs(...runs);
   if (ms === null) return <span className="text-muted">—</span>;
+  const rerun = wasRerun(...runs);
+  const firstMs = rerun ? runFirstSpanMs(...runs) : null;
   const min = fmtMinutes(ms);
+  const firstAt = firstStartedText(runs);
   return (
-    <span className="flex flex-col leading-tight">
+    <span
+      className="flex flex-col leading-tight"
+      title={
+        rerun
+          ? [
+              `최초 ${firstAt ?? ''}${firstMs !== null ? ` · ${fmtDuration(firstMs)}` : ''}`,
+              `마지막 재실행 ${fmtDuration(ms)}`,
+            ].join('\n')
+          : undefined
+      }
+    >
       <span>{fmtDuration(ms)}</span>
-      {min && <span className="text-[10.5px] text-muted-soft">{min}</span>}
+      {rerun && firstMs !== null ? (
+        <span className="text-[10.5px] text-muted-soft">최초 {fmtDuration(firstMs)}</span>
+      ) : (
+        min && <span className="text-[10.5px] text-muted-soft">{min}</span>
+      )}
     </span>
   );
 }
@@ -1112,9 +1188,9 @@ export function CollapseAllStrip({
  * '일치'와 '불일치'는 글자 수가 달라, 줄마다 알약 너비가 달라지면 여러 줄이 쌓인
  * 목록에서 그 자리가 통째로 흔들린다. 케이스 판정은 최소 너비를 잡고 가운데로
  * 세워 어느 줄에서든 같은 폭을 차지하게 한다(비율 배지는 자릿수가 스스로 정한다). */
-export function OxBadge({ value, rate }: { value: number | null; rate?: boolean }) {
-  if (value == null) return <span className="text-[11px] text-muted">—</span>;
-  const ok = rate ? value >= 1 : value >= 0.5;
+export function OxBadge({ value, rate, passed }: { value: number | null; rate?: boolean; passed?: boolean }) {
+  if (value == null && !passed) return <span className="text-[11px] text-muted">—</span>;
+  const ok = passed || (rate ? (value ?? 0) >= 1 : (value ?? 0) >= 0.5);
   return (
     <span
       className={cn(
@@ -1122,9 +1198,65 @@ export function OxBadge({ value, rate }: { value: number | null; rate?: boolean 
         rate ? '' : 'min-w-[52px] justify-center',
         ok ? 'border-ok-line bg-ok-soft text-ok' : 'border-bad-line bg-bad-soft text-bad',
       )}
+      // 사람이 통과시킨 줄은 테두리가 점선이다 — 같은 '일치'라도 채점이 낸 것과
+      // 사람이 낸 것을 한눈에 가를 수 있어야 실행 점수를 읽을 때 오해가 없다.
+      style={passed ? { borderStyle: 'dashed' } : undefined}
+      title={passed ? '사람이 통과시킨 케이스 — 채점은 불일치였습니다' : undefined}
     >
-      {rate ? `${Math.round(value * 100)}% 일치` : ok ? '일치' : '불일치'}
+      {rate ? `${Math.round((value ?? 0) * 100)}% 일치` : passed ? '일치 (수동)' : ok ? '일치' : '불일치'}
     </span>
+  );
+}
+
+/**
+ * 불일치로 떨어진 케이스를 사람이 손으로 통과시키는 단추 — 그리고 되돌리기.
+ *
+ * 표현만 다르거나 정답지 쪽이 낡아 불일치가 난 경우가 있고, 그걸 매번 다시 돌려
+ * 봐야 같은 결과다. 채점 결과는 그대로 두고 통과 표시만 세우므로, 펼쳐 보면
+ * 원래 무엇이 걸렸던 건지는 그대로 읽힌다.
+ *
+ * 줄 전체가 펼치기 단추라서 클릭이 위로 새지 않게 막는다 — PickCheck 과 같은 이유.
+ */
+export function PassButton({
+  runId, resultId, passed, disabled, onDone,
+}: {
+  runId: number;
+  resultId: number;
+  passed: boolean;
+  disabled?: boolean;
+  onDone: (passed: boolean) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  async function toggle(e: ReactMouseEvent) {
+    e.stopPropagation();
+    setBusy(true);
+    setErr(null);
+    try {
+      await api.put(`/ragas-runs/${runId}/results/${resultId}/pass`, { pass: !passed });
+      onDone(!passed);
+    } catch (x) {
+      setErr(errText(x));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <button
+      type="button"
+      disabled={busy || disabled}
+      onClick={toggle}
+      onKeyDown={(e) => e.stopPropagation()}
+      title={err ?? (passed ? '통과 처리를 되돌립니다 — 다시 불일치로 셉니다' : '이 케이스를 일치로 처리합니다 — 채점 결과는 그대로 남습니다')}
+      className={cn(
+        'whitespace-nowrap rounded-sm border px-1.5 py-px text-[10.5px] font-medium transition-colors disabled:opacity-50',
+        err
+          ? 'border-bad-line bg-bad-soft text-bad'
+          : 'border-line text-muted hover:border-muted-soft hover:bg-surface-2 hover:text-ink',
+      )}
+    >
+      {busy ? '…' : err ? '실패' : passed ? '통과 해제' : '일치 처리'}
+    </button>
   );
 }
 
@@ -1267,14 +1399,17 @@ export function ScoreBars({
 // the question (plus its average score when collapsed); the body holds ground
 // truth, answer, and the per-metric score bars.
 export function CaseTable({
-  detail, bordered, scored, defaultAllOpen = false, picking,
+  detail, bordered, scored, defaultAllOpen = false, picking, onPassChanged,
 }: {
   detail: RagasRunDetail;
   bordered?: boolean;
   scored?: boolean;
   defaultAllOpen?: boolean;
-  /** 있으면 케이스마다 고르기 상자가 선다 — 고른 케이스만 재테스트. */
+  /** 있으면 케이스마다 고르기 상자가 선다 — 고른 케이스만 재실행. */
   picking?: Picking;
+  /** 수동 통과 처리가 끝난 뒤. 실행 단위 점수도 같이 움직이므로, 위쪽 요약까지
+   * 맞추려면 부모가 이걸 받아 다시 읽어 온다. 줄 자체는 이 표가 바로 뒤집는다. */
+  onPassChanged?: () => void;
 }) {
   // A cancelled run keeps whatever it scored before the stop, so its cases are
   // shown with scores like any other run — the ones that never got there say so.
@@ -1298,6 +1433,10 @@ export function CaseTable({
   const allClosed = opened.size === 0;
   const toggle = (id: number) =>
     setOpened((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  // 방금 뒤집은 통과 상태. 부모가 다시 읽어 오기 전에도 그 줄은 즉시 바뀐다 —
+  // 눌렀는데 아무 일도 없어 보이면 한 번 더 누르게 된다.
+  const [passOverride, setPassOverride] = useState<Map<number, boolean>>(new Map());
+  const isPassed = (r: RagasResultRow) => passOverride.get(r.ragas_result_id) ?? r.passed;
   const list = (
     <div className="divide-y divide-line">
       {ids.length > 1 && (
@@ -1358,7 +1497,9 @@ export function CaseTable({
                     {/* O/X and the RAGAS mean stand on their own — a verdict and a
                         graded score answer different questions, so neither is
                         folded into the other. Both can be present at once. */}
-                    {r.exact_match != null && <OxBadge value={r.exact_match} />}
+                    {(r.exact_match != null || isPassed(r)) && (
+                      <OxBadge value={r.exact_match} passed={isPassed(r)} />
+                    )}
                     {mean != null && (
                       <span className="font-mono text-xs tabular-nums text-muted">
                         RAGAS <span className="font-semibold text-ink">{fmt3(mean)}</span>
@@ -1376,6 +1517,22 @@ export function CaseTable({
                       글자가 한 자씩 세로로 감겼다. */}
                   {(r.exact_match != null || mean != null) && r.answer != null && r.error_msg && (
                     <span className="whitespace-nowrap text-[11px] leading-none text-bad" title={r.error_msg}>일부 실패</span>
+                  )}
+                  {/* 통과 처리 단추는 판정 배지 아래 제 줄에 선다 — 배지 옆에 두면
+                      좁은 점수 칸에서 둘 다 찌그러진다. 채점이 불일치를 낸 줄과
+                      이미 통과시킨 줄에만 서고, 끝난 실행에서만 누를 수 있다. */}
+                  {/* 기록으로 남은 실행에서만. 스트리밍 중인 표는 아직 기록이 아니라
+                      실행 id 자체가 없어서, 누를 곳이 없는 단추가 된다. */}
+                  {settled && detail.ragas_run_id != null && (r.exact_match === 0 || isPassed(r)) && (
+                    <PassButton
+                      runId={detail.ragas_run_id}
+                      resultId={r.ragas_result_id}
+                      passed={isPassed(r)}
+                      onDone={(next) => {
+                        setPassOverride((cur) => new Map(cur).set(r.ragas_result_id, next));
+                        onPassChanged?.();
+                      }}
+                    />
                   )}
                 </span>
               )}

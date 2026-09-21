@@ -807,10 +807,11 @@ function AbCompareView({ aId, bId, manual }: { aId: number; bId: number; manual?
   const [a, setA] = useState<RagasRunDetail | null>(null);
   const [b, setB] = useState<RagasRunDetail | null>(null);
   const picking = usePickedCases(aId);
-  useEffect(() => {
+  const loadPair = useCallback(() => {
     api.get<RagasRunDetail>(`/ragas-runs/${aId}`).then(setA).catch(() => setA(null));
     api.get<RagasRunDetail>(`/ragas-runs/${bId}`).then(setB).catch(() => setB(null));
   }, [aId, bId]);
+  useEffect(loadPair, [loadPair]);
   if (!a || !b) return <div className="p-4 text-xs text-muted">불러오는 중…</div>;
   return (
     <div className="space-y-4">
@@ -834,7 +835,7 @@ function AbCompareView({ aId, bId, manual }: { aId: number; bId: number; manual?
           </span>
         </div>
         <div className="p-4">
-          <CaseCompareTable detailA={a} detailB={b} defaultAllOpen={false} picking={manual ? undefined : picking} />
+          <CaseCompareTable detailA={a} detailB={b} defaultAllOpen={false} picking={manual ? undefined : picking} onPassChanged={loadPair} />
         </div>
       </div>
     </div>
@@ -851,7 +852,10 @@ function RagasRunDetailView({ ragasId, manual }: { ragasId: number; manual?: boo
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState<string | null>(null);
   const picking = usePickedCases(ragasId);
-  useEffect(() => { setAdded(null); api.get<RagasRunDetail>(`/ragas-runs/${ragasId}`).then(setDetail).catch(() => setDetail(null)); }, [ragasId]);
+  const load = useCallback(() => {
+    api.get<RagasRunDetail>(`/ragas-runs/${ragasId}`).then(setDetail).catch(() => setDetail(null));
+  }, [ragasId]);
+  useEffect(() => { setAdded(null); load(); }, [ragasId, load]);
   if (!detail) return <div className="p-4 text-xs text-muted">불러오는 중…</div>;
 
   const verLabel = detail.version_no != null ? `v${detail.version_no}` : (detail.prompt_id ? `ID ${detail.prompt_id}` : runTargetLabel(detail));
@@ -904,7 +908,9 @@ function RagasRunDetailView({ ragasId, manual }: { ragasId: number; manual?: boo
           </div>
         )}
         <div className="p-4">
-          <CaseTable detail={detail} defaultAllOpen={false} picking={manual ? undefined : picking} />
+          {/* 통과 처리는 실행 단위 '정답 일치'까지 움직이므로, 위의 요약과 점수가
+               줄과 다른 말을 하지 않도록 기록을 다시 읽는다. */}
+          <CaseTable detail={detail} defaultAllOpen={false} picking={manual ? undefined : picking} onPassChanged={load} />
         </div>
       </div>
       {adding && (
