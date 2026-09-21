@@ -95,24 +95,37 @@ function FieldsEditor({
           />
         </div>
       </div>
-      <div>
-        <div className="mb-1 flex items-center gap-2">
-          <span className="eyebrow">폴더</span>
+      {/* 목적은 폴더와 같은 줄에 선다 — 둘 다 케이스가 '무엇인지' 를 말하는 꼬리표라,
+          질문·정답 아래 한 단 내려와 나란히 앉는 편이 읽는 순서에 맞는다. */}
+      <div className="flex flex-wrap items-end gap-2.5">
+        <div className="min-w-0 flex-1">
+          <label className={LABEL}>목적</label>
+          <Input
+            value={value.criteria}
+            onChange={(e) => set({ criteria: e.target.value })}
+            placeholder="이 케이스로 무엇을 확인하나"
+            className="h-9 w-full text-sm"
+          />
         </div>
-        <Select
-          value={value.category}
-          onChange={(e) => set({ category: e.target.value })}
-          className="h-9 w-48 text-sm"
-        >
-          <option value="">폴더 없음</option>
-          {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-          {/* A category dropped from the registry after cases were filed under it
-              stays selectable here, so saving such a case does not silently
-              re-file it under whatever option happens to come first. */}
-          {value.category !== '' && !categories.includes(value.category) && (
-            <option value={value.category}>{value.category} (목록에 없음)</option>
-          )}
-        </Select>
+        <div>
+          <div className="mb-1 flex items-center gap-2">
+            <span className="eyebrow">폴더</span>
+          </div>
+          <Select
+            value={value.category}
+            onChange={(e) => set({ category: e.target.value })}
+            className="h-9 w-48 text-sm"
+          >
+            <option value="">폴더 없음</option>
+            {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+            {/* A category dropped from the registry after cases were filed under it
+                stays selectable here, so saving such a case does not silently
+                re-file it under whatever option happens to come first. */}
+            {value.category !== '' && !categories.includes(value.category) && (
+              <option value={value.category}>{value.category} (목록에 없음)</option>
+            )}
+          </Select>
+        </div>
       </div>
     </div>
   );
@@ -257,7 +270,8 @@ export default function DatasetsPanel() {
     return parsed.filter(({ c, p }) =>
       inFolder(c) && (!q ||
         p.question.toLowerCase().includes(q) ||
-        (p.groundTruth ?? c.expected_output ?? '').toLowerCase().includes(q)));
+        (p.groundTruth ?? c.expected_output ?? '').toLowerCase().includes(q) ||
+        (c.eval_criteria ?? '').toLowerCase().includes(q)));
   }, [cases, query, folder]);
 
   /**
@@ -299,6 +313,10 @@ export default function DatasetsPanel() {
 
   // Actions only ever touch picked rows that are on screen — a search that hides
   // a picked case also takes it out of the delete.
+  // 목적이 비어 있는 건수 — 보고 있는 폴더 기준. LLM 으로 채울 거리가 얼마나
+  // 남았는지가 곧 버튼에 적히는 수다.
+  const noPurpose = inFolder.filter((c) => !(c.eval_criteria ?? '').trim()).length;
+
   const pickedRows = rows.filter((r) => picked.has(r.c.case_id));
   const allPicked = rows.length > 0 && pickedRows.length === rows.length;
   // Checkboxes stay out of sight until a row is hovered; once anything is picked
@@ -323,7 +341,7 @@ export default function DatasetsPanel() {
       `${selected.dataset_nm}${suffix ? `_${suffix}` : ''}.xlsx`,
       // 템플릿과 같은 파일 — 받은 그대로 고쳐서 올리기 표에 붙여 넣는다.
       casesWorkbook(
-        list.map((c) => toFields(parseCaseInput(c.input_data), c.expected_output, c.case_type)),
+        list.map((c) => toFields(parseCaseInput(c.input_data), c.expected_output, c.case_type, c.eval_criteria)),
         folderNames,
       ),
       XLSX_MIME,
@@ -509,15 +527,53 @@ export default function DatasetsPanel() {
 
   /** Copy a case into the add form — building near-identical cases is the common
    * way these datasets grow, and retyping the whole payload is the slow part. */
+  /**
+   * 목적이 빈 데이터에 LLM 이 한 줄씩 채운다. 고른 것이 있으면 그중에서만 —
+   * 목록 전체를 한 번에 돌리기 전에 몇 건으로 결과를 확인해 보는 길이다.
+   *
+   * 이미 적힌 목적은 서버가 건드리지 않으므로, 여러 번 눌러도 사람이 쓴 줄은
+   * 그대로다. 되돌리기는 이번에 채워진 것만 도로 비운다.
+   */
+  const fillPurposes = (caseIds?: number[]) => guard(async () => {
+    if (selDataset == null) return;
+    const did = selDataset;
+    const before = new Set(
+      cases.filter((c) => !(c.eval_criteria ?? '').trim()).map((c) => c.case_id),
+    );
+    setToast({ text: '목적을 채우는 중…' });
+    const res = await api.post<{ filled: number; remaining: number }>(
+      `/datasets/${did}/cases/purpose`,
+      caseIds ? { case_ids: caseIds } : {},
+    );
+    const fresh = await api.get<TestCase[]>(`/datasets/${did}/cases`);
+    setCases(fresh);
+    const touched = fresh.filter((c) => before.has(c.case_id) && (c.eval_criteria ?? '').trim());
+    setToast({
+      text:
+        `목적 ${res.filled}건을 채웠습니다` +
+        (res.remaining > 0 ? ` · ${res.remaining}건 남음 (다시 누르면 이어서)` : ''),
+      undo: touched.length
+        ? () =>
+            guard(async () => {
+              for (const c of touched) {
+                await api.put(`/datasets/${did}/cases/${c.case_id}`, { eval_criteria: null });
+              }
+              loadCases();
+              setToast({ text: `목적 ${touched.length}건을 되돌렸습니다` });
+            })
+        : undefined,
+    });
+  });
+
   function duplicate(c: TestCase) {
-    setDraft(toFields(parseCaseInput(c.input_data), c.expected_output, c.case_type));
+    setDraft(toFields(parseCaseInput(c.input_data), c.expected_output, c.case_type, c.eval_criteria));
     setAdding(true);
     setEditId(null);
   }
 
   function openEdit(c: TestCase) {
     setEditId((cur) => (cur === c.case_id ? null : c.case_id));
-    setEdit(toFields(parseCaseInput(c.input_data), c.expected_output, c.case_type));
+    setEdit(toFields(parseCaseInput(c.input_data), c.expected_output, c.case_type, c.eval_criteria));
   }
 
   function onImported(res: CaseBulkResult) {
@@ -848,6 +904,15 @@ export default function DatasetsPanel() {
                     <Button
                       variant="ghost"
                       size="sm"
+                      disabled={busy}
+                      onClick={() => fillPurposes(pickedRows.map((r) => r.c.case_id))}
+                      title="고른 데이터 중 목적이 비어 있는 것만 LLM 이 채웁니다"
+                    >
+                      목적 채우기
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => downloadCases(pickedRows.map((r) => r.c), `선택${pickedRows.length}건`)}
                     >
                       내려받기
@@ -861,9 +926,22 @@ export default function DatasetsPanel() {
                   <Input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    placeholder="질문 · 정답 검색"
+                    placeholder="질문 · 정답 · 목적 검색"
                     className="h-8 w-44 text-xs"
                   />
+                  {/* 채울 것이 남아 있을 때만 선다 — 다 찬 데이터셋에 늘 서 있으면
+                      누를 일 없는 버튼이 검색창 옆자리를 계속 차지한다. */}
+                  {noPurpose > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => fillPurposes()}
+                      title="목적이 비어 있는 데이터를 LLM 이 한 줄씩 채웁니다 — 같은 폴더의 데이터를 함께 보고 서로 다른 지점을 짚습니다"
+                    >
+                      목적 채우기 <span className="font-mono tabular-nums text-muted">{noPurpose}</span>
+                    </Button>
+                  )}
                   <span className="ml-auto inline-flex items-center overflow-hidden rounded-sm border border-line bg-surface">
                     <button
                       type="button" disabled={busy}
@@ -967,6 +1045,15 @@ export default function DatasetsPanel() {
                                 <span className="mt-0.5 min-w-0 truncate text-xs text-muted">
                                   {open ? '' : gt ? oneLine(gt) : <span className="text-muted-soft">정답 없음</span>}
                                 </span>
+                                {/* 목적은 질문·정답 아래를 가로질러 한 줄로 깔린다. 칸을
+                                    하나 더 세우면 이미 잘리고 있는 질문과 정답이 더
+                                    좁아지고, 목적은 둘 중 어느 쪽의 부연도 아니다.
+                                    왼쪽 세로선이 이 줄을 질문에 딸린 것으로 묶어 준다. */}
+                                {!open && !!c.eval_criteria?.trim() && (
+                                  <span className="col-start-3 col-span-2 mt-1 min-w-0 truncate border-l-2 border-line-strong pl-2 text-[11px] text-muted">
+                                    {oneLine(c.eval_criteria)}
+                                  </span>
+                                )}
                               </button>
                             </div>
                             {open && (

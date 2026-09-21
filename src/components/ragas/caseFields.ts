@@ -34,17 +34,21 @@ export interface Fields {
   question: string;
   contexts: string; // one per line
   groundTruth: string;
+  /** CRITERIA_CTN — 이 케이스로 무엇을 확인하는가. 질문과 정답은 '무엇을 묻고
+   * 무엇이 나와야 하나' 까지만 말하고, 왜 이걸 묻는지는 말하지 않는다. */
+  criteria: string;
   category: string; // TYPE_CD; '' in the form means UNFILED
 }
 
-export const EMPTY: Fields = { question: '', contexts: '', groundTruth: '', category: '' };
+export const EMPTY: Fields = { question: '', contexts: '', groundTruth: '', criteria: '', category: '' };
 
-export function toFields(p: Parsed, expected: string | null, caseType: string): Fields {
+export function toFields(p: Parsed, expected: string | null, caseType: string, criteria: string | null): Fields {
   return {
     question: p.question,
     contexts: p.contexts.join('\n'),
     // parseCase prefers input_data.ground_truth and falls back to EXPECT_CTN.
     groundTruth: p.groundTruth ?? expected ?? '',
+    criteria: criteria ?? '',
     category: caseType === UNFILED ? '' : caseType,
   };
 }
@@ -75,6 +79,7 @@ export function rowFromResult(r: {
     question: (r.question ?? '').trim(),
     contexts: parseContexts(r.contexts).join('\n'),
     groundTruth: (r.trace_value ?? r.answer ?? '').trim(),
+    criteria: '',
     category: '',
   };
 }
@@ -92,6 +97,7 @@ export function toPayload(f: Fields, rest: Record<string, unknown> = {}) {
   return {
     input_data: JSON.stringify(input),
     expected_output: gt || null,
+    eval_criteria: f.criteria.trim() || null,
     case_type: f.category.trim() || UNFILED,
   };
 }

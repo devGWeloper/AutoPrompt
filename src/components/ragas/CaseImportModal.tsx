@@ -18,10 +18,11 @@ type Key = keyof Fields;
  * old CSV column names are among them, so an exported file still goes back in.
  */
 const COLS: { key: Key; label: string; names: string[]; width: string; xlsxWidth: number }[] = [
-  { key: 'question', label: '질문', names: ['question', 'input_json', 'input', 'message'], width: 'w-[34%]', xlsxWidth: 50 },
-  { key: 'contexts', label: 'Contexts', names: ['context'], width: 'w-[22%]', xlsxWidth: 40 },
-  { key: 'groundTruth', label: '정답', names: ['ground_truth', 'expected_output', '기대답변'], width: 'w-[30%]', xlsxWidth: 50 },
-  { key: 'category', label: '폴더', names: ['folder', 'case_type', 'category', '카테고리'], width: 'w-[14%]', xlsxWidth: 18 },
+  { key: 'question', label: '질문', names: ['question', 'input_json', 'input', 'message'], width: 'w-[30%]', xlsxWidth: 50 },
+  { key: 'contexts', label: 'Contexts', names: ['context'], width: 'w-[18%]', xlsxWidth: 40 },
+  { key: 'groundTruth', label: '정답', names: ['ground_truth', 'expected_output', '기대답변'], width: 'w-[26%]', xlsxWidth: 50 },
+  { key: 'criteria', label: '목적', names: ['eval_criteria', 'criteria', '평가기준', '기준'], width: 'w-[14%]', xlsxWidth: 34 },
+  { key: 'category', label: '폴더', names: ['folder', 'case_type', 'category', '카테고리'], width: 'w-[12%]', xlsxWidth: 18 },
 ];
 
 const MIN_ROWS = 10;

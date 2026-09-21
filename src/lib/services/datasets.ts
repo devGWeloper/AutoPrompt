@@ -496,9 +496,9 @@ function clip(s: string, n: number): string {
   return t.length > n ? `${t.slice(0, n)}…` : t;
 }
 
-/** 케이스 하나를 요약용 한 줄로. 질문과 정답, 그리고 폴더 이름 — 폴더는 사람이
- * 이미 붙여 둔 분류라 목적을 가장 곧장 말해 주는 값이다. */
-function purposeLine(c: TestCase, i: number): string {
+/** INPUT_CTN 에서 질문과 정답을 꺼낸다 — parseCaseInput 과 같은 규칙이고, JSON 이
+ * 아니면 전체가 질문이다. */
+function caseQA(c: TestCase): { question: string; truth: string } {
   let question = c.input_data;
   let truth = c.expected_output ?? "";
   try {
@@ -508,8 +508,15 @@ function purposeLine(c: TestCase, i: number): string {
       if (o.ground_truth != null) truth = String(o.ground_truth);
     }
   } catch {
-    // JSON 이 아니면 INPUT_CTN 전체가 질문이다 — parseCaseInput 과 같은 규칙.
+    // JSON 이 아니면 INPUT_CTN 전체가 질문이다.
   }
+  return { question, truth };
+}
+
+/** 케이스 하나를 데이터셋 요약용 한 줄로. 폴더 이름도 같이 — 폴더는 사람이 이미
+ * 붙여 둔 분류라 목적을 가장 곧장 말해 주는 값이다. */
+function purposeLine(c: TestCase, i: number): string {
+  const { question, truth } = caseQA(c);
   const folder = c.case_type && c.case_type !== "NORMAL" ? ` [${c.case_type}]` : "";
   const answer = truth ? `\n   정답: ${clip(truth, PURPOSE_FIELD)}` : "";
   return `${i + 1}.${folder} ${clip(question, PURPOSE_FIELD)}${answer}`;
@@ -552,4 +559,116 @@ export async function suggestDatasetPurpose(datasetId: number): Promise<{ purpos
   const purpose = clip(String(r.purpose ?? ""), PURPOSE_MAX);
   if (!purpose) throw badRequest("요약을 받지 못했습니다 — 다시 시도해 주세요");
   return { purpose };
+}
+
+// ---- 데이터 한 건씩 목적 채우기 ----
+
+/** 한 번의 요청으로 채우는 상한. 넘는 만큼은 다음 요청으로 넘긴다 — 버튼 한 번에
+ * 수백 번의 LLM 호출이 나가면 안 된다. */
+const CASE_PURPOSE_MAX = 200;
+/** 한 번의 호출에 함께 올리는 데이터 수. 폴더가 이보다 크면 나눠 부른다. */
+const CASE_PURPOSE_BATCH = 30;
+/** 이미 목적이 적힌 형제 중 몇 건을 본보기로 같이 올릴지. */
+const CASE_PURPOSE_HINTS = 8;
+/** 데이터 한 건의 목적 길이 상한 — 목록에서 한 줄로 읽히는 길이. */
+const CASE_PURPOSE_LEN = 60;
+
+/** 데이터 한 건을 프롬프트 한 줄로. 폴더는 이미 묶음의 머리에 적혀 있어 빼고,
+ * 번호는 돌아올 답을 되짚을 열쇠다. */
+function dataLine(c: TestCase, n: number): string {
+  const { question, truth } = caseQA(c);
+  const answer = truth ? `\n   정답: ${clip(truth, PURPOSE_FIELD)}` : "";
+  return `${n}. ${clip(question, PURPOSE_FIELD)}${answer}`;
+}
+
+/**
+ * 데이터 한 건마다 "이 건으로 무엇을 확인하는가" 를 채운다.
+ *
+ * 한 건만 떼어 놓고 물으면 질문을 고쳐 쓴 문장이 돌아온다. 그 건이 무엇을 확인하는
+ * 건지는 옆의 형제들과 견줘야 갈리기 때문이다 — "A 는 부분취소 금액, B 는 전액취소
+ * 후 잔액" 처럼. 그래서 같은 폴더의 데이터를 함께 올려 놓고 서로 다른 지점을 짚게
+ * 시키고, 답은 건별로 받는다. 폴더로 묶는 건 '같은 폴더에 넣었다' 는 것 자체가
+ * 이미 사람이 해 둔 갈래 나누기라서다.
+ *
+ * 이미 적혀 있는 목적은 덮지 않는다. 대신 본보기로 실어 보낸다 — 사람이 잡아 둔
+ * 말투와 결을 나머지가 따라간다.
+ */
+export async function fillCasePurposes(
+  datasetId: number,
+  caseIds?: number[] | null,
+): Promise<{ filled: number; remaining: number }> {
+  if (!llmConfigured()) {
+    throw badRequest("LLM 엔드포인트가 설정되어 있지 않습니다 (config.yml llm.endpoint)");
+  }
+  const ds = await getDatasetDetail(datasetId);
+  const all = await listCases(datasetId);
+  const pick = Array.isArray(caseIds) && caseIds.length ? new Set(caseIds.map(Number)) : null;
+  const empty = all.filter(
+    (c) => !(c.eval_criteria ?? "").trim() && (pick === null || pick.has(c.case_id)),
+  );
+  if (empty.length === 0) throw badRequest("목적이 비어 있는 데이터가 없습니다");
+
+  const todo = empty.slice(0, CASE_PURPOSE_MAX);
+  const byFolder = new Map<string, TestCase[]>();
+  for (const c of todo) {
+    const k = c.case_type || "NORMAL";
+    const list = byFolder.get(k);
+    if (list) list.push(c);
+    else byFolder.set(k, [c]);
+  }
+
+  const filled: { id: number; text: string }[] = [];
+  for (const [folder, items] of byFolder) {
+    const hints = all
+      .filter((c) => (c.case_type || "NORMAL") === folder && (c.eval_criteria ?? "").trim())
+      .slice(0, CASE_PURPOSE_HINTS);
+    for (let i = 0; i < items.length; i += CASE_PURPOSE_BATCH) {
+      const batch = items.slice(i, i + CASE_PURPOSE_BATCH);
+      const user = [
+        `평가 데이터셋 "${ds.dataset_nm}"${ds.description ? ` — ${ds.description}` : ""}`,
+        folder === "NORMAL" ? "폴더 없음" : `폴더: ${folder}`,
+        "",
+        hints.length
+          ? `같은 폴더에서 이미 목적이 적힌 데이터 (말투와 결의 본보기):\n` +
+            `${hints.map((h) => `- ${clip(caseQA(h).question, 80)} → ${h.eval_criteria}`).join("\n")}\n`
+          : "",
+        `아래 ${batch.length}건입니다.`,
+        batch.map((c, n) => dataLine(c, n + 1)).join("\n"),
+        "",
+        `이 데이터들은 한 갈래에 속합니다. 서로 무엇이 다른지가 드러나도록, 각 건이 ` +
+          `확인하려는 지점을 한국어 한 구절(${CASE_PURPOSE_LEN}자 이내)로 적으세요. ` +
+          `질문을 그대로 옮겨 쓰거나 여러 건에 같은 문장을 쓰지 마세요. ` +
+          `번호(n)는 위 번호 그대로 쓰고, 모든 건에 대해 답하세요. ` +
+          `JSON 형식: {"purposes":[{"n":1,"purpose":"..."}]}`,
+      ].filter(Boolean).join("\n");
+
+      const r = await chatJson<{ purposes?: { n?: number; purpose?: string }[] }>(
+        "당신은 LLM 평가 데이터를 보고 각 건이 무엇을 확인하려는 것인지 한 줄로 적는 " +
+          "사람입니다. 반드시 JSON 으로만 답하세요.",
+        user,
+      );
+      for (const item of r.purposes ?? []) {
+        // 번호는 이 묶음 안에서의 1-based 자리다. 엉뚱한 번호가 오면 그 항목만 버린다.
+        const at = Number(item?.n) - 1;
+        const text = clip(String(item?.purpose ?? ""), CASE_PURPOSE_LEN);
+        if (!Number.isInteger(at) || at < 0 || at >= batch.length || !text) continue;
+        filled.push({ id: batch[at].case_id, text });
+      }
+    }
+  }
+  if (filled.length === 0) throw badRequest("요약을 받지 못했습니다 — 다시 시도해 주세요");
+
+  await withConn(async (conn) => {
+    for (const f of filled) {
+      // DATASET_ID 를 함께 걸고 빈 칸만 친다 — 도중에 사람이 적어 넣은 목적을
+      // 뒤늦게 도착한 요약이 덮는 일이 없다.
+      await conn.execute(
+        `UPDATE PTX_DATASET_DET SET CRITERIA_CTN = :crit
+          WHERE CASE_ID = :cid AND DATASET_ID = :did AND CRITERIA_CTN IS NULL`,
+        { crit: f.text, cid: f.id, did: datasetId },
+      );
+    }
+  }, { commit: true });
+
+  return { filled: filled.length, remaining: empty.length - filled.length };
 }
