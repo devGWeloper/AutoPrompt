@@ -858,7 +858,13 @@ async function setupRun(
   // (recordFailure) 은 어느 쪽이든 이번 실행이 대신하므로 같이 치운다.
   await deleteResultsFor(conn, runId, cases.map((c) => c.case_id));
   await conn.commit();
-  emit({ event: "RUNNING", run_id: runId, total: cases.length, metrics });
+  emit({
+    event: "RUNNING",
+    run_id: runId,
+    total: cases.length,
+    metrics,
+    case_ids: cases.map((c) => c.case_id),
+  });
 
   // No prompt version on the run (A/B pinned to two endpoints) → nothing to swap:
   // the endpoint itself is the version under test.

@@ -94,6 +94,21 @@ function spanOf(
 }
 
 /**
+ * 이 결과 줄이 제자리 재실행으로 다시 쓰인 것인가.
+ *
+ * 재실행은 그 케이스의 옛 줄을 지우고 새로 쓴다. 그래서 실행이 처음 끝난 시각보다
+ * 늦게 쓰인 줄이 곧 '이번에 다시 돌린 것' 이다 — 어느 케이스를 다시 돌렸는지 따로
+ * 저장하지 않아도, 나중에 기록을 열어 봐도 그대로 읽힌다.
+ */
+export function isRerunRow(row: { created_dt?: string | null }, run: Timed): boolean {
+  const first = tsAt(run?.first_ended_dt);
+  const made = tsAt(row?.created_dt);
+  if (Number.isNaN(first) || Number.isNaN(made)) return false;
+  // 1초 여유: 최초 실행의 마지막 줄과 종료 시각은 사실상 같은 순간이다.
+  return made - first > 1000;
+}
+
+/**
  * 이 실행이 재실행을 거쳤나 — 최초 시작이 마지막 시작과 다르면.
  *
  * 두 값이 같으면 처음 돌고 그대로인 실행이라, 화면에 '최초' 와 '재실행' 을 나눠
@@ -160,6 +175,59 @@ export function RunDurationTag({ runs, className }: { runs: Timed[]; className?:
           {firstAt && <span className="ml-1 text-muted-soft">{firstAt}</span>}
         </span>
       )}
+    </span>
+  );
+}
+
+/**
+ * 결과 머리줄의 재실행 요약 — 이번에 무엇을 다시 돌렸는지.
+ *
+ * 케이스 줄마다 표식이 붙어 있어도, 스물네 줄 가운데 세 줄이면 훑다가 놓친다.
+ * 머리줄에서 먼저 '세 건을 다시 돌렸다' 고 말해 두면 아래에서 그 셋을 찾게 된다.
+ */
+export function RerunSummary({ detail, className }: { detail: RagasRunDetail; className?: string }) {
+  const n = detail.results.filter((r) => isRerunRow(r, detail)).length;
+  if (!n) return null;
+  return (
+    <span
+      className={cn(
+        'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-sm border border-accent-line bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent',
+        className,
+      )}
+      title="가장 최근 재실행에서 다시 돌린 케이스 — 아래 목록에 재실행 표식이 붙어 있습니다"
+    >
+      재실행 <span className="font-mono font-semibold tabular-nums">{n}</span>건
+    </span>
+  );
+}
+
+/** 이번 재실행으로 다시 돌아온 줄에 붙는 표식. 남겨 둔 줄과 섞여 있으니, 어느
+ * 것이 방금 다시 돈 것인지는 줄 위에 적혀 있어야 한다. */
+export function RerunMark({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex shrink-0 items-center whitespace-nowrap rounded-sm border border-accent-line bg-accent-soft px-1.5 py-px text-[10px] font-semibold text-accent',
+        className,
+      )}
+      title="이번 재실행으로 다시 돌린 케이스"
+    >
+      재실행
+    </span>
+  );
+}
+
+/** 다시 도는 중인 줄 — 옛 결과는 자리를 지키고, 이 표식만 그 위에 얹힌다. */
+export function RerunningMark({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-sm border border-line bg-surface-2 px-1.5 py-px text-[10px] font-semibold text-muted',
+        className,
+      )}
+    >
+      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+      다시 도는 중
     </span>
   );
 }
@@ -238,7 +306,13 @@ export function scoredMetrics(d: Scored): RagasMetric[] {
 
 /** Insert or replace a streamed result row, keeping case order (by result id). */
 export function upsertResult(cur: RagasResultRow[], row: RagasResultRow): RagasResultRow[] {
-  const i = cur.findIndex((x) => x.ragas_result_id === row.ragas_result_id);
+  // 케이스로도 찾는다. 제자리 재실행은 옛 줄을 지우고 새로 쓰므로 결과 id 가
+  // 달라진다 — id 로만 맞추면 같은 케이스가 옛 답과 새 답 두 줄로 남는다.
+  const i = cur.findIndex(
+    (x) =>
+      x.ragas_result_id === row.ragas_result_id ||
+      (row.case_id != null && x.case_id === row.case_id),
+  );
   if (i === -1) return [...cur, row].sort((a, b) => a.ragas_result_id - b.ragas_result_id);
   const next = cur.slice();
   next[i] = row;
@@ -1223,6 +1297,72 @@ export function OxBadge({ value, rate, passed }: { value: number | null; rate?: 
 }
 
 /**
+ * 이 답을 데이터셋의 정답으로 삼는 단추 — 정답지 쪽이 낡았을 때.
+ *
+ * 불일치는 두 갈래다. 답이 틀렸거나, 정답지가 낡았거나. 앞은 고칠 곳이 에이전트
+ * 쪽이고 뒤는 데이터셋 쪽인데, 뒤를 고치러 데이터셋 화면으로 건너가 같은 케이스를
+ * 다시 찾아 붙여 넣는 동안 방금 본 답은 손에 없다. 그래서 답을 보고 있는 이 자리에
+ * 둔다.
+ *
+ * 되돌릴 수 없는 덮어쓰기라 한 번 더 누르게 한다(useArmed). 지난 실행 기록은
+ * 건드리지 않는다 — 그 실행은 그때의 정답지로 채점된 사실이다.
+ */
+export function TruthFixButton({
+  datasetId, caseId, truth, onDone,
+}: {
+  datasetId: number;
+  caseId: number;
+  /** 정답으로 삼을 값 — 채점 대상과 같은 것(중간 변수가 있으면 그것). */
+  truth: string;
+  onDone?: () => void;
+}) {
+  const [armed, setArmed] = useArmed();
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  async function click(e: ReactMouseEvent) {
+    e.stopPropagation();
+    if (!armed) { setArmed(true); return; }
+    setArmed(false);
+    setBusy(true);
+    setErr(null);
+    try {
+      await api.put(`/datasets/${datasetId}/cases/${caseId}/truth`, { ground_truth: truth });
+      setDone(true);
+      onDone?.();
+    } catch (x) {
+      setErr(errText(x));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <button
+      type="button"
+      disabled={busy || done}
+      onClick={click}
+      onKeyDown={(e) => e.stopPropagation()}
+      title={
+        err ??
+        (done
+          ? '데이터셋의 정답을 이 답으로 바꿨습니다 — 이 기록은 그대로입니다'
+          : '데이터셋의 이 케이스 정답을 지금 답으로 바꿉니다. 지난 기록은 그대로 남습니다')
+      }
+      className={cn(
+        'whitespace-nowrap rounded-sm border px-1.5 py-px text-[10.5px] font-medium transition-colors disabled:opacity-60',
+        err
+          ? 'border-bad-line bg-bad-soft text-bad'
+          : armed
+            ? 'border-accent bg-accent-soft text-accent'
+            : 'border-line text-muted hover:border-muted-soft hover:bg-surface-2 hover:text-ink',
+      )}
+    >
+      {busy ? '…' : err ? '실패' : done ? '정답 바뀜' : armed ? '한 번 더' : '정답 수정'}
+    </button>
+  );
+}
+
+/**
  * 불일치로 떨어진 케이스를 사람이 손으로 통과시키는 단추 — 그리고 되돌리기.
  *
  * 표현만 다르거나 정답지 쪽이 낡아 불일치가 난 경우가 있고, 그걸 매번 다시 돌려
@@ -1413,7 +1553,7 @@ export function ScoreBars({
 // the question (plus its average score when collapsed); the body holds ground
 // truth, answer, and the per-metric score bars.
 export function CaseTable({
-  detail, bordered, scored, defaultAllOpen = false, picking, onPassChanged,
+  detail, bordered, scored, defaultAllOpen = false, picking, onPassChanged, rerunning,
 }: {
   detail: RagasRunDetail;
   bordered?: boolean;
@@ -1424,6 +1564,10 @@ export function CaseTable({
   /** 수동 통과 처리가 끝난 뒤. 실행 단위 점수도 같이 움직이므로, 위쪽 요약까지
    * 맞추려면 부모가 이걸 받아 다시 읽어 온다. 줄 자체는 이 표가 바로 뒤집는다. */
   onPassChanged?: () => void;
+  /** 지금 다시 돌고 있는 케이스들. 남겨 둔 결과는 자리를 지키고 이 줄들만
+   * '다시 도는 중' 으로 바뀐다 — 재실행이라고 목록을 비우면, 방금까지 보던
+   * 스물네 줄이 사라졌다가 세 줄로 돌아온다. */
+  rerunning?: Set<number>;
 }) {
   // A cancelled run keeps whatever it scored before the stop, so its cases are
   // shown with scores like any other run — the ones that never got there say so.
@@ -1451,6 +1595,9 @@ export function CaseTable({
   // 눌렀는데 아무 일도 없어 보이면 한 번 더 누르게 된다.
   const [passOverride, setPassOverride] = useState<Map<number, boolean>>(new Map());
   const isPassed = (r: RagasResultRow) => passOverride.get(r.ragas_result_id) ?? r.passed;
+  // 지금 다시 도는 중인 줄 / 이번 재실행으로 이미 돌아온 줄.
+  const isRerunning = (r: RagasResultRow) => r.case_id != null && !!rerunning?.has(r.case_id);
+  const isRerun = (r: RagasResultRow) => isRerunRow(r, detail);
   const list = (
     <div className="divide-y divide-line">
       {ids.length > 1 && (
@@ -1487,6 +1634,9 @@ export function CaseTable({
               <span className={cn('min-w-0 flex-1 text-sm text-ink', isClosed ? 'truncate' : 'whitespace-pre-wrap break-words font-medium')}>
                 {r.question ?? '—'}
               </span>
+              {/* 무엇을 다시 돌렸는지는 그 줄 위에 적힌다 — 남겨 둔 줄과 한 목록에
+                  섞여 있으니, 목록 밖 어딘가에 적어 두면 짝을 못 맞춘다. */}
+              {isRerunning(r) ? <RerunningMark className="mt-1" /> : isRerun(r) && <RerunMark className="mt-1" />}
               {/* 펼친 케이스의 질문은 그대로 다시 쓰이는 문장이다 — 끌어서 고를
                   수도 있고, 긴 질문은 이 버튼 하나로 통째로 가져간다. */}
               {!isClosed && r.question && (
@@ -1538,15 +1688,26 @@ export function CaseTable({
                   {/* 기록으로 남은 실행에서만. 스트리밍 중인 표는 아직 기록이 아니라
                       실행 id 자체가 없어서, 누를 곳이 없는 단추가 된다. */}
                   {settled && detail.ragas_run_id != null && (r.exact_match === 0 || isPassed(r)) && (
-                    <PassButton
-                      runId={detail.ragas_run_id}
-                      resultId={r.ragas_result_id}
-                      passed={isPassed(r)}
-                      onDone={(next) => {
-                        setPassOverride((cur) => new Map(cur).set(r.ragas_result_id, next));
-                        onPassChanged?.();
-                      }}
-                    />
+                    <span className="flex items-center gap-1">
+                      <PassButton
+                        runId={detail.ragas_run_id}
+                        resultId={r.ragas_result_id}
+                        passed={isPassed(r)}
+                        onDone={(next) => {
+                          setPassOverride((cur) => new Map(cur).set(r.ragas_result_id, next));
+                          onPassChanged?.();
+                        }}
+                      />
+                      {/* 불일치의 나머지 갈래 — 답이 아니라 정답지가 낡은 경우.
+                          데이터셋에서 온 실행에서만: 직접 호출에는 고칠 케이스가 없다. */}
+                      {detail.dataset_id != null && r.case_id != null && !isPassed(r) && (r.trace_value ?? r.answer) && (
+                        <TruthFixButton
+                          datasetId={detail.dataset_id}
+                          caseId={r.case_id}
+                          truth={(r.trace_value ?? r.answer)!}
+                        />
+                      )}
+                    </span>
                   )}
                 </span>
               )}

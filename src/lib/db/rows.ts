@@ -163,6 +163,10 @@ export const RESULT_COLS = [
   "TRACE_VAR_NM",
   "TRACE_CTN",
   "ELAPSED_MS",
+  // 이 줄이 쓰인 시각. 제자리 재실행은 다시 돌린 케이스의 행을 지우고 새로 쓰므로,
+  // 실행의 최초 종료 시각보다 늦게 쓰인 줄이 곧 '이번에 다시 돌린 것' 이다 —
+  // 어느 케이스를 다시 돌렸는지 따로 저장하지 않고도 나중에 읽어낼 수 있다.
+  tsColMs("CRT_TM"),
 ].join(", ");
 
 /**
@@ -411,6 +415,7 @@ export function mapRagasResult(r: Row): RagasResultRow {
     // Also null when the endpoint did not stream this call: no first token, so
     // nothing to time. Absent entirely until the migration runs.
     ttft_ms: num(r.TTFT_MS),
+    created_dt: str(r.CRT_TM),
     // 사람이 손으로 통과시킨 케이스. exact_match 는 채점이 내린 판정 그대로 남아
     // 있어서, 무엇이 걸렸던 건지는 펼쳐 보면 여전히 읽을 수 있다.
     passed: str(r.PASS_YN) === "Y",

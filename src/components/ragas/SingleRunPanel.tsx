@@ -43,6 +43,7 @@ import {
   CaseTable,
   ScoreBars,
   ElapsedTag,
+  RerunSummary,
   RunDurationTag,
   usePickedCases,
   AnswerBox,
@@ -152,6 +153,9 @@ export default function SingleRunPanel() {
   const [scoreOn, setScoreOn] = useState(true);
   const [status, setStatus] = useState('idle');
   const [detail, setDetail] = useState<RagasRunDetail | null>(null);
+  // 이번 패스가 도는 케이스들. 전체 실행이면 전부라 표식이 의미가 없고, 제자리
+  // 재실행이면 부분 집합이라 그 줄만 '다시 도는 중' 으로 선다.
+  const [rerunning, setRerunning] = useState<Set<number> | null>(null);
   // 끝난 실행의 케이스 목록에서 고른 것 — 새 실행이 뜨면 비운다.
   const rerunPick = usePickedCases(detail?.ragas_run_id);
   const [error, setError] = useState<string | null>(null);
@@ -209,6 +213,9 @@ export default function SingleRunPanel() {
         if (m.event === 'RUNNING') {
           setTotal(m.total ?? 0);
           if (m.metrics) setRunMetrics(m.metrics);
+          // 남겨 둔 줄이 있을 때만 표식이 뜻을 가진다 — 빈 목록에서 시작하는
+          // 보통의 실행은 어차피 도는 것만 나오므로 '다시 도는 중' 이 군더더기다.
+          setRerunning((cur) => (cur === null ? null : new Set((m.case_ids ?? []).filter((x): x is number => x != null))));
         } else if (m.event === 'ANSWER' || m.event === 'SCORE') {
           setTotal(m.total);
           setLive((cur) => upsertResult(cur, m.result));
@@ -218,6 +225,7 @@ export default function SingleRunPanel() {
           // 버튼은 취소 버튼인 채, 취소할 실행은 없는 상태.
           clearActiveRun('single');
           ws.close();
+          setRerunning(null);
           setStatus(m.event === 'DONE' ? 'done' : m.event === 'CANCELLED' ? 'cancelled' : 'failed');
           try {
             setDetail(await api.get<RagasRunDetail>(`/ragas-runs/${runId}`));
@@ -250,15 +258,36 @@ export default function SingleRunPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** Switch the panel onto a run that was created elsewhere — a re-test started
-   * from this panel or from the records drawer. */
-  function follow(s: ActiveSingleRun) {
+  /**
+   * Switch the panel onto a run that was armed elsewhere — a re-run started from
+   * this panel or from the records drawer.
+   *
+   * 재실행은 그 실행을 그 자리에서 다시 돌리는 것이라, 목록을 비우고 시작하면
+   * 방금까지 보던 스물네 줄이 사라졌다가 세 줄로 돌아온다. 그래서 스트림을 열기
+   * **전에** 지금 기록을 읽어 깔아 둔다 — 서버는 스트림이 열릴 때 비로소 그
+   * 케이스들의 옛 줄을 지우므로, 이 순서에서만 옛 줄을 온전히 받을 수 있다.
+   */
+  async function follow(s: ActiveSingleRun) {
     wsRef.current?.close();
     setError(null); setDetail(null); setStatus('running');
-    setLive([]); setTotal(0); setRunMetrics(null); setCancelling(false);
+    setTotal(0); setRunMetrics(null); setCancelling(false);
     setSource('dataset');
     setScoreOn(s.scoreOn);
     setRunMeta({ nodeNm: s.nodeNm, verLabel: s.verLabel });
+    let seeded = false;
+    try {
+      const prev = await api.get<RagasRunDetail>(`/ragas-runs/${s.runId}`);
+      if (prev.results.length) {
+        setLive(prev.results);
+        // 빈 집합으로 시작해 RUNNING 이 실제 목록을 채운다. null 이면 '남겨 둔 줄이
+        // 없는 실행' 이라 표식을 아예 달지 않는다.
+        setRerunning(new Set());
+        seeded = true;
+      }
+    } catch {
+      // 기록을 못 읽어도 실행은 돈다 — 예전처럼 빈 목록에서 채워 나간다.
+    }
+    if (!seeded) { setLive([]); setRerunning(null); }
     attach(s.runId, s.endpointId);
   }
 
@@ -273,7 +302,7 @@ export default function SingleRunPanel() {
   async function run() {
     if (!canRun) return;
     setError(null); setDetail(null); setStatus('running');
-    setLive([]); setTotal(0); setRunMetrics(null); setCancelling(false); runIdRef.current = null;
+    setLive([]); setTotal(0); setRunMetrics(null); setCancelling(false); setRerunning(null); runIdRef.current = null;
     const byPrompt = target === 'prompt';
     // Only the target under test is pinned; everything else runs as the agent's
     // own config has it. A URL belongs to an endpoint test, models to a model test.
@@ -650,7 +679,11 @@ export default function SingleRunPanel() {
               <div className="p-4">
                 {live.length > 0 ? (
                   <div className="overflow-hidden rounded-sm border border-line bg-surface">
-                    <CaseTable detail={{ results: live } as RagasRunDetail} scored={scoreOn} />
+                    <CaseTable
+                      detail={{ results: live } as RagasRunDetail}
+                      scored={scoreOn}
+                      rerunning={rerunning ?? undefined}
+                    />
                   </div>
                 ) : (
                   <div className="py-8 text-center"><PendingHint label="답변 생성 중…" /></div>
@@ -673,6 +706,7 @@ export default function SingleRunPanel() {
                   {detail.node_nm && <span className="font-medium text-ink">{detail.node_nm}</span>}
                   {detail.prompt_id && <Badge tone="neutral">{verLabel(detail.prompt_id)}</Badge>}
                   <span className="ml-auto flex items-center gap-2">
+                    <RerunSummary detail={detail} />
                     <RunDurationTag runs={[detail]} />
                     <span>·</span>
                     <span>Engine {detail.engine ?? '—'}</span>

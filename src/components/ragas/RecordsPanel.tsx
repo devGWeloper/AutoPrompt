@@ -19,7 +19,7 @@ import { CaseCompareTable } from './CompareTable';
 import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import { AbKeyBreakdown, KeyBreakdown } from './KeyBreakdown';
 import {
-  CaseTable, DatasetPurpose, DownloadIcon, ErrBox, errText, fmt2, fmt3, fmtDt, RunDurationStack, RunDurationTag, usePickedCases, folderLabel, hasTextSelection, runMean, runTargetLabel,
+  CaseTable, DatasetPurpose, DownloadIcon, ErrBox, errText, RerunSummary, fmt2, fmt3, fmtDt, RunDurationStack, RunDurationTag, usePickedCases, folderLabel, hasTextSelection, runMean, runTargetLabel,
   compareSideLabel, runModelDetail, runTitle, runTitleParts, scoredMetrics, SegToggle, TrashIcon, UNSCORED_LABEL,
 } from './shared';
 import RerunButton from './RerunButton';
@@ -890,14 +890,20 @@ function RagasRunDetailView({ ragasId, manual }: { ragasId: number; manual?: boo
           )}
           <span className="ml-auto flex items-center gap-2">
             <ModelStamp text={formatModelSnapshot(detail.model_snapshot)} />
+            <RerunSummary detail={detail} />
             <RunDurationTag runs={[detail]} />
             <span>·</span>
             <span>Engine {detail.engine ?? '—'}</span>
             <span>·</span>
             <span>{detail.results.length} case{detail.results.length === 1 ? '' : 's'}</span>
-            <Button variant="secondary" size="sm" className="ml-1" disabled={seed.length === 0} onClick={() => setAdding(true)}>
-              데이터셋에 추가
-            </Button>
+            {/* 데이터셋에서 돌린 실행은 케이스가 이미 데이터셋에 있다 — 같은 질문을
+                한 벌 더 넣는 단추가 될 뿐이다. 직접 호출 기록에서만 선다. 정답이
+                틀렸을 때 고치는 길은 아래 줄마다의 '정답 수정' 이다. */}
+            {manual && (
+              <Button variant="secondary" size="sm" className="ml-1" disabled={seed.length === 0} onClick={() => setAdding(true)}>
+                데이터셋에 추가
+              </Button>
+            )}
             {!manual && <RerunButton detail={detail} picking={picking} />}
           </span>
         </div>

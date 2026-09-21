@@ -19,6 +19,7 @@ import type {
   DatasetUpdate,
   TestCase,
 } from "@/lib/types";
+import { SYSTEM_USER } from "@/lib/types";
 import { writeAudit } from "./audit";
 import { chatJson, llmConfigured } from "./ragas/llmClient";
 
@@ -671,4 +672,56 @@ export async function fillCasePurposes(
   }, { commit: true });
 
   return { filled: filled.length, remaining: empty.length - filled.length };
+}
+
+/**
+ * 케이스의 기대 정답을 주어진 값으로 갈아끼운다 — 실행 결과를 보고 "정답지 쪽이
+ * 낡았다" 고 판단했을 때.
+ *
+ * 정답은 두 군데 있다: INPUT_CTN JSON 의 `ground_truth` 와 EXPECT_CTN. 채점은
+ * 앞의 것을 먼저 보고 없으면 뒤를 쓰므로(parseCase), 한쪽만 고치면 화면에 보이는
+ * 정답과 실제로 채점에 쓰이는 정답이 갈린다. 그래서 둘을 함께 쓴다.
+ *
+ * INPUT_CTN 의 나머지 키는 그대로 둔다 — question · contexts 는 물론, CSV 로
+ * 들어온 낯선 키도 이 수정에 휩쓸려 사라지면 안 된다. 값이 JSON 이 아니면 그
+ * 전체가 질문이라는 뜻이라(parseCaseInput 과 같은 규칙) EXPECT_CTN 만 고친다.
+ *
+ * 지난 실행 기록은 손대지 않는다. 그 실행은 그때의 정답지로 채점된 사실이고,
+ * 여기서 거슬러 고치면 기록이 기록이 아니게 된다.
+ */
+export async function setCaseGroundTruth(
+  datasetId: number,
+  caseId: number,
+  truth: string,
+): Promise<TestCase> {
+  const gt = (truth ?? "").trim();
+  if (!gt) throw badRequest("정답이 비어 있습니다");
+  return withConn(async (conn) => {
+    const existing = await fetchCase(conn, datasetId, caseId);
+    if (!existing) throw notFound("test case not found");
+
+    let input = existing.input_data;
+    try {
+      const o = JSON.parse(existing.input_data) as Record<string, unknown>;
+      if (o && typeof o === "object" && !Array.isArray(o)) {
+        input = JSON.stringify({ ...o, ground_truth: gt });
+      }
+    } catch {
+      // JSON 이 아니면 전체가 질문이다 — 건드리지 않는다.
+    }
+    await conn.execute(
+      `UPDATE PTX_DATASET_DET SET INPUT_CTN = :input, EXPECT_CTN = :expected
+        WHERE CASE_ID = :cid AND DATASET_ID = :did`,
+      { input, expected: gt, cid: caseId, did: datasetId },
+    );
+    await writeAudit(conn, {
+      targetTable: "PTX_DATASET_DET",
+      targetId: caseId,
+      action: "UPDATE",
+      before: { expected_output: existing.expected_output },
+      after: { expected_output: gt },
+      createdBy: SYSTEM_USER,
+    });
+    return (await fetchCase(conn, datasetId, caseId))!;
+  }, { commit: true });
 }

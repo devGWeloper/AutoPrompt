@@ -330,6 +330,9 @@ export interface RagasResultRow {
    * 그대로다 — 둘을 합쳐 읽어야 하는 곳(실행 점수 · 불일치 재실행)에서만 합친다. */
   passed: boolean;
   passed_dt: string | null;
+  /** 이 결과 줄이 쓰인 시각. 실행의 first_ended_dt 보다 늦으면 제자리 재실행으로
+   * 다시 돌린 줄이다 — 결과에서 '무엇을 다시 돌렸는지' 는 이 둘의 비교로 읽는다. */
+  created_dt: string | null;
 }
 
 export interface RagasRunOut {
@@ -526,7 +529,9 @@ export interface DirectAbOut {
 export type RunEvent =
   // `metrics` is what the run will actually score, so a client that attached
   // late (after a refresh) knows whether to expect a RAGAS phase at all.
-  | { event: "RUNNING"; run_id: number; total?: number; metrics?: RagasMetric[] }
+  // `case_ids` 는 이번에 도는 케이스들. 제자리 재실행이면 그 부분 집합이라,
+  // 화면이 남겨 둔 결과는 그대로 두고 이 케이스들만 '다시 도는 중' 으로 바꾼다.
+  | { event: "RUNNING"; run_id: number; total?: number; metrics?: RagasMetric[]; case_ids?: number[] }
   | { event: "ANSWER"; run_id: number; done: number; total: number; case_id: number | null; result: RagasResultRow }
   | { event: "SCORE"; run_id: number; done: number; total: number; case_id: number | null; result: RagasResultRow }
   | { event: "DONE"; run_id: number; engine?: string | null; summary?: Record<string, number | null> }
