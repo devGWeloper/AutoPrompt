@@ -15,7 +15,7 @@ import type {
   RunEvent,
 } from "@/lib/types";
 import { exactMatchScore } from "@/lib/exactMatch";
-import { resolveRagasEngine } from "@/lib/config";
+import { getCaseDelayMs, resolveRagasEngine } from "@/lib/config";
 import { requireDataset } from "./datasets";
 import { CONFIG_ENDPOINT_A, CONFIG_ENDPOINT_B, resolveEndpoint } from "./endpoints";
 import { currentModelSnapshot, explicitSnapshot, modelSnapshot } from "./models";
@@ -724,6 +724,21 @@ async function isCancelRequested(conn: OracleConnection, runId: number, signal?:
   return rows.length > 0 && rows[0].STATUS_CD === "CANCELLING";
 }
 
+/** Wait `ms`, or until the run is aborted — whichever comes first. Cancel must
+ * not have to sit out a configured pause before it is felt. */
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal?.addEventListener("abort", done, { once: true });
+  });
+}
+
 async function fetchResultRow(conn: OracleConnection, resultId: number): Promise<RagasResultRow> {
   const { mapRagasResult, resultCols } = await import("@/lib/db/rows");
   const res = await conn.execute(`SELECT ${await resultCols(conn)} FROM PTX_RUN_DET WHERE RESULT_ID = :id`, {
@@ -903,8 +918,15 @@ async function deleteResultsFor(conn: OracleConnection, runId: number, caseIds: 
 
 async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx, emit: Emit, signal?: AbortSignal): Promise<void> {
   const total = ctx.cases.length;
+  // Read once per phase, so half a run cannot pace differently from the other
+  // half because someone edited the config file while it was running.
+  const delayMs = getCaseDelayMs();
   let done = 0;
-  for (const c of ctx.cases) {
+  for (const [i, c] of ctx.cases.entries()) {
+    // 케이스 사이 간격(agent.caseDelaySec) — 엔드포인트가 연속 호출을 못 받는
+    // 경우를 위한 것이다. 첫 케이스는 기다리지 않고, 대기는 취소로 끊긴다:
+    // 바로 아래 취소 확인이 대기 직후에 오도록 이 순서를 지킨다.
+    if (i > 0 && delayMs > 0) await sleep(delayMs, signal);
     if (await isCancelRequested(conn, ctx.runId, signal)) {
       ctx.cancelled = true;
       break;
