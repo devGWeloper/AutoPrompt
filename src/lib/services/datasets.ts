@@ -21,7 +21,14 @@ import type {
 } from "@/lib/types";
 import { SYSTEM_USER } from "@/lib/types";
 import { writeAudit } from "./audit";
-import { analyzeFolder, describeFolder, whyNoAxes, type PurposeCase } from "./purposeAxes";
+import {
+  analyzeFolder,
+  describeFolder,
+  lineFromLabels,
+  whyNoAxes,
+  type FolderAxes,
+  type PurposeCase,
+} from "./purposeAxes";
 import { chatJson, llmConfigured } from "./ragas/llmClient";
 
 // ---- datasets ----
@@ -584,6 +591,16 @@ const CASE_PURPOSE_HINTS = 8;
 const CASE_PURPOSE_LEN = 60;
 /** 축 미리보기가 폴더마다 보여 주는 예시 목적 수. 축이 무엇을 짚는지는 몇 줄이면
  * 드러나고, 전건을 실어 보내면 미리보기가 목록이 된다. */
+/** 폴더 공통값을 프롬프트에 몇 개까지 적을지. 전제를 늘어놓는 자리라 서넛이면 족하다. */
+const PREMISE_MAX = 4;
+/** 축 하나를 소개할 때 보여 주는 값의 수. 갈래가 무엇인지 알면 되지 전부 늘어놓을
+ * 일은 아니다. */
+const AXIS_SAMPLE_VALUES = 4;
+/** 프롬프트에 적는 값의 길이 상한. */
+const VALUE_SHOW = 24;
+/** 한 건에 대해 LLM 이 고를 수 있는 키의 수. 둘이면 족하고, 셋부터는 목적이 아니라
+ * 정답지 요약이 된다. */
+const PICK_MAX = 2;
 const AXIS_PREVIEW_SAMPLES = 5;
 /** 미리보기가 늘어놓는 열 수의 상한. 키가 수십 개인 정답지에서 미리보기가 스키마
  * 덤프가 되지 않게. */
@@ -605,6 +622,135 @@ function dataLine(c: TestCase, n: number): string {
   return `${n}. ${clip(question, PURPOSE_FIELD)}${answer}`;
 }
 
+/** 폴더 전체가 공통으로 갖는 값. 목적에 적으면 모든 건이 같은 말을 하게 되므로
+ * "이건 고르지 말라" 고 일러 주려고 뽑는다. */
+function folderPremise(axes: FolderAxes): string {
+  const fixed = axes.fixed.slice(0, PREMISE_MAX);
+  if (fixed.length === 0) return "";
+  const parts = fixed.map((c) => {
+    const first = c.cells.values().next().value;
+    return `${c.label}='${clip(first ? first.text : "", VALUE_SHOW)}'`;
+  });
+  return `이 소분류의 모든 데이터가 공통으로 갖는 값 (갈리지 않으므로 고르지 마세요): ${parts.join(", ")}\n`;
+}
+
+/** 소분류에 어떤 축이 있고 몇 갈래인지. 한 건의 값만 보여 주면 그 값이 흔한 것인지
+ * 드문 것인지 알 수 없어, 축이 무엇을 가르는 축인지 먼저 펼쳐 놓는다. */
+function axisMenu(axes: FolderAxes): string {
+  const lines = axes.splits.map((c) => {
+    const seen = [...new Set([...c.cells.values()].map((v) => v.text))].slice(0, AXIS_SAMPLE_VALUES);
+    const more = c.distinct > seen.length ? " …" : "";
+    return `- ${c.label} (${c.distinct}갈래: ${seen.map((v) => clip(v, VALUE_SHOW)).join(" / ")}${more})`;
+  });
+  return lines.join("\n");
+}
+
+/**
+ * 정답지가 JSON 인 건들의 목적 — 어느 축이 핵심인지만 LLM 이 고르고, 값과 형식은
+ * 코드가 붙인다.
+ *
+ * 축을 세는 것만으로는 '뜻이 있는 키' 를 가려낼 수 없다. `status` 가 갈리는 것과
+ * `code 타입` 이 갈리는 것은 세기로는 똑같이 두 갈래지만, 목적에 적을 값어치는 전혀
+ * 다르다. 변별력 순으로 줄을 세워 봐야 그건 '얼마나 드문가' 일 뿐 '무엇을 뜻하는가'
+ * 가 아니다. 그 판단은 말을 아는 쪽이 해야 한다.
+ *
+ * 그래서 모델에게는 **고르는 일만** 시킨다. 축 이름 목록과 이 건의 값들을 주고 핵심
+ * 키의 이름만 돌려받는다. 값을 옮겨 적게 하지 않으니 틀릴 수가 없고, 형식을 쓰게
+ * 하지 않으니 흔들릴 수가 없다 — 모델이 자유로운 자리는 '어느 키인가' 하나뿐이다.
+ *
+ * 아는 이름이 하나도 안 돌아온 건은 변별력 순으로 고른 기본 줄로 메운다.
+ */
+async function pickKeyAxes(
+  head: string,
+  premise: string,
+  batch: TestCase[],
+  axes: FolderAxes,
+): Promise<{ id: number; text: string }[]> {
+  const block = batch.map((c, i) => {
+    const facts = axes.facts.get(c.case_id) ?? [];
+    return (
+      `${i + 1}. 질문: ${clip(caseQA(c).question, PURPOSE_FIELD)}\n` +
+      `   값: ${facts.map((f) => f.text).join(", ")}`
+    );
+  });
+
+  const user = [
+    head,
+    "",
+    premise,
+    `이 소분류의 데이터를 모두 견줘 '값이 갈리는 지점' 을 뽑았습니다:`,
+    axisMenu(axes),
+    "",
+    `아래 ${batch.length}건입니다. 각 건이 그 지점들에서 어떤 값을 갖는지 적었습니다.`,
+    "",
+    block.join("\n"),
+    "",
+    `각 건마다, 그 건이 무엇을 확인하려는 것인지 말해 주는 **핵심 키의 이름만** ` +
+      `골라 주세요. 문장은 쓰지 마세요 — 목적 문구는 제가 만듭니다.`,
+    `- 나열된 키가 다 쓸모 있는 것은 아닙니다. 우연히 갈렸을 뿐이거나 부수적인 것` +
+      `(타입·길이·유무 같은 파생값, 내부 플래그)은 빼고, 그 건의 의도를 드러내는 ` +
+      `것만 남기세요.`,
+    `- 1개면 충분하면 1개만. 많아야 2개입니다.`,
+    `- 반드시 위에 적힌 키 이름을 글자 그대로 쓰세요. 새로 만들거나 값을 함께 쓰지 마세요.`,
+    `- 모든 건에 답하고, 번호(n)는 위 번호 그대로 쓰세요.`,
+    `JSON 형식: {"picks":[{"n":1,"keys":["키이름"]}]}`,
+  ].filter(Boolean).join("\n");
+
+  const r = await chatJson<{ picks?: { n?: number; keys?: unknown }[] }>(
+    "당신은 LLM 평가 데이터에서 '이 건이 무엇을 확인하는 건인지' 를 말해 주는 키를 " +
+      "골라 내는 사람입니다. 고른 키 이름만 JSON 으로 답하세요.",
+    user,
+  );
+
+  const chosen = new Map<number, string[]>();
+  for (const item of r.picks ?? []) {
+    const at = Number(item?.n) - 1;
+    if (!Number.isInteger(at) || at < 0 || at >= batch.length) continue;
+    const keys = Array.isArray(item?.keys) ? item.keys.map((k) => String(k)) : [];
+    if (keys.length) chosen.set(at, keys.slice(0, PICK_MAX));
+  }
+
+  const out: { id: number; text: string }[] = [];
+  for (let i = 0; i < batch.length; i++) {
+    const c = batch[i];
+    const facts = axes.facts.get(c.case_id) ?? [];
+    const text =
+      lineFromLabels(facts, chosen.get(i) ?? [], CASE_PURPOSE_LEN) ??
+      axes.purposes.get(c.case_id) ??
+      "";
+    if (text) out.push({ id: c.case_id, text });
+  }
+  return out;
+}
+
+/** 묶음 하나를 물어보고 번호를 되짚어 담는다. 답이 안 온 건은 `fallback` 이 채우고,
+ * 그것도 없으면 그 건은 이번에 비는 채로 남는다 — 다시 누르면 이어서 채워진다. */
+async function askPurposes(
+  user: string,
+  batch: TestCase[],
+  fallback: (c: TestCase) => string | null,
+): Promise<{ id: number; text: string }[]> {
+  const r = await chatJson<{ purposes?: { n?: number; purpose?: string }[] }>(
+    "당신은 LLM 평가 데이터를 보고 각 건이 무엇을 확인하려는 것인지 한 줄로 적는 " +
+      "사람입니다. 반드시 JSON 으로만 답하세요.",
+    user,
+  );
+  const byIndex = new Map<number, string>();
+  for (const item of r.purposes ?? []) {
+    // 번호는 이 묶음 안에서의 1-based 자리다. 엉뚱한 번호가 오면 그 항목만 버린다.
+    const at = Number(item?.n) - 1;
+    const text = clip(String(item?.purpose ?? ""), CASE_PURPOSE_LEN);
+    if (!Number.isInteger(at) || at < 0 || at >= batch.length || !text) continue;
+    byIndex.set(at, text);
+  }
+  const out: { id: number; text: string }[] = [];
+  for (let i = 0; i < batch.length; i++) {
+    const text = byIndex.get(i) ?? fallback(batch[i]);
+    if (text) out.push({ id: batch[i].case_id, text });
+  }
+  return out;
+}
+
 /**
  * 데이터 한 건마다 "이 건으로 무엇을 확인하는가" 를 채운다.
  *
@@ -613,15 +759,25 @@ function dataLine(c: TestCase, n: number): string {
  * 후 잔액" 처럼. 그래서 같은 폴더의 데이터를 함께 놓고 서로 다른 지점을 짚는다.
  * 폴더로 묶는 건 '같은 폴더에 넣었다' 는 것 자체가 이미 사람이 해 둔 갈래 나누기라서다.
  *
- * 견주는 일은 두 손으로 한다.
+ * 목적의 형식은 `키='값', 키='값' 확인` 한 가지다. 목적은 읽는 글이 아니라 목록에서
+ * 훑는 표지라, 문장으로 풀어 쓰는 것보다 같은 자리에 같은 것이 오는 쪽이 빠르게
+ * 읽힌다.
  *
- * 정답지가 JSON 이면 먼저 축으로 짓는다(purposeAxes). 같은 폴더 안에서는 키가 같고
- * 값만 다르므로 '서로 다른 지점' 은 부탁할 것이 아니라 세면 나오는 값이다. 값이
- * 겹치는 열은 갈래, 전건 제각각인 열은 식별자 — 세어 보면 주문번호로 목적을 짓는
- * 일이 없고, 같은 폴더를 두 번 돌려도 같은 문장이 나오며, 호출이 아예 없다.
+ * 정답지가 JSON 이면 두 손으로 짓는다.
  *
- * 축이 잡히지 않은 건만 LLM 으로 넘어간다 — 정답지가 산문이거나, 폴더에 견줄 형제가
- * 없거나, 모든 열이 전건 같은 값일 때다. 이때는 예전처럼 형제를 함께 올려 부른다.
+ * 먼저 소분류(폴더) 전체를 견줘 값이 갈리는 지점을 센다(purposeAxes). 같은 소분류
+ * 안에서는 키가 같고 값만 다르므로, 표로 세우면 무엇이 갈리는지가 그대로 나오고
+ * 주문번호나 타임스탬프는 거기서 저절로 떨어져 나간다 — 예전 프롬프트가 "A-1031
+ * 주문의 취소 확인" 같은 걸 쓰던 이유가 그 열을 변별점으로 오해해서였는데, 세어 보면
+ * 그럴 수가 없다.
+ *
+ * 그다음 그중 **어느 것이 핵심인지** 를 LLM 이 고른다. 갈린다고 다 뜻이 있는 건
+ * 아니어서(우연히 갈린 내부 버전값, 배열 길이 같은 파생값) 그 판단은 말을 아는 쪽이
+ * 해야 한다. 다만 고르는 일까지만 시키고 값과 형식은 코드가 붙인다 — 그래야 값을
+ * 옮겨 적다 틀리거나 형식이 흔들릴 여지가 없다.
+ *
+ * 정답지가 산문이면 축이 없다. 그때는 그 건의 질문과 정답만 보고 LLM 이 자유롭게
+ * 쓴다 — 셀 것이 없으니 형식을 강제할 근거도 없다.
  *
  * 이미 적혀 있는 목적은 어느 쪽도 덮지 않는다. 대신 LLM 에는 본보기로 실어 보낸다 —
  * 사람이 잡아 둔 말투와 결을 나머지가 따라간다.
@@ -676,21 +832,21 @@ export async function fillCasePurposes(
       all.filter((c) => (c.case_type || "NORMAL") === folder).map(toPurposeCase),
       { folder, maxLen: CASE_PURPOSE_LEN },
     );
-    const left: TestCase[] = [];
-    const byAxes: { id: number; text: string }[] = [];
-    for (const c of items) {
-      const line = axes.purposes.get(c.case_id);
-      if (line) byAxes.push({ id: c.case_id, text: line });
-      else left.push(c);
-    }
-    // 축으로 지은 것은 호출이 없어 즉시 나온다. 먼저 내보내야 버튼을 누른 사람이
-    // 기다리는 동안 볼 것이 있다.
-    await flush(byAxes);
-    if (left.length === 0) continue;
+    // 구분점이 잡힌 건과 그렇지 않은 건. 앞쪽은 무엇이 다른지를 이미 아니까 그것만
+    // 건네고 문장을 맡기면 되고, 뒤쪽은 예전처럼 질문과 정답을 통째로 올려야 한다.
+    const grounded = items.filter((c) => (axes.facts.get(c.case_id) ?? []).length > 0);
+    const blind = items.filter((c) => (axes.facts.get(c.case_id) ?? []).length === 0);
+
     if (!llmConfigured()) {
-      // 축으로 지은 게 있으면 그것만이라도 저장하고 남은 건 다음 기회로 넘긴다.
-      // 여기서 던지면 방금 공짜로 얻은 목적까지 같이 버려진다. 다음 폴더는 계속
-      // 본다 — 그 폴더는 축만으로 다 채워질 수도 있다.
+      // LLM 이 없으면 변별력 순으로 고른 기본 줄이라도 남긴다. 핵심 키를 가려내지
+      // 못해 부수적인 축이 섞일 수 있지만, 비어 있는 것보다는 낫다.
+      await flush(
+        grounded
+          .map((c) => ({ id: c.case_id, text: axes.purposes.get(c.case_id) ?? "" }))
+          .filter((f) => f.text),
+      );
+      // 여기서 던지면 방금 얻은 목적까지 같이 버려진다. 다음 폴더는 계속 본다 —
+      // 그 폴더는 구분점만으로 다 채워질 수도 있다.
       if (total > 0) continue;
       throw badRequest("LLM 엔드포인트가 설정되어 있지 않습니다 (config.yml llm.endpoint)");
     }
@@ -698,40 +854,41 @@ export async function fillCasePurposes(
     const hints = all
       .filter((c) => (c.case_type || "NORMAL") === folder && (c.eval_criteria ?? "").trim())
       .slice(0, CASE_PURPOSE_HINTS);
-    for (let i = 0; i < left.length; i += CASE_PURPOSE_BATCH) {
-      const batch = left.slice(i, i + CASE_PURPOSE_BATCH);
+    const hintBlock = hints.length
+      ? `같은 폴더에서 이미 목적이 적힌 데이터 (말투와 결의 본보기):\n` +
+        `${hints.map((h) => `- ${clip(caseQA(h).question, 80)} → ${h.eval_criteria}`).join("\n")}\n`
+      : "";
+    const head = [
+      `평가 데이터셋 "${ds.dataset_nm}"${ds.description ? ` — ${ds.description}` : ""}`,
+      folder === "NORMAL" ? "폴더 없음" : `폴더: ${folder}`,
+    ].join("\n");
+
+    // 정답지가 JSON 인 건: 소분류 전체를 보고 뽑은 축 가운데 어느 것이 핵심인지만
+    // LLM 이 고른다. 값도 형식도 코드가 붙인다.
+    for (let i = 0; i < grounded.length; i += CASE_PURPOSE_BATCH) {
+      const batch = grounded.slice(i, i + CASE_PURPOSE_BATCH);
+      await flush(await pickKeyAxes(head, folderPremise(axes), batch, axes));
+    }
+
+    // 정답지가 산문인 건: 축이 없으니 그 건의 입출력만 보고 자유롭게 쓴다.
+    for (let i = 0; i < blind.length; i += CASE_PURPOSE_BATCH) {
+      const batch = blind.slice(i, i + CASE_PURPOSE_BATCH);
       const user = [
-        `평가 데이터셋 "${ds.dataset_nm}"${ds.description ? ` — ${ds.description}` : ""}`,
-        folder === "NORMAL" ? "폴더 없음" : `폴더: ${folder}`,
+        head,
         "",
-        hints.length
-          ? `같은 폴더에서 이미 목적이 적힌 데이터 (말투와 결의 본보기):\n` +
-            `${hints.map((h) => `- ${clip(caseQA(h).question, 80)} → ${h.eval_criteria}`).join("\n")}\n`
-          : "",
+        hintBlock,
         `아래 ${batch.length}건입니다.`,
         batch.map((c, n) => dataLine(c, n + 1)).join("\n"),
         "",
-        `이 데이터들은 한 갈래에 속합니다. 서로 무엇이 다른지가 드러나도록, 각 건이 ` +
-          `확인하려는 지점을 한국어 한 구절(${CASE_PURPOSE_LEN}자 이내)로 적으세요. ` +
-          `질문을 그대로 옮겨 쓰거나 여러 건에 같은 문장을 쓰지 마세요. ` +
-          `번호(n)는 위 번호 그대로 쓰고, 모든 건에 대해 답하세요. ` +
-          `JSON 형식: {"purposes":[{"n":1,"purpose":"..."}]}`,
+        `각 건이 무엇을 확인하려는 것인지 한국어 한 구절(${CASE_PURPOSE_LEN}자 이내)로 ` +
+          `적으세요.`,
+        `- 그 건의 질문과 정답만 보고 쓰세요.`,
+        `- 질문을 그대로 옮겨 쓰지 마세요. 무엇을 보려고 이 질문을 넣었는지를 쓰세요.`,
+        `- 번호(n)는 위 번호 그대로 쓰고, 모든 건에 대해 답하세요.`,
+        `JSON 형식: {"purposes":[{"n":1,"purpose":"..."}]}`,
       ].filter(Boolean).join("\n");
 
-      const r = await chatJson<{ purposes?: { n?: number; purpose?: string }[] }>(
-        "당신은 LLM 평가 데이터를 보고 각 건이 무엇을 확인하려는 것인지 한 줄로 적는 " +
-          "사람입니다. 반드시 JSON 으로만 답하세요.",
-        user,
-      );
-      const got: { id: number; text: string }[] = [];
-      for (const item of r.purposes ?? []) {
-        // 번호는 이 묶음 안에서의 1-based 자리다. 엉뚱한 번호가 오면 그 항목만 버린다.
-        const at = Number(item?.n) - 1;
-        const text = clip(String(item?.purpose ?? ""), CASE_PURPOSE_LEN);
-        if (!Number.isInteger(at) || at < 0 || at >= batch.length || !text) continue;
-        got.push({ id: batch[at].case_id, text });
-      }
-      await flush(got);
+      await flush(await askPurposes(user, batch, () => null));
     }
   }
   if (total === 0) throw badRequest("요약을 받지 못했습니다 — 다시 시도해 주세요");

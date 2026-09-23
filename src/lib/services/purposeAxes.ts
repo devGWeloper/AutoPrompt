@@ -1,5 +1,5 @@
-// 목적 축 분석 — 폴더 하나를 표로 세워, 케이스마다 "이 건으로 무엇을 확인하는가" 를
-// LLM 없이 짓는다.
+// 목적 축 분석 — 폴더 하나를 표로 세워, 케이스마다 "이 건이 형제와 무엇이 다른가" 를
+// LLM 없이 가려낸다.
 //
 // 지금의 `fillCasePurposes` 는 같은 폴더의 형제들을 한꺼번에 LLM 에 올려 놓고
 // "서로 무엇이 다른지 드러나게 쓰라" 고 시킨다. 그런데 정답지가 JSON 이면 그
@@ -21,9 +21,26 @@
 // 다시 세운다 — 배열은 길이, 숫자는 부호, 무엇이든 빈 값 여부와 타입. 금액이 전건
 // 다르더라도 '0이냐 아니냐' 는 두 갈래라 축이 된다.
 //
-// 한 건의 목적은 그 건이 가진 분류축 값들 가운데 '같은 값을 나눠 갖는 형제가 가장
-// 적은' 것부터 두 개다. 스무 건 중 나만 CANCELLED 인 쪽이 절반이 같은 값인 쪽보다
-// 이 건을 더 잘 말해 준다.
+// 한 건의 구분점은 그 건이 가진 분류축 값들을 '같은 값을 나눠 갖는 형제가 적은' 순으로
+// 세운 것이다. 스무 건 중 나만 CANCELLED 인 쪽이 절반이 같은 값인 쪽보다 이 건을 더
+// 잘 말해 준다.
+//
+// 목적은 `키='값', 키='값' 확인` 한 모양으로 적는다. 문어체로 풀어 쓰지 않는 건
+// 목적이 읽는 글이 아니라 목록에서 훑는 표지이기 때문이다 — 스무 줄이 나란히 설 때
+// 같은 자리에 같은 것이 오는 쪽이 빠르게 읽히고, 옆줄과 견주기 쉽다.
+//
+// 그런데 갈리는 열이 다 뜻이 있는 것은 아니다. `status` 가 갈리는 것과 `code 타입`이
+// 갈리는 것은 세기로는 똑같이 두 갈래지만 목적에 적을 값어치는 전혀 다르고, 그 차이는
+// 세어서 알 수 없다. 변별력 순으로 줄을 세워 봐야 '얼마나 드문가' 일 뿐 '무엇을
+// 뜻하는가' 가 아니다.
+//
+// 그래서 어느 축이 핵심인지는 LLM 이 고른다(services/datasets). 고르는 일만 시키고
+// 값과 형식은 `lineFromLabels` 가 붙이므로, 모델이 값을 옮겨 적다 틀리거나 형식이
+// 흔들릴 여지가 없다. `facts` 가 그 후보 목록이고, 거기에 주문번호가 없다는 것 자체가
+// "그런 걸로 목적을 쓰지 말라" 는 울타리다 — 부탁이 아니라 재료로 막는다.
+//
+// `purposes` 는 변별력 순으로 고른 기본 줄이다. LLM 이 없거나 아는 이름을 하나도
+// 돌려주지 않을 때의 바닥으로 남겨 둔다.
 //
 // path 표기는 `exactMatch` 의 것을 그대로 쓴다. 목적에 적힌 `refund.fee` 와 키별
 // 판정 표의 `refund.fee` 가 같은 글자여야, 실패한 키에서 그 키를 확인하려던 목적으로
@@ -115,8 +132,32 @@ export interface FolderAxes {
   /** 폴더의 전제 — 전건 같은 값인 원값 열. */
   fixed: AxisColumn[];
   outliers: SchemaOutlier[];
-  /** case_id → 목적 한 줄. 축이 잡히지 않은 건은 아예 키가 없다. */
+  /** case_id → 축을 그대로 옮겨 적은 줄. 축이 잡히지 않은 건은 키가 없다. */
   purposes: Map<number, string>;
+  /**
+   * case_id → 그 건을 형제와 구분 짓는 지점, 변별력 높은 순.
+   *
+   * 목적을 LLM 이 쓸 때 건네는 재료다. 무엇이 다른지는 세면 나오지만 그걸 읽히는
+   * 한국어로 만드는 건 다른 일이라, 사실은 여기서 굳히고 문장은 LLM 이 짓는다.
+   * 이 목록 밖의 값(주문번호·금액·날짜)은 애초에 축으로 뽑히지 않았으므로, 이걸
+   * 건네는 것 자체가 "그런 걸로 목적을 쓰지 말라" 는 울타리가 된다.
+   */
+  facts: Map<number, AxisFact[]>;
+}
+
+/** 한 건을 형제와 갈라놓는 지점 하나. */
+export interface AxisFact {
+  /** 축 이름. LLM 이 고른 축을 되짚는 열쇠이기도 하다 — 모델에게는 이 이름만 보이고,
+   * 값과 형식은 코드가 붙인다. */
+  label: string;
+  /** 이 건의 값. */
+  value: string;
+  /** 둘을 합친 한 토막 — `status='CANCELLED'`. 목적 줄은 이것들을 잇는다. */
+  text: string;
+  /** 같은 값을 가진 형제 수(자기 포함). */
+  same: number;
+  /** 그 축이 덮는 건 수. `same`이 `of`에 견줘 작을수록 이 건만의 특징이다. */
+  of: number;
 }
 
 export interface AxisOpts {
@@ -164,6 +205,9 @@ const ECHO_MAX_LEN = 20;
 /** 두 번째 축부터 넘어야 하는 변별력 문턱. 형제의 3/4 이상이 같은 값이면 그 축은
  * 이 건에 대해 할 말이 없는 것이다. */
 const MIN_EXTRA_RARITY = 0.25;
+/** 한 건에 대해 LLM 에게 건네는 구분점 수의 상한. 다섯을 넘겨 주면 프롬프트만 길어지고
+ * 고르는 눈이 흐려진다 — 변별력 순으로 잘린 위쪽이 어차피 쓸 만한 것들이다. */
+const FACTS_MAX = 5;
 /** 폴더 한 줄 설명에 늘어놓는 항목 수. */
 const DESC_ITEMS = 3;
 
@@ -406,6 +450,7 @@ export function analyzeFolder(cases: PurposeCase[], opts: AxisOpts = {}): Folder
       fixed: [],
       outliers: [],
       purposes: new Map(),
+      facts: new Map(),
     };
   }
 
@@ -533,10 +578,23 @@ export function analyzeFolder(cases: PurposeCase[], opts: AxisOpts = {}): Folder
   }
 
   const purposes = new Map<number, string>();
+  const facts = new Map<number, AxisFact[]>();
   const chosen = Boolean(opts.pick && opts.pick.length);
   for (const s of shapes) {
-    const line = lineFor(s.id, splits, lineAxes, maxLen, chosen, labels);
+    const ranked = rankFor(s.id, splits, chosen);
+    if (ranked.length === 0) continue;
+    const line = lineFrom(ranked, lineAxes, maxLen, chosen, labels);
     if (line) purposes.set(s.id, line);
+    facts.set(
+      s.id,
+      ranked.slice(0, FACTS_MAX).map((r) => ({
+        label: axisName(r.col, labels),
+        value: axisValue(r.col, r.cell),
+        text: phrase(r.col, r.cell, labels),
+        same: r.same,
+        of: r.col.present,
+      })),
+    );
   }
 
   return {
@@ -551,45 +609,68 @@ export function analyzeFolder(cases: PurposeCase[], opts: AxisOpts = {}): Folder
     ),
     outliers: outliersOf(shapes),
     purposes,
+    facts,
   };
 }
 
+interface Ranked {
+  col: AxisColumn;
+  cell: AxisCell;
+  /** `splits` 안에서의 자리 — 정렬이 동률일 때의 마지막 기준. */
+  rank: number;
+  /** 같은 값을 나눠 갖는 형제 수(자기 포함). */
+  same: number;
+  rarity: number;
+}
+
 /**
- * 한 건의 목적 한 줄. 쓸 축이 하나도 없으면 null — 부르는 쪽이 LLM 으로 넘길 몫이다.
+ * 한 건이 가진 축들을 변별력 순으로. 비어 있으면 그 건은 축으로 말할 것이 없다.
  *
- * `chosen` 은 축을 사람이 골랐다는 뜻이다. 그때는 고른 순서대로, 문턱도 재지 않고
- * 그대로 적는다 — 폴더 전체를 한 틀로 맞추려고 고른 것이라 어떤 건에서는 빠지고
- * 어떤 건에서는 들어오면 틀이 되지 않는다.
+ * `chosen` 은 축을 사람이 골랐다는 뜻이다. 그때는 고른 순서를 흩지 않는다 — 폴더
+ * 전체를 한 틀로 맞추려고 고른 것이라, 건마다 순서가 바뀌면 틀이 되지 않는다.
  */
-function lineFor(
-  id: number,
-  splits: AxisColumn[],
-  lineAxes: number,
-  maxLen: number,
-  chosen: boolean,
-  labels?: Record<string, string>,
-): string | null {
-  const mine: { col: AxisColumn; cell: AxisCell; rank: number; rarity: number }[] = [];
+function rankFor(id: number, splits: AxisColumn[], chosen: boolean): Ranked[] {
+  const mine: Ranked[] = [];
   for (let i = 0; i < splits.length; i++) {
     const col = splits[i];
     const cell = col.cells.get(id);
     if (!cell) continue;
     // 변별력 = 같은 값을 나눠 갖는 형제가 적을수록 크다. 스무 건 중 나만 CANCELLED
-    // 인 쪽이, 절반이 같은 값인 쪽보다 이 건을 더 잘 말해 준다. 기존 프롬프트의
-    // "여러 건에 같은 문장을 쓰지 마세요" 가 여기서 계산으로 바뀐다.
+    // 인 쪽이, 절반이 같은 값인 쪽보다 이 건을 더 잘 말해 준다.
     let same = 0;
     for (const other of col.cells.values()) if (other.key === cell.key) same++;
-    mine.push({ col, cell, rank: i, rarity: 1 - same / col.present });
+    mine.push({ col, cell, rank: i, same, rarity: 1 - same / col.present });
   }
-  if (mine.length === 0) return null;
-  if (chosen) {
-    const kept = mine.slice(0, lineAxes);
-    return clip(`${kept.map((x) => phrase(x.col, x.cell, labels)).join(" · ")} 확인`, maxLen);
-  }
-
+  if (chosen) return mine;
   // 변별력이 같으면 폴더의 주된 축을 앞에 둔다. `status=CANCELLED · refund.fee=500`
   // 이 그 반대보다 읽힌다 — 무엇에 관한 건인지가 먼저 오기 때문이다.
   mine.sort((a, b) => b.rarity - a.rarity || b.col.distinct - a.col.distinct || a.rank - b.rank);
+  return mine;
+}
+
+/**
+ * 한 건의 목적 한 줄 — `키='값', 키='값' 확인`.
+ *
+ * 문어체로 풀어 쓰지 않는다. 목적은 읽는 글이 아니라 목록에서 한 눈에 훑는 표지이고,
+ * 스무 줄이 나란히 설 때 같은 자리에 같은 것이 오는 쪽이 빠르게 읽힌다. "전액취소
+ * 시 정상 처리되는지 확인합니다" 보다 `취소유형='FULL', 결과='OK' 확인` 이 옆줄과
+ * 견주기 쉽다.
+ *
+ * 형식이 이렇게 굳어 있으니 여기서 나오는 줄이 그대로 목적이 된다 — 예전처럼 LLM 이
+ * 다시 쓸 자리가 아니다.
+ */
+function lineFrom(
+  mine: Ranked[],
+  lineAxes: number,
+  maxLen: number,
+  chosen: boolean,
+  labels?: Record<string, string>,
+): string | null {
+  if (mine.length === 0) return null;
+  if (chosen) {
+    const kept = mine.slice(0, lineAxes);
+    return clip(`${kept.map((x) => phrase(x.col, x.cell, labels)).join(", ")} 확인`, maxLen);
+  }
   // 첫 축은 변별력이 낮아도 쓴다 — 가진 것 중 가장 나은 말이다. 두 번째부터는 문턱을
   // 넘어야 한다: 스무 건 중 열아홉 건이 같은 값인 축을 뒤에 붙여 봐야 `status=A ·
   // vip=false` 처럼 앞말만 되풀이하는 줄이 된다. 변별력 순으로 정렬돼 있으니 문턱에
@@ -599,26 +680,28 @@ function lineFor(
     if (mine[i].rarity < MIN_EXTRA_RARITY) break;
     take.push(mine[i]);
   }
-  return clip(`${take.map((x) => phrase(x.col, x.cell, labels)).join(" · ")} 확인`, maxLen);
+  return clip(`${take.map((x) => phrase(x.col, x.cell, labels)).join(", ")} 확인`, maxLen);
 }
 
 /** 축 하나를 목적 문장의 한 토막으로. 열의 종류마다 읽히는 말이 다르다. */
+/** 목적 줄에 적히는 축 이름. 무엇을 재는 열인지는 이름에 이미 붙어 있다
+ * (`items 길이`, `error_code 유무`). 원값 열만 꼬리가 없다. */
+function axisName(col: AxisColumn, labels?: Record<string, string>): string {
+  return col.kind === "value" ? nameOf(col.path, labels) : labelFor(col.kind, col.path, labels);
+}
+
+/** 목적 줄에 적히는 값. 원값에서만 따옴표 붙은 열쇠를 쓴다 — `200` 과 `"200"` 이
+ * 섞인 열을 가르려고. 바깥 따옴표가 이미 있으니 안쪽 것은 굽은 따옴표로 바꿔
+ * 겹따옴표가 되지 않게 한다. */
+function axisValue(col: AxisColumn, cell: AxisCell): string {
+  const raw = col.kind === "value" && col.quoted ? cell.key : cell.text;
+  return clip(raw, VALUE_MAX).replace(/'/g, "’");
+}
+
+/** 축 하나를 목적 줄의 한 토막으로 — 종류를 가리지 않고 `이름='값'` 한 모양이다.
+ * 스무 줄이 나란히 설 때 같은 자리에 같은 것이 와야 눈이 빨리 훑는다. */
 function phrase(col: AxisColumn, cell: AxisCell, labels?: Record<string, string>): string {
-  const n = nameOf(col.path, labels);
-  switch (col.kind) {
-    case "value":
-      return `${n}=${clip(col.quoted ? cell.key : cell.text, VALUE_MAX)}`;
-    case "present":
-      return cell.text === "있음" ? `${n} 반환` : `${n} 미반환`;
-    case "length":
-      return `${n} ${cell.text}건`;
-    case "blank":
-      return `${n} 값 ${cell.text}`;
-    case "sign":
-      return `${n} ${cell.text}`;
-    case "type":
-      return `${n} 타입 ${cell.text}`;
-  }
+  return `${axisName(col, labels)}='${axisValue(col, cell)}'`;
 }
 
 /** 형제 대다수와 키 집합이 다른 건을 집어낸다. 최빈 키 집합을 폴더의 모양으로 보고,
@@ -696,6 +779,34 @@ export function whyNoAxes(f: FolderAxes): string | null {
       `겹치는 값이 전체의 1/3은 되어야 갈래로 봅니다`;
   }
   return "모든 열이 전건 같은 값입니다 — 정답지끼리 서로 다르지 않습니다";
+}
+
+/**
+ * 고른 축들로 목적 한 줄을 짓는다 — `키='값', 키='값' 확인`.
+ *
+ * LLM 이 어느 축이 핵심인지만 골라 보내면(services/datasets), 값과 형식은 여기서
+ * 붙인다. 모델에게 값까지 쓰게 하면 옮겨 적다 틀리거나 형식이 흔들리는데, 고르는
+ * 일만 맡기면 그럴 수가 없다 — 모델이 하는 판단은 '어느 키가 뜻이 있는가' 하나다.
+ *
+ * 아는 이름이 하나도 없으면 null. 부르는 쪽이 기본 줄로 되돌아갈 몫이다.
+ */
+export function lineFromLabels(
+  facts: AxisFact[],
+  labels: string[],
+  maxLen = DEFAULT_MAX_LEN,
+): string | null {
+  const byLabel = new Map<string, AxisFact>();
+  for (const f of facts) if (!byLabel.has(f.label)) byLabel.set(f.label, f);
+
+  const picked: AxisFact[] = [];
+  for (const raw of labels) {
+    // 모델이 따옴표를 붙여 보내거나 값까지 함께 보내는 일이 있다. 이름만 떼어 본다.
+    const name = String(raw ?? "").trim().replace(/^['"]|['"]$/g, "").split("=")[0].trim();
+    const hit = byLabel.get(name);
+    if (hit && !picked.includes(hit)) picked.push(hit);
+  }
+  if (picked.length === 0) return null;
+  return clip(`${picked.map((f) => f.text).join(", ")} 확인`, maxLen);
 }
 
 /** 폴더 자체를 한 줄로 — 전제와 갈래. 데이터셋 목적을 LLM 없이 짓는 씨앗이다. */
