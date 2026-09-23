@@ -1,5 +1,7 @@
-import { getCallTimeoutMs, getEmbeddingConfig, getLlmConfig } from "@/lib/config";
+import { getCallTimeoutMs, getCaseDelayMs, getEmbeddingConfig, getLlmConfig } from "@/lib/config";
 import { fetchWithTimeout } from "@/lib/http";
+import { currentRunSignal } from "@/lib/runSignal";
+import { sleep } from "@/lib/sleep";
 
 // Minimal OpenAI-compatible client for the RAGAS judge LLM + embeddings.
 // Endpoints are the base URL (e.g. http://host/v1); this appends the standard
@@ -11,9 +13,55 @@ interface ChatMessage {
   content: string;
 }
 
+/** 마지막 호출이 끝난 시각. 모듈 스코프라 이 프로세스에서 나가는 모든 모델 호출이
+ * 하나의 줄에 선다 — 채점이든 목적 채우기든, 어느 실행에서 불렀든. */
+let lastCallDone = 0;
+/** 대기하는 순서 자체를 줄 세운다. 이게 없으면 동시에 도착한 두 호출이 같은
+ * `lastCallDone` 을 읽고 나란히 통과해, 간격을 두라고 한 바로 그 일이 벌어진다. */
+let callQueue: Promise<void> = Promise.resolve();
+
+/**
+ * 설정된 간격(`agent.caseDelaySec`)만큼 앞 호출과 사이를 띄우고 `fn` 을 부른다.
+ *
+ * 간격은 앞 호출이 '끝난' 때부터 잰다. 모델 서버가 연속 호출을 못 받는다는 뜻으로
+ * 둔 값이라, 응답을 받자마자 다음 것을 밀어 넣지 않는 쪽이 맞다.
+ *
+ * 간격이 0이면(기본값) 아무것도 하지 않는다 — 줄도 세우지 않고 그대로 부른다.
+ * 0일 때까지 직렬화하면 설정을 안 건드린 사람의 채점이 느려진다.
+ *
+ * 대기는 취소로 끊긴다. 취소를 눌렀는데 설정해 둔 간격을 다 기다린 뒤에야 멈추면
+ * 그건 취소가 아니다.
+ */
+function paced<T>(fn: () => Promise<T>): Promise<T> {
+  const gap = getCaseDelayMs();
+  if (gap <= 0) return fn();
+  const mine = callQueue.then(async () => {
+    const wait = lastCallDone + gap - Date.now();
+    if (wait > 0) await sleep(wait, currentRunSignal());
+    try {
+      return await fn();
+    } finally {
+      // 실패한 호출도 서버를 한 번 두드린 것이다. 다음 것이 곧바로 따라붙지 않게
+      // 끝난 시각은 성공 여부와 무관하게 적는다.
+      lastCallDone = Date.now();
+    }
+  });
+  // 앞 호출이 실패해도 줄은 계속 흘러야 한다 — 한 번의 오류로 이후 전부가 멈추면
+  // 안 된다. 그래서 줄에는 결과도 오류도 남기지 않는다.
+  callQueue = mine.then(
+    () => undefined,
+    () => undefined,
+  );
+  return mine;
+}
+
 /** The judge LLM and the embedding model wait exactly as long as an agent call
  * does — one `agent.timeoutSec` for every outbound request. */
 async function postJson(url: string, apiKey: string, body: unknown, timeoutMs = getCallTimeoutMs()): Promise<unknown> {
+  return paced(() => postJsonNow(url, apiKey, body, timeoutMs));
+}
+
+async function postJsonNow(url: string, apiKey: string, body: unknown, timeoutMs: number): Promise<unknown> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
   let resp: Response;

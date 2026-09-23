@@ -16,6 +16,7 @@ import type {
 } from "@/lib/types";
 import { exactMatchScore } from "@/lib/exactMatch";
 import { getCaseDelayMs, resolveRagasEngine } from "@/lib/config";
+import { sleep } from "@/lib/sleep";
 import { requireDataset } from "./datasets";
 import { CONFIG_ENDPOINT_A, CONFIG_ENDPOINT_B, resolveEndpoint } from "./endpoints";
 import { currentModelSnapshot, explicitSnapshot, modelSnapshot } from "./models";
@@ -724,20 +725,6 @@ async function isCancelRequested(conn: OracleConnection, runId: number, signal?:
   return rows.length > 0 && rows[0].STATUS_CD === "CANCELLING";
 }
 
-/** Wait `ms`, or until the run is aborted — whichever comes first. Cancel must
- * not have to sit out a configured pause before it is felt. */
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  if (signal?.aborted) return Promise.resolve();
-  return new Promise((resolve) => {
-    const done = () => {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", done);
-      resolve();
-    };
-    const timer = setTimeout(done, ms);
-    signal?.addEventListener("abort", done, { once: true });
-  });
-}
 
 async function fetchResultRow(conn: OracleConnection, resultId: number): Promise<RagasResultRow> {
   const { mapRagasResult, resultCols } = await import("@/lib/db/rows");

@@ -21,7 +21,7 @@ import type {
 } from "@/lib/types";
 import { SYSTEM_USER } from "@/lib/types";
 import { writeAudit } from "./audit";
-import { analyzeFolder, describeFolder, type PurposeCase } from "./purposeAxes";
+import { analyzeFolder, describeFolder, whyNoAxes, type PurposeCase } from "./purposeAxes";
 import { chatJson, llmConfigured } from "./ragas/llmClient";
 
 // ---- datasets ----
@@ -585,6 +585,9 @@ const CASE_PURPOSE_LEN = 60;
 /** 축 미리보기가 폴더마다 보여 주는 예시 목적 수. 축이 무엇을 짚는지는 몇 줄이면
  * 드러나고, 전건을 실어 보내면 미리보기가 목록이 된다. */
 const AXIS_PREVIEW_SAMPLES = 5;
+/** 미리보기가 늘어놓는 열 수의 상한. 키가 수십 개인 정답지에서 미리보기가 스키마
+ * 덤프가 되지 않게. */
+const AXIS_PREVIEW_COLUMNS = 20;
 
 /** 케이스를 축 분석이 아는 모양으로. 정답은 두 군데 있고 채점이 INPUT_CTN 의
  * `ground_truth` 를 먼저 보므로(parseCase), 축도 같은 것을 봐야 한다 — 화면의 정답과
@@ -626,6 +629,7 @@ function dataLine(c: TestCase, n: number): string {
 export async function fillCasePurposes(
   datasetId: number,
   caseIds?: number[] | null,
+  onFilled?: (items: { case_id: number; purpose: string }[]) => void,
 ): Promise<{ filled: number; remaining: number }> {
   const ds = await getDatasetDetail(datasetId);
   const all = await listCases(datasetId);
@@ -644,7 +648,27 @@ export async function fillCasePurposes(
     else byFolder.set(k, [c]);
   }
 
-  const filled: { id: number; text: string }[] = [];
+  // 한 덩어리가 지어질 때마다 저장하고 알린다. 예전처럼 끝에 한 번에 쓰면 스무
+   // 건짜리 LLM 묶음이 다 돌 때까지 화면에는 아무것도 없고, 도중에 끊기면 이미 지어
+  // 놓은 것까지 같이 사라진다. 덩어리마다 커밋하면 둘 다 없는 문제가 된다.
+  let total = 0;
+  const flush = async (chunk: { id: number; text: string }[]): Promise<void> => {
+    if (chunk.length === 0) return;
+    await withConn(async (conn) => {
+      for (const f of chunk) {
+        // DATASET_ID 를 함께 걸고 빈 칸만 친다 — 도중에 사람이 적어 넣은 목적을
+        // 뒤늦게 도착한 요약이 덮는 일이 없다.
+        await conn.execute(
+          `UPDATE PTX_DATASET_DET SET CRITERIA_CTN = :crit
+            WHERE CASE_ID = :cid AND DATASET_ID = :did AND CRITERIA_CTN IS NULL`,
+          { crit: f.text, cid: f.id, did: datasetId },
+        );
+      }
+    }, { commit: true });
+    total += chunk.length;
+    onFilled?.(chunk.map((f) => ({ case_id: f.id, purpose: f.text })));
+  };
+
   for (const [folder, items] of byFolder) {
     // 축은 폴더 전체를 보고 센다. 목적이 이미 적힌 형제도 값의 분포에는 들어가야
     // 한다 — 무엇이 흔하고 무엇이 드문지는 채울 건들만 봐서는 알 수 없다.
@@ -653,17 +677,21 @@ export async function fillCasePurposes(
       { folder, maxLen: CASE_PURPOSE_LEN },
     );
     const left: TestCase[] = [];
+    const byAxes: { id: number; text: string }[] = [];
     for (const c of items) {
       const line = axes.purposes.get(c.case_id);
-      if (line) filled.push({ id: c.case_id, text: line });
+      if (line) byAxes.push({ id: c.case_id, text: line });
       else left.push(c);
     }
+    // 축으로 지은 것은 호출이 없어 즉시 나온다. 먼저 내보내야 버튼을 누른 사람이
+    // 기다리는 동안 볼 것이 있다.
+    await flush(byAxes);
     if (left.length === 0) continue;
     if (!llmConfigured()) {
       // 축으로 지은 게 있으면 그것만이라도 저장하고 남은 건 다음 기회로 넘긴다.
       // 여기서 던지면 방금 공짜로 얻은 목적까지 같이 버려진다. 다음 폴더는 계속
       // 본다 — 그 폴더는 축만으로 다 채워질 수도 있다.
-      if (filled.length > 0) continue;
+      if (total > 0) continue;
       throw badRequest("LLM 엔드포인트가 설정되어 있지 않습니다 (config.yml llm.endpoint)");
     }
 
@@ -695,30 +723,53 @@ export async function fillCasePurposes(
           "사람입니다. 반드시 JSON 으로만 답하세요.",
         user,
       );
+      const got: { id: number; text: string }[] = [];
       for (const item of r.purposes ?? []) {
         // 번호는 이 묶음 안에서의 1-based 자리다. 엉뚱한 번호가 오면 그 항목만 버린다.
         const at = Number(item?.n) - 1;
         const text = clip(String(item?.purpose ?? ""), CASE_PURPOSE_LEN);
         if (!Number.isInteger(at) || at < 0 || at >= batch.length || !text) continue;
-        filled.push({ id: batch[at].case_id, text });
+        got.push({ id: batch[at].case_id, text });
       }
+      await flush(got);
     }
   }
-  if (filled.length === 0) throw badRequest("요약을 받지 못했습니다 — 다시 시도해 주세요");
+  if (total === 0) throw badRequest("요약을 받지 못했습니다 — 다시 시도해 주세요");
 
-  await withConn(async (conn) => {
-    for (const f of filled) {
-      // DATASET_ID 를 함께 걸고 빈 칸만 친다 — 도중에 사람이 적어 넣은 목적을
-      // 뒤늦게 도착한 요약이 덮는 일이 없다.
-      await conn.execute(
-        `UPDATE PTX_DATASET_DET SET CRITERIA_CTN = :crit
-          WHERE CASE_ID = :cid AND DATASET_ID = :did AND CRITERIA_CTN IS NULL`,
-        { crit: f.text, cid: f.id, did: datasetId },
+  return { filled: total, remaining: empty.length - total };
+}
+
+/**
+ * 고른 데이터의 목적을 지운다.
+ *
+ * 채우기는 한 번에 200건을 건드리는 일이라 무를 길이 있어야 한다. 토스트의 되돌리기는
+ * 그 자리를 뜨면 사라지고, 채운 것이 마음에 안 드는 걸 나중에 알아차리는 일도 많다 —
+ * 목록에서 골라 지우는 길이 그래서 따로 있다.
+ *
+ * 비어 있던 칸을 또 비우는 건 셈에 넣지 않는다. 돌아오는 수는 '실제로 지워진 것' 이라
+ * 화면이 "3건을 지웠습니다" 라고 말하면 정말 세 줄이 사라진 것이다.
+ */
+export async function clearCasePurposes(
+  datasetId: number,
+  caseIds: number[] | null,
+): Promise<{ cleared: number }> {
+  const ids = (caseIds ?? []).map(Number).filter(Number.isInteger);
+  if (ids.length === 0) throw badRequest("지울 데이터를 고르세요");
+
+  return withConn(async (conn) => {
+    let cleared = 0;
+    for (const cid of ids) {
+      // DATASET_ID 를 함께 걸어 남의 데이터셋 행을 건드리지 않게 하고, 이미 비어
+      // 있는 행은 조건에서 걸러 셈이 부풀지 않게 한다.
+      const res = await conn.execute(
+        `UPDATE PTX_DATASET_DET SET CRITERIA_CTN = NULL
+          WHERE CASE_ID = :cid AND DATASET_ID = :did AND CRITERIA_CTN IS NOT NULL`,
+        { cid, did: datasetId },
       );
+      cleared += Number(res.rowsAffected ?? 0);
     }
+    return { cleared };
   }, { commit: true });
-
-  return { filled: filled.length, remaining: empty.length - filled.length };
 }
 
 /**
@@ -736,7 +787,11 @@ export async function previewCaseAxes(datasetId: number): Promise<{
     cases: number;
     parsed: number;
     summary: string;
-    axes: { id: string; label: string; role: string; distinct: number; present: number }[];
+    axes: { id: string; label: string; role: string; echo: boolean; distinct: number; present: number }[];
+    /** 축이 하나도 없을 때 그 이유. 있으면 null. */
+    reason: string | null;
+    /** 정답지에 실제로 적힌 열 전부 — 무엇이 왜 빠졌는지 숫자로 보는 자리다. */
+    columns: { label: string; role: string; distinct: number; present: number }[];
     samples: { case_id: number; purpose: string }[];
     unparsed: number[];
     outliers: { case_id: number; missing: string[]; extra: string[] }[];
@@ -766,9 +821,17 @@ export async function previewCaseAxes(datasetId: number): Promise<{
         id: c.id,
         label: c.label,
         role: c.role,
+        echo: c.echo,
         distinct: c.distinct,
         present: c.present,
       })),
+      reason: whyNoAxes(f),
+      // 원값 열만. 파생 열(부호·길이·유무)은 원값에서 나온 것이라 여기 같이 놓으면
+      // 같은 키가 다섯 줄로 늘어난다.
+      columns: f.columns
+        .filter((c) => c.kind === "value")
+        .slice(0, AXIS_PREVIEW_COLUMNS)
+        .map((c) => ({ label: c.label, role: c.role, distinct: c.distinct, present: c.present })),
       samples: items
         .map((c) => ({ case_id: c.case_id, purpose: f.purposes.get(c.case_id) ?? "" }))
         .filter((s) => s.purpose)

@@ -40,9 +40,11 @@ export interface AgentConfig {
    * `agent.timeoutSec` (default 90s) — a flow that fans out to several nodes is
    * slow, so this is generous on purpose. */
   timeoutMs: number;
-  /** Pause between two cases of the same run, in ms. From `agent.caseDelaySec`
-   * (default 0 = back-to-back). It is the gap between endpoint calls only: the
-   * first case never waits, and a cancel cuts the wait short. */
+  /** Pause between two outbound model calls, in ms. From `agent.caseDelaySec`
+   * (default 0 = back-to-back). It paces both the run loop (case to case) and
+   * every call to the judge LLM / embedding endpoint. The first call never
+   * waits, the gap is measured from the previous call's end, and a cancel cuts
+   * the wait short. */
   caseDelayMs: number;
   /** Side A. Also the default: a run that names no side calls A. */
   a: AgentSideConfig;
@@ -245,9 +247,11 @@ export function getCallTimeoutMs(): number {
   return loadConfig().agent.timeoutMs;
 }
 
-/** How long a run waits between two cases — `agent.caseDelaySec`, 0 by default.
- * A throttle for endpoints that cannot take the cases back to back. It paces the
- * chat endpoint only; the judge LLM and embeddings are unaffected. */
+/** How long to wait between two outbound model calls — `agent.caseDelaySec`,
+ * 0 by default. A throttle for endpoints that cannot take calls back to back.
+ * Two places read it: the run loop pauses between cases (services/flow), and
+ * every judge-LLM and embedding request queues behind it (ragas/llmClient) —
+ * so a purpose fill or a scoring pass is paced the same as a run. */
 export function getCaseDelayMs(): number {
   return loadConfig().agent.caseDelayMs;
 }

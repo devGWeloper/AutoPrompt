@@ -318,6 +318,10 @@ export default function DatasetsPanel() {
   const noPurpose = inFolder.filter((c) => !(c.eval_criteria ?? '').trim()).length;
 
   const pickedRows = rows.filter((r) => picked.has(r.c.case_id));
+  /** 고른 것 중 실제로 목적이 적혀 있는 건. '목적 지우기' 가 설지 말지를 가른다. */
+  const pickedWithPurpose = pickedRows
+    .filter((r) => (r.c.eval_criteria ?? '').trim())
+    .map((r) => r.c.case_id);
   const allPicked = rows.length > 0 && pickedRows.length === rows.length;
   // Checkboxes stay out of sight until a row is hovered; once anything is picked
   // they all show, since from then on the list is being chosen from.
@@ -528,8 +532,28 @@ export default function DatasetsPanel() {
   /** Copy a case into the add form — building near-identical cases is the common
    * way these datasets grow, and retyping the whole payload is the slow part. */
   /**
-   * 목적이 빈 데이터에 LLM 이 한 줄씩 채운다. 고른 것이 있으면 그중에서만 —
-   * 목록 전체를 한 번에 돌리기 전에 몇 건으로 결과를 확인해 보는 길이다.
+   * 고른 데이터의 목적을 지운다 — 채운 것이 마음에 들지 않을 때.
+   *
+   * 토스트의 되돌리기도 이 길을 쓴다. 그쪽은 그 자리를 뜨면 사라지지만, 채운 목적이
+   * 어긋난 걸 나중에 알아차리는 일이 더 많아서 목록에서 골라 지우는 길이 따로 있다.
+   */
+  const clearPurposes = (caseIds: number[], done = '지웠습니다') => guard(async () => {
+    if (selDataset == null || caseIds.length === 0) return;
+    const ids = new Set(caseIds);
+    const res = await api.del<{ cleared: number }>(`/datasets/${selDataset}/cases/purpose`, {
+      case_ids: caseIds,
+    });
+    setCases((prev) => prev.map((c) => (ids.has(c.case_id) ? { ...c, eval_criteria: null } : c)));
+    setToast({ text: `목적 ${res.cleared}건을 ${done}` });
+  });
+
+  /**
+   * 목적이 빈 데이터를 한 줄씩 채운다. 고른 것이 있으면 그중에서만 — 목록 전체를
+   * 한 번에 돌리기 전에 몇 건으로 결과를 확인해 보는 길이다.
+   *
+   * 결과를 기다렸다 한꺼번에 받지 않고 채워지는 대로 그 자리에 앉힌다. 정답지가
+   * JSON 인 건은 호출 없이 즉시 지어지고 나머지만 LLM 을 거치는데, 끝을 기다리면
+   * 즉시 나온 것까지 같이 묶여 한참 뒤에 나타난다.
    *
    * 이미 적힌 목적은 서버가 건드리지 않으므로, 여러 번 눌러도 사람이 쓴 줄은
    * 그대로다. 되돌리기는 이번에 채워진 것만 도로 비운다.
@@ -537,33 +561,43 @@ export default function DatasetsPanel() {
   const fillPurposes = (caseIds?: number[]) => guard(async () => {
     if (selDataset == null) return;
     const did = selDataset;
-    const before = new Set(
-      cases.filter((c) => !(c.eval_criteria ?? '').trim()).map((c) => c.case_id),
-    );
+    const touched: number[] = [];
+    let failed: string | null = null;
     setToast({ text: '목적을 채우는 중…' });
-    const res = await api.post<{ filled: number; remaining: number }>(
-      `/datasets/${did}/cases/purpose`,
-      caseIds ? { case_ids: caseIds } : {},
-    );
-    const fresh = await api.get<TestCase[]>(`/datasets/${did}/cases`);
-    setCases(fresh);
-    const touched = fresh.filter((c) => before.has(c.case_id) && (c.eval_criteria ?? '').trim());
-    setToast({
-      text:
-        `목적 ${res.filled}건을 채웠습니다` +
-        (res.remaining > 0 ? ` · ${res.remaining}건 남음 (다시 누르면 이어서)` : ''),
-      undo: touched.length
-        ? () =>
-            guard(async () => {
-              for (const c of touched) {
-                await api.put(`/datasets/${did}/cases/${c.case_id}`, { eval_criteria: null });
-              }
-              loadCases();
-              setToast({ text: `목적 ${touched.length}건을 되돌렸습니다` });
-            })
-        : undefined,
+
+    await api.stream<
+      | { event: 'FILLED'; items: { case_id: number; purpose: string }[] }
+      | { event: 'DONE'; filled: number; remaining: number }
+      | { event: 'FAILED'; message: string }
+    >(`/datasets/${did}/cases/purpose/stream`, caseIds ? { case_ids: caseIds } : {}, (e) => {
+      if (e.event === 'FILLED') {
+        const got = new Map(e.items.map((i) => [i.case_id, i.purpose]));
+        touched.push(...e.items.map((i) => i.case_id));
+        // 도착한 것만 그 자리에서 갈아 끼운다. 목록을 통째로 다시 받아 오면 채워지는
+        // 모습 대신 화면이 한 번 깜빡이고, 펼쳐 둔 행도 접힌다.
+        setCases((prev) =>
+          prev.map((c) => {
+            const line = got.get(c.case_id);
+            return line ? { ...c, eval_criteria: line } : c;
+          }),
+        );
+        setToast({ text: `목적을 채우는 중… ${touched.length}건` });
+      } else if (e.event === 'DONE') {
+        setToast({
+          text:
+            `목적 ${e.filled}건을 채웠습니다` +
+            (e.remaining > 0 ? ` · ${e.remaining}건 남음 (다시 누르면 이어서)` : ''),
+          undo: touched.length ? () => clearPurposes(touched, '되돌렸습니다') : undefined,
+        });
+      } else {
+        failed = e.message;
+      }
     });
+    // 스트림은 이미 200 으로 열린 뒤라 실패가 프레임으로 온다. 평소의 오류 자리에
+    // 보이도록 여기서 다시 던진다.
+    if (failed) throw new Error(failed);
   });
+
 
   function duplicate(c: TestCase) {
     setDraft(toFields(parseCaseInput(c.input_data), c.expected_output, c.case_type, c.eval_criteria));
@@ -906,10 +940,23 @@ export default function DatasetsPanel() {
                       size="sm"
                       disabled={busy}
                       onClick={() => fillPurposes(pickedRows.map((r) => r.c.case_id))}
-                      title="고른 데이터 중 목적이 비어 있는 것만 LLM 이 채웁니다"
+                      title="고른 데이터 중 목적이 비어 있는 것만 채웁니다 — 정답지가 JSON 이면 정답지를 보고, 아니면 LLM 이"
                     >
                       목적 채우기
                     </Button>
+                    {/* 지울 것이 있을 때만 선다. 목적이 하나도 없는 선택에 이 버튼이
+                        서 있으면 누를 때마다 "0건을 지웠습니다" 만 돌아온다. */}
+                    {pickedWithPurpose.length > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => clearPurposes(pickedWithPurpose)}
+                        title="고른 데이터의 목적을 지웁니다 — 채운 것이 어긋났을 때"
+                      >
+                        목적 지우기 <span className="font-mono tabular-nums text-muted">{pickedWithPurpose.length}</span>
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="sm"

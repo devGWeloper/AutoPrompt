@@ -12,11 +12,20 @@ import { logger } from "./logger";
  * close) can reattach and be replayed rather than losing the run.
  */
 export function sseResponse(run: (emit: Emit) => Promise<void>): Response {
+  return sseOf(run as (emit: (e: unknown) => void) => Promise<void>);
+}
+
+/**
+ * Same wire format, any payload — 목적 채우기처럼 실행과는 무관한 진행 상황에 쓴다.
+ * 한 건이 지어질 때마다 프레임 하나가 나가므로, 부르는 쪽은 스무 건짜리 LLM 묶음이
+ * 다 돌기를 기다리지 않고 채워지는 대로 화면에 올릴 수 있다.
+ */
+export function sseOf<T>(run: (emit: (event: T) => void) => Promise<void>): Response {
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       let closed = false;
-      const emit = (event: RunEvent) => {
+      const emit = (event: T) => {
         if (closed) return;
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));

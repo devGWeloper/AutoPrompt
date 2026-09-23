@@ -1,4 +1,4 @@
-import { fillCasePurposes, previewCaseAxes } from "@/lib/services/datasets";
+import { clearCasePurposes, fillCasePurposes, previewCaseAxes } from "@/lib/services/datasets";
 import { errorResponse } from "@/lib/http";
 import { caseIdsField, intParam, ok } from "@/lib/route-utils";
 
@@ -21,6 +21,19 @@ export async function POST(req: Request, { params }: { params: { dataset_id: str
   try {
     const body = await req.json().catch(() => null);
     return ok(await fillCasePurposes(intParam(params.dataset_id, "dataset_id"), caseIdsField(body)));
+  } catch (e) {
+    return errorResponse(e);
+  }
+}
+
+/** 고른 데이터의 목적을 지운다. 본문의 `case_ids` 는 반드시 있어야 한다 — 데이터셋
+ * 전체를 한 번에 비우는 건 실수로 부르기 너무 쉬운 요청이다. */
+export async function DELETE(req: Request, { params }: { params: { dataset_id: string } }) {
+  try {
+    const body = await req.json().catch(() => null);
+    return ok(
+      await clearCasePurposes(intParam(params.dataset_id, "dataset_id"), caseIdsField(body)),
+    );
   } catch (e) {
     return errorResponse(e);
   }

@@ -263,10 +263,105 @@ function isBlank(leaf: JsonLeaf): boolean {
   return leaf.type === "null" || leaf.text === "" || leaf.text === "[]" || leaf.text === "{}";
 }
 
+const FENCE = /^```[a-zA-Z]*\s*\n?([\s\S]*?)\n?\s*```$/;
+
+/** ```json 펜스를 벗긴다. */
+function stripFence(s: string): string {
+  const m = FENCE.exec(s);
+  return m ? m[1].trim() : s;
+}
+
+/** 앞뒤 군말을 떼고 괄호 한 쌍만 남긴다. 문자열 안의 괄호는 세지 않는다 —
+ * `{"msg":"}"}` 를 반 토막 내면 안 된다. */
+function sliceJson(s: string): string | null {
+  const start = s.search(/[{[]/);
+  if (start < 0) return null;
+  const open = s[start];
+  const close = open === "{" ? "}" : "]";
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === open) depth++;
+    else if (ch === close && --depth === 0) return s.slice(start, i + 1);
+  }
+  return null;
+}
+
+/** 파이썬 쪽에서 찍어 낸 흔적과 남는 쉼표를 지운다. 문자열 안은 건드리지 않는다. */
+function repairJson(s: string): string {
+  let out = "";
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      out += ch;
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') {
+      inStr = true;
+      out += ch;
+      continue;
+    }
+    // 닫는 괄호 앞의 쉼표는 JSON 이 허락하지 않는다.
+    if (ch === ",") {
+      const rest = s.slice(i + 1);
+      if (/^\s*[}\]]/.test(rest)) continue;
+      out += ch;
+      continue;
+    }
+    const word = /^(True|False|None|NaN|Infinity|-Infinity)\b/.exec(s.slice(i));
+    if (word) {
+      out += { True: "true", False: "false", None: "null" }[word[1]] ?? "null";
+      i += word[1].length - 1;
+      continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
+/**
+ * 엄격한 JSON 으로 안 읽히는 정답지를 한 겹 더 벗겨 본다.
+ *
+ * 정답을 사람이 손으로 붙여 넣은 데이터셋에서 JSON 이 맨몸으로 있는 일은 드물다.
+ * ```json 펜스에 싸여 있거나, "아래와 같이 반환됩니다:" 가 앞에 붙거나, 파이썬 쪽에서
+ * 찍어 낸 True/None 과 작은따옴표가 섞여 있다. 눈으로는 JSON 인데 JSON.parse 는
+ * 거부하고, 그러면 축이 한 줄도 안 잡혀 폴더 전체가 LLM 으로 넘어간다.
+ *
+ * 채점(structuredMatch)은 이 손을 쓰지 않는다. 일치/불일치의 기준을 느슨하게 만드는
+ * 건 전혀 다른 이야기고, 여기서 하는 일은 목적을 지으려고 모양만 들여다보는 것이다.
+ */
+function looseText(raw: string): string | null {
+  const body = sliceJson(stripFence(raw));
+  if (body === null) return null;
+  // 큰따옴표가 하나도 없으면 파이썬 repr 이다. 그때만 작은따옴표를 바꾼다 —
+  // 섞여 있을 때 바꾸면 값 안의 아포스트로피까지 따옴표가 되어 더 망가진다.
+  const quoted = body.includes('"') ? body : body.replace(/'/g, '"');
+  return repairJson(quoted);
+}
+
 function shapeOf(c: PurposeCase, unwrapBody?: boolean): CaseShape | null {
   const raw = (c.ground_truth ?? "").trim();
   if (!raw) return null;
-  const value = jsonValueOf(raw, unwrapBody === undefined ? {} : { unwrapBody });
+  const opts = unwrapBody === undefined ? {} : { unwrapBody };
+  let value = jsonValueOf(raw, opts);
+  if (value === undefined) {
+    const relaxed = looseText(raw);
+    if (relaxed !== null) value = jsonValueOf(relaxed, opts);
+  }
   if (value === undefined) return null;
   const { leaves, arrays } = jsonShape(value);
   const byPath = new Map<string, JsonLeaf>();
@@ -569,6 +664,38 @@ function outliersOf(shapes: CaseShape[]): SchemaOutlier[] {
     out.push({ case_id: s.id, missing, extra });
   }
   return out;
+}
+
+/**
+ * 축이 하나도 안 잡힌 이유를 한 줄로. 잡혔으면 null.
+ *
+ * 이게 없으면 "정답이 JSON 인데 왜 LLM 이 답했지?" 에 답할 길이 없다. 규칙이 네 개고
+ * 어느 문턱에 걸렸는지는 숫자를 봐야 아는데, 그 숫자는 여기에만 있다.
+ */
+export function whyNoAxes(f: FolderAxes): string | null {
+  if (f.splits.length > 0) return null;
+  if (f.parsed === 0) {
+    return `정답지가 JSON 이 아닙니다 (${f.cases}건 전부). 정답이 산문이면 축을 셀 수 없습니다`;
+  }
+  if (f.parsed < 2) {
+    return `견줄 형제가 없습니다 — 이 폴더에 JSON 정답이 ${f.parsed}건뿐입니다`;
+  }
+  const brief = (cols: AxisColumn[]) =>
+    cols.slice(0, DESC_ITEMS).map((c) => `${c.label} ${c.distinct}가지/${c.present}건`).join(", ");
+
+  // 갈래로 갈리기는 했는데 폴더의 절반을 못 덮은 경우 — 폴더 안에 키 모양이 다른
+  // 무리가 섞여 있다는 뜻이라, 폴더를 나누면 바로 잡힌다.
+  const narrow = f.columns.filter((c) => c.role === "split");
+  if (narrow.length > 0) {
+    return `갈래가 보이는 열은 있으나 폴더의 절반을 덮지 못했습니다 (${brief(narrow)}) — ` +
+      `한 폴더에 키 모양이 다른 무리가 섞여 있습니다`;
+  }
+  const free = f.columns.filter((c) => c.kind === "value" && c.role === "free");
+  if (free.length > 0) {
+    return `값이 건마다 제각각이라 갈래로 볼 열이 없습니다 (${brief(free)}) — ` +
+      `겹치는 값이 전체의 1/3은 되어야 갈래로 봅니다`;
+  }
+  return "모든 열이 전건 같은 값입니다 — 정답지끼리 서로 다르지 않습니다";
 }
 
 /** 폴더 자체를 한 줄로 — 전제와 갈래. 데이터셋 목적을 LLM 없이 짓는 씨앗이다. */
