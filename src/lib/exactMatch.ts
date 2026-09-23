@@ -296,3 +296,78 @@ export function structuredMatch(
   const matched = fields.filter((f) => f.status === "match").length;
   return { fields, matched, total: fields.length, ok: matched === fields.length };
 }
+
+// ---- 값 한쪽의 뼈대 ----
+//
+// `walk` 은 두 쪽을 견준다. 그런데 한 폴더에 든 정답지 스무 건을 나란히 세워 두고
+// "어느 키가 갈리는가" 를 보려면 한 쪽만 펴는 손이 따로 있어야 한다 — 목적 축
+// 분석(services/purposeAxes)이 쓰는 손이다.
+//
+// 그 손을 굳이 이 파일에 두는 이유는 하나다. 목적에 적히는 키와 키별 판정 표의
+// 키가 한 글자라도 다르면, 실패한 키에서 그 키를 확인하려던 목적으로 되짚는 길이
+// 끊긴다. path 를 만드는 규칙은 한 군데에만 있어야 한다.
+
+export interface JsonLeaf {
+  path: string;
+  segs: string[];
+  /** 표시용 — 문자열은 따옴표 없이, `walk` 의 기본값과 같다. */
+  text: string;
+  /** 같은 값인지 가르는 열쇠. 문자열은 따옴표째라 `200` 과 `"200"` 이 한 값으로
+   * 뭉뚱그려지지 않는다 — 그 둘이 갈리는 것 자체가 시험 지점일 수 있다. */
+  key: string;
+  /** null 과 array 가 갈라져 나온 JSON 타입 이름. */
+  type: string;
+}
+
+export interface JsonShape {
+  /** 잎 하나당 한 줄. 빈 객체와 빈 배열은 그 자체가 잎이다 — `walk` 도 거기서
+   * 더 내려가지 않고 한 줄을 만든다. */
+  leaves: JsonLeaf[];
+  /** 배열 노드의 path → 길이. 노드지 잎이 아니라 `leaves` 에는 없다. */
+  arrays: Map<string, number>;
+}
+
+function shapeWalk(v: unknown, path: string, segs: string[], out: JsonShape): void {
+  const leaf = (): void => {
+    out.leaves.push({
+      path,
+      segs,
+      text: leafText(v),
+      key: leafText(v, true),
+      type: typeName(v),
+    });
+  };
+
+  if (Array.isArray(v)) {
+    out.arrays.set(path, v.length);
+    if (v.length === 0) return leaf();
+    for (let i = 0; i < v.length; i++) {
+      shapeWalk(v[i], `${path}[${i}]`, [...segs, `[${i}]`], out);
+    }
+    return;
+  }
+
+  if (isContainer(v)) {
+    const o = v as Record<string, unknown>;
+    const keys = Object.keys(o);
+    if (keys.length === 0) return leaf();
+    for (const k of keys) shapeWalk(o[k], path ? `${path}.${k}` : k, [...segs, k], out);
+    return;
+  }
+
+  leaf();
+}
+
+/** 값 하나를 잎 목록과 배열 길이로 편다. path 표기는 `walk` 과 같다 — `a.b`,
+ * `items[0].id`, 그리고 맨 위는 빈 문자열. */
+export function jsonShape(value: unknown): JsonShape {
+  const out: JsonShape = { leaves: [], arrays: new Map() };
+  shapeWalk(value, "", [], out);
+  return out;
+}
+
+/** 텍스트 한쪽의 파싱된(그리고 `body` 가 벗겨진) JSON 값. JSON 이 아니면
+ * undefined — `structuredMatch` 가 정답지를 읽는 규칙 그대로다. */
+export function jsonValueOf(raw: string, opts: MatchOpts = {}): unknown | undefined {
+  return sideOf(raw, opts.unwrapBody !== false).value;
+}

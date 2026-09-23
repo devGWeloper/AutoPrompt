@@ -21,6 +21,7 @@ import type {
 } from "@/lib/types";
 import { SYSTEM_USER } from "@/lib/types";
 import { writeAudit } from "./audit";
+import { analyzeFolder, describeFolder, type PurposeCase } from "./purposeAxes";
 import { chatJson, llmConfigured } from "./ragas/llmClient";
 
 // ---- datasets ----
@@ -497,6 +498,14 @@ function clip(s: string, n: number): string {
   return t.length > n ? `${t.slice(0, n)}…` : t;
 }
 
+/** JSON 값 하나를 한 줄 텍스트로. 문자열은 그대로 두고 나머지는 JSON 으로 적는다 —
+ * 객체를 String() 에 넣으면 "[object Object]" 가 되어 정답지가 통째로 사라진다.
+ * 정답이 중첩 객체로 들어 있는 데이터셋에서 특히 그렇고, 그런 데이터셋이야말로
+ * 축으로 목적을 지을 수 있는 쪽이다. */
+function asText(v: unknown): string {
+  return typeof v === "string" ? v : (JSON.stringify(v) ?? "");
+}
+
 /** INPUT_CTN 에서 질문과 정답을 꺼낸다 — parseCaseInput 과 같은 규칙이고, JSON 이
  * 아니면 전체가 질문이다. */
 function caseQA(c: TestCase): { question: string; truth: string } {
@@ -505,8 +514,8 @@ function caseQA(c: TestCase): { question: string; truth: string } {
   try {
     const o = JSON.parse(c.input_data) as Record<string, unknown>;
     if (o && typeof o === "object" && !Array.isArray(o)) {
-      if (o.question != null) question = String(o.question);
-      if (o.ground_truth != null) truth = String(o.ground_truth);
+      if (o.question != null) question = asText(o.question);
+      if (o.ground_truth != null) truth = asText(o.ground_truth);
     }
   } catch {
     // JSON 이 아니면 INPUT_CTN 전체가 질문이다.
@@ -573,6 +582,17 @@ const CASE_PURPOSE_BATCH = 30;
 const CASE_PURPOSE_HINTS = 8;
 /** 데이터 한 건의 목적 길이 상한 — 목록에서 한 줄로 읽히는 길이. */
 const CASE_PURPOSE_LEN = 60;
+/** 축 미리보기가 폴더마다 보여 주는 예시 목적 수. 축이 무엇을 짚는지는 몇 줄이면
+ * 드러나고, 전건을 실어 보내면 미리보기가 목록이 된다. */
+const AXIS_PREVIEW_SAMPLES = 5;
+
+/** 케이스를 축 분석이 아는 모양으로. 정답은 두 군데 있고 채점이 INPUT_CTN 의
+ * `ground_truth` 를 먼저 보므로(parseCase), 축도 같은 것을 봐야 한다 — 화면의 정답과
+ * 목적이 말하는 정답이 갈리면 안 된다. */
+function toPurposeCase(c: TestCase): PurposeCase {
+  const { question, truth } = caseQA(c);
+  return { case_id: c.case_id, ground_truth: truth || c.expected_output, question };
+}
 
 /** 데이터 한 건을 프롬프트 한 줄로. 폴더는 이미 묶음의 머리에 적혀 있어 빼고,
  * 번호는 돌아올 답을 되짚을 열쇠다. */
@@ -587,20 +607,26 @@ function dataLine(c: TestCase, n: number): string {
  *
  * 한 건만 떼어 놓고 물으면 질문을 고쳐 쓴 문장이 돌아온다. 그 건이 무엇을 확인하는
  * 건지는 옆의 형제들과 견줘야 갈리기 때문이다 — "A 는 부분취소 금액, B 는 전액취소
- * 후 잔액" 처럼. 그래서 같은 폴더의 데이터를 함께 올려 놓고 서로 다른 지점을 짚게
- * 시키고, 답은 건별로 받는다. 폴더로 묶는 건 '같은 폴더에 넣었다' 는 것 자체가
- * 이미 사람이 해 둔 갈래 나누기라서다.
+ * 후 잔액" 처럼. 그래서 같은 폴더의 데이터를 함께 놓고 서로 다른 지점을 짚는다.
+ * 폴더로 묶는 건 '같은 폴더에 넣었다' 는 것 자체가 이미 사람이 해 둔 갈래 나누기라서다.
  *
- * 이미 적혀 있는 목적은 덮지 않는다. 대신 본보기로 실어 보낸다 — 사람이 잡아 둔
- * 말투와 결을 나머지가 따라간다.
+ * 견주는 일은 두 손으로 한다.
+ *
+ * 정답지가 JSON 이면 먼저 축으로 짓는다(purposeAxes). 같은 폴더 안에서는 키가 같고
+ * 값만 다르므로 '서로 다른 지점' 은 부탁할 것이 아니라 세면 나오는 값이다. 값이
+ * 겹치는 열은 갈래, 전건 제각각인 열은 식별자 — 세어 보면 주문번호로 목적을 짓는
+ * 일이 없고, 같은 폴더를 두 번 돌려도 같은 문장이 나오며, 호출이 아예 없다.
+ *
+ * 축이 잡히지 않은 건만 LLM 으로 넘어간다 — 정답지가 산문이거나, 폴더에 견줄 형제가
+ * 없거나, 모든 열이 전건 같은 값일 때다. 이때는 예전처럼 형제를 함께 올려 부른다.
+ *
+ * 이미 적혀 있는 목적은 어느 쪽도 덮지 않는다. 대신 LLM 에는 본보기로 실어 보낸다 —
+ * 사람이 잡아 둔 말투와 결을 나머지가 따라간다.
  */
 export async function fillCasePurposes(
   datasetId: number,
   caseIds?: number[] | null,
 ): Promise<{ filled: number; remaining: number }> {
-  if (!llmConfigured()) {
-    throw badRequest("LLM 엔드포인트가 설정되어 있지 않습니다 (config.yml llm.endpoint)");
-  }
   const ds = await getDatasetDetail(datasetId);
   const all = await listCases(datasetId);
   const pick = Array.isArray(caseIds) && caseIds.length ? new Set(caseIds.map(Number)) : null;
@@ -620,11 +646,32 @@ export async function fillCasePurposes(
 
   const filled: { id: number; text: string }[] = [];
   for (const [folder, items] of byFolder) {
+    // 축은 폴더 전체를 보고 센다. 목적이 이미 적힌 형제도 값의 분포에는 들어가야
+    // 한다 — 무엇이 흔하고 무엇이 드문지는 채울 건들만 봐서는 알 수 없다.
+    const axes = analyzeFolder(
+      all.filter((c) => (c.case_type || "NORMAL") === folder).map(toPurposeCase),
+      { folder, maxLen: CASE_PURPOSE_LEN },
+    );
+    const left: TestCase[] = [];
+    for (const c of items) {
+      const line = axes.purposes.get(c.case_id);
+      if (line) filled.push({ id: c.case_id, text: line });
+      else left.push(c);
+    }
+    if (left.length === 0) continue;
+    if (!llmConfigured()) {
+      // 축으로 지은 게 있으면 그것만이라도 저장하고 남은 건 다음 기회로 넘긴다.
+      // 여기서 던지면 방금 공짜로 얻은 목적까지 같이 버려진다. 다음 폴더는 계속
+      // 본다 — 그 폴더는 축만으로 다 채워질 수도 있다.
+      if (filled.length > 0) continue;
+      throw badRequest("LLM 엔드포인트가 설정되어 있지 않습니다 (config.yml llm.endpoint)");
+    }
+
     const hints = all
       .filter((c) => (c.case_type || "NORMAL") === folder && (c.eval_criteria ?? "").trim())
       .slice(0, CASE_PURPOSE_HINTS);
-    for (let i = 0; i < items.length; i += CASE_PURPOSE_BATCH) {
-      const batch = items.slice(i, i + CASE_PURPOSE_BATCH);
+    for (let i = 0; i < left.length; i += CASE_PURPOSE_BATCH) {
+      const batch = left.slice(i, i + CASE_PURPOSE_BATCH);
       const user = [
         `평가 데이터셋 "${ds.dataset_nm}"${ds.description ? ` — ${ds.description}` : ""}`,
         folder === "NORMAL" ? "폴더 없음" : `폴더: ${folder}`,
@@ -672,6 +719,65 @@ export async function fillCasePurposes(
   }, { commit: true });
 
   return { filled: filled.length, remaining: empty.length - filled.length };
+}
+
+/**
+ * 폴더별로 어떤 축이 잡히는지 보여 준다 — 아무것도 쓰지 않고, LLM 도 부르지 않는다.
+ *
+ * 목적을 채우는 건 되돌리기가 있어도 200건을 한꺼번에 건드리는 일이라, 어떤 기준으로
+ * 지어질지 먼저 보는 길이 있어야 한다. 축은 호출 없이 계산되므로 이 미리보기가 공짜다.
+ *
+ * 스키마가 어긋난 건도 같이 온다. "한 카테고리 안에서 키는 같다" 는 전제를 깨는
+ * 쪽이라 대개는 정답지의 오타다 — 목적을 보러 왔다가 정답지를 고치게 된다.
+ */
+export async function previewCaseAxes(datasetId: number): Promise<{
+  folders: {
+    folder: string;
+    cases: number;
+    parsed: number;
+    summary: string;
+    axes: { id: string; label: string; role: string; distinct: number; present: number }[];
+    samples: { case_id: number; purpose: string }[];
+    unparsed: number[];
+    outliers: { case_id: number; missing: string[]; extra: string[] }[];
+  }[];
+}> {
+  const all = await listCases(datasetId);
+  if (all.length === 0) throw badRequest("케이스가 없어 볼 축이 없습니다");
+
+  const byFolder = new Map<string, TestCase[]>();
+  for (const c of all) {
+    const k = c.case_type || "NORMAL";
+    const list = byFolder.get(k);
+    if (list) list.push(c);
+    else byFolder.set(k, [c]);
+  }
+
+  const folders = [];
+  for (const [folder, items] of byFolder) {
+    const f = analyzeFolder(items.map(toPurposeCase), { folder, maxLen: CASE_PURPOSE_LEN });
+    folders.push({
+      folder,
+      cases: f.cases,
+      parsed: f.parsed,
+      summary: describeFolder(f),
+      // 쓰이는 축만 — 모든 열을 늘어놓으면 고정값과 타입 열이 화면을 덮는다.
+      axes: f.splits.map((c) => ({
+        id: c.id,
+        label: c.label,
+        role: c.role,
+        distinct: c.distinct,
+        present: c.present,
+      })),
+      samples: items
+        .map((c) => ({ case_id: c.case_id, purpose: f.purposes.get(c.case_id) ?? "" }))
+        .filter((s) => s.purpose)
+        .slice(0, AXIS_PREVIEW_SAMPLES),
+      unparsed: f.unparsed,
+      outliers: f.outliers,
+    });
+  }
+  return { folders };
 }
 
 /**
