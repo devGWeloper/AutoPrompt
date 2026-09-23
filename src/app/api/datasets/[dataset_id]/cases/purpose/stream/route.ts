@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 
 /** 스트림이 나르는 것. 한 덩어리가 저장될 때마다 FILLED 하나, 끝에 DONE 또는 FAILED. */
 type PurposeEvent =
+  | { event: "WORKING"; done: number; total: number }
   | { event: "FILLED"; items: { case_id: number; purpose: string }[] }
   | { event: "DONE"; filled: number; remaining: number }
   | { event: "FAILED"; message: string };
@@ -28,7 +29,10 @@ export async function POST(req: Request, { params }: { params: { dataset_id: str
   return sseOf<PurposeEvent>(async (emit) => {
     try {
       const id = intParam(params.dataset_id, "dataset_id");
-      const res = await fillCasePurposes(id, caseIds, (items) => emit({ event: "FILLED", items }));
+      const res = await fillCasePurposes(id, caseIds, {
+        onFilled: (items) => emit({ event: "FILLED", items }),
+        onProgress: (done, total) => emit({ event: "WORKING", done, total }),
+      });
       emit({ event: "DONE", ...res });
     } catch (e) {
       // 스트림은 이미 200 으로 열려 있어 상태 코드로 실패를 말할 수 없다. 프레임으로

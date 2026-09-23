@@ -583,10 +583,38 @@ export async function suggestDatasetPurpose(datasetId: number): Promise<{ purpos
 /** 한 번의 요청으로 채우는 상한. 넘는 만큼은 다음 요청으로 넘긴다 — 버튼 한 번에
  * 수백 번의 LLM 호출이 나가면 안 된다. */
 const CASE_PURPOSE_MAX = 200;
-/** 한 번의 호출에 함께 올리는 데이터 수. 폴더가 이보다 크면 나눠 부른다. */
-const CASE_PURPOSE_BATCH = 30;
+/**
+ * 한 번의 호출에 함께 올리는 데이터 수.
+ *
+ * 1이면 한 건씩 묻고 한 건씩 채워진다. 답이 한꺼번에 돌아오는 이상 화면에 나타나는
+ * 단위는 이 수를 넘을 수 없으므로, 채워지는 대로 보이려면 1이어야 한다.
+ *
+ * 한 건씩 물어도 답의 질은 떨어지지 않는다. 형제와 견주는 일은 이미 끝나 있기
+ * 때문이다 — 소분류 전체를 보고 뽑은 축 목록과, 그 건의 값이 형제 몇 건과 같은지가
+ * 프롬프트에 함께 실린다(pickKeyAxes). 모아서 올려야 비교가 되던 예전 방식과 다르다.
+ * 산문 쪽은 애초에 그 건의 질문과 정답만 보고 쓰는 것이라 더 말할 것도 없다.
+ *
+ * 값은 오직 호출 수다. 마흔다섯 건이면 마흔다섯 번 부르고, `agent.caseDelaySec` 이
+ * 걸려 있으면 그 사이마다 쉰다. 데이터셋이 크고 기다림이 길어 못 견디겠으면 이
+ * 수를 올리면 되는데, 올린 만큼 화면은 한 번에 그만큼씩 나타난다.
+ */
+const CASE_PURPOSE_BATCH = 1;
 /** 이미 목적이 적힌 형제 중 몇 건을 본보기로 같이 올릴지. */
 const CASE_PURPOSE_HINTS = 8;
+/**
+ * 채우는 동안 바깥에 알리는 두 자리. 스트림 라우트가 이걸 SSE 프레임으로 바꾼다.
+ *
+ * 둘이 따로 있는 건 알릴 것이 두 가지라서다. `onFilled` 는 결과이고, `onProgress` 는
+ * 결과가 나오기까지의 기다림이다. 한 묶음이 도는 동안은 아무 일도 안 일어난 것처럼
+ * 보이는데, LLM 호출에 설정된 간격(`agent.caseDelaySec`)까지 붙으면 그 침묵이 길다.
+ */
+interface FillHooks {
+  /** 한 덩어리가 저장될 때마다. */
+  onFilled?: (items: { case_id: number; purpose: string }[]) => void;
+  /** 묶음을 부르기 직전마다 — 지금까지 끝낸 수와 이번에 채울 전체 수. */
+  onProgress?: (done: number, total: number) => void;
+}
+
 /** 데이터 한 건의 목적 길이 상한 — 목록에서 한 줄로 읽히는 길이. */
 const CASE_PURPOSE_LEN = 60;
 /** 축 미리보기가 폴더마다 보여 주는 예시 목적 수. 축이 무엇을 짚는지는 몇 줄이면
@@ -793,7 +821,7 @@ async function askPurposes(
 export async function fillCasePurposes(
   datasetId: number,
   caseIds?: number[] | null,
-  onFilled?: (items: { case_id: number; purpose: string }[]) => void,
+  hooks?: FillHooks,
 ): Promise<{ filled: number; remaining: number }> {
   const ds = await getDatasetDetail(datasetId);
   const all = await listCases(datasetId);
@@ -830,7 +858,7 @@ export async function fillCasePurposes(
       }
     }, { commit: true });
     total += chunk.length;
-    onFilled?.(chunk.map((f) => ({ case_id: f.id, purpose: f.text })));
+    hooks?.onFilled?.(chunk.map((f) => ({ case_id: f.id, purpose: f.text })));
   };
 
   for (const [folder, items] of byFolder) {
@@ -875,12 +903,14 @@ export async function fillCasePurposes(
     // LLM 이 고른다. 값도 형식도 코드가 붙인다.
     for (let i = 0; i < grounded.length; i += CASE_PURPOSE_BATCH) {
       const batch = grounded.slice(i, i + CASE_PURPOSE_BATCH);
+      hooks?.onProgress?.(total, todo.length);
       await flush(await pickKeyAxes(head, folderPremise(axes), batch, axes));
     }
 
     // 정답지가 산문인 건: 축이 없으니 그 건의 입출력만 보고 자유롭게 쓴다.
     for (let i = 0; i < blind.length; i += CASE_PURPOSE_BATCH) {
       const batch = blind.slice(i, i + CASE_PURPOSE_BATCH);
+      hooks?.onProgress?.(total, todo.length);
       const user = [
         head,
         "",

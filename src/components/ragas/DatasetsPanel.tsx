@@ -563,14 +563,22 @@ export default function DatasetsPanel() {
     const did = selDataset;
     const touched: number[] = [];
     let failed: string | null = null;
+    // 이번에 채울 전체 수. 서버가 첫 묶음을 시작할 때 알려 준다.
+    let goal = 0;
     setToast({ text: '목적을 채우는 중…' });
 
     await api.stream<
+      | { event: 'WORKING'; done: number; total: number }
       | { event: 'FILLED'; items: { case_id: number; purpose: string }[] }
       | { event: 'DONE'; filled: number; remaining: number }
       | { event: 'FAILED'; message: string }
     >(`/datasets/${did}/cases/purpose/stream`, caseIds ? { case_ids: caseIds } : {}, (e) => {
-      if (e.event === 'FILLED') {
+      if (e.event === 'WORKING') {
+        // 묶음 하나가 도는 동안은 목록이 멈춰 있다. 몇 건까지 왔는지라도 움직여야
+        // 멈춘 것과 기다리는 것이 구분된다.
+        goal = e.total;
+        setToast({ text: `목적을 채우는 중… ${e.done}/${e.total}건` });
+      } else if (e.event === 'FILLED') {
         const got = new Map(e.items.map((i) => [i.case_id, i.purpose]));
         touched.push(...e.items.map((i) => i.case_id));
         // 도착한 것만 그 자리에서 갈아 끼운다. 목록을 통째로 다시 받아 오면 채워지는
@@ -581,7 +589,9 @@ export default function DatasetsPanel() {
             return line ? { ...c, eval_criteria: line } : c;
           }),
         );
-        setToast({ text: `목적을 채우는 중… ${touched.length}건` });
+        setToast({
+          text: `목적을 채우는 중… ${touched.length}${goal ? `/${goal}` : ''}건`,
+        });
       } else if (e.event === 'DONE') {
         setToast({
           text:
