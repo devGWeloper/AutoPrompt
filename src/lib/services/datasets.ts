@@ -815,8 +815,12 @@ async function askPurposes(
  * 정답지가 산문이면 축이 없다. 그때는 그 건의 질문과 정답만 보고 LLM 이 자유롭게
  * 쓴다 — 셀 것이 없으니 형식을 강제할 근거도 없다.
  *
- * 이미 적혀 있는 목적은 어느 쪽도 덮지 않는다. 대신 LLM 에는 본보기로 실어 보낸다 —
- * 사람이 잡아 둔 말투와 결을 나머지가 따라간다.
+ * 이미 적혀 있는 목적은 **덮는다.** 이 버튼은 빈 칸 채우기가 아니라 다시 짓기다 —
+ * 정답지를 고쳤거나 형제가 늘어 축이 달라졌을 때, 또는 프롬프트를 손본 뒤 전체를
+ * 새로 뽑는 것이 쓰임이다. 빈 칸만 치면 두 번째 누름부터는 아무 일도 하지 않는다.
+ *
+ * 사람이 손으로 쓴 목적도 함께 덮인다. 되돌리기는 화면이 맡는다 — 덮기 전의 값을
+ * 쥐고 있다가 그대로 돌려놓는다(DatasetsPanel).
  */
 export async function fillCasePurposes(
   datasetId: number,
@@ -826,12 +830,13 @@ export async function fillCasePurposes(
   const ds = await getDatasetDetail(datasetId);
   const all = await listCases(datasetId);
   const pick = Array.isArray(caseIds) && caseIds.length ? new Set(caseIds.map(Number)) : null;
-  const empty = all.filter(
-    (c) => !(c.eval_criteria ?? "").trim() && (pick === null || pick.has(c.case_id)),
-  );
-  if (empty.length === 0) throw badRequest("목적이 비어 있는 데이터가 없습니다");
+  // 이미 적힌 목적도 대상이다 — 버튼은 '빈 칸 채우기' 가 아니라 '다시 짓기' 다.
+  // 축이 달라졌거나(형제가 늘었거나 정답지를 고쳤거나) 프롬프트를 손본 뒤 전체를
+  // 새로 뽑는 것이 이 버튼의 쓰임이라, 빈 칸만 치면 두 번째부터는 아무 일도 안 한다.
+  const targets = all.filter((c) => pick === null || pick.has(c.case_id));
+  if (targets.length === 0) throw badRequest("채울 데이터가 없습니다");
 
-  const todo = empty.slice(0, CASE_PURPOSE_MAX);
+  const todo = targets.slice(0, CASE_PURPOSE_MAX);
   const byFolder = new Map<string, TestCase[]>();
   for (const c of todo) {
     const k = c.case_type || "NORMAL";
@@ -848,11 +853,11 @@ export async function fillCasePurposes(
     if (chunk.length === 0) return;
     await withConn(async (conn) => {
       for (const f of chunk) {
-        // DATASET_ID 를 함께 걸고 빈 칸만 친다 — 도중에 사람이 적어 넣은 목적을
-        // 뒤늦게 도착한 요약이 덮는 일이 없다.
+        // 적혀 있던 목적은 덮는다. DATASET_ID 를 함께 거는 건 남의 데이터셋 행을
+        // 건드리지 않기 위해서다.
         await conn.execute(
           `UPDATE PTX_DATASET_DET SET CRITERIA_CTN = :crit
-            WHERE CASE_ID = :cid AND DATASET_ID = :did AND CRITERIA_CTN IS NULL`,
+            WHERE CASE_ID = :cid AND DATASET_ID = :did`,
           { crit: f.text, cid: f.id, did: datasetId },
         );
       }
@@ -931,7 +936,7 @@ export async function fillCasePurposes(
   }
   if (total === 0) throw badRequest("요약을 받지 못했습니다 — 다시 시도해 주세요");
 
-  return { filled: total, remaining: empty.length - total };
+  return { filled: total, remaining: targets.length - total };
 }
 
 /**

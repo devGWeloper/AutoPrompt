@@ -313,8 +313,8 @@ export default function DatasetsPanel() {
 
   // Actions only ever touch picked rows that are on screen — a search that hides
   // a picked case also takes it out of the delete.
-  // 목적이 비어 있는 건수 — 보고 있는 폴더 기준. LLM 으로 채울 거리가 얼마나
-  // 남았는지가 곧 버튼에 적히는 수다.
+  // 목적이 비어 있는 건수 — 보고 있는 폴더 기준. 채우기는 이제 빈 칸만이 아니라
+  // 전부를 다시 짓는 것이라 버튼의 수가 아니라 설명에만 쓴다.
   const noPurpose = inFolder.filter((c) => !(c.eval_criteria ?? '').trim()).length;
 
   const pickedRows = rows.filter((r) => picked.has(r.c.case_id));
@@ -548,20 +548,43 @@ export default function DatasetsPanel() {
   });
 
   /**
-   * 목적이 빈 데이터를 한 줄씩 채운다. 고른 것이 있으면 그중에서만 — 목록 전체를
+   * 목적을 덮기 전의 값으로 되돌린다.
+   *
+   * 채우기가 이미 적힌 목적까지 덮으므로, 되돌리기가 '지우기' 여서는 안 된다 —
+   * 사람이 손으로 써 둔 줄이 있었다면 그 줄이 돌아와야 한다. 비어 있던 자리는
+   * null 로 되돌아가 다시 빈 칸이 된다.
+   */
+  const restorePurposes = (prev: [number, string | null][]) => guard(async () => {
+    if (selDataset == null || prev.length === 0) return;
+    const did = selDataset;
+    for (const [caseId, text] of prev) {
+      await api.put(`/datasets/${did}/cases/${caseId}`, { eval_criteria: text });
+    }
+    const back = new Map(prev);
+    setCases((cur) =>
+      cur.map((c) => (back.has(c.case_id) ? { ...c, eval_criteria: back.get(c.case_id) ?? null } : c)),
+    );
+    setToast({ text: `목적 ${prev.length}건을 되돌렸습니다` });
+  });
+
+  /**
+   * 목적을 한 줄씩 다시 짓는다. 고른 것이 있으면 그중에서만 — 목록 전체를
    * 한 번에 돌리기 전에 몇 건으로 결과를 확인해 보는 길이다.
    *
-   * 결과를 기다렸다 한꺼번에 받지 않고 채워지는 대로 그 자리에 앉힌다. 정답지가
-   * JSON 인 건은 호출 없이 즉시 지어지고 나머지만 LLM 을 거치는데, 끝을 기다리면
-   * 즉시 나온 것까지 같이 묶여 한참 뒤에 나타난다.
+   * 결과를 기다렸다 한꺼번에 받지 않고 지어지는 대로 그 자리에 앉힌다. 한 건씩
+   * 묻고 한 건씩 돌려받으므로 줄이 하나씩 차오른다.
    *
-   * 이미 적힌 목적은 서버가 건드리지 않으므로, 여러 번 눌러도 사람이 쓴 줄은
-   * 그대로다. 되돌리기는 이번에 채워진 것만 도로 비운다.
+   * 이미 적힌 목적도 덮는다 — 정답지를 고쳤거나 형제가 늘어 축이 달라졌을 때 다시
+   * 뽑는 것이 이 버튼의 쓰임이라, 빈 칸만 치면 두 번째 누름부터는 아무 일도 하지
+   * 않는다. 사람이 손으로 쓴 줄도 함께 덮이므로, 되돌리기는 덮기 전의 값을 그대로
+   * 돌려놓는다.
    */
   const fillPurposes = (caseIds?: number[]) => guard(async () => {
     if (selDataset == null) return;
     const did = selDataset;
-    const touched: number[] = [];
+    // 덮기 전의 값. 되돌리기가 '지우기' 가 아니라 '되돌리기' 이려면 이게 있어야
+    // 한다 — 사람이 손으로 써 둔 목적도 이 버튼에 덮이기 때문이다.
+    const before = new Map<number, string | null>();
     let failed: string | null = null;
     // 이번에 채울 전체 수. 서버가 첫 묶음을 시작할 때 알려 준다.
     let goal = 0;
@@ -580,24 +603,26 @@ export default function DatasetsPanel() {
         setToast({ text: `목적을 채우는 중… ${e.done}/${e.total}건` });
       } else if (e.event === 'FILLED') {
         const got = new Map(e.items.map((i) => [i.case_id, i.purpose]));
-        touched.push(...e.items.map((i) => i.case_id));
         // 도착한 것만 그 자리에서 갈아 끼운다. 목록을 통째로 다시 받아 오면 채워지는
         // 모습 대신 화면이 한 번 깜빡이고, 펼쳐 둔 행도 접힌다.
         setCases((prev) =>
           prev.map((c) => {
             const line = got.get(c.case_id);
-            return line ? { ...c, eval_criteria: line } : c;
+            if (!line) return c;
+            if (!before.has(c.case_id)) before.set(c.case_id, c.eval_criteria ?? null);
+            return { ...c, eval_criteria: line };
           }),
         );
         setToast({
-          text: `목적을 채우는 중… ${touched.length}${goal ? `/${goal}` : ''}건`,
+          text: `목적을 채우는 중… ${before.size}${goal ? `/${goal}` : ''}건`,
         });
       } else if (e.event === 'DONE') {
+        const undoable = [...before];
         setToast({
           text:
             `목적 ${e.filled}건을 채웠습니다` +
             (e.remaining > 0 ? ` · ${e.remaining}건 남음 (다시 누르면 이어서)` : ''),
-          undo: touched.length ? () => clearPurposes(touched, '되돌렸습니다') : undefined,
+          undo: undoable.length ? () => restorePurposes(undoable) : undefined,
         });
       } else {
         failed = e.message;
@@ -950,7 +975,7 @@ export default function DatasetsPanel() {
                       size="sm"
                       disabled={busy}
                       onClick={() => fillPurposes(pickedRows.map((r) => r.c.case_id))}
-                      title="고른 데이터 중 목적이 비어 있는 것만 채웁니다 — 정답지가 JSON 이면 정답지를 보고, 아니면 LLM 이"
+                      title="고른 데이터의 목적을 다시 짓습니다 — 이미 적힌 것도 덮습니다"
                     >
                       목적 채우기
                     </Button>
@@ -986,17 +1011,25 @@ export default function DatasetsPanel() {
                     placeholder="질문 · 정답 · 목적 검색"
                     className="h-8 w-44 text-xs"
                   />
-                  {/* 채울 것이 남아 있을 때만 선다 — 다 찬 데이터셋에 늘 서 있으면
-                      누를 일 없는 버튼이 검색창 옆자리를 계속 차지한다. */}
-                  {noPurpose > 0 && (
+                  {/* 다 찬 뒤에도 선다 — 이제 빈 칸 채우기가 아니라 다시 짓기라,
+                      정답지를 고친 뒤 눌러야 할 자리가 여기다. 옆의 수는 이번에
+                      덮을 건수이고, 그중 몇이 비어 있었는지는 제목이 말한다. */}
+                  {inFolder.length > 0 && (
                     <Button
                       variant="ghost"
                       size="sm"
                       disabled={busy}
-                      onClick={() => fillPurposes()}
-                      title="목적이 비어 있는 데이터를 LLM 이 한 줄씩 채웁니다 — 같은 폴더의 데이터를 함께 보고 서로 다른 지점을 짚습니다"
+                      // 보고 있는 폴더만 친다. 옆에 적힌 수와 실제로 덮는 대상이
+                      // 어긋나면 안 되고, 덮어쓰기라 눈에 보이는 범위로 묶는 쪽이
+                      // 안전하다. 전체 보기에서는 inFolder 가 곧 전체다.
+                      onClick={() => fillPurposes(inFolder.map((c) => c.case_id))}
+                      title={
+                        `${inFolder.length}건의 목적을 다시 짓습니다` +
+                        (noPurpose > 0 ? ` (지금 비어 있는 것 ${noPurpose}건)` : '') +
+                        ' — 이미 적힌 목적도 덮습니다. 되돌리기로 되돌릴 수 있습니다'
+                      }
                     >
-                      목적 채우기 <span className="font-mono tabular-nums text-muted">{noPurpose}</span>
+                      목적 채우기 <span className="font-mono tabular-nums text-muted">{inFolder.length}</span>
                     </Button>
                   )}
                   <span className="ml-auto inline-flex items-center overflow-hidden rounded-sm border border-line bg-surface">
