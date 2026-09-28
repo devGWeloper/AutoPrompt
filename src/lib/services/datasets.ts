@@ -34,6 +34,7 @@ import {
   type GlossaryReply,
   type PurposeCase,
 } from "./purposeAxes";
+import { allowedKeys, deniedKeys } from "./purposeAllow";
 import { chatJson, llmConfigured } from "./ragas/llmClient";
 
 // ---- datasets ----
@@ -613,6 +614,34 @@ const CASE_PURPOSE_BATCH = 5;
 /** 이미 목적이 적힌 형제 중 몇 건을 본보기로 같이 올릴지. */
 const CASE_PURPOSE_HINTS = 8;
 /**
+ * 요청이 한 번만 다르게 걸어 보는 키 목록. 파일에 적힌 것(`purposeAllow`)과 만나는 방식이
+ * 둘이 다르다.
+ *
+ * `allow` 는 **갈아 낀다.** "이 키들로만 채워 보자" 는 요청이라, 파일의 목록과 섞으면
+ * 무엇으로 채운 것인지 알 수 없어진다.
+ *
+ * `deny` 는 **보탠다.** "이건 쓰지 말라" 는 판단은 한 번 채워 보는 일과 상관없이 그대로
+ * 서 있어야 한다. 요청이 파일의 제외 목록을 지울 수 있게 해 두면, 그 목록을 적어 둔
+ * 이유가 사라진다.
+ */
+export interface KeyLists {
+  allow?: string[] | null;
+  deny?: string[] | null;
+}
+
+/** 파일에 적힌 목록과 요청이 준 목록을 합친다 — `KeyLists` 가 말하는 규칙 그대로:
+ * `allow` 는 갈아 끼우고 `deny` 는 보탠다. 채우기와 미리보기가 같은 답을 보도록 한
+ * 자리에 둔다 — 미리보기가 "이렇게 나옵니다" 라고 한 것과 다르게 채우면 안 된다. */
+function keyLists(lists?: KeyLists): { only: string[] | null; never: string[] | null } {
+  const ask = lists?.allow;
+  const never = [...(deniedKeys() ?? []), ...(lists?.deny ?? [])];
+  return {
+    only: ask && ask.length ? ask : allowedKeys(),
+    never: never.length ? never : null,
+  };
+}
+
+/**
  * 채우는 동안 바깥에 알리는 두 자리. 스트림 라우트가 이걸 SSE 프레임으로 바꾼다.
  *
  * 둘이 따로 있는 건 알릴 것이 두 가지라서다. `onFilled` 는 결과이고, `onProgress` 는
@@ -974,6 +1003,7 @@ export async function fillCasePurposes(
   datasetId: number,
   caseIds?: number[] | null,
   hooks?: FillHooks,
+  lists?: KeyLists,
 ): Promise<{ filled: number; remaining: number }> {
   const ds = await getDatasetDetail(datasetId);
   const all = await listCases(datasetId);
@@ -1017,14 +1047,34 @@ export async function fillCasePurposes(
   for (const [folder, items] of byFolder) {
     // 축은 폴더 전체를 보고 센다. 목적이 이미 적힌 형제도 값의 분포에는 들어가야
     // 한다 — 무엇이 흔하고 무엇이 드문지는 채울 건들만 봐서는 알 수 없다.
+    // 쓸 키는 `purposeAllow` 에 손으로 적고, 요청이 준 것과는 `keyLists` 가 합친다.
+    const { only, never } = keyLists(lists);
     const axes = analyzeFolder(
       all.filter((c) => (c.case_type || "NORMAL") === folder).map(toPurposeCase),
-      { folder, maxLen: CASE_PURPOSE_LEN },
+      {
+        folder,
+        maxLen: CASE_PURPOSE_LEN,
+        allow: only ?? undefined,
+        deny: never ?? undefined,
+      },
     );
     // 구분점이 잡힌 건과 그렇지 않은 건. 앞쪽은 무엇이 다른지를 이미 아니까 그것만
     // 건네고 문장을 맡기면 되고, 뒤쪽은 예전처럼 질문과 정답을 통째로 올려야 한다.
     const grounded = items.filter((c) => (axes.facts.get(c.case_id) ?? []).length > 0);
-    const blind = items.filter((c) => (axes.facts.get(c.case_id) ?? []).length === 0);
+
+    // 목록을 적은 뒤에는 '구분점이 없다' 가 두 가지 뜻이 된다: 정답지가 JSON 이 아니라
+    // 축을 볼 수 없었거나, JSON 인데 남은 키에 갈래가 없었거나.
+    //
+    // 둘을 갈라야 한다. 산문 경로는 그 건의 질문과 정답을 통째로 올려 자유롭게 쓰게
+    // 하는 자리라, 걸러 낸 키가 목적에 그대로 올라온다 — 앞문을 닫고 뒷문을 열어 두는
+    // 셈이다. 그래서 목록이 있을 때는 JSON 으로 읽힌 건을 산문으로 보내지 않고 비운 채
+    // 남긴다. 왜 비었는지는 미리보기가 말해 준다(`whyNoAxes` 가 걸러 낸 열 수를 센다).
+    const unparsed = new Set(axes.unparsed);
+    const listed = Boolean(only || never);
+    const blind = items.filter(
+      (c) =>
+        (axes.facts.get(c.case_id) ?? []).length === 0 && (!listed || unparsed.has(c.case_id)),
+    );
 
     if (!llmConfigured()) {
       // LLM 이 없으면 변별력 순으로 고른 기본 줄이라도 남긴다. 핵심 키를 가려내지
@@ -1138,7 +1188,10 @@ export async function clearCasePurposes(
  * 스키마가 어긋난 건도 같이 온다. "한 카테고리 안에서 키는 같다" 는 전제를 깨는
  * 쪽이라 대개는 정답지의 오타다 — 목적을 보러 왔다가 정답지를 고치게 된다.
  */
-export async function previewCaseAxes(datasetId: number): Promise<{
+export async function previewCaseAxes(
+  datasetId: number,
+  lists?: KeyLists,
+): Promise<{
   folders: {
     folder: string;
     cases: number;
@@ -1167,7 +1220,13 @@ export async function previewCaseAxes(datasetId: number): Promise<{
 
   const folders = [];
   for (const [folder, items] of byFolder) {
-    const f = analyzeFolder(items.map(toPurposeCase), { folder, maxLen: CASE_PURPOSE_LEN });
+    const { only, never } = keyLists(lists);
+    const f = analyzeFolder(items.map(toPurposeCase), {
+      folder,
+      maxLen: CASE_PURPOSE_LEN,
+      allow: only ?? undefined,
+      deny: never ?? undefined,
+    });
     folders.push({
       folder,
       cases: f.cases,
@@ -1183,6 +1242,7 @@ export async function previewCaseAxes(datasetId: number): Promise<{
         present: c.present,
       })),
       reason: whyNoAxes(f),
+      blocked: f.blocked,
       // 원값 열만. 파생 열(부호·길이·유무)은 원값에서 나온 것이라 여기 같이 놓으면
       // 같은 키가 다섯 줄로 늘어난다.
       columns: f.columns

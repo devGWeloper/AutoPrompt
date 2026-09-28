@@ -1,14 +1,22 @@
 import { clearCasePurposes, fillCasePurposes, previewCaseAxes } from "@/lib/services/datasets";
 import { errorResponse } from "@/lib/http";
-import { caseIdsField, intParam, ok } from "@/lib/route-utils";
+import { allowField, caseIdsField, denyField, intParam, ok } from "@/lib/route-utils";
 
 export const dynamic = "force-dynamic";
 
 /** 폴더마다 어떤 축이 잡히고 목적이 어떤 모양으로 나올지. GET 인 건 아무것도 쓰지
  * 않고 LLM 도 부르지 않기 때문이다 — 채우기 전에 기준을 보는 자리다. */
-export async function GET(_req: Request, { params }: { params: { dataset_id: string } }) {
+export async function GET(req: Request, { params }: { params: { dataset_id: string } }) {
   try {
-    return ok(await previewCaseAxes(intParam(params.dataset_id, "dataset_id")));
+    // 키 목록은 쿼리로 받는다 — GET 이라 본문이 없고, 목록을 고치는 대로 다시 부르는
+    // 자리다. 아무것도 안 주면 `purposeAllow` 에 적힌 것만 걸린다.
+    const q = new URL(req.url).searchParams;
+    return ok(
+      await previewCaseAxes(intParam(params.dataset_id, "dataset_id"), {
+        allow: q.getAll("allow"),
+        deny: q.getAll("deny"),
+      }),
+    );
   } catch (e) {
     return errorResponse(e);
   }
@@ -20,7 +28,14 @@ export async function GET(_req: Request, { params }: { params: { dataset_id: str
 export async function POST(req: Request, { params }: { params: { dataset_id: string } }) {
   try {
     const body = await req.json().catch(() => null);
-    return ok(await fillCasePurposes(intParam(params.dataset_id, "dataset_id"), caseIdsField(body)));
+    return ok(
+      await fillCasePurposes(
+        intParam(params.dataset_id, "dataset_id"),
+        caseIdsField(body),
+        undefined,
+        { allow: allowField(body), deny: denyField(body) },
+      ),
+    );
   } catch (e) {
     return errorResponse(e);
   }

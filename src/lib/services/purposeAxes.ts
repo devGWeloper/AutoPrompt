@@ -125,8 +125,11 @@ export interface FolderAxes {
   parsed: number;
   /** 정답지가 JSON 이 아니어서 축을 볼 수 없던 건. LLM 으로 넘길 몫이다. */
   unparsed: number[];
-  /** 만들어진 모든 열. 미리보기 표가 그리는 것. */
+  /** 만들어진 모든 열. 미리보기 표가 그리는 것 — 화이트리스트에 막힌 열도 들어 있다. */
   columns: AxisColumn[];
+  /** 손으로 적은 목록(`allow`/`deny`)이 후보에서 걷어 낸 열 수. 목록이 없었으면 0이다.
+   * 목록을 적어 놓고 목적이 안 나올 때, 그게 목록 때문인지는 이 수로만 알 수 있다. */
+  blocked: number;
   /** 목적에 실제로 쓰인 축, 변별력 순. */
   splits: AxisColumn[];
   /** 폴더의 전제 — 전건 같은 값인 원값 열. */
@@ -165,6 +168,33 @@ export interface AxisOpts {
   /** path → 한글 이름. 없으면 path 를 그대로 쓴다. 이 사전만 있으면 목적이 한국어로
    * 읽히므로, LLM 이 필요하다면 여기 한 번이면 된다 — 건별이 아니라 폴더당 한 번. */
   labels?: Record<string, string>;
+  /**
+   * 목적에 쓸 수 있는 키 — 화이트리스트. path 로 적는다.
+   *
+   * 없으면 지금처럼 모든 열이 후보다. 주면 여기 걸리는 열만 후보가 되고, 그 안에서
+   * 자동 순위와 LLM 의 고르기가 그대로 돈다 — `pick` 과 다른 점이 그것이다. `pick` 은
+   * "이 축들로 쓰라" 고 자리까지 못 박는 것이고, 이건 "이 밖으로는 나가지 말라" 는
+   * 울타리다. 둘을 같이 주면 `pick` 도 이 울타리 안에서만 걸린다.
+   *
+   * 걸러 낸 결과는 `facts` 에도 적용된다. 그래야 LLM 이 울타리 밖의 키를 고를 수가
+   * 없다 — 프롬프트로 부탁하는 것이 아니라 후보에서 지운다.
+   *
+   * 적는 법 세 가지:
+   *   `cancel.type`  그 키 하나. 거기서 뽑은 파생 축(타입·유무)도 같이 열린다.
+   *   `cancel`       그 아래 전부 — `cancel.type`, `cancel.amt`.
+   *   `items[].id`   배열 자리를 가리지 않고 — `items[0].id`, `items[3].id`.
+   */
+  allow?: string[];
+  /**
+   * 목적에 쓰지 않을 키 — 제외 목록. `allow` 와 같은 표기를 쓴다.
+   *
+   * `allow` 보다 이쪽이 손에 맞는 경우가 많다. 규칙이 이미 갈래 수와 변별력으로 걸러
+   * 놓아서 새는 것은 몇 개뿐인데, `allow` 로 막으려면 쓰고 싶은 키를 전부 세어야 하고
+   * 데이터셋이 바뀌면 그 목록이 통째로 빗나간다. 제외 목록은 열려 있어 그 일이 없다.
+   *
+   * 둘을 같이 주면 `allow` 로 좁힌 다음 여기서 뺀다.
+   */
+  deny?: string[];
   /** 목적 한 줄에 넣을 축 수. 기본 2. */
   lineAxes?: number;
   /** 목적 한 줄의 길이 상한. 기본 60 — 목록에서 한 줄로 읽히는 길이. */
@@ -240,6 +270,34 @@ function insideArray(path: string): boolean {
  * 나오면 안 되므로, 키 집합을 견줄 때는 자리 번호를 지우고 본다. */
 function collapseIdx(path: string): string {
   return path.replace(/\[\d+\]/g, "[]");
+}
+
+/**
+ * 손으로 적은 목록에 걸리는 path 인가. 허용 목록과 제외 목록이 같은 잣대를 쓴다.
+ *
+ * 배열 자리를 지우고 견준다. `items[0].id` 와 `items[3].id` 는 사람에게 같은 키지,
+ * 스물세 번째 자리를 따로 적을 일이 아니다 — 스키마를 견줄 때 쓰는 잣대와 같은 것을
+ * 쓴다(`collapseIdx`).
+ *
+ * 아래까지 함께 걸리는 건 정답지가 중첩되어 있어서다. `cancel` 이라고 적었는데
+ * `cancel.type` 이 안 걸리면 leaf 를 하나하나 세어야 한다. 경계를 보는 건 `cancel` 이
+ * `cancellation.reason` 까지 걸어 버리면 안 되기 때문이다.
+ */
+function listed(path: string, list: Set<string>): boolean {
+  const p = collapseIdx(path);
+  if (list.has(p)) return true;
+  for (const a of list) {
+    if (p.length > a.length && p.startsWith(a) && (p[a.length] === "." || p[a.length] === "[")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** 손으로 적은 목록을 견줄 수 있는 모양으로. 빈 항목은 버린다 — 빈 문자열이 남으면
+ * 경계 검사가 모든 path 에 걸려 목록 하나가 온 폴더를 삼킨다. */
+function listOf(raw?: string[]): Set<string> {
+  return new Set((raw ?? []).map((p) => collapseIdx(String(p).trim())).filter(Boolean));
 }
 
 function nameOf(path: string, labels?: Record<string, string>): string {
@@ -449,6 +507,7 @@ export function analyzeFolder(cases: PurposeCase[], opts: AxisOpts = {}): Folder
       parsed: shapes.length,
       unparsed,
       columns: [],
+      blocked: 0,
       splits: [],
       fixed: [],
       outliers: [],
@@ -546,8 +605,19 @@ export function analyzeFolder(cases: PurposeCase[], opts: AxisOpts = {}): Folder
     c.echo = isEcho(c, shapes);
   }
 
-  const order = new Map(live.map((c, i) => [c.id, i]));
-  const byId = new Map(live.map((c) => [c.id, c]));
+  // 손으로 적은 목록은 후보를 좁히는 이 자리에만 건다. `live` 를 줄이지 않는 건
+  // 미리보기가 폴더의 열을 전부 보여 줘야 하기 때문이다 — 무엇이 걸러졌는지 보이지
+  // 않으면 목록을 고칠 수가 없다.
+  //
+  // 허용으로 좁히고 제외로 뺀다. 순서가 이런 건 둘을 같이 적었을 때 제외가 마지막
+  // 말이 되어야 읽히기 때문이다 — "이 중에서 쓰되, 이건 빼고".
+  const allow = listOf(opts.allow);
+  const deny = listOf(opts.deny);
+  let pool = allow.size ? live.filter((c) => listed(c.path, allow)) : live;
+  if (deny.size) pool = pool.filter((c) => !listed(c.path, deny));
+
+  const order = new Map(pool.map((c, i) => [c.id, i]));
+  const byId = new Map(pool.map((c) => [c.id, c]));
 
   let splits: AxisColumn[];
   if (opts.pick && opts.pick.length) {
@@ -558,7 +628,7 @@ export function analyzeFolder(cases: PurposeCase[], opts: AxisOpts = {}): Folder
     }
   } else {
     const floor = Math.ceil(shapes.length * COVERAGE_MIN);
-    const auto = live.filter((c) => c.role === "split" && c.present >= floor);
+    const auto = pool.filter((c) => c.role === "split" && c.present >= floor);
     // 같은 path 의 원값이 이미 갈래를 보여 주면 거기서 뽑은 특성은 같은 말을 두 번
     // 한다 — `status=DONE` 옆의 `status 값 있음` 은 아무것도 보태지 않는다.
     const rawSplit = new Set(auto.filter((c) => c.kind === "value").map((c) => c.path));
@@ -577,7 +647,7 @@ export function analyzeFolder(cases: PurposeCase[], opts: AxisOpts = {}): Folder
     // 변별력이 높아 문장 앞자리를 차지한다 — `city=서울 · unit=C` 처럼 주제가 먼저,
     // 어느 갈래인지가 뒤에 온다.
     const taken = new Set(splits.map((c) => c.id));
-    splits = [...live.filter((c) => c.echo && c.present >= floor && !taken.has(c.id)), ...splits];
+    splits = [...pool.filter((c) => c.echo && c.present >= floor && !taken.has(c.id)), ...splits];
   }
 
   const purposes = new Map<number, string>();
@@ -606,8 +676,11 @@ export function analyzeFolder(cases: PurposeCase[], opts: AxisOpts = {}): Folder
     parsed: shapes.length,
     unparsed,
     columns: live,
+    blocked: live.length - pool.length,
     splits,
-    fixed: live.filter(
+    // 전제도 울타리 안에서만 말한다. 허용하지 않은 키가 공통값이라는 사실은 이 목적이
+    // 무엇을 고를지와 아무 상관이 없다.
+    fixed: pool.filter(
       (c) => c.kind === "value" && c.role === "fixed" && c.present === shapes.length,
     ),
     outliers: outliersOf(shapes),
@@ -768,6 +841,14 @@ export function whyNoAxes(f: FolderAxes): string | null {
   }
   const brief = (cols: AxisColumn[]) =>
     cols.slice(0, DESC_ITEMS).map((c) => `${c.label} ${c.distinct}가지/${c.present}건`).join(", ");
+
+  // 손으로 적은 목록을 먼저 말한다. 아래 이유들은 "데이터가 이래서 축이 없다" 는
+  // 말인데, 목록 때문이면 데이터는 멀쩡하고 목록이 좁은 것이라 고칠 자리가 전혀 다르다.
+  if (f.blocked > 0) {
+    return `손으로 적은 목록이 열 ${f.blocked}개를 걸러 냈습니다 — 남은 키에는 갈리는 ` +
+      `값이 없습니다. purposeAllow 를 고치거나, 미리보기에서 어느 열이 갈리는지 보고 ` +
+      `정하세요`;
+  }
 
   // 갈래로 갈리기는 했는데 폴더의 절반을 못 덮은 경우 — 폴더 안에 키 모양이 다른
   // 무리가 섞여 있다는 뜻이라, 폴더를 나누면 바로 잡힌다.

@@ -1,6 +1,6 @@
 import { fillCasePurposes } from "@/lib/services/datasets";
 import { errorText } from "@/lib/http";
-import { caseIdsField, intParam } from "@/lib/route-utils";
+import { allowField, caseIdsField, denyField, intParam } from "@/lib/route-utils";
 import { sseOf } from "@/lib/sse";
 
 export const dynamic = "force-dynamic";
@@ -26,13 +26,19 @@ type PurposeEvent =
 export async function POST(req: Request, { params }: { params: { dataset_id: string } }) {
   const body = await req.json().catch(() => null);
   const caseIds = caseIdsField(body);
+  const lists = { allow: allowField(body), deny: denyField(body) };
   return sseOf<PurposeEvent>(async (emit) => {
     try {
       const id = intParam(params.dataset_id, "dataset_id");
-      const res = await fillCasePurposes(id, caseIds, {
-        onFilled: (items) => emit({ event: "FILLED", items }),
-        onProgress: (done, total) => emit({ event: "WORKING", done, total }),
-      });
+      const res = await fillCasePurposes(
+        id,
+        caseIds,
+        {
+          onFilled: (items) => emit({ event: "FILLED", items }),
+          onProgress: (done, total) => emit({ event: "WORKING", done, total }),
+        },
+        lists,
+      );
       emit({ event: "DONE", ...res });
     } catch (e) {
       // 스트림은 이미 200 으로 열려 있어 상태 코드로 실패를 말할 수 없다. 프레임으로
