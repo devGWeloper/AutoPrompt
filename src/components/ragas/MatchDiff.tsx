@@ -181,6 +181,23 @@ const CELL = 'border-b border-line px-3 py-1.5 align-top';
  * 칸까지가 기대값인지 눈이 자꾸 놓친다. */
 const COL = 'border-r border-line';
 
+/**
+ * 키 칸의 면. 헤어라인만으로는 다 맞은 표가 흰 종이 한 장이 되어, 어디까지가
+ * 키고 어디부터가 값인지 눈이 자꾸 놓친다 — 스프레드시트의 머리 열처럼 키 칸만
+ * 한 단 진하게 깔아, 값 칸들과 갈리게 한다.
+ *
+ * 값 칸끼리는 같은 면이다. 기대값과 실제값(또는 A 와 B)은 나란히 견주라고 놓은
+ * 같은 성격의 칸이라, 서로 농도를 달리하면 한쪽이 더 중요한 것처럼 읽힌다.
+ * 그 둘을 가르는 것은 세로 헤어라인과 머리줄이 한다.
+ *
+ * 색은 쓰지 않는다. 이 표에서 색은 판정이 쓰는 말(틀린 칸의 붉은 면, 추가의
+ * 노란 면)이라, 칸을 가르는 데 색을 쓰면 그 말과 섞인다. 그래서 회색 농도만.
+ *
+ * 줄에 마우스를 올리면 이 면을 비워 줄 전체가 한 색으로 덮이게 한다. 비우지
+ * 않으면 tr 의 hover 가 이 면에 가려 어느 줄에 있는지가 보이지 않는다.
+ */
+const COL_KEY = 'bg-surface-2 group-hover:bg-transparent';
+
 /** 이 길이를 넘는 값은 두 줄로 접어 둔다. 한 줄이 화면을 다 먹으면 위아래를
  * 나란히 읽으라고 만든 표가 아니게 된다. */
 const LONG = 160;
@@ -608,7 +625,7 @@ function KeyCell({
   children?: ReactNode;
 }) {
   return (
-    <td className={cn(CELL, COL, 'border-l-[3px] font-mono', dim ? 'text-body' : 'text-ink', rail !== 'border-l-transparent' && 'font-semibold', rail)}>
+    <td className={cn(CELL, COL, COL_KEY, 'border-l-[3px] font-mono', dim ? 'text-body' : 'text-ink', rail !== 'border-l-transparent' && 'font-semibold', rail)}>
       <span className="flex items-baseline gap-1" style={depth ? { paddingLeft: depth * 12 } : undefined}>
         {gutter && <span className="w-3.5 shrink-0 self-center">{lead}</span>}
         <span className="min-w-0 break-words" title={path || undefined}>
