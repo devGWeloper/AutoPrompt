@@ -165,6 +165,15 @@ export interface AxisOpts {
   /** path → 한글 이름. 없으면 path 를 그대로 쓴다. 이 사전만 있으면 목적이 한국어로
    * 읽히므로, LLM 이 필요하다면 여기 한 번이면 된다 — 건별이 아니라 폴더당 한 번. */
   labels?: Record<string, string>;
+  /**
+   * `path=원값` → 한글 값. `값` 만 적어도 되지만, 그러면 `type='FULL'` 과
+   * `mode='FULL'` 이 같은 말로 번역된다 — 열마다 다르게 읽히는 값은 path 를 붙여
+   * 적는다. 찾는 순서도 그렇다: `path=값` 이 먼저, 없으면 `값`.
+   *
+   * 원값 열에만 쓴다. 파생 열의 값(`있음`/`없음`, `양수`)은 이미 한국어이고 코드가
+   * 지은 말이라 사전이 건드릴 자리가 아니다.
+   */
+  values?: Record<string, string>;
   /** 목적 한 줄에 넣을 축 수. 기본 2. */
   lineAxes?: number;
   /** 목적 한 줄의 길이 상한. 기본 60 — 목록에서 한 줄로 읽히는 길이. */
@@ -210,6 +219,9 @@ const MIN_EXTRA_RARITY = 0.25;
 const FACTS_MAX = 5;
 /** 폴더 한 줄 설명에 늘어놓는 항목 수. */
 const DESC_ITEMS = 3;
+/** 사전이 받아 주는 이름의 길이 상한. 목적 한 줄에 둘씩 들어가는 자리라 이름은
+ * 이름이어야 한다 — 프롬프트로는 2~6자를 부탁하고, 이만큼까지 받아 준다. */
+const NAME_MAX = 12;
 
 /** 미리보기 표의 열 이름에 붙는 꼬리 — 무엇을 재는 열인지. 원값은 꼬리가 없다. */
 const KIND_LABEL: Record<AxisKind, string> = {
@@ -239,17 +251,32 @@ function collapseIdx(path: string): string {
   return path.replace(/\[\d+\]/g, "[]");
 }
 
-function nameOf(path: string, labels?: Record<string, string>): string {
-  const given = labels?.[path];
+/** 사전 두 개를 한 덩어리로 들고 다닌다. 이름을 짓는 자리마다 둘이 함께 필요해,
+ * 따로 넘기면 인자만 늘고 한쪽을 빼먹기 쉽다. */
+interface Naming {
+  labels?: Record<string, string>;
+  values?: Record<string, string>;
+}
+
+function nameOf(path: string, n?: Naming): string {
+  const given = n?.labels?.[path];
   if (given) return given;
   // 맨 위(빈 path)는 정답지 전체다 — 값 하나가 통째로 정답인 경우.
   return path || "응답";
 }
 
-function labelFor(kind: AxisKind, path: string, labels?: Record<string, string>): string {
-  const n = nameOf(path, labels);
+/** 원값 하나를 사전에 걸어 본다. `path=값` 이 먼저 — 같은 값이 열마다 다른 뜻인
+ * 경우가 있어서다. 없으면 `값` 만으로, 그것도 없으면 원값 그대로. */
+function valueOf(path: string, raw: string, n?: Naming): string {
+  const dict = n?.values;
+  if (!dict) return raw;
+  return dict[`${path}=${raw}`] ?? dict[raw] ?? raw;
+}
+
+function labelFor(kind: AxisKind, path: string, n?: Naming): string {
+  const name = nameOf(path, n);
   const tail = KIND_LABEL[kind];
-  return tail ? `${n} ${tail}` : n;
+  return tail ? `${name} ${tail}` : name;
 }
 
 /**
@@ -426,7 +453,7 @@ function shapeOf(c: PurposeCase, unwrapBody?: boolean): CaseShape | null {
  * 나누기라서다. 폴더가 다르면 키 집합도 달라 한 표에 세울 수 없다.
  */
 export function analyzeFolder(cases: PurposeCase[], opts: AxisOpts = {}): FolderAxes {
-  const labels = opts.labels;
+  const naming: Naming = { labels: opts.labels, values: opts.values };
   const lineAxes = Math.max(1, opts.lineAxes ?? DEFAULT_LINE_AXES);
   const maxLen = Math.max(8, opts.maxLen ?? DEFAULT_MAX_LEN);
 
@@ -479,7 +506,7 @@ export function analyzeFolder(cases: PurposeCase[], opts: AxisOpts = {}): Folder
       id: `${kind}:${path}`,
       path,
       kind,
-      label: labelFor(kind, path, labels),
+      label: labelFor(kind, path, naming),
       role: "fixed",
       cells: new Map(),
       distinct: 0,
@@ -583,14 +610,14 @@ export function analyzeFolder(cases: PurposeCase[], opts: AxisOpts = {}): Folder
   for (const s of shapes) {
     const ranked = rankFor(s.id, splits, chosen);
     if (ranked.length === 0) continue;
-    const line = lineFrom(ranked, lineAxes, maxLen, chosen, labels);
+    const line = lineFrom(ranked, lineAxes, maxLen, chosen, naming);
     if (line) purposes.set(s.id, line);
     facts.set(
       s.id,
       ranked.slice(0, FACTS_MAX).map((r) => ({
-        label: axisName(r.col, labels),
-        value: axisValue(r.col, r.cell),
-        text: phrase(r.col, r.cell, labels),
+        label: axisName(r.col, naming),
+        value: axisValue(r.col, r.cell, naming),
+        text: phrase(r.col, r.cell, naming),
         same: r.same,
         of: r.col.present,
       })),
@@ -664,12 +691,12 @@ function lineFrom(
   lineAxes: number,
   maxLen: number,
   chosen: boolean,
-  labels?: Record<string, string>,
+  naming?: Naming,
 ): string | null {
   if (mine.length === 0) return null;
   if (chosen) {
     const kept = mine.slice(0, lineAxes);
-    return clip(`${kept.map((x) => phrase(x.col, x.cell, labels)).join(", ")} 확인`, maxLen);
+    return clip(`${kept.map((x) => phrase(x.col, x.cell, naming)).join(", ")} 확인`, maxLen);
   }
   // 첫 축은 변별력이 낮아도 쓴다 — 가진 것 중 가장 나은 말이다. 두 번째부터는 문턱을
   // 넘어야 한다: 스무 건 중 열아홉 건이 같은 값인 축을 뒤에 붙여 봐야 `status=A ·
@@ -680,28 +707,34 @@ function lineFrom(
     if (mine[i].rarity < MIN_EXTRA_RARITY) break;
     take.push(mine[i]);
   }
-  return clip(`${take.map((x) => phrase(x.col, x.cell, labels)).join(", ")} 확인`, maxLen);
+  return clip(`${take.map((x) => phrase(x.col, x.cell, naming)).join(", ")} 확인`, maxLen);
 }
 
 /** 축 하나를 목적 문장의 한 토막으로. 열의 종류마다 읽히는 말이 다르다. */
 /** 목적 줄에 적히는 축 이름. 무엇을 재는 열인지는 이름에 이미 붙어 있다
  * (`items 길이`, `error_code 유무`). 원값 열만 꼬리가 없다. */
-function axisName(col: AxisColumn, labels?: Record<string, string>): string {
-  return col.kind === "value" ? nameOf(col.path, labels) : labelFor(col.kind, col.path, labels);
+function axisName(col: AxisColumn, n?: Naming): string {
+  return col.kind === "value" ? nameOf(col.path, n) : labelFor(col.kind, col.path, n);
 }
 
 /** 목적 줄에 적히는 값. 원값에서만 따옴표 붙은 열쇠를 쓴다 — `200` 과 `"200"` 이
  * 섞인 열을 가르려고. 바깥 따옴표가 이미 있으니 안쪽 것은 굽은 따옴표로 바꿔
- * 겹따옴표가 되지 않게 한다. */
-function axisValue(col: AxisColumn, cell: AxisCell): string {
+ * 겹따옴표가 되지 않게 한다.
+ *
+ * 사전은 원값 열에만 건다. 파생 열의 값은 코드가 이미 한국어로 지은 것이고, 열쇠에
+ * 따옴표가 섞인 열(`quoted`)은 그 따옴표 자체가 구분점이라 번역하면 구분이 사라진다. */
+function axisValue(col: AxisColumn, cell: AxisCell, n?: Naming): string {
+  if (col.kind === "value" && !col.quoted) {
+    return clip(valueOf(col.path, cell.text, n), VALUE_MAX).replace(/'/g, "’");
+  }
   const raw = col.kind === "value" && col.quoted ? cell.key : cell.text;
   return clip(raw, VALUE_MAX).replace(/'/g, "’");
 }
 
 /** 축 하나를 목적 줄의 한 토막으로 — 종류를 가리지 않고 `이름='값'` 한 모양이다.
  * 스무 줄이 나란히 설 때 같은 자리에 같은 것이 와야 눈이 빨리 훑는다. */
-function phrase(col: AxisColumn, cell: AxisCell, labels?: Record<string, string>): string {
-  return `${axisName(col, labels)}='${axisValue(col, cell)}'`;
+function phrase(col: AxisColumn, cell: AxisCell, n?: Naming): string {
+  return `${axisName(col, n)}='${axisValue(col, cell, n)}'`;
 }
 
 /** 형제 대다수와 키 집합이 다른 건을 집어낸다. 최빈 키 집합을 폴더의 모양으로 보고,
@@ -824,4 +857,113 @@ export function describeFolder(f: FolderAxes): string {
   ]
     .filter(Boolean)
     .join(" / ");
+}
+
+/** 사전을 지을 때 번역이 필요한 자리 하나 — 열 하나와, 그 열에 나오는 값들. */
+export interface LabelTarget {
+  /** 사전의 열쇠. `labels[path]` 와 `values["path=원값"]` 이 이 path 로 걸린다. */
+  path: string;
+  /** 지금 쓰이는 이름 — 사전이 없으면 path 그대로다. */
+  name: string;
+  /** 번역할 원값. 갈래가 적고 짧고 한글이 아닌 것만 담는다. */
+  values: string[];
+}
+
+/**
+ * 사전에 물어볼 자리만 골라 낸다.
+ *
+ * 목적 줄에 실제로 실리는 것은 축(`splits`)과 전제(`fixed`) 뿐이다. 나머지 열까지
+ * 번역해 봐야 프롬프트만 길어지고 쓰이지 않는다 — 폴더당 한 번 묻는 값이므로 묻는
+ * 자리를 좁히는 것이 곧 품질이다.
+ *
+ * 값은 갈래로 갈리는 열에서만 뽑는다. 금액·날짜·주문번호를 번역할 말은 없고, 이미
+ * 한글인 값은 번역할 것이 없다. 따옴표가 구분점인 열(`quoted`)은 아예 건너뛴다 —
+ * `200` 과 `"200"` 을 가르는 것이 그 따옴표라, 번역하면 두 값이 한 말이 된다.
+ */
+export function labelTargets(f: FolderAxes, maxValues = SPLIT_MAX): LabelTarget[] {
+  const out = new Map<string, LabelTarget>();
+  for (const col of [...f.splits, ...f.fixed]) {
+    if (out.has(col.path)) continue;
+    const raw = f.columns.find((c) => c.kind === "value" && c.path === col.path);
+    const values =
+      raw && !raw.quoted && raw.distinct <= maxValues
+        ? [...new Set([...raw.cells.values()].map((v) => v.text))].filter(
+            (v) =>
+              v !== "" &&
+              // 빈 배열·빈 객체는 값이 아니라 모양이다. 같은 path 의 길이 축이 그걸
+              // 이미 말하고 있어, 여기서 번역할 말이 없다.
+              v !== "[]" &&
+              v !== "{}" &&
+              v.length <= VALUE_MAX &&
+              !/[가-힣]/.test(v) &&
+              !/^-?\d+(\.\d+)?$/.test(v),
+          )
+        : [];
+    out.set(col.path, { path: col.path, name: nameOf(col.path), values });
+  }
+  return [...out.values()];
+}
+
+/** 사전을 물어본 답. 모델이 준 그대로라 어느 자리도 믿을 수 없다. */
+export interface LabelReply {
+  keys?: unknown;
+  values?: unknown;
+}
+
+/**
+ * 모델이 준 사전을 `AxisOpts` 가 받는 모양으로 — 믿을 수 있는 것만 골라서.
+ *
+ * 사전은 표시용이라 틀려도 채점이 흔들리지는 않지만, 두 가지는 막아야 한다.
+ *
+ * 하나는 묻지 않은 값이다. 모델이 열에 없는 값을 지어 보내면 사전에 죽은 항목이
+ * 쌓이고, 그게 다른 열의 같은 값에 걸릴 수 있다 — 물어본 자리만 받는다.
+ *
+ * 다른 하나가 더 중하다: **서로 다른 원값이 같은 말로 옮겨지면 구분이 사라진다.**
+ * `PARTIAL` 과 `NONE` 이 둘 다 `부분취소` 가 되면, 그 둘을 가르려고 만든 축이 목적
+ * 줄에서 한 말이 된다 — 축 분석이 애써 세운 갈래를 표시 단계에서 무너뜨리는 것이다.
+ * 그래서 한 열 안에서 이름이 겹치면 뒤엣것을 버린다. 버려진 값은 원문 그대로 보이고,
+ * 영어로 보이는 쪽이 두 값이 한 말이 되는 것보다 낫다.
+ */
+export function dictFrom(
+  targets: LabelTarget[],
+  reply: LabelReply,
+): { labels: Record<string, string>; values: Record<string, string> } {
+  const asked = new Map<string, Set<string>>();
+  for (const t of targets) asked.set(t.path, new Set(t.values));
+  // 이름에 따옴표가 들어오면 목적 줄의 `키='값'` 이 깨진다. 값 쪽은 굽은 따옴표로
+  // 바꾸는 길이 있지만 이름은 그럴 자리가 아니라 아예 뗀다.
+  //
+  // 긴 것은 잘라 쓰지 않고 버린다. 모델이 이름 대신 설명을 적어 보내는 일이 있는데,
+  // 그걸 잘라 넣으면 `이 열은 결제 취소 요청의 최종…='성공' 확인` 이 된다 — 이름이
+  // 아니라 잘린 설명이다. 버리면 원문 키가 보이고, 영어로 보이는 쪽이 낫다.
+  const clean = (v: unknown) => {
+    const s = String(v ?? "").replace(/\s+/g, " ").trim().replace(/['"]/g, "");
+    return s.length > NAME_MAX ? "" : s;
+  };
+
+  const labels: Record<string, string> = {};
+  for (const item of Array.isArray(reply.keys) ? reply.keys : []) {
+    const row = item as { path?: unknown; name?: unknown };
+    const path = String(row?.path ?? "");
+    const name = clean(row?.name);
+    if (!asked.has(path) || !name || name === path) continue;
+    labels[path] = name;
+  }
+
+  const values: Record<string, string> = {};
+  const used = new Map<string, Set<string>>();
+  for (const item of Array.isArray(reply.values) ? reply.values : []) {
+    const row = item as { path?: unknown; value?: unknown; name?: unknown };
+    const path = String(row?.path ?? "");
+    const raw = String(row?.value ?? "");
+    const name = clean(row?.name);
+    if (!name || name === raw) continue;
+    if (!asked.get(path)?.has(raw)) continue;
+    const mine = used.get(path) ?? new Set<string>();
+    if (mine.has(name)) continue;
+    mine.add(name);
+    used.set(path, mine);
+    values[`${path}=${raw}`] = name;
+  }
+  return { labels, values };
 }
