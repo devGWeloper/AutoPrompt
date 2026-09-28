@@ -195,6 +195,19 @@ export interface AxisOpts {
    * 둘을 같이 주면 `allow` 로 좁힌 다음 여기서 뺀다.
    */
   deny?: string[];
+  /**
+   * 쓰지 않을 파생 축의 종류.
+   *
+   * 원값(`value`)만 정답지에 실제로 적힌 값이고 나머지는 거기서 뽑아낸 것이다. 금액이
+   * 건마다 달라 원값으로는 축이 못 되어도 `부호` 는 두 갈래라 축이 되는 식으로, 버려질
+   * 열을 살리려고 만든다.
+   *
+   * 살아난 축이 다 읽히는 것은 아니다. `err 유무` 는 맞는 말이지만 목적으로 읽으면
+   * 무엇을 확인하려는 건인지 잘 안 들어온다. 그런 종류는 여기 적어 끈다.
+   *
+   * `value` 는 적어도 꺼지지 않는다 — 그건 파생이 아니라 정답지 자체다.
+   */
+  skipKinds?: AxisKind[];
   /** 목적 한 줄에 넣을 축 수. 기본 2. */
   lineAxes?: number;
   /** 목적 한 줄의 길이 상한. 기본 60 — 목록에서 한 줄로 읽히는 길이. */
@@ -615,6 +628,11 @@ export function analyzeFolder(cases: PurposeCase[], opts: AxisOpts = {}): Folder
   const deny = listOf(opts.deny);
   let pool = allow.size ? live.filter((c) => listed(c.path, allow)) : live;
   if (deny.size) pool = pool.filter((c) => !listed(c.path, deny));
+  // 종류로 끄는 건 path 로는 말할 수 없는 일이라 따로 둔다. `유무` 를 그만 보고 싶다는
+  // 건 어느 키의 유무가 아니라 그 종류 전부를 뜻한다. 원값은 끌 수 없다 — 그걸 끄면
+  // 정답지에 적힌 값이 목적에서 사라진다.
+  const skip = new Set<AxisKind>((opts.skipKinds ?? []).filter((k) => k !== "value"));
+  if (skip.size) pool = pool.filter((c) => !skip.has(c.kind));
 
   const order = new Map(pool.map((c, i) => [c.id, i]));
   const byId = new Map(pool.map((c) => [c.id, c]));

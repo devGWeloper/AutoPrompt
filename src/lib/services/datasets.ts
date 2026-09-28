@@ -34,7 +34,7 @@ import {
   type GlossaryReply,
   type PurposeCase,
 } from "./purposeAxes";
-import { allowedKeys, deniedKeys } from "./purposeAllow";
+import { allowedKeys, deniedKeys, skippedKinds } from "./purposeAllow";
 import { chatJson, llmConfigured } from "./ragas/llmClient";
 
 // ---- datasets ----
@@ -1056,6 +1056,7 @@ export async function fillCasePurposes(
         maxLen: CASE_PURPOSE_LEN,
         allow: only ?? undefined,
         deny: never ?? undefined,
+        skipKinds: skippedKinds() ?? undefined,
       },
     );
     // 구분점이 잡힌 건과 그렇지 않은 건. 앞쪽은 무엇이 다른지를 이미 아니까 그것만
@@ -1226,6 +1227,7 @@ export async function previewCaseAxes(
       maxLen: CASE_PURPOSE_LEN,
       allow: only ?? undefined,
       deny: never ?? undefined,
+      skipKinds: skippedKinds() ?? undefined,
     });
     folders.push({
       folder,

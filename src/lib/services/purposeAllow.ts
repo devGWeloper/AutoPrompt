@@ -1,3 +1,5 @@
+import type { AxisKind } from "./purposeAxes";
+
 // 목적에 쓸 키를 손으로 정하는 자리.
 //
 // 축 분석은 정답지의 모든 키를 후보로 본다. 갈래 수와 변별력으로 걸러도 우연히 갈린
@@ -69,4 +71,29 @@ export function allowedKeys(): string[] | null {
 /** 제외할 목록. 비어 있으면 null. */
 export function deniedKeys(): string[] | null {
   return PURPOSE_DENY.length ? PURPOSE_DENY : null;
+}
+
+/**
+ * 쓰지 않을 파생 축의 종류.
+ *
+ * 정답지에 적힌 값(원값) 말고도, 거기서 뽑아낸 축이 있다. 값이 건마다 달라 원값으로는
+ * 축이 못 되는 키를 살리려고 만든 것이다:
+ *
+ *   present  `amount 유무`      그 키가 정답지에 있는가       있음 / 없음
+ *   blank    `amount 값 유무`   키는 있는데 값이 비었는가     있음 / 없음
+ *   length   `items 길이`       배열이 몇 개인가              0 / 1 / 2 …
+ *   sign     `amount 부호`      숫자가 0 이냐 아니냐           양수 / 0 / 음수
+ *   type     `code 타입`        값의 자료형                   string / number
+ *
+ * 맞는 말이긴 한데 목적으로 읽으면 무엇을 확인하려는 건인지 잘 안 들어온다. 특히
+ * 유무 둘이 그렇다 — 그래서 기본으로 꺼 뒀다.
+ *
+ * 배열을 자주 쓰면 `length` 는 켜 두는 편이 낫다. `items 길이=0` 은 빈 결과를 확인하는
+ * 건이라는 뜻이라 목적으로 읽힌다. 비우면 다섯 가지가 전부 켜진다.
+ */
+const PURPOSE_SKIP_KINDS: AxisKind[] = ["present", "blank"];
+
+/** 끌 축 종류. 비어 있으면 null — 다 쓴다. */
+export function skippedKinds(): AxisKind[] | null {
+  return PURPOSE_SKIP_KINDS.length ? PURPOSE_SKIP_KINDS : null;
 }
