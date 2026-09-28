@@ -208,6 +208,25 @@ export interface AxisOpts {
    * `value` 는 적어도 꺼지지 않는다 — 그건 파생이 아니라 정답지 자체다.
    */
   skipKinds?: AxisKind[];
+  /**
+   * 값이 있는 키를 전부 늘어놓는다 — 고르지 않고.
+   *
+   * 기본 방식은 '형제와 무엇이 다른가' 를 세어 한두 축만 남긴다. 목록에서 훑는 표지로는
+   * 그게 맞지만, 남는 것이 너무 적다고 느껴질 수 있다. 특히 정답지가 평평하고 키가 이미
+   * 손으로 골라진 것이라면(제외 목록으로 식별자를 걷어 낸 뒤라면), 남은 키는 전부 그
+   * 건이 확인하려는 조건이다 — 그중 하나만 고르는 것이 오히려 정보를 버리는 일이 된다.
+   *
+   * 켜면 이렇게 달라진다:
+   *   - 후보에 남은 원값 열을 **전부** 쓴다. 갈래 수도 변별력도 보지 않는다.
+   *   - 전건 같은 값인 키도 쓴다. 그것도 '값이 채워져 있는 키' 다.
+   *   - 값이 빈 키(null, 빈 문자열, [], {})는 뺀다.
+   *   - 파생 축(부호·길이·유무)은 쓰지 않는다. 원값만 늘어놓는 자리다.
+   *   - 순서는 정답지에 적힌 키 순서다. 변별력 순으로 흩지 않아야 스무 줄이 같은
+   *     자리에 같은 키를 놓고, 옆줄과 견주기 쉽다.
+   *
+   * 줄이 길어지므로 `maxLen` 을 함께 올려야 한다.
+   */
+  everyKey?: boolean;
   /** 목적 한 줄에 넣을 축 수. 기본 2. */
   lineAxes?: number;
   /** 목적 한 줄의 길이 상한. 기본 60 — 목록에서 한 줄로 읽히는 길이. */
@@ -637,8 +656,21 @@ export function analyzeFolder(cases: PurposeCase[], opts: AxisOpts = {}): Folder
   const order = new Map(pool.map((c, i) => [c.id, i]));
   const byId = new Map(pool.map((c) => [c.id, c]));
 
+  // 값이 비었는지는 `blank` 축이 케이스별로 이미 재 놓았다. everyKey 에서 빈 키를 뺄 때
+  // 그 표를 그대로 읽는다 — 같은 판정을 두 군데서 따로 하면 언젠가 갈린다.
+  const blankOf = new Map<string, AxisColumn>();
+  for (const c of columns) if (c.kind === "blank") blankOf.set(c.path, c);
+  const blankCell = (col: AxisColumn, id: number): boolean =>
+    blankOf.get(col.path)?.cells.get(id)?.text === "없음";
+
+  const everyKey = Boolean(opts.everyKey);
+
   let splits: AxisColumn[];
-  if (opts.pick && opts.pick.length) {
+  if (everyKey) {
+    // 정답지에 적힌 키 순서 그대로. `columns` 를 그 순서로 만들었으므로 거르기만 하면
+    // 된다 — 파생 열은 빼고, 갈래 수도 변별력도 보지 않는다.
+    splits = pool.filter((c) => c.kind === "value");
+  } else if (opts.pick && opts.pick.length) {
     splits = [];
     for (const id of opts.pick) {
       const c = byId.get(id);
@@ -670,15 +702,20 @@ export function analyzeFolder(cases: PurposeCase[], opts: AxisOpts = {}): Folder
 
   const purposes = new Map<number, string>();
   const facts = new Map<number, AxisFact[]>();
-  const chosen = Boolean(opts.pick && opts.pick.length);
+  // everyKey 도 '사람이 정한 순서' 쪽이다. 변별력으로 다시 줄 세우면 건마다 키 차례가
+  // 달라져, 전부 늘어놓는 보람이 없어진다.
+  const chosen = everyKey || Boolean(opts.pick && opts.pick.length);
+  const perLine = everyKey ? Number.MAX_SAFE_INTEGER : lineAxes;
   for (const s of shapes) {
-    const ranked = rankFor(s.id, splits, chosen);
+    const ranked = rankFor(s.id, splits, chosen).filter(
+      (r) => !everyKey || !blankCell(r.col, s.id),
+    );
     if (ranked.length === 0) continue;
-    const line = lineFrom(ranked, lineAxes, maxLen, chosen, labels);
+    const line = lineFrom(ranked, perLine, maxLen, chosen, labels);
     if (line) purposes.set(s.id, line);
     facts.set(
       s.id,
-      ranked.slice(0, FACTS_MAX).map((r) => ({
+      (everyKey ? ranked : ranked.slice(0, FACTS_MAX)).map((r) => ({
         label: axisName(r.col, labels),
         value: axisValue(r.col, r.cell),
         text: phrase(r.col, r.cell, labels),

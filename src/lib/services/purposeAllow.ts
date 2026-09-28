@@ -97,3 +97,40 @@ const PURPOSE_SKIP_KINDS: AxisKind[] = ["present", "blank"];
 export function skippedKinds(): AxisKind[] | null {
   return PURPOSE_SKIP_KINDS.length ? PURPOSE_SKIP_KINDS : null;
 }
+
+/**
+ * 값이 채워진 키를 **전부** 목적에 늘어놓는다.
+ *
+ * 끄면(=false) 형제와 견줘 갈리는 지점 한두 개만 골라 쓴다. 목록에서 훑는 표지로는 그게
+ * 맞지만, 정답지가 평평하고 위 제외 목록으로 식별자를 이미 걷어 냈다면 남은 키는 전부
+ * 그 건이 확인하려는 조건이다 — 그중 하나만 고르면 오히려 정보를 버린다.
+ *
+ *   꺼짐:  type='FULL', result='OK' 확인
+ *   켜짐:  type='FULL', result='OK', amount='30000', step='READY' 확인
+ *
+ * 켜면 LLM 을 부르지 않는다. 고를 것이 없으니 고르게 할 일도 없다 — 목적 채우기가
+ * 즉시 끝나고 호출도 대기(`agent.caseDelaySec`)도 없다. 정답지가 JSON 이 아닌 건만
+ * 예전처럼 LLM 이 쓴다.
+ *
+ * 빈 값(null, 빈 문자열, [], {})인 키는 빠진다. 파생 축(부호·길이·유무)도 안 쓴다 —
+ * 원값만 늘어놓는 자리다.
+ */
+const PURPOSE_EVERY_KEY = true;
+
+/**
+ * 목적 한 줄의 길이 상한.
+ *
+ * 전부 늘어놓으면 줄이 길어진다. 60은 목록에서 한 줄로 읽히는 길이라 그대로 두면 뒤가
+ * 잘린다. 넘치면 `…` 로 잘리므로, 키가 많으면 올린다.
+ */
+const PURPOSE_LINE_MAX = PURPOSE_EVERY_KEY ? 200 : 60;
+
+/** 전부 늘어놓는 모드인가. */
+export function everyKey(): boolean {
+  return PURPOSE_EVERY_KEY;
+}
+
+/** 목적 한 줄의 길이 상한. */
+export function lineMax(): number {
+  return PURPOSE_LINE_MAX;
+}

@@ -34,7 +34,7 @@ import {
   type GlossaryReply,
   type PurposeCase,
 } from "./purposeAxes";
-import { allowedKeys, deniedKeys, skippedKinds } from "./purposeAllow";
+import { allowedKeys, deniedKeys, everyKey, lineMax, skippedKinds } from "./purposeAllow";
 import { chatJson, llmConfigured } from "./ragas/llmClient";
 
 // ---- datasets ----
@@ -1053,10 +1053,11 @@ export async function fillCasePurposes(
       all.filter((c) => (c.case_type || "NORMAL") === folder).map(toPurposeCase),
       {
         folder,
-        maxLen: CASE_PURPOSE_LEN,
+        maxLen: lineMax(),
         allow: only ?? undefined,
         deny: never ?? undefined,
         skipKinds: skippedKinds() ?? undefined,
+        everyKey: everyKey(),
       },
     );
     // 구분점이 잡힌 건과 그렇지 않은 건. 앞쪽은 무엇이 다른지를 이미 아니까 그것만
@@ -1077,19 +1078,31 @@ export async function fillCasePurposes(
         (axes.facts.get(c.case_id) ?? []).length === 0 && (!listed || unparsed.has(c.case_id)),
     );
 
-    if (!llmConfigured()) {
-      // LLM 이 없으면 변별력 순으로 고른 기본 줄이라도 남긴다. 핵심 키를 가려내지
-      // 못해 부수적인 축이 섞일 수 있지만, 비어 있는 것보다는 낫다.
+    // 정답지가 JSON 인 건을 코드가 그대로 채우는 두 경우.
+    //
+    // 하나는 전부 늘어놓는 모드다. 고를 것이 없으니 고르게 할 일도 없다 — 축 목록도,
+    // 용어 풀이도, 핵심 키 고르기도 전부 '무엇을 남기고 무엇을 버릴까' 를 위한 것이었고,
+    // 그 질문이 사라지면 호출도 사라진다. 채우기가 즉시 끝나고 `agent.caseDelaySec` 도
+    // 걸리지 않는다.
+    //
+    // 다른 하나는 LLM 이 아예 없을 때다. 그때는 변별력 순으로 고른 기본 줄이라도 남긴다 —
+    // 부수적인 축이 섞일 수 있지만 비어 있는 것보다는 낫다.
+    const selfServed = everyKey() || !llmConfigured();
+    if (selfServed) {
       await flush(
         grounded
           .map((c) => ({ id: c.case_id, text: axes.purposes.get(c.case_id) ?? "" }))
           .filter((f) => f.text),
       );
-      // 여기서 던지면 방금 얻은 목적까지 같이 버려진다. 다음 폴더는 계속 본다 —
-      // 그 폴더는 구분점만으로 다 채워질 수도 있다.
+    }
+
+    // 산문 건이 남아 있는데 LLM 이 없으면 여기서 막힌다. 던지기 전에 위에서 채운 것은
+    // 이미 저장돼 있고, 다음 폴더는 계속 본다 — 그 폴더는 산문이 하나도 없을 수 있다.
+    if (!llmConfigured() && blind.length > 0) {
       if (total > 0) continue;
       throw badRequest("LLM 엔드포인트가 설정되어 있지 않습니다 (config.yml llm.endpoint)");
     }
+    if (!llmConfigured()) continue;
 
     const hints = all
       .filter((c) => (c.case_type || "NORMAL") === folder && (c.eval_criteria ?? "").trim())
@@ -1107,14 +1120,14 @@ export async function fillCasePurposes(
     // 전부 산문이면 묻지 않는다 — 산문 쪽은 축 목록을 쓰지 않으므로 그 호출과
     // `agent.caseDelaySec` 한 번을 그냥 버리는 셈이다.
     let gloss: Glossary | undefined;
-    if (grounded.length > 0) {
+    if (!selfServed && grounded.length > 0) {
       hooks?.onProgress?.(total, todo.length);
       gloss = await askGlossary(datasetId, head, axes);
     }
 
     // 정답지가 JSON 인 건: 소분류 전체를 보고 뽑은 축 가운데 어느 것이 핵심인지만
-    // LLM 이 고른다. 값도 형식도 코드가 붙인다.
-    for (let i = 0; i < grounded.length; i += CASE_PURPOSE_BATCH) {
+    // LLM 이 고른다. 값도 형식도 코드가 붙인다. (위에서 이미 채웠으면 건너뛴다.)
+    for (let i = 0; !selfServed && i < grounded.length; i += CASE_PURPOSE_BATCH) {
       const batch = grounded.slice(i, i + CASE_PURPOSE_BATCH);
       hooks?.onProgress?.(total, todo.length);
       await flush(await pickKeyAxes(head, folderPremise(axes), batch, axes, gloss));
@@ -1224,10 +1237,11 @@ export async function previewCaseAxes(
     const { only, never } = keyLists(lists);
     const f = analyzeFolder(items.map(toPurposeCase), {
       folder,
-      maxLen: CASE_PURPOSE_LEN,
+      maxLen: lineMax(),
       allow: only ?? undefined,
       deny: never ?? undefined,
       skipKinds: skippedKinds() ?? undefined,
+      everyKey: everyKey(),
     });
     folders.push({
       folder,
