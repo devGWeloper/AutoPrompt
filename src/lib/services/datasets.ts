@@ -24,12 +24,14 @@ import { writeAudit } from "./audit";
 import {
   analyzeFolder,
   describeFolder,
-  dictFrom,
+  glossaryEmpty,
+  glossaryFrom,
   labelTargets,
   lineFromLabels,
   whyNoAxes,
   type FolderAxes,
-  type LabelReply,
+  type Glossary,
+  type GlossaryReply,
   type PurposeCase,
 } from "./purposeAxes";
 import { chatJson, llmConfigured } from "./ragas/llmClient";
@@ -639,35 +641,31 @@ const VALUE_SHOW = 24;
  * 정답지 요약이 된다. */
 const PICK_MAX = 2;
 /**
- * 사전 한 번에 물어보는 열 수의 상한.
+ * 용어 풀이를 한 번에 물어보는 열 수의 상한.
  *
- * 폴더당 한 번뿐인 호출이라 아끼려 들 자리는 아니지만, 키가 수십 개인 정답지를
- * 통째로 올리면 프롬프트가 스키마 덤프가 되고 이름 짓는 눈이 흐려진다. 목적 줄에
- * 실리는 것은 변별력 위쪽 몇 개뿐이라, 거기까지 덮으면 나머지는 번역돼도 쓰이지
- * 않는다.
+ * 폴더당 한 번뿐인 호출이라 아끼려 들 자리는 아니지만, 키가 수십 개인 정답지를 통째로
+ * 올리면 프롬프트가 스키마 덤프가 된다. 축 목록에 실리는 것만 물어도 쓰이는 건 다 덮는다.
  */
-const LABEL_TARGETS_MAX = 24;
-/** 한 열에서 사전에 올리는 값의 수. 갈래 상한(SPLIT_MAX)과 같은 자리라 그보다 많이
- * 물어볼 일이 없다. */
-const LABEL_VALUES_MAX = 8;
+const GLOSS_TARGETS_MAX = 24;
+/** 한 열에서 풀이를 물어보는 값의 수. 갈래 상한과 같은 자리라 그보다 많이 물을 일이 없다. */
+const GLOSS_VALUES_MAX = 8;
 /**
- * 폴더 사전을 쥐고 있는 자리.
+ * 폴더 풀이를 쥐고 있는 자리.
  *
- * 물어본 자리가 글자 하나까지 같으면 답도 같다 — 온도가 0이다(ragas/llmClient). 그래서
- * 목적 채우기를 다시 누를 때, 폴더 하나를 나눠 채울 때, 프롬프트만 손보고 다시 돌릴 때
- * 같은 질문을 되풀이할 이유가 없다. `agent.caseDelaySec` 이 호출마다 걸리는 만큼 이
- * 되풀이는 그냥 기다림이다.
+ * 물어본 자리가 글자 하나까지 같으면 답도 같다 — 온도가 0이다(ragas/llmClient). 목적
+ * 채우기를 다시 누를 때, 폴더 하나를 나눠 채울 때, 프롬프트만 손보고 다시 돌릴 때 같은
+ * 질문을 되풀이할 이유가 없다. `agent.caseDelaySec` 이 호출마다 걸리는 만큼 그 되풀이는
+ * 그냥 기다림이다.
  *
  * 열쇠에 물어본 자리를 통째로 넣는 게 요점이다. 정답지를 고쳐 갈래가 달라지면 열쇠도
- * 달라져 저절로 다시 묻는다 — 낡은 사전이 남아 있을 수가 없다.
+ * 달라져 저절로 다시 묻는다 — 낡은 풀이가 남아 있을 수가 없다.
  *
- * 프로세스 안에만 산다. 껐다 켜면 한 번 더 묻는 값이고, 그걸 DB 에 앉히는 건 사전을
- * 사람이 고칠 수 있게 만든 다음의 일이다.
+ * 프로세스 안에만 산다. 껐다 켜면 한 번 더 묻는 값이다.
  */
-const labelCache = new Map<string, { labels: Record<string, string>; values: Record<string, string> }>();
-/** 캐시가 무한히 자라지 않게. 넘으면 비운다 — 다시 묻는 값은 폴더당 한 번이라 굳이
- * 오래된 것만 골라 버릴 만한 일이 아니다. */
-const LABEL_CACHE_MAX = 200;
+const glossCache = new Map<string, Glossary>();
+/** 캐시가 무한히 자라지 않게. 넘으면 비운다 — 다시 묻는 값은 폴더당 한 번이라 오래된
+ * 것만 골라 버릴 만한 일이 아니다. */
+const GLOSS_CACHE_MAX = 200;
 const AXIS_PREVIEW_SAMPLES = 5;
 /** 미리보기가 늘어놓는 열 수의 상한. 키가 수십 개인 정답지에서 미리보기가 스키마
  * 덤프가 되지 않게. */
@@ -701,46 +699,58 @@ function folderPremise(axes: FolderAxes): string {
   return `이 소분류의 모든 데이터가 공통으로 갖는 값 (갈리지 않으므로 고르지 마세요): ${parts.join(", ")}\n`;
 }
 
-/** 소분류에 어떤 축이 있고 몇 갈래인지. 한 건의 값만 보여 주면 그 값이 흔한 것인지
- * 드문 것인지 알 수 없어, 축이 무엇을 가르는 축인지 먼저 펼쳐 놓는다. */
-function axisMenu(axes: FolderAxes): string {
+/**
+ * 소분류에 어떤 축이 있고 몇 갈래인지. 한 건의 값만 보여 주면 그 값이 흔한 것인지
+ * 드문 것인지 알 수 없어, 축이 무엇을 가르는 축인지 먼저 펼쳐 놓는다.
+ *
+ * 풀이가 있으면 뒤에 덧붙인다. `FULL / PARTIAL / NONE` 만 보여 주면 셋 중 어느 것이
+ * 이 건의 의도인지 모델이 짐작만 하게 되는데, 무슨 뜻인지 알면 고를 수 있다.
+ *
+ * 축 이름은 줄 맨 앞, 글자 하나 달라지지 않은 자리에 그대로 둔다. 모델이 돌려보낼 것이
+ * 그 이름이고(`lineFromLabels` 가 그걸로 되짚는다), 풀이는 그 뒤에 붙는 설명일 뿐이다.
+ */
+function axisMenu(axes: FolderAxes, gloss?: Glossary): string {
   const lines = axes.splits.map((c) => {
     const seen = [...new Set([...c.cells.values()].map((v) => v.text))].slice(0, AXIS_SAMPLE_VALUES);
     const more = c.distinct > seen.length ? " …" : "";
-    return `- ${c.label} (${c.distinct}갈래: ${seen.map((v) => clip(v, VALUE_SHOW)).join(" / ")}${more})`;
+    const head = `- ${c.label} (${c.distinct}갈래: ${seen.map((v) => clip(v, VALUE_SHOW)).join(" / ")}${more})`;
+    if (!gloss) return head;
+    // 값 풀이는 원값 열에만 붙는다. 파생 열의 값(`있음`, `양수`)은 코드가 이미 한국어로
+    // 지은 말이라 풀어 줄 것이 없다.
+    const meant =
+      c.kind === "value"
+        ? seen.map((v) => (gloss.values[`${c.path}=${v}`] ? `${v}=${gloss.values[`${c.path}=${v}`]}` : null))
+            .filter(Boolean)
+        : [];
+    const tail = [gloss.keys[c.path], meant.length ? meant.join(", ") : null].filter(Boolean).join(". ");
+    return tail ? `${head} — ${tail}` : head;
   });
   return lines.join("\n");
 }
 
 /**
- * 폴더의 키와 값을 한국어로 옮기는 사전 — 폴더당 LLM 한 번.
+ * 이 폴더의 키와 값이 무슨 뜻인지 — 폴더당 LLM 한 번.
  *
- * 축 분석은 정답지에 적힌 글자를 그대로 쓴다. 그래서 목적이 `cancel.type='PARTIAL',
- * result='OK' 확인` 으로 나온다. 틀린 말은 아니지만 이걸 읽는 사람은 목록을 훑다가
- * 영어를 한 번 더 번역해야 하고, 그 한 번이 목적을 표지로 못 쓰게 만든다.
+ * 축 분석은 어느 열이 갈리는지까지만 안다. `cancel.type` 이 `FULL / PARTIAL / NONE` 으로
+ * 갈린다는 것은 세면 나오지만, 셋 중 어느 것이 이 건의 의도인지는 그 말을 알아야 안다.
+ * 그래서 핵심 키를 고르라고 시키기 전에 풀이를 먼저 받아 축 목록에 덧붙인다.
  *
- * 번역을 건별로 맡기면 같은 키가 건마다 다른 말이 된다 — `취소유형` 과 `취소 타입`
- * 이 한 폴더에 섞이면 목록에서 견주는 일이 안 된다. 그래서 폴더당 한 번만 묻고,
- * 그 사전을 폴더 전체에 똑같이 건다: 스무 건이면 스무 번이 아니라 한 번이고, 그
- * 한 번의 답이 스무 줄에 같은 모양으로 퍼진다.
+ * 폴더당 한 번만 묻는다. 건별로 물으면 같은 키가 건마다 다르게 풀려 축 목록이 건마다
+ * 흔들리고, 무엇보다 스무 건이면 스무 번이다.
  *
- * 값까지 묻는 건 키만 옮겨서는 절반만 읽히기 때문이다. `취소유형='PARTIAL'` 보다
- * `취소유형='부분취소'` 가 읽히고, 그 판단은 말을 아는 쪽이 해야 한다.
+ * **풀이는 프롬프트에만 쓴다.** 목적 줄은 정답지에 적힌 글자를 그대로 쓴다 — 목적의
+ * `refund.fee` 와 키별 판정 표의 `refund.fee` 가 같은 글자여야 실패한 키에서 그 목적으로
+ * 되짚을 수 있고, 그 되짚기가 축 분석이 path 표기를 빌려 온 이유다.
  *
- * 실패하면 빈 사전을 돌려준다. 사전은 표시용이라 없으면 예전처럼 원문이 보일 뿐,
- * 축도 변별력도 그대로다 — 목적 채우기 전체를 여기서 멈춰 세울 이유가 없다.
+ * 실패하면 빈 사전을 돌려준다. 풀이가 없으면 예전과 똑같은 프롬프트가 나갈 뿐이다.
  */
-async function askLabels(
-  datasetId: number,
-  head: string,
-  axes: FolderAxes,
-): Promise<{ labels: Record<string, string>; values: Record<string, string> }> {
-  const empty = { labels: {}, values: {} };
-  const targets = labelTargets(axes, LABEL_VALUES_MAX).slice(0, LABEL_TARGETS_MAX);
+async function askGlossary(datasetId: number, head: string, axes: FolderAxes): Promise<Glossary> {
+  const empty: Glossary = { keys: {}, values: {} };
+  const targets = labelTargets(axes, GLOSS_VALUES_MAX).slice(0, GLOSS_TARGETS_MAX);
   if (targets.length === 0) return empty;
 
   const key = `${datasetId}\u0000${axes.folder}\u0000${JSON.stringify(targets)}`;
-  const had = labelCache.get(key);
+  const had = glossCache.get(key);
   if (had) return had;
 
   const user = [
@@ -756,37 +766,38 @@ async function askLabels(
       })
       .join("\n"),
     "",
-    `각각을 목록에서 한 눈에 읽히는 짧은 한국어로 옮겨 주세요.`,
-    `- 이름은 짧게 (2~6자). 목적 한 줄에 들어갑니다 — 설명이 아니라 이름입니다.`,
+    `각각이 무슨 뜻인지 짧은 한국어로 풀어 주세요. 이 풀이는 다음 질문에서 어느 키가 ` +
+      `중요한지 판단하는 데만 쓰입니다.`,
+    `- 짧게 (한 토막, 스무 자 안쪽). 설명문이 아니라 뜻입니다.`,
     `- 값도 같습니다. 'FULL' → '전액', 'CANCELLED' → '취소됨' 처럼.`,
-    `- **서로 다른 값은 서로 다른 이름이어야 합니다.** 두 값을 같은 말로 옮기면 ` +
-      `그 둘을 가르던 구분이 사라집니다.`,
-    `- 적힌 값만 옮기세요. 없는 값을 만들지 마세요.`,
-    `- 이미 한국어이거나 그대로 읽히는 것(id, url 같은), 옮길 말이 마땅치 않은 것은 ` +
-      `그냥 빼세요. 빠진 것은 원문이 그대로 쓰입니다 — 억지로 채우지 않아도 됩니다.`,
+    `- **서로 다른 값은 서로 다르게 풀어야 합니다.** 두 값을 같은 말로 풀면 그 둘을 ` +
+      `가르던 구분이 사라집니다.`,
+    `- 적힌 값만 푸세요. 없는 값을 만들지 마세요.`,
+    `- 뜻이 뻔한 것(id, url), 이미 한국어인 것, 짐작이 안 가는 것은 그냥 빼세요. ` +
+      `빠진 것은 원문만 보일 뿐이라 억지로 채우지 않아도 됩니다.`,
     `- path 는 위에 적힌 것을 글자 그대로 쓰세요.`,
-    `JSON 형식: {"keys":[{"path":"cancel.type","name":"취소유형"}],` +
-      `"values":[{"path":"cancel.type","value":"FULL","name":"전액"}]}`,
+    `JSON 형식: {"keys":[{"path":"cancel.type","mean":"취소유형"}],` +
+      `"values":[{"path":"cancel.type","value":"FULL","mean":"전액"}]}`,
   ].join("\n");
 
-  let dict: { labels: Record<string, string>; values: Record<string, string> };
+  let gloss: Glossary;
   try {
-    // 걸러내는 일은 `dictFrom` 이 한다 — 무엇을 물었는지와 견줘야 하는 일이라 축을
+    // 걸러내는 일은 `glossaryFrom` 이 한다 — 무엇을 물었는지와 견줘야 하는 일이라 축을
     // 아는 쪽에 두었다. 여기서는 묻고 받는 것만 한다.
-    dict = dictFrom(targets, await chatJson<LabelReply>(
-      "당신은 API 응답의 키와 값을 짧은 한국어 이름으로 옮기는 사람입니다. " +
+    gloss = glossaryFrom(targets, await chatJson<GlossaryReply>(
+      "당신은 API 응답의 키와 값이 무슨 뜻인지 짧은 한국어로 풀어 주는 사람입니다. " +
         "반드시 JSON 으로만 답하세요.",
       user,
     ));
   } catch {
-    // 사전 없이 가면 목적이 영어로 보일 뿐이다. 그게 목적이 아예 안 채워지는 것보다
-    // 낫다. 실패는 쥐고 있지 않는다 — 끊긴 연결이나 시간 초과라면 다음번엔 될 수도 있다.
+    // 풀이 없이 가면 예전과 같은 프롬프트가 나간다. 목적이 아예 안 채워지는 것보다 낫다.
+    // 실패는 쥐고 있지 않는다 — 끊긴 연결이나 시간 초과라면 다음번엔 될 수도 있다.
     return empty;
   }
 
-  if (labelCache.size >= LABEL_CACHE_MAX) labelCache.clear();
-  labelCache.set(key, dict);
-  return dict;
+  if (glossCache.size >= GLOSS_CACHE_MAX) glossCache.clear();
+  glossCache.set(key, gloss);
+  return gloss;
 }
 
 /**
@@ -809,6 +820,7 @@ async function pickKeyAxes(
   premise: string,
   batch: TestCase[],
   axes: FolderAxes,
+  gloss?: Glossary,
 ): Promise<{ id: number; text: string }[]> {
   const block = batch.map((c, i) => {
     const facts = axes.facts.get(c.case_id) ?? [];
@@ -826,7 +838,11 @@ async function pickKeyAxes(
     "",
     premise,
     `이 소분류의 데이터를 모두 견줘 '값이 갈리는 지점' 을 뽑았습니다:`,
-    axisMenu(axes),
+    axisMenu(axes, gloss),
+    gloss && !glossaryEmpty(gloss)
+      ? `줄 끝 — 뒤는 그 키와 값이 무슨 뜻인지 풀어 둔 것입니다. 고를 때 참고만 하고, ` +
+        `돌려보낼 이름은 줄 맨 앞의 것을 쓰세요.`
+      : "",
     "",
     `아래 ${batch.length}건입니다. 각 건이 그 지점들에서 어떤 값을 갖는지 적었습니다.`,
     `대괄호 안 [같은 값 M/N건] 은 그 키를 가진 형제 N건 가운데 이 건과 같은 값인 것이 ` +
@@ -855,10 +871,26 @@ async function pickKeyAxes(
   );
 
   const chosen = new Map<number, string[]>();
+  // 풀이를 붙여 보냈으면 풀이로 돌려보내는 일이 생긴다 — `cancel.type` 대신 `취소유형`.
+  // 부탁으로 막는 대신 받아 준다. 한 path 에 축이 여럿 걸려 있으면(원값과 파생 열) 어느
+  // 것을 말한 것인지 알 수 없으므로 그때만 안 받는다.
+  const alias = new Map<string, string>();
+  if (gloss) {
+    for (const [path, mean] of Object.entries(gloss.keys)) {
+      const hit = axes.splits.filter((c) => c.path === path);
+      if (hit.length === 1 && !alias.has(mean)) alias.set(mean, hit[0].label);
+    }
+  }
+
   for (const item of r.picks ?? []) {
     const at = Number(item?.n) - 1;
     if (!Number.isInteger(at) || at < 0 || at >= batch.length) continue;
-    const keys = Array.isArray(item?.keys) ? item.keys.map((k) => String(k)) : [];
+    const keys = Array.isArray(item?.keys)
+      ? item.keys.map((k) => {
+          const s = String(k);
+          return alias.get(s.trim().replace(/^['"]|['"]$/g, "")) ?? s;
+        })
+      : [];
     if (keys.length) chosen.set(at, keys.slice(0, PICK_MAX));
   }
 
@@ -983,38 +1015,16 @@ export async function fillCasePurposes(
   };
 
   for (const [folder, items] of byFolder) {
-    const head = [
-      `평가 데이터셋 "${ds.dataset_nm}"${ds.description ? ` — ${ds.description}` : ""}`,
-      folder === "NORMAL" ? "폴더 없음" : `폴더: ${folder}`,
-    ].join("\n");
-
     // 축은 폴더 전체를 보고 센다. 목적이 이미 적힌 형제도 값의 분포에는 들어가야
     // 한다 — 무엇이 흔하고 무엇이 드문지는 채울 건들만 봐서는 알 수 없다.
-    const siblings = all
-      .filter((c) => (c.case_type || "NORMAL") === folder)
-      .map(toPurposeCase);
-    let axes = analyzeFolder(siblings, { folder, maxLen: CASE_PURPOSE_LEN });
-
+    const axes = analyzeFolder(
+      all.filter((c) => (c.case_type || "NORMAL") === folder).map(toPurposeCase),
+      { folder, maxLen: CASE_PURPOSE_LEN },
+    );
     // 구분점이 잡힌 건과 그렇지 않은 건. 앞쪽은 무엇이 다른지를 이미 아니까 그것만
     // 건네고 문장을 맡기면 되고, 뒤쪽은 예전처럼 질문과 정답을 통째로 올려야 한다.
-    //
-    // 사전을 묻기 전에 가른다. 사전은 이름만 갈아 끼우므로 어느 건에 구분점이 있는지는
-    // 사전 전후로 달라지지 않고, 이 폴더에서 채울 것이 전부 산문이면 사전을 물어 봐야
-    // 쓸 데가 없다 — 호출 한 번과 `agent.caseDelaySec` 한 번을 그냥 버리는 셈이다.
     const grounded = items.filter((c) => (axes.facts.get(c.case_id) ?? []).length > 0);
     const blind = items.filter((c) => (axes.facts.get(c.case_id) ?? []).length === 0);
-
-    // 사전은 축을 세운 뒤에 묻는다 — 무엇을 물을지가 축에서 나오기 때문이다. 받으면
-    // 같은 표를 이름만 갈아 다시 세운다. 분석은 순수 함수라 두 번 도는 값이 싸고,
-    // 이렇게 해야 사전이 목적 줄·`facts`·프롬프트에 실리는 축 목록까지 한꺼번에
-    // 적용된다 — 한 군데만 번역해 놓으면 고른 키와 적힌 이름이 어긋난다.
-    if (llmConfigured() && grounded.length > 0) {
-      hooks?.onProgress?.(total, todo.length);
-      const dict = await askLabels(datasetId, head, axes);
-      if (Object.keys(dict.labels).length || Object.keys(dict.values).length) {
-        axes = analyzeFolder(siblings, { folder, maxLen: CASE_PURPOSE_LEN, ...dict });
-      }
-    }
 
     if (!llmConfigured()) {
       // LLM 이 없으면 변별력 순으로 고른 기본 줄이라도 남긴다. 핵심 키를 가려내지
@@ -1037,13 +1047,26 @@ export async function fillCasePurposes(
       ? `같은 폴더에서 이미 목적이 적힌 데이터 (말투와 결의 본보기):\n` +
         `${hints.map((h) => `- ${clip(caseQA(h).question, 80)} → ${h.eval_criteria}`).join("\n")}\n`
       : "";
+    const head = [
+      `평가 데이터셋 "${ds.dataset_nm}"${ds.description ? ` — ${ds.description}` : ""}`,
+      folder === "NORMAL" ? "폴더 없음" : `폴더: ${folder}`,
+    ].join("\n");
+
+    // 키와 값이 무슨 뜻인지 먼저 받아 축 목록에 덧붙인다. 폴더당 한 번이고, 채울 것이
+    // 전부 산문이면 묻지 않는다 — 산문 쪽은 축 목록을 쓰지 않으므로 그 호출과
+    // `agent.caseDelaySec` 한 번을 그냥 버리는 셈이다.
+    let gloss: Glossary | undefined;
+    if (grounded.length > 0) {
+      hooks?.onProgress?.(total, todo.length);
+      gloss = await askGlossary(datasetId, head, axes);
+    }
 
     // 정답지가 JSON 인 건: 소분류 전체를 보고 뽑은 축 가운데 어느 것이 핵심인지만
     // LLM 이 고른다. 값도 형식도 코드가 붙인다.
     for (let i = 0; i < grounded.length; i += CASE_PURPOSE_BATCH) {
       const batch = grounded.slice(i, i + CASE_PURPOSE_BATCH);
       hooks?.onProgress?.(total, todo.length);
-      await flush(await pickKeyAxes(head, folderPremise(axes), batch, axes));
+      await flush(await pickKeyAxes(head, folderPremise(axes), batch, axes, gloss));
     }
 
     // 정답지가 산문인 건: 축이 없으니 그 건의 입출력만 보고 자유롭게 쓴다.
