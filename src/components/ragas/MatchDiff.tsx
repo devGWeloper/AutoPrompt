@@ -188,19 +188,21 @@ const COL = 'border-r border-line-strong';
 /**
  * 키 칸의 면. 헤어라인만으로는 다 맞은 표가 흰 종이 한 장이 되어, 어디까지가
  * 키고 어디부터가 값인지 눈이 자꾸 놓친다 — 스프레드시트의 머리 열처럼 키 칸에만
- * 옅은 흙빛(keycol)을 깔아, 흰 값 칸들과 갈리게 한다.
+ * 흙빛을 깔아, 흰 값 칸들과 갈리게 한다.
  *
  * 값 칸끼리는 같은 면이다. 기대값과 실제값(또는 A 와 B)은 나란히 견주라고 놓은
  * 같은 성격의 칸이라, 서로 농도를 달리하면 한쪽이 더 중요한 것처럼 읽힌다.
  * 그 둘을 가르는 것은 세로 헤어라인과 머리줄이 한다.
  *
- * 색은 쓰지 않는다. 이 표에서 색은 판정이 쓰는 말(틀린 칸의 붉은 면, 추가의
- * 노란 면)이라, 칸을 가르는 데 색을 쓰면 그 말과 섞인다. 그래서 회색 농도만.
+ * 값을 tailwind.config 의 토큰이 아니라 여기 직접 적는다. 토큰은 config 를 읽는
+ * 시점에만 반영돼서, 이미 떠 있는 서버에서는 클래스가 아예 생성되지 않는다 —
+ * 색이 바뀌지 않는 게 아니라 면이 없는 상태가 되고, 그걸 알아채려면 빌드된 CSS 를
+ * 뒤져야 한다. 한 군데서만 쓰는 색이니 여기 두고 여기서 고친다.
  *
  * 줄에 마우스를 올리면 이 면을 비워 줄 전체가 한 색으로 덮이게 한다. 비우지
  * 않으면 tr 의 hover 가 이 면에 가려 어느 줄에 있는지가 보이지 않는다.
  */
-const COL_KEY = 'bg-keycol group-hover:bg-transparent';
+const COL_KEY = 'bg-[#e8d9a8] group-hover:bg-transparent';
 
 /** 이 길이를 넘는 값은 두 줄로 접어 둔다. 한 줄이 화면을 다 먹으면 위아래를
  * 나란히 읽으라고 만든 표가 아니게 된다. */
@@ -531,6 +533,11 @@ function Val({
   // 빈 문자열은 글자 없이 그리면 칸이 깨진 것처럼 보인다.
   if (text.trim() === '') return <span className="text-muted">&quot;&quot;</span>;
   return (
+    // 값은 본문 글씨체(sans)로 둔다. mono 로 맞춰 보았지만 더 나빴다: 이 표의 값에는
+    // 한글 문장이 섞이고, mono 스택(Consolas 계열)에는 한글 글자가 없어 한글만 다른
+    // 글씨체로 떨어진다 — 한 칸 안에서 라틴과 한글의 글씨체가 갈리는 쪽이, 글자 폭이
+    // 안 맞는 것보다 읽기 어렵다. 숫자 자리는 ValueTd 의 tabular-nums 가 맞춰 준다.
+    // 펼친 값(SameValue 의 pre)만 mono 인 까닭은 그쪽은 들여쓴 JSON 구조를 보여서다.
     <span className={cn('min-w-0 break-words', dim ? 'text-muted' : TONE_TEXT[tone], clamp && 'line-clamp-3')}>
       {typeTag && <span className="mr-1 font-mono text-[11px] font-semibold text-muted">{jsonTypeOf(text)}</span>}
       {segs
@@ -630,8 +637,11 @@ function KeyCell({
   lead?: ReactNode;
   children?: ReactNode;
 }) {
+  // 키 이름도 본문 글씨체다. mono 스택은 Windows 에서 Consolas 로 떨어지고 거기엔
+  // 한글 글자가 없어, 한글이 섞인 키에서 한 칸 안의 글씨체가 갈린다. 코드처럼 보이게
+  // 하는 일은 글씨체가 아니라 굵기와 흙빛 면이 이미 하고 있다.
   return (
-    <td className={cn(CELL, COL, COL_KEY, 'border-l-[3px] font-mono', dim ? 'text-body' : 'text-ink', rail !== 'border-l-transparent' && 'font-semibold', rail)}>
+    <td className={cn(CELL, COL, COL_KEY, 'border-l-[3px]', dim ? 'text-body' : 'text-ink', rail !== 'border-l-transparent' && 'font-semibold', rail)}>
       <span className="flex items-baseline gap-1" style={depth ? { paddingLeft: depth * 12 } : undefined}>
         {gutter && <span className="w-3.5 shrink-0 self-center">{lead}</span>}
         <span className="min-w-0 break-words" title={path || undefined}>

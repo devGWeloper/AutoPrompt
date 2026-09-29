@@ -33,12 +33,6 @@ const config: Config = {
         // inview's fourth status stop — a run that completed but scored a fail,
         // which is not the same thing as an error.
         fail: { DEFAULT: "#c2410c", vivid: "#f97316", soft: "#ffedd5", soft2: "#ffe1bd", line: "#fed7aa" },
-        // JSON 키 비교표의 키 열 면. 회색 ramp 가 아니라 제 색인 까닭은, 키 칸과
-        // 값 칸을 갈라 놓는 장치가 이 면 하나이기 때문이다 — surface-2 는 값 칸의
-        // 흰색과 너무 가까워 표가 통째로 흰 종이로 읽혔다.
-        // warn.soft(#fdf2e5) 보다 노란기를 키우고 한 단 깊게 잡았다: 그 tint 는 같은
-        // 표에서 '추가' 키가 쓰는 말이라, 옅게 잡으면 열의 면과 상태가 섞인다.
-        keycol: { DEFAULT: "#f0e4c2", strong: "#e7d7a9" },
         // Category hues. Surface/marker fills only — never a button background.
         chroma: {
           purple: "#7c3aed",
