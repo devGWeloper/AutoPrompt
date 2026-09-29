@@ -63,12 +63,13 @@ type RunSortKey = 'created' | 'avg';
 
 const RUNS_PAGE_SIZE = 20; // rows per Records page
 
-/** Status badge: soft tint + dot + text at the brand's 4px radius.
+/** Status badge: soft tint + text at the brand's 4px radius. 점은 달지 않는다 —
+ * 글자가 이미 DONE/FAILED 라고 말하고, 그 옆의 색점은 같은 말을 한 번 더 한다.
  * FAILED red (wins in mixed pair states like DONE/FAILED), DONE green,
  * everything else (RUNNING/CANCELLED…) muted. */
 function StatusText({ s }: { s: string }) {
   const tone = s.includes('FAILED') ? 'bad' : s.includes('DONE') ? 'ok' : 'neutral';
-  return <Badge tone={tone} dot>{s}</Badge>;
+  return <Badge tone={tone}>{s}</Badge>;
 }
 
 /** Run-type label — plain colored text (badges read too heavy at this density):
@@ -868,7 +869,7 @@ function RagasRunDetailView({ ragasId, manual }: { ragasId: number; manual?: boo
       <div className="overflow-hidden rounded-sm border border-line bg-surface">
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
           <h3 className="mr-1 text-sm font-semibold text-ink">Single Detail</h3>
-          <Badge tone={detail.status === 'FAILED' ? 'bad' : 'neutral'} dot>{detail.status}</Badge>
+          <Badge tone={detail.status === 'FAILED' ? 'bad' : 'neutral'}>{detail.status}</Badge>
           {detail.node_nm && <span className="font-medium text-ink">{detail.node_nm}</span>}
           <Badge tone="neutral">{verLabel}</Badge>
           {/* 폴더가 붙어 있으면 이 실행의 모수는 데이터셋 전체가 아니다.

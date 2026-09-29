@@ -1271,11 +1271,10 @@ export function CollapseAllStrip({
   );
 }
 
-/** 정답 일치 verdict: 1 → 일치, 0 → 불일치 (a run-level rate renders as a percentage).
+/** 정답 일치 verdict: 1 → PASS, 0 → FAIL (a run-level rate renders as a percentage).
  *
- * '일치'와 '불일치'는 글자 수가 달라, 줄마다 알약 너비가 달라지면 여러 줄이 쌓인
- * 목록에서 그 자리가 통째로 흔들린다. 케이스 판정은 최소 너비를 잡고 가운데로
- * 세워 어느 줄에서든 같은 폭을 차지하게 한다(비율 배지는 자릿수가 스스로 정한다). */
+ * 케이스 판정은 최소 너비를 잡고 가운데로 세워 어느 줄에서든 같은 폭을 차지하게
+ * 한다(비율 배지는 자릿수가 스스로 정한다). */
 export function OxBadge({ value, rate, passed }: { value: number | null; rate?: boolean; passed?: boolean }) {
   if (value == null && !passed) return <span className="text-[11px] text-muted">—</span>;
   const ok = passed || (rate ? (value ?? 0) >= 1 : (value ?? 0) >= 0.5);
@@ -1286,12 +1285,12 @@ export function OxBadge({ value, rate, passed }: { value: number | null; rate?: 
         rate ? '' : 'min-w-[52px] justify-center',
         ok ? 'border-ok-line bg-ok-soft text-ok' : 'border-bad-line bg-bad-soft text-bad',
       )}
-      // 사람이 통과시킨 줄은 테두리가 점선이다 — 같은 '일치'라도 채점이 낸 것과
+      // 사람이 통과시킨 줄은 테두리가 점선이다 — 같은 PASS 라도 채점이 낸 것과
       // 사람이 낸 것을 한눈에 가를 수 있어야 실행 점수를 읽을 때 오해가 없다.
       style={passed ? { borderStyle: 'dashed' } : undefined}
-      title={passed ? '사람이 통과시킨 케이스 — 채점은 불일치였습니다' : undefined}
+      title={passed ? '사람이 통과시킨 케이스 — 채점은 FAIL 이었습니다' : undefined}
     >
-      {rate ? `${Math.round((value ?? 0) * 100)}% 일치` : passed ? '일치 (수동)' : ok ? '일치' : '불일치'}
+      {rate ? `PASS ${Math.round((value ?? 0) * 100)}%` : passed ? 'PASS (수동)' : ok ? 'PASS' : 'FAIL'}
     </span>
   );
 }
@@ -1412,7 +1411,7 @@ export function PassButton({
           : 'border-line text-muted hover:border-muted-soft hover:bg-surface-2 hover:text-ink',
       )}
     >
-      {busy ? '…' : err ? '실패' : passed ? '통과 해제' : '일치 처리'}
+      {busy ? '…' : err ? '실패' : passed ? 'PASS 해제' : 'PASS 처리'}
     </button>
   );
 }
