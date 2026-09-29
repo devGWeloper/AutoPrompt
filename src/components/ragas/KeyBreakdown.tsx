@@ -253,14 +253,13 @@ export function AbKeyBreakdown({
   const [all, setAll] = useState(false);
   if (stats.length === 0) return null;
   const shown = all ? stats : stats.slice(0, FIRST);
-  const split = stats.filter((s) => s.split > 0).length;
 
   return (
-    <Panel
-      title="키별 집계"
-      count={`${stats.length}개 키`}
-      note={split > 0 ? `A·B 갈린 키 ${split}개` : 'A·B 갈린 키 없음'}
-    >
+    // note 는 적지 않는다. 'A·B 갈린 키 n개' 라고 적어 두었는데, 이 판에 서는 줄은
+    // 갈린 키만이 아니라 '둘 다 정답과 다른 키' 도 포함한다(아래 필터가 split > 0
+    // 이거나 bothBad > 0 인 줄을 남긴다) — 머리줄이 표의 내용을 좁혀 말하고 있었다.
+    // 무엇이 몇 개인지는 줄마다의 A만·B만·둘 다 칸이 그대로 말한다.
+    <Panel title="키별 집계" count={`${stats.length}개 키`}>
       <table className="w-full table-fixed border-separate border-spacing-0 text-xs">
         <colgroup>
           <col style={{ width: '34%' }} />

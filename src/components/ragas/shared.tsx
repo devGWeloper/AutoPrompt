@@ -1695,7 +1695,10 @@ export function CaseTable({
                   {/* 기록으로 남은 실행에서만. 스트리밍 중인 표는 아직 기록이 아니라
                       실행 id 자체가 없어서, 누를 곳이 없는 단추가 된다. */}
                   {settled && detail.ragas_run_id != null && (r.exact_match === 0 || isPassed(r)) && (
-                    <span className="flex items-center gap-1">
+                    // 두 단추는 세로로 쌓는다 — 나란히 두면 좁은 점수 칸에서 글자가
+                    // 감기고, 무엇보다 이 둘은 '고르는 선택지' 라 위아래로 놓였을 때
+                    // 한눈에 세어진다.
+                    <span className="flex flex-col items-end gap-0.5">
                       <PassButton
                         runId={detail.ragas_run_id}
                         resultId={r.ragas_result_id}
@@ -1705,7 +1708,7 @@ export function CaseTable({
                           onPassChanged?.();
                         }}
                       />
-                      {/* 불일치의 나머지 갈래 — 답이 아니라 정답지가 낡은 경우.
+                      {/* FAIL 의 나머지 갈래 — 답이 아니라 정답지가 낡은 경우.
                           데이터셋에서 온 실행에서만: 직접 호출에는 고칠 케이스가 없다. */}
                       {detail.dataset_id != null && r.case_id != null && !isPassed(r) && (r.trace_value ?? r.answer) && (
                         <TruthFixButton

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/cn';
 import {
@@ -493,8 +493,12 @@ export function CaseCompareTable({
                   <CopyButton text={q} />
                 </span>
               )}
+              {/* 질문과 A·B 미리보기는 남은 폭을 반씩 나눈다 — 단일 실행 표와 같은
+                  규칙이다. 미리보기에 flex-[2] 를 주던 이전 값은 질문에 1/3 만 남겨,
+                  같은 데이터셋을 단일로 볼 때보다 질문이 절반 폭으로 접혔다.
+                  A·B 두 칸은 그 절반을 다시 반씩 쓴다. */}
               {isClosed && (a || b) && (
-                <span className="mt-0.5 flex min-w-0 flex-[2] items-baseline gap-2.5 text-xs text-muted">
+                <span className="mt-0.5 flex min-w-0 flex-1 items-baseline gap-2.5 text-xs text-muted">
                   <span className="flex min-w-0 flex-1 items-baseline gap-1">
                     <span className="shrink-0 font-semibold">A</span>
                     {a ? <AnswerPreview row={a} className="min-w-0 flex-1" /> : <PendingHint label="대기 중" className="min-w-0 flex-1" />}
@@ -524,40 +528,46 @@ export function CaseCompareTable({
                           B <OxBadge value={b?.exact_match ?? null} passed={passedOf(b)} />
                         </div>
                       )}
-                      {/* 불일치를 손으로 정리하는 두 갈래 — 답이 맞다고 보면 통과,
+                      {/* 불일치를 손으로 정리하는 두 갈래 — 답이 맞다고 보면 PASS 처리,
                           정답지가 낡았다고 보면 그 답을 정답으로.
-                          사이드마다 제 줄을 쓴다: A 는 맞다고 보고 B 는 아니라고 보는
-                          경우가 이 화면의 본체라 둘이 따로 서야 하고, 한 줄에 네 단추를
-                          늘어놓으면 좁은 칸에서 글자가 감긴다. */}
+                          단추는 한 줄에 하나씩 세로로 쌓는다. 좁은 칸에서 나란히 두면
+                          글자가 감기고, 무엇보다 이 둘은 '고르는 선택지' 라 위아래로
+                          놓였을 때 한눈에 세어진다. 사이드는 각 줄 앞에 적는다. */}
                       {/* 스트리밍 중인 표에는 실행 id 가 없다 — 기록으로 남은 뒤에만 선다. */}
                       {settled && detailA.ragas_run_id != null && detailB.ragas_run_id != null && (
-                        <div className="flex flex-col gap-0.5 whitespace-nowrap">
+                        <div className="flex flex-col items-start gap-0.5 whitespace-nowrap">
                           {([['A', a, detailA], ['B', b, detailB]] as const).map(([side, row, det]) => {
                             if (!row || !(row.exact_match === 0 || passedOf(row))) return null;
                             const answer = row.trace_value ?? row.answer;
+                            const lead = <span className="w-3 shrink-0 text-[10px] font-semibold text-muted">{side}</span>;
                             return (
-                              <span key={side} className="flex items-center gap-1">
-                                <span className="w-3 shrink-0 text-[10px] font-semibold text-muted">{side}</span>
-                                <PassButton
-                                  runId={det.ragas_run_id}
-                                  resultId={row.ragas_result_id}
-                                  passed={passedOf(row)}
-                                  onDone={(next) => {
-                                    setPassOverride((cur) => new Map(cur).set(row.ragas_result_id, next));
-                                    onPassChanged?.();
-                                  }}
-                                />
+                              <Fragment key={side}>
+                                <span className="flex items-center gap-1">
+                                  {lead}
+                                  <PassButton
+                                    runId={det.ragas_run_id}
+                                    resultId={row.ragas_result_id}
+                                    passed={passedOf(row)}
+                                    onDone={(next) => {
+                                      setPassOverride((cur) => new Map(cur).set(row.ragas_result_id, next));
+                                      onPassChanged?.();
+                                    }}
+                                  />
+                                </span>
                                 {/* 정답은 두 사이드가 함께 쓰는 하나다 — 어느 쪽 답으로
                                     바꿀지가 곧 이 단추를 누가 누르느냐다. */}
                                 {det.dataset_id != null && row.case_id != null && !passedOf(row) && answer && (
-                                  <TruthFixButton
-                                    datasetId={det.dataset_id}
-                                    caseId={row.case_id}
-                                    truth={answer}
-                                    side={side}
-                                  />
+                                  <span className="flex items-center gap-1">
+                                    {lead}
+                                    <TruthFixButton
+                                      datasetId={det.dataset_id}
+                                      caseId={row.case_id}
+                                      truth={answer}
+                                      side={side}
+                                    />
+                                  </span>
                                 )}
-                              </span>
+                              </Fragment>
                             );
                           })}
                         </div>
