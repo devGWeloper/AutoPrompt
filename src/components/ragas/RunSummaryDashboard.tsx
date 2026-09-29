@@ -1,6 +1,5 @@
 'use client';
 
-import { Badge } from '@/components/ui/Badge';
 import { cn } from '@/lib/cn';
 import {
   EXACT_MATCH,
@@ -41,7 +40,24 @@ function scoreLevel(score: number | null) {
  * 그림자, 앞날의 3px 톤 레일은 숫자를 '위젯' 으로 보이게 만든다 — 이 판이 하는
  * 일은 잰 값을 또박또박 적어 두는 것이고, 그건 서류의 일이다.
  */
-const CARD = 'flex flex-col justify-between rounded-sm border border-line bg-surface p-3.5';
+const CARD = 'flex flex-col justify-between rounded-sm border bg-surface p-3.5';
+
+/**
+ * 카드의 테두리. 둘로 갈린다.
+ *
+ * RAGAS 평균과 Action Test 는 이 판에서 먼저 읽히는 두 값이다 — 앞은 "얼마나
+ * 잘했나" 를 한 수로 말하고, 뒤는 "몇 건이 통과했나" 를 말한다. 나머지 카드는 그
+ * 둘을 뜯어 본 것이라, 열 장이 같은 테두리로 서면 어디부터 읽어야 하는지가 없다.
+ *
+ * 색으로 가리지 않고 테두리 농도만 쓴다: 이 판에서 색은 점수대(ok · warn · bad)가
+ * 쓰는 말이고, 파랑은 '나은 쪽' 이 쓰는 말이다. 둘 중 어느 것도 '먼저 읽을 카드'
+ * 라는 뜻이 아니다.
+ */
+const CARD_LINE = 'border-line';
+const CARD_LEAD = 'border-[#97a0ab]';
+
+/** 먼저 읽히는 카드인가 — RAGAS 평균(지표 없음)과 Action Test. */
+const isLead = (m?: RagasMetric) => m === undefined || m === EXACT_MATCH;
 
 /** 카드가 크게 세우는 숫자. 굵기는 semibold 까지 — bold 에 음수 자간까지 주면
  * 숫자가 제목처럼 커져서, 정작 무엇을 잰 값인지 적은 라벨이 딸려 보인다. */
@@ -111,7 +127,7 @@ export function SingleRunSummaryDashboard({ detail }: { detail: RagasRunDetail }
       <div className={cn('grid gap-3', gridCols(shown.length + (withOverall ? 1 : 0)))}>
         {/* Overall Mean Card */}
         {withOverall && (
-          <div className={cn(CARD, 'bg-surface-2')}>
+          <div className={cn(CARD, CARD_LEAD, 'bg-surface-2')}>
             <div>
               <span className="block truncate text-caption uppercase tracking-[0.9px] text-muted">
                 RAGAS Mean
@@ -130,7 +146,7 @@ export function SingleRunSummaryDashboard({ detail }: { detail: RagasRunDetail }
           const val = detail[m] != null ? Number(detail[m]) : null;
           const isExact = m === EXACT_MATCH;
           return (
-            <div key={m} className={CARD}>
+            <div key={m} className={cn(CARD, isLead(m) ? CARD_LEAD : CARD_LINE)}>
               <div>
                 <span
                   className="block truncate text-caption uppercase tracking-[0.9px] text-muted cursor-help"
@@ -151,22 +167,6 @@ export function SingleRunSummaryDashboard({ detail }: { detail: RagasRunDetail }
   );
 }
 
-/**
- * 히어로 카드가 크게 세우는 숫자 — 그 실행이 실제로 잰 것.
- *
- * 'RAGAS Mean' 과 '—' 를 늘 세워 두던 이전 카드는, RAGAS 를 켜지 않은 실행에서
- * 재지도 않은 지표의 이름만 큼직하게 보여 주고 정작 잰 것(Action Test 일치율)은
- * 구석에 두었다. 화면에서 제일 큰 숫자가 무엇인지 헷갈리면 나머지를 읽을 이유가
- * 없다: RAGAS 를 쟀으면 그 평균, 아니면 일치율, 둘 다 아니면 잰 것이 없다고 말한다.
- */
-function heroScore(mean: number | null, exact: number | null) {
-  if (mean != null) return { score: mean, value: fmt3(mean), label: 'RAGAS Mean', ragas: true };
-  if (exact != null) {
-    return { score: exact, value: `${Math.round(exact * 100)}%`, label: `${METRIC_LABELS[EXACT_MATCH]} 일치율`, ragas: false };
-  }
-  return { score: null, value: '—', label: '점수 없음', ragas: false };
-}
-
 /** 일치율은 비율이라 퍼센트로 읽는다 — 0.800 은 RAGAS 점수와 같은 꼴이라 서로
  * 다른 두 종류의 수를 같은 자리에서 견주게 만든다. */
 const metricValue = (m: RagasMetric, v: number | null) =>
@@ -176,6 +176,11 @@ const metricDelta = (m: RagasMetric, d: number | null) =>
   d == null ? '—' : m !== EXACT_MATCH
     ? (d > 0 ? '+' : '') + d.toFixed(3)
     : `${d > 0 ? '+' : ''}${Math.round(d * 100)}%p`;
+
+/** 카드의 값·차이. 지표가 없는 카드는 RAGAS 평균이라 RAGAS 지표와 같은 꼴로 읽는다. */
+const cardValue = (m: RagasMetric | undefined, v: number | null) => (m ? metricValue(m, v) : fmt3(v));
+const cardDelta = (m: RagasMetric | undefined, d: number | null) =>
+  m ? metricDelta(m, d) : d == null ? '—' : (d > 0 ? '+' : '') + d.toFixed(3);
 
 // Compare Run Dashboard: Two Side-by-Side Hero Cards (Version A & Version B) + 5 Paired Metric Cards
 export function CompareSummaryDashboard({
@@ -196,109 +201,53 @@ export function CompareSummaryDashboard({
   const meanA = runMean(detailA);
   const meanB = runMean(detailB);
   const shownPair = Array.from(new Set([...scoredMetrics(detailA), ...scoredMetrics(detailB)]));
-  // Run-level EXACT_VAL is already the match rate (mean of the per-case 0/1).
-  const exA = detailA.exact_match != null ? Number(detailA.exact_match) : null;
-  const exB = detailB.exact_match != null ? Number(detailB.exact_match) : null;
-  // RAGAS decides the better side when it ran; a 정답 일치 only pair falls back to
-  // the match rate rather than showing nothing at all.
-  const [cmpA, cmpB] = meanA != null || meanB != null ? [meanA, meanB] : [exA, exB];
-  const ahead = cmpA != null && cmpB != null ? (cmpB > cmpA ? 'B' : cmpA > cmpB ? 'A' : null) : null;
-  const heroCard = (side: 'A' | 'B') =>
-    cn(
-      'flex flex-col justify-between rounded-sm border bg-surface p-3.5',
-      // 나은 쪽은 테두리 색으로만 가리킨다 — ring 은 테두리 밖으로 번져 빛나는
-      // 자리를 만드는데, 서류에서 어느 칸이 빛날 일은 없다.
-      ahead === side ? 'border-accent' : 'border-line',
-    );
-  const headA = heroScore(meanA, exA);
-  const headB = heroScore(meanB, exB);
-  const headDelta = headA.score != null && headB.score != null ? headB.score - headA.score : null;
+
+  /**
+   * 카드 한 벌. 지표마다 하나씩이고, 맨 앞에 RAGAS 평균이 선다.
+   *
+   * 평균은 지표가 아니라 지표들의 평균이라 shownPair 에 들어 있지 않다. 예전에는
+   * 그 값을 위쪽 A·B 히어로 카드가 크게 세웠는데, 그 카드가 같은 지표들을 한 번 더
+   * 적어 격자와 내용이 겹쳤다. 큰 상자 둘을 걷고 평균만 같은 모양의 카드로 옮겨,
+   * 값은 그대로 남기고 중복만 없앤다.
+   */
+  const cards: { key: string; label: string; metric?: RagasMetric }[] = [
+    ...(meanA != null || meanB != null ? [{ key: 'mean', label: 'RAGAS Mean' }] : []),
+    ...shownPair.map((m) => ({ key: m as string, label: METRIC_LABELS[m], metric: m })),
+  ];
+  const valueOf = (m: RagasMetric | undefined, d: RagasRunDetail, mean: number | null) =>
+    m ? (d[m] != null ? Number(d[m]) : null) : mean;
 
   return (
     <div className="mb-6 space-y-4">
-      {/* 2 Hero Summary Cards Side by Side (Version A vs Version B) */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {/* Version A Hero Card */}
-        <div className={heroCard('A')}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Badge tone="neutral">A · {nameA}</Badge>
-            </div>
-            <ScoreBadge score={headA.score} />
-          </div>
-          <div className="my-3 flex items-baseline gap-3">
-            <span className={cn(FIGURE, 'text-[26px]')}>{headA.value}</span>
-            <span className="text-xs text-muted">{headA.label}</span>
-            {/* 일치율이 이미 머리 숫자면 같은 것을 옆에 또 적지 않는다. */}
-            {headA.ragas && exA != null && (
-              <span className="ml-auto flex items-baseline gap-1.5 text-xs text-muted">
-                {METRIC_LABELS[EXACT_MATCH]} <OxBadge value={exA} rate />
-              </span>
-            )}
-          </div>
-          <Bar value={headA.score} tone="bg-muted-soft" />
-        </div>
-
-        {/* Version B Hero Card */}
-        <div className={heroCard('B')}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Badge tone="accent">B · {nameB}</Badge>
-            </div>
-            <div className="flex items-center gap-2">
-              {/* Δ 는 두 카드가 크게 세운 그 숫자의 차이다 — 위는 일치율인데 Δ 만
-                  RAGAS 평균 차이를 적으면 둘을 빼도 답이 나오지 않는다. */}
-              {headDelta != null && (
-                <span
-                  className={cn(
-                    'inline-flex items-center rounded-sm border px-1.5 py-px font-mono text-[11px] font-semibold tabular-nums',
-                    headDelta > 0
-                      ? 'border-ok-line bg-ok-soft text-ok'
-                      : headDelta < 0
-                      ? 'border-bad-line bg-bad-soft text-bad'
-                      : 'border-line bg-surface-2 text-muted'
-                  )}
-                >
-                  Δ {headA.ragas
-                    ? (headDelta > 0 ? '+' : '') + headDelta.toFixed(3)
-                    : `${headDelta > 0 ? '+' : ''}${Math.round(headDelta * 100)}%p`}
-                </span>
-              )}
-              <ScoreBadge score={headB.score} />
-            </div>
-          </div>
-          <div className="my-3 flex items-baseline gap-3">
-            <span className={cn(FIGURE, 'text-[26px]')}>{headB.value}</span>
-            <span className="text-xs text-muted">{headB.label}</span>
-            {headB.ragas && exB != null && (
-              <span className="ml-auto flex items-baseline gap-1.5 text-xs text-muted">
-                {METRIC_LABELS[EXACT_MATCH]} <OxBadge value={exB} rate />
-              </span>
-            )}
-          </div>
-          <Bar value={headB.score} tone="bg-accent" />
-        </div>
+      {/* 어느 쪽이 A 이고 B 인지는 한 줄로 적는다 — 카드가 'A' · 'B' 로만 부르니
+          그 둘이 무엇인지는 격자 위에서 한 번 말해 두면 된다. 큰 상자는 필요 없다. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+        <span>
+          <span className="font-mono font-semibold text-ink">A</span> {nameA}
+        </span>
+        <span aria-hidden className="h-3 w-px bg-line-strong" />
+        <span>
+          <span className="font-mono font-semibold text-ink">B</span> {nameB}
+        </span>
       </div>
 
-      {/* One comparison card per metric scored on either side */}
-      <div className={cn('grid gap-3', pairCols(shownPair.length))}>
-        {shownPair.map((m) => {
-          const av = detailA[m] != null ? Number(detailA[m]) : null;
-          const bv = detailB[m] != null ? Number(detailB[m]) : null;
+      {/* RAGAS 평균 + 지표마다 한 장 */}
+      <div className={cn('grid gap-3', pairCols(cards.length))}>
+        {cards.map(({ key, label, metric: m }) => {
+          const av = valueOf(m, detailA, meanA);
+          const bv = valueOf(m, detailB, meanB);
           const d = av != null && bv != null ? bv - av : null;
 
           return (
-            <div key={m} className={CARD}>
+            <div key={key} className={cn(CARD, isLead(m) ? CARD_LEAD : CARD_LINE)}>
               <div>
-                <span className="block truncate text-xs font-semibold text-ink">
-                  {METRIC_LABELS[m]}
-                </span>
+                <span className="block truncate text-xs font-semibold text-ink">{label}</span>
                 <div className="mt-2 flex items-center justify-between text-xs font-mono tabular-nums">
                   <span className={cn(d != null && d < 0 ? 'font-semibold text-ink' : 'text-muted')}>
-                    A {metricValue(m, av)}
+                    A {cardValue(m, av)}
                   </span>
                   <span className={cn(d != null && d > 0 ? 'font-semibold text-ink' : 'text-muted')}>
-                    B {metricValue(m, bv)}
+                    B {cardValue(m, bv)}
                   </span>
                 </div>
               </div>
@@ -318,7 +267,7 @@ export function CompareSummaryDashboard({
                     d == null ? 'text-muted' : d > 0 ? 'text-ok' : d < 0 ? 'text-bad' : 'text-muted'
                   )}
                 >
-                  {metricDelta(m, d)}
+                  {cardDelta(m, d)}
                 </span>
               </div>
             </div>
