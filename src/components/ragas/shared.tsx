@@ -1280,6 +1280,28 @@ export function CollapseAllStrip({
  *
  * 케이스 판정은 최소 너비를 잡고 가운데로 세워 어느 줄에서든 같은 폭을 차지하게
  * 한다(비율 배지는 자릿수가 스스로 정한다). */
+/**
+ * 통과율 배지의 색 — 세 단이다.
+ *
+ * 100% 만 초록이다. Action Test 는 '전부 통과' 가 목표라, 한 건이 틀린 92% 를 다 맞은
+ * 것과 같은 초록으로 칠하면 회귀가 초록 밑에 숨는다. 그렇다고 92% 와 20% 를 같은
+ * 빨강으로 두면 그 둘의 차이가 사라지므로, 사이에 노랑을 둔다.
+ *
+ * 같은 줄의 점수 막대도 이 규칙을 쓴다(RATE_FILL) — 한 줄의 두 조각이 다른 자로
+ * 칠해지면 하나는 초록, 하나는 빨강이 되어 어느 쪽을 믿어야 할지 알 수 없다.
+ */
+export function rateTone(v: number | null): 'ok' | 'warn' | 'bad' | 'none' {
+  if (v == null) return 'none';
+  return v >= 1 ? 'ok' : v >= 0.8 ? 'warn' : 'bad';
+}
+
+const TONE_CHIP: Record<'ok' | 'warn' | 'bad' | 'none', string> = {
+  ok: 'border-ok-line bg-ok-soft text-ok',
+  warn: 'border-warn-line bg-warn-soft text-warn',
+  bad: 'border-bad-line bg-bad-soft text-bad',
+  none: 'border-line bg-surface-2 text-muted',
+};
+
 export function OxBadge({ value, rate, passed }: { value: number | null; rate?: boolean; passed?: boolean }) {
   if (value == null && !passed) return <span className="text-[11px] text-muted">—</span>;
   const ok = passed || (rate ? (value ?? 0) >= 1 : (value ?? 0) >= 0.5);
@@ -1288,7 +1310,7 @@ export function OxBadge({ value, rate, passed }: { value: number | null; rate?: 
       className={cn(
         'inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold',
         rate ? '' : 'min-w-[52px] justify-center',
-        ok ? 'border-ok-line bg-ok-soft text-ok' : 'border-bad-line bg-bad-soft text-bad',
+        rate && !passed ? TONE_CHIP[rateTone(value)] : ok ? TONE_CHIP.ok : TONE_CHIP.bad,
       )}
       // 사람이 통과시킨 줄은 테두리가 점선이다 — 같은 PASS 라도 채점이 낸 것과
       // 사람이 낸 것을 한눈에 가를 수 있어야 실행 점수를 읽을 때 오해가 없다.

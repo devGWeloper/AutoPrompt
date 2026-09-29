@@ -7,7 +7,7 @@ import {
   type RagasMetric,
   type RagasRunDetail,
 } from '@/lib/types';
-import { compareSideLabel, fmt3, OxBadge, runMean, scoredMetrics } from './shared';
+import { compareSideLabel, fmt3, OxBadge, rateTone, runMean, scoredMetrics } from './shared';
 
 // Card grid width follows the card count so a 정답 일치 only run doesn't leave
 // four empty columns.
@@ -72,6 +72,23 @@ const CARD_LABEL = 'block truncate text-xs font-semibold text-ink';
  */
 const PAIR_FIGURE = 'font-mono text-sm tabular-nums';
 
+/**
+ * 이 실행에서 통과한 케이스 수 / 판정이 있는 케이스 수.
+ *
+ * Action Test 는 비율이 아니라 '몇 개 중 몇 개' 로 읽는 값이다 — 92% 는 12건 중
+ * 11건인지 100건 중 92건인지 말하지 않고, 둘은 믿음이 다르다. 단일 실행과 A·B 가
+ * 같은 함수를 써서 두 화면이 같은 수를 적는다.
+ *
+ * 사람이 통과시킨 케이스도 통과로 센다. 실행 단위 EXACT_VAL 이 그렇게 계산되므로,
+ * 여기만 채점 결과 그대로 세면 같은 카드 안에서 두 숫자가 어긋난다.
+ */
+function exactCount(d: RagasRunDetail): { hit: number; total: number } {
+  return {
+    hit: d.results.filter((r) => r.passed || (r.exact_match != null && Number(r.exact_match) >= 0.5)).length,
+    total: d.results.filter((r) => r.exact_match != null || r.passed).length,
+  };
+}
+
 /** 먼저 읽히는 카드인가 — RAGAS 평균(지표 없음)과 Action Test. */
 const isLead = (m?: RagasMetric) => m === undefined || m === EXACT_MATCH;
 
@@ -81,6 +98,14 @@ const FIGURE = 'font-mono text-[22px] font-semibold leading-none tabular-nums te
 
 const barFill = (v: number | null) =>
   v == null ? 'bg-muted-soft' : v >= 0.8 ? 'bg-ok' : v >= 0.6 ? 'bg-warn' : 'bg-bad';
+
+/**
+ * Action Test 막대의 색. 0~1 품질 점수인 RAGAS 지표와 자가 다르다 — 이건 통과율이고,
+ * 100% 만 '다 됐다' 다. 옆에 서는 PASS 배지와 같은 규칙(rateTone)을 써서, 한 줄의 두
+ * 조각이 같은 말을 하게 한다.
+ */
+const RATE_FILL: Record<string, string> = { ok: 'bg-ok', warn: 'bg-warn', bad: 'bg-bad', none: 'bg-muted-soft' };
+const rateFill = (v: number | null) => RATE_FILL[rateTone(v)];
 
 /**
  * 점수 막대 — 3px, 모난 모서리.
@@ -126,13 +151,7 @@ function ScoreBadge({ score }: { score: number | null }) {
 export function SingleRunSummaryDashboard({ detail }: { detail: RagasRunDetail }) {
   const mean = runMean(detail);
   const shown = scoredMetrics(detail);
-  const emTotal = detail.results.filter((r) => r.exact_match != null || r.passed).length;
-  // 사람이 통과시킨 케이스도 맞은 것으로 센다 — 카드의 'N/M' 과 그 옆 비율 배지는
-  // 실행 단위 EXACT_VAL(서버가 통과를 반영해 다시 낸 값)에서 오므로, 여기만
-  // 채점 결과 그대로 세면 같은 카드 안에서 두 숫자가 어긋난다.
-  const emHit = detail.results.filter(
-    (r) => r.passed || (r.exact_match != null && Number(r.exact_match) >= 0.5),
-  ).length;
+  const { hit: emHit, total: emTotal } = exactCount(detail);
   // The summary card averages the RAGAS metrics only (정답 일치 has its own card,
   // and a 0/1 verdict does not belong in a mean), so it earns its place only when
   // there are at least two of them to average.
@@ -170,7 +189,7 @@ export function SingleRunSummaryDashboard({ detail }: { detail: RagasRunDetail }
                   {isExact ? <OxBadge value={val} rate /> : <ScoreBadge score={val} />}
                 </div>
               </div>
-              <Bar value={val} className="mt-3" />
+              <Bar value={val} tone={isExact ? rateFill(val) : undefined} className="mt-3" />
             </div>
           );
         })}
@@ -189,8 +208,15 @@ const metricDelta = (m: RagasMetric, d: number | null) =>
     ? (d > 0 ? '+' : '') + d.toFixed(3)
     : `${d > 0 ? '+' : ''}${Math.round(d * 100)}%p`;
 
-/** 카드의 값·차이. 지표가 없는 카드는 RAGAS 평균이라 RAGAS 지표와 같은 꼴로 읽는다. */
-const cardValue = (m: RagasMetric | undefined, v: number | null) => (m ? metricValue(m, v) : fmt3(v));
+/** 카드에 적는 값. 지표가 없는 카드는 RAGAS 평균이라 RAGAS 지표와 같은 꼴로 읽고,
+ * Action Test 는 단일 실행 카드와 같이 '몇 개 중 몇 개' 로 적는다. */
+const cardValue = (m: RagasMetric | undefined, v: number | null, d: RagasRunDetail) => {
+  if (m === EXACT_MATCH) {
+    const { hit, total } = exactCount(d);
+    return `${hit}/${total}`;
+  }
+  return m ? metricValue(m, v) : fmt3(v);
+};
 const cardDelta = (m: RagasMetric | undefined, d: number | null) =>
   m ? metricDelta(m, d) : d == null ? '—' : (d > 0 ? '+' : '') + d.toFixed(3);
 
@@ -262,21 +288,32 @@ export function CompareSummaryDashboard({
                     시작해, 길이를 견주라고 그린 막대에서 그것만은 일어나면 안 된다. */}
                 <div className="mt-2 space-y-1">
                   {([
-                    ['A', av, 'bg-muted-soft', d != null && d < 0],
-                    ['B', bv, 'bg-accent', d != null && d > 0],
-                  ] as const).map(([side, v, tone, ahead]) => (
+                    ['A', av, detailA, d != null && d < 0],
+                    ['B', bv, detailB, d != null && d > 0],
+                  ] as const).map(([side, v, det, ahead]) => (
                     <div key={side} className="flex items-center gap-2">
                       <span className={cn(PAIR_FIGURE, 'w-[4.5rem] shrink-0', ahead ? 'font-semibold text-ink' : 'text-muted')}>
-                        {side} {cardValue(m, v)}
+                        {side} {cardValue(m, v, det)}
                       </span>
-                      <Bar value={v} tone={tone} className="min-w-0 flex-1" />
+                      {/* 막대 색은 tone 을 주지 않아 단일 실행과 같은 점수색(초록 ·
+                          노랑 · 빨강)이 된다. 사이드를 색으로 가르던 이전 값(A 회색 ·
+                          B 파랑)은 같은 지표가 두 화면에서 다른 색으로 보이게 했고,
+                          어느 쪽이 A 인지는 이미 왼쪽 글자가 말한다. */}
+                      <Bar value={v} tone={m === EXACT_MATCH ? rateFill(v) : undefined} className="min-w-0 flex-1" />
+                      {/* Action Test 는 0/1 판정이라 점수 막대만으로는 '통과인가' 가
+                          안 읽힌다 — 단일 실행 카드가 11/12 옆에 PASS 배지를 두는
+                          까닭이고, 여기에도 사이드마다 같은 배지가 선다. */}
+                      {m === EXACT_MATCH && <OxBadge value={v} rate />}
                     </div>
                   ))}
                 </div>
               </div>
 
               <div className="mt-2 flex items-center justify-between border-t border-line pt-2 text-[11px]">
-                <span className="text-muted">Delta</span>
+                {/* 'Delta' 가 아니라 '차이' 다. 이 화면의 영어는 그것이 곧 이름인
+                    것들(RAGAS · Action Test · Faithfulness)에만 남기고, 그냥 '차이' 를
+                    뜻하는 낱말은 우리말로 적는다. */}
+                <span className="text-muted">차이</span>
                 <span
                   className={cn(
                     'font-mono font-semibold tabular-nums',
