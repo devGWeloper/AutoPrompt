@@ -127,8 +127,6 @@ interface StatusStyle {
   /** 결과 칸의 상태 칩. 일치는 테두리 없이 조용히 — 스무 줄이 전부 알약이면
    * 어긋난 줄이 도리어 묻힌다. */
   chip: string;
-  /** 행 왼쪽 3px 톤 레일 (선택 행·KPI 카드와 같은 장치). */
-  rail: string;
   /** 두 값 칸의 면. 낱말 단위로 칠할 수 없을 때 되돌아갈 자리다 — '값 다름'은
    * 보통 어긋난 낱말에만 색이 가고 칸 자체는 칠하지 않는다. */
   expected: string;
@@ -142,11 +140,11 @@ const BAD_CHIP = 'border border-bad-line bg-bad-soft text-bad';
 const BAD_FILL = { expected: '', actual: 'bg-bad-soft text-bad' };
 
 const STATUS: Record<FieldStatus, StatusStyle> = {
-  match: { label: '일치', text: QUIET, chip: QUIET, rail: 'border-l-transparent', expected: '', actual: '' },
-  diff: { label: '값 다름', text: 'text-bad', chip: BAD_CHIP, rail: 'border-l-bad-vivid', ...BAD_FILL },
-  type: { label: '타입 다름', text: 'text-bad', chip: BAD_CHIP, rail: 'border-l-bad-vivid', ...BAD_FILL },
+  match: { label: '일치', text: QUIET, chip: QUIET, expected: '', actual: '' },
+  diff: { label: '값 다름', text: 'text-bad', chip: BAD_CHIP, ...BAD_FILL },
+  type: { label: '타입 다름', text: 'text-bad', chip: BAD_CHIP, ...BAD_FILL },
   // 기대값만 있는 줄이라 실제값 칸은 칠하지 않는다 — 거기엔 아무것도 없다.
-  missing: { label: '누락', text: 'text-bad', chip: BAD_CHIP, rail: 'border-l-bad-vivid', expected: '', actual: '' },
+  missing: { label: '누락', text: 'text-bad', chip: BAD_CHIP, expected: '', actual: '' },
   // '추가'만 warn 인 까닭은, 나머지 셋이 "기대한 것이 그대로 오지 않았다"인 반면
   // 이것은 "묻지 않은 것이 더 왔다"라서 고칠 곳이 프롬프트가 아니라 기대 정답인
   // 경우가 잦기 때문이다.
@@ -154,7 +152,6 @@ const STATUS: Record<FieldStatus, StatusStyle> = {
     label: '추가',
     text: 'text-warn',
     chip: 'border border-warn-line bg-warn-soft text-warn',
-    rail: 'border-l-warn-vivid',
     expected: '',
     actual: 'bg-warn-soft text-warn',
   },
@@ -641,10 +638,13 @@ interface KeyView {
 }
 
 function KeyCell({
-  path, label, prefix, depth = 0, gutter, rail, dim, lead, children,
+  path, label, prefix, depth = 0, gutter, flagged, dim, lead, children,
 }: KeyView & {
   path: string;
-  rail: string;
+  /** 어긋난 줄 — 키 이름을 굵게 세운다. 왼쪽 3px 톤 레일이 있던 자리인데, 표에
+   * 테두리를 두르고 나니 그 레일이 테두리 바로 안쪽에 붙어 색 띠처럼 떠서 걷었다.
+   * 어느 줄이 어긋났는지는 키 옆의 상태 칩과 값 칸의 면이 이미 말한다. */
+  flagged?: boolean;
   /** 값 없는 줄은 키 이름까지 한 발 물러난다. */
   dim?: boolean;
   lead?: ReactNode;
@@ -652,9 +652,9 @@ function KeyCell({
 }) {
   // 키 이름도 본문 글씨체다. mono 스택은 Windows 에서 Consolas 로 떨어지고 거기엔
   // 한글 글자가 없어, 한글이 섞인 키에서 한 칸 안의 글씨체가 갈린다. 코드처럼 보이게
-  // 하는 일은 글씨체가 아니라 굵기와 흙빛 면이 이미 하고 있다.
+  // 하는 일은 글씨체가 아니라 굵기와 파란 면이 이미 하고 있다.
   return (
-    <td className={cn(CELL, COL, COL_KEY, 'border-l-[3px]', dim ? 'text-body' : 'text-ink', rail !== 'border-l-transparent' && 'font-semibold', rail)}>
+    <td className={cn(CELL, COL, COL_KEY, dim ? 'text-body' : 'text-ink', flagged && 'font-semibold')}>
       <span className="flex items-baseline gap-1" style={depth ? { paddingLeft: depth * 12 } : undefined}>
         {gutter && <span className="w-3.5 shrink-0 self-center">{lead}</span>}
         <span className="min-w-0 break-words" title={path || undefined}>
@@ -810,7 +810,7 @@ function GroupRow<T extends Pathed>({
         label={row.label}
         depth={row.depth}
         gutter
-        rail={worst === 'match' ? 'border-l-transparent' : s.rail}
+        flagged={worst !== 'match'}
         lead={<Chevron open={!collapsed} />}
       />
       <td className={CELL} colSpan={span}>
@@ -973,7 +973,7 @@ function FieldRow({
   const clampOf = (t: string | null) => isLong(t) && !expanded;
   return (
     <tr className={cn('group transition-colors', ROW_HOVER)}>
-      <KeyCell path={f.path} label={label} depth={depth} rail={s.rail} dim={dim}>
+      <KeyCell path={f.path} label={label} depth={depth} flagged={!ok} dim={dim}>
         {f.status !== 'match' && <StatusChip status={f.status} />}
       </KeyCell>
       <ValueTd long={isLong(f.expected)} expanded={expanded} onToggle={onExpand} copy={f.expected}>
@@ -1410,7 +1410,7 @@ function PairFieldRow({
         label={label}
         depth={depth}
         dim={dim}
-        rail={!bad ? 'border-l-transparent' : warnOnly ? 'border-l-warn-vivid' : 'border-l-bad-vivid'}
+        flagged={bad}
       >
         {/* 어느 쪽이 맞았는지는 키 옆 칩 하나로. 따로 '판정' 열을 두면 좁은
             상세보기에서 값이 쓸 폭을 그만큼 빼앗긴다. */}
@@ -1662,7 +1662,6 @@ function ValueTable({ fields, lead, trailing }: { fields: FieldResult[]; lead?: 
                       label={r.label}
                       depth={r.depth}
                       gutter={groups.length > 0}
-                      rail="border-l-transparent"
                       dim={dim}
                     />
                     <ValueCell

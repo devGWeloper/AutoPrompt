@@ -28,28 +28,55 @@ function pairCols(n: number): string {
 }
 
 function scoreLevel(score: number | null) {
-  if (score == null) return { label: '—', tone: 'neutral', color: 'bg-muted' };
-  if (score >= 0.8) return { label: 'High', tone: 'ok', color: 'bg-ok-vivid' };
-  if (score >= 0.6) return { label: 'Mid', tone: 'warn', color: 'bg-warn-vivid' };
-  return { label: 'Low', tone: 'bad', color: 'bg-bad-vivid' };
+  if (score == null) return { label: '—', tone: 'neutral' };
+  if (score >= 0.8) return { label: 'High', tone: 'ok' };
+  if (score >= 0.6) return { label: 'Mid', tone: 'warn' };
+  return { label: 'Low', tone: 'bad' };
 }
 
-// inview's KPI card marks its tone with a solid 3px rail down the leading edge —
-// the colour of the score, readable before the number is.
-function toneRail(score: number | null): string {
-  if (score == null) return 'bg-line-strong';
-  if (score >= 0.8) return 'bg-ok';
-  if (score >= 0.6) return 'bg-warn';
-  return 'bg-bad';
+/**
+ * 요약 카드의 껍데기.
+ *
+ * 모난 각(rounded-sm), 헤어라인 하나, 그림자 없음. 크게 둥근 모서리와 들리는
+ * 그림자, 앞날의 3px 톤 레일은 숫자를 '위젯' 으로 보이게 만든다 — 이 판이 하는
+ * 일은 잰 값을 또박또박 적어 두는 것이고, 그건 서류의 일이다.
+ */
+const CARD = 'flex flex-col justify-between rounded-sm border border-line bg-surface p-3.5';
+
+/** 카드가 크게 세우는 숫자. 굵기는 semibold 까지 — bold 에 음수 자간까지 주면
+ * 숫자가 제목처럼 커져서, 정작 무엇을 잰 값인지 적은 라벨이 딸려 보인다. */
+const FIGURE = 'font-mono text-[22px] font-semibold leading-none tabular-nums text-ink';
+
+const barFill = (v: number | null) =>
+  v == null ? 'bg-muted-soft' : v >= 0.8 ? 'bg-ok' : v >= 0.6 ? 'bg-warn' : 'bg-bad';
+
+/**
+ * 점수 막대 — 3px, 모난 모서리.
+ *
+ * 색은 vivid 가 아니라 글자로도 읽히는 기본 stop 을 쓴다. vivid 는 점 하나를 찍는
+ * 색이라 넓게 깔면 형광펜처럼 뜬다. 둥글고 통통한 막대는 게이지로 읽히는데, 이건
+ * 계기판이 아니라 숫자의 크기를 한 번 더 말해 주는 밑줄이다.
+ */
+function Bar({ value, tone, className }: { value: number | null; tone?: string; className?: string }) {
+  const pct = value != null ? Math.max(0, Math.min(1, value)) * 100 : 0;
+  return (
+    <div className={cn('h-[3px] w-full overflow-hidden bg-surface-3', className)}>
+      <div
+        className={cn('h-full transition-all duration-300', tone ?? barFill(value))}
+        style={{ width: `${pct}%` }}
+      />
+    </div>
+  );
 }
 
+/** 점수대 딱지 — 모난 각, 점(dot) 없음. 둥근 알약에 색점까지 붙으면 표가 아니라
+ * 대시보드 장식이 된다. 등급은 글자 세 자로 충분하다. */
 function ScoreBadge({ score }: { score: number | null }) {
   if (score == null) return <span className="text-xs text-muted">—</span>;
-  const lvl = scoreLevel(score);
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-xs font-semibold tabular-nums border',
+        'inline-flex items-center rounded-sm border px-1.5 py-px font-mono text-[11px] font-semibold tabular-nums',
         score >= 0.8
           ? 'border-ok-line bg-ok-soft text-ok'
           : score >= 0.6
@@ -57,8 +84,7 @@ function ScoreBadge({ score }: { score: number | null }) {
           : 'border-bad-line bg-bad-soft text-bad'
       )}
     >
-      <span className={cn('h-1.5 w-1.5 rounded-full', lvl.color)} />
-      {lvl.label}
+      {scoreLevel(score).label}
     </span>
   );
 }
@@ -85,42 +111,26 @@ export function SingleRunSummaryDashboard({ detail }: { detail: RagasRunDetail }
       <div className={cn('grid gap-3', gridCols(shown.length + (withOverall ? 1 : 0)))}>
         {/* Overall Mean Card */}
         {withOverall && (
-          <div className="relative flex flex-col justify-between overflow-hidden rounded-xl border border-line bg-surface-2 p-4 pl-5 shadow-card">
-            <span aria-hidden className={cn('absolute inset-y-0 left-0 w-[3px]', toneRail(mean))} />
+          <div className={cn(CARD, 'bg-surface-2')}>
             <div>
               <span className="block truncate text-caption uppercase tracking-[0.9px] text-muted">
                 RAGAS Mean
               </span>
               <div className="mt-2 flex items-baseline justify-between">
-                <span className="font-mono text-[26px] font-bold leading-none tracking-[-0.6px] tabular-nums text-ink">
-                  {fmt3(mean)}
-                </span>
+                <span className={FIGURE}>{fmt3(mean)}</span>
                 <ScoreBadge score={mean} />
               </div>
             </div>
-            <div className="mt-3 relative h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
-              <div
-                className={cn(
-                  'h-full rounded-full transition-all duration-300',
-                  mean == null ? 'bg-muted' : mean >= 0.8 ? 'bg-ok-vivid' : mean >= 0.6 ? 'bg-warn-vivid' : 'bg-bad-vivid'
-                )}
-                style={{ width: `${mean != null ? mean * 100 : 0}%` }}
-              />
-            </div>
+            <Bar value={mean} className="mt-3" />
           </div>
         )}
 
         {/* One card per scored metric */}
         {shown.map((m) => {
           const val = detail[m] != null ? Number(detail[m]) : null;
-          const pct = val != null ? Math.max(0, Math.min(1, val)) * 100 : 0;
           const isExact = m === EXACT_MATCH;
           return (
-            <div
-              key={m}
-              className="relative flex flex-col justify-between overflow-hidden rounded-xl border border-line bg-surface p-4 pl-5 shadow-card transition-shadow hover:shadow-lift"
-            >
-              <span aria-hidden className={cn('absolute inset-y-0 left-0 w-[3px]', toneRail(val))} />
+            <div key={m} className={CARD}>
               <div>
                 <span
                   className="block truncate text-caption uppercase tracking-[0.9px] text-muted cursor-help"
@@ -128,21 +138,11 @@ export function SingleRunSummaryDashboard({ detail }: { detail: RagasRunDetail }
                   {METRIC_LABELS[m]}
                 </span>
                 <div className="mt-2 flex items-baseline justify-between gap-2">
-                  <span className="font-mono text-[26px] font-bold leading-none tracking-[-0.6px] tabular-nums text-ink">
-                    {isExact ? `${emHit}/${emTotal}` : fmt3(val)}
-                  </span>
+                  <span className={FIGURE}>{isExact ? `${emHit}/${emTotal}` : fmt3(val)}</span>
                   {isExact ? <OxBadge value={val} rate /> : <ScoreBadge score={val} />}
                 </div>
               </div>
-              <div className="mt-3 relative h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
-                <div
-                  className={cn(
-                    'h-full rounded-full transition-all duration-300',
-                    val == null ? 'bg-muted' : val >= 0.8 ? 'bg-ok-vivid' : val >= 0.6 ? 'bg-warn-vivid' : 'bg-bad-vivid'
-                  )}
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
+              <Bar value={val} className="mt-3" />
             </div>
           );
         })}
@@ -205,8 +205,10 @@ export function CompareSummaryDashboard({
   const ahead = cmpA != null && cmpB != null ? (cmpB > cmpA ? 'B' : cmpA > cmpB ? 'A' : null) : null;
   const heroCard = (side: 'A' | 'B') =>
     cn(
-      'flex flex-col justify-between rounded-xl border bg-surface p-4 shadow-card',
-      ahead === side ? 'border-accent ring-1 ring-accent/25' : 'border-line',
+      'flex flex-col justify-between rounded-sm border bg-surface p-3.5',
+      // 나은 쪽은 테두리 색으로만 가리킨다 — ring 은 테두리 밖으로 번져 빛나는
+      // 자리를 만드는데, 서류에서 어느 칸이 빛날 일은 없다.
+      ahead === side ? 'border-accent' : 'border-line',
     );
   const headA = heroScore(meanA, exA);
   const headB = heroScore(meanB, exB);
@@ -225,9 +227,7 @@ export function CompareSummaryDashboard({
             <ScoreBadge score={headA.score} />
           </div>
           <div className="my-3 flex items-baseline gap-3">
-            <span className="font-mono text-3xl font-bold tabular-nums text-ink">
-              {headA.value}
-            </span>
+            <span className={cn(FIGURE, 'text-[26px]')}>{headA.value}</span>
             <span className="text-xs text-muted">{headA.label}</span>
             {/* 일치율이 이미 머리 숫자면 같은 것을 옆에 또 적지 않는다. */}
             {headA.ragas && exA != null && (
@@ -236,12 +236,7 @@ export function CompareSummaryDashboard({
               </span>
             )}
           </div>
-          <div className="relative h-2 w-full overflow-hidden rounded-full bg-surface-3">
-            <div
-              className="h-full rounded-full bg-muted-soft transition-all duration-300"
-              style={{ width: `${headA.score != null ? headA.score * 100 : 0}%` }}
-            />
-          </div>
+          <Bar value={headA.score} tone="bg-muted-soft" />
         </div>
 
         {/* Version B Hero Card */}
@@ -256,7 +251,7 @@ export function CompareSummaryDashboard({
               {headDelta != null && (
                 <span
                   className={cn(
-                    'inline-flex items-center rounded-full px-2 py-0.5 font-mono text-xs font-semibold tabular-nums border',
+                    'inline-flex items-center rounded-sm border px-1.5 py-px font-mono text-[11px] font-semibold tabular-nums',
                     headDelta > 0
                       ? 'border-ok-line bg-ok-soft text-ok'
                       : headDelta < 0
@@ -273,9 +268,7 @@ export function CompareSummaryDashboard({
             </div>
           </div>
           <div className="my-3 flex items-baseline gap-3">
-            <span className="font-mono text-3xl font-bold tabular-nums text-ink">
-              {headB.value}
-            </span>
+            <span className={cn(FIGURE, 'text-[26px]')}>{headB.value}</span>
             <span className="text-xs text-muted">{headB.label}</span>
             {headB.ragas && exB != null && (
               <span className="ml-auto flex items-baseline gap-1.5 text-xs text-muted">
@@ -283,12 +276,7 @@ export function CompareSummaryDashboard({
               </span>
             )}
           </div>
-          <div className="relative h-2 w-full overflow-hidden rounded-full bg-surface-3">
-            <div
-              className="h-full rounded-full bg-accent transition-all duration-300"
-              style={{ width: `${headB.score != null ? headB.score * 100 : 0}%` }}
-            />
-          </div>
+          <Bar value={headB.score} tone="bg-accent" />
         </div>
       </div>
 
@@ -298,33 +286,28 @@ export function CompareSummaryDashboard({
           const av = detailA[m] != null ? Number(detailA[m]) : null;
           const bv = detailB[m] != null ? Number(detailB[m]) : null;
           const d = av != null && bv != null ? bv - av : null;
-          const pctA = av != null ? Math.max(0, Math.min(1, av)) * 100 : 0;
-          const pctB = bv != null ? Math.max(0, Math.min(1, bv)) * 100 : 0;
 
           return (
-            <div key={m} className="flex flex-col justify-between rounded-md border border-line bg-surface p-4">
+            <div key={m} className={CARD}>
               <div>
                 <span className="block truncate text-xs font-semibold text-ink">
                   {METRIC_LABELS[m]}
                 </span>
                 <div className="mt-2 flex items-center justify-between text-xs font-mono tabular-nums">
-                  <span className={cn('font-medium', d != null && d < 0 ? 'font-bold text-ink' : 'text-muted')}>
+                  <span className={cn(d != null && d < 0 ? 'font-semibold text-ink' : 'text-muted')}>
                     A {metricValue(m, av)}
                   </span>
-                  <span className={cn('font-medium', d != null && d > 0 ? 'font-bold text-ink' : 'text-muted')}>
+                  <span className={cn(d != null && d > 0 ? 'font-semibold text-ink' : 'text-muted')}>
                     B {metricValue(m, bv)}
                   </span>
                 </div>
               </div>
 
+              {/* A · B 두 줄. 같은 자리에서 시작해 같은 자리에서 끝나는 막대라야
+                  길이 차이가 곧 점수 차이로 읽힌다. */}
               <div className="mt-3 space-y-1">
-                {/* Dual Bars A & B */}
-                <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
-                  <div className="h-full rounded-full bg-muted-soft" style={{ width: `${pctA}%` }} />
-                </div>
-                <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
-                  <div className="h-full rounded-full bg-accent" style={{ width: `${pctB}%` }} />
-                </div>
+                <Bar value={av} tone="bg-muted-soft" />
+                <Bar value={bv} tone="bg-accent" />
               </div>
 
               <div className="mt-2 flex items-center justify-between border-t border-line pt-2 text-[11px]">
