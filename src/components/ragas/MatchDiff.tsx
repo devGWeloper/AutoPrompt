@@ -176,15 +176,19 @@ const rankOf = (s: FieldStatus) => RANK[s];
 
 const FAIL_KINDS: FieldStatus[] = ['diff', 'type', 'missing', 'extra'];
 
-const CELL = 'border-b border-line px-3 py-1.5 align-top';
+// 격자선은 line 이 아니라 line-strong 이다. 표 밖의 헤어라인(패널 경계, 목록
+// 구분선)은 있는지 없는지 모를 만큼 옅어야 하지만, 이 표에서 선은 장식이 아니라
+// 칸의 경계 — 값을 위아래·좌우로 견주라고 만든 격자라, 선이 보이지 않으면 표가
+// 아니라 글자 무더기가 된다.
+const CELL = 'border-b border-line-strong px-3 py-2 align-top';
 /** 열 사이 세로 헤어라인. 값이 두 칸에 걸쳐 읽히는 표라 가로줄만으로는 어느
  * 칸까지가 기대값인지 눈이 자꾸 놓친다. */
-const COL = 'border-r border-line';
+const COL = 'border-r border-line-strong';
 
 /**
  * 키 칸의 면. 헤어라인만으로는 다 맞은 표가 흰 종이 한 장이 되어, 어디까지가
- * 키고 어디부터가 값인지 눈이 자꾸 놓친다 — 스프레드시트의 머리 열처럼 키 칸만
- * 한 단 진하게 깔아, 값 칸들과 갈리게 한다.
+ * 키고 어디부터가 값인지 눈이 자꾸 놓친다 — 스프레드시트의 머리 열처럼 키 칸에만
+ * 옅은 흙빛(keycol)을 깔아, 흰 값 칸들과 갈리게 한다.
  *
  * 값 칸끼리는 같은 면이다. 기대값과 실제값(또는 A 와 B)은 나란히 견주라고 놓은
  * 같은 성격의 칸이라, 서로 농도를 달리하면 한쪽이 더 중요한 것처럼 읽힌다.
@@ -196,7 +200,7 @@ const COL = 'border-r border-line';
  * 줄에 마우스를 올리면 이 면을 비워 줄 전체가 한 색으로 덮이게 한다. 비우지
  * 않으면 tr 의 hover 가 이 면에 가려 어느 줄에 있는지가 보이지 않는다.
  */
-const COL_KEY = 'bg-surface-2 group-hover:bg-transparent';
+const COL_KEY = 'bg-keycol group-hover:bg-transparent';
 
 /** 이 길이를 넘는 값은 두 줄로 접어 둔다. 한 줄이 화면을 다 먹으면 위아래를
  * 나란히 읽으라고 만든 표가 아니게 된다. */
@@ -493,7 +497,7 @@ function ParentRow({
 }) {
   return (
     <tr className="cursor-pointer" onClick={onToggle}>
-      <td colSpan={cols} className="border-b border-line bg-surface-2 px-3 py-1 transition-colors hover:bg-surface-3">
+      <td colSpan={cols} className="border-b border-line-strong bg-surface-3 px-3 py-1.5 transition-colors hover:bg-surface-2">
         <span className="flex flex-wrap items-center gap-x-2.5 text-xs">
           <Chevron open={!collapsed} />
           <span className="break-all font-mono font-semibold text-ink">{parent || '(최상위)'}</span>
@@ -599,7 +603,9 @@ function ValueTd({
 
 const isLong = (...texts: (string | null | undefined)[]) => texts.some((t) => (t?.length ?? 0) > LONG);
 
-const TH = 'border-b border-line px-3 py-1.5 font-semibold';
+// 머리줄은 격자를 위에서 닫는다 — 두 겹 선과 진한 글자로, 첫 줄이 데이터가 아니라
+// 열 이름이라는 것이 한눈에 갈리게.
+const TH = 'border-b-2 border-line-strong px-3 py-2 font-semibold text-ink';
 
 // ---------------------------------------------------------------------------
 // 표의 부품 — 단일 표와 A/B 표가 같은 것을 쓴다
@@ -1056,7 +1062,7 @@ function FieldTable({ m, lead, trailing }: { m: StructuredMatch; lead?: ReactNod
       ) : (
         // 안쪽 세로 스크롤은 두지 않는다 — 페이지 스크롤 안에 스크롤이 또 생기면
         // 표를 읽다 말고 어느 쪽을 굴릴지부터 골라야 한다.
-        <div className="overflow-x-auto">
+        <div className="m-3 overflow-x-auto rounded-sm border border-line-strong">
           <table className="w-full min-w-[460px] table-fixed border-separate border-spacing-0 text-[13px] leading-normal">
             <colgroup>
               <col style={{ width: `${keyRem}rem` }} />
@@ -1485,7 +1491,7 @@ export function FieldCompareTable({
       {t.shown.length === 0 ? (
         <NoRows>{t.q.trim() ? '검색과 맞는 키가 없습니다' : '해당하는 키가 없습니다'}</NoRows>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="m-3 overflow-x-auto rounded-sm border border-line-strong">
           <table className="w-full min-w-[520px] table-fixed border-separate border-spacing-0 text-[13px] leading-normal">
             <colgroup>
               <col style={{ width: `${keyRem}rem` }} />
@@ -1585,7 +1591,7 @@ function ValueTable({ fields, lead, trailing }: { fields: FieldResult[]; lead?: 
       {shown.length === 0 ? (
         <NoRows>검색과 맞는 키가 없습니다</NoRows>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="m-3 overflow-x-auto rounded-sm border border-line-strong">
           <table className="w-full min-w-[420px] table-fixed border-separate border-spacing-0 text-[13px] leading-normal">
             <colgroup>
               <col style={{ width: '32%' }} />
@@ -1593,8 +1599,8 @@ function ValueTable({ fields, lead, trailing }: { fields: FieldResult[]; lead?: 
             </colgroup>
             <thead className="sticky top-0 z-10 bg-surface-3 text-left text-xs text-body">
               <tr>
-                <th className={cn('border-b border-line px-3 py-1.5 font-semibold', COL)}>키</th>
-                <th className="border-b border-line px-3 py-1.5 font-semibold">값</th>
+                <th className={cn(TH, COL)}>키</th>
+                <th className={TH}>값</th>
               </tr>
             </thead>
             <tbody className="[&>tr:last-child>td]:border-b-0">
