@@ -1503,10 +1503,10 @@ export function FieldCompareTable({
     4,
   );
 
-  // 단일 표와 같은 규칙: 제목과 조작이 한 막대에, 판정 열은 없다.
+  // 단일 표와 같은 규칙: 제목('키별 판정')은 적지 않고, 판정 열도 없다. 아래 표의
+  // 열 이름이 이미 '키 · 기대값 · A · B' 라고 말한다.
   const head = (
     <>
-      <span className="eyebrow">키별 판정</span>
       <span className="text-xs text-muted">
         키 <span className="font-mono font-semibold tabular-nums text-ink">{all.length}</span>
       </span>

@@ -73,16 +73,10 @@ function SideBox({
   // 정답이 없을 때 JSON 결과는 키 · 값 표로 — 들여쓴 원문보다 키를 찾기 쉽다.
   const keyed = gt === null && !!valueFields(scored, !row?.trace_value);
   return (
-    // The two panels sit side by side and otherwise look identical, so the side
-    // is carried by the edge of the box as well as by the badge — at a glance
-    // the eye finds the rail, not a two-letter word inside a sentence.
-    <div
-      className={cn(
-        'min-w-0 border-l-2 bg-surface p-3',
-        !flush && 'rounded-md border border-line',
-        tone === 'accent' ? 'border-l-accent' : 'border-l-muted/50',
-      )}
-    >
+    // 왼쪽 톤 레일은 걷었다. 키 표와 요약 카드에서 레일을 없애고 나니 이 상자만
+    // 색 띠를 두르고 있어, A·B 상자가 화면에서 혼자 다른 규칙을 쓰는 꼴이었다.
+    // 어느 사이드인지는 머리의 A · B 배지가 말한다.
+    <div className={cn('min-w-0 bg-surface p-3', !flush && 'rounded-md border border-line')}>
       <div className="flex items-center gap-2">
         <Badge tone={tone}>
           <span className="font-mono font-semibold">{side}</span>
