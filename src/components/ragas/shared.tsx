@@ -122,7 +122,7 @@ export function wasRerun(...runs: Timed[]): boolean {
   });
 }
 
-/** 최초 실행 시각 — 툴팁과 '최초' 줄에 적는다. */
+/** 이 실행을 처음 돌린 시각 — 화면에는 시간만 적고, 그게 언제였는지는 툴팁이 맡는다. */
 function firstStartedText(runs: Timed[]): string | null {
   const at = runs.map((r) => r?.first_started_dt).filter(Boolean) as string[];
   if (!at.length) return null;
@@ -140,39 +140,38 @@ export function fmtDuration(ms: number): string {
  * 결과 카드 머리줄의 소요시간. 케이스마다의 시간은 각 줄에 있고, 이것은 실행
  * 한 번을 통째로 기다린 시간이다.
  *
- * 한 줄에 한 사실만 둔다. 재실행한 적 없는 실행은 한 줄이고, 재실행을 거치면
- * '마지막'과 '최초' 두 줄이다 — 둘 다 필요한 건, 위만 적으면 불일치 3건을 다시
- * 돌린 12초가 24건짜리 실행의 소요처럼 읽히고 아래만 적으면 방금 무엇을 했는지가
- * 사라지기 때문이다.
+ * 위가 이 실행에 걸린 시간이고, 재실행을 거쳤으면 그 아래 한 줄이 더 선다. 위 줄에
+ * 이름을 붙이지 않는 까닭은 그것이 기본값이기 때문이다 — 라벨이 필요한 쪽은 나중에
+ * 덧붙은 '재실행' 이고, 둘에 다 이름을 달면 어느 쪽이 그 실행의 시간인지가 흐려진다.
  *
  * 분 표기는 그 줄의 괄호 안에 붙인다. 제 줄을 주면 위아래의 '다른 시간' 들 사이에
- * 끼어 네 번째 사실처럼 보이는데, 실은 바로 옆 숫자를 단위만 바꿔 적은 것이다.
+ * 끼어 세 번째 사실처럼 보이는데, 실은 바로 옆 숫자를 단위만 바꿔 적은 것이다.
  */
 export function RunDurationTag({ runs, className }: { runs: Timed[]; className?: string }) {
   const ms = runSpanMs(...runs);
   if (ms === null) return null;
   const rerun = wasRerun(...runs);
   const firstMs = rerun ? runFirstSpanMs(...runs) : null;
-  const firstAt = rerun ? firstStartedText(runs) : null;
+  // 위 줄은 그 실행에 걸린 시간 — 재실행을 거쳤으면 처음 돌렸을 때의 것이고,
+  // 아닌 실행에서는 방금 돌린 그것이다. 둘 다 '이 실행에 걸린 시간' 이라 자리가 같다.
+  const headMs = firstMs ?? ms;
   return (
     <span
       className={cn('inline-flex flex-col items-end whitespace-nowrap leading-tight text-muted', className)}
       title={
         rerun
-          ? '최초: 이 실행을 처음 돌렸을 때 · 마지막: 가장 최근 재실행 (다시 돌린 케이스만)'
+          ? `실행 ${fmtDuration(headMs)}${firstStartedText(runs) ? ` (${firstStartedText(runs)})` : ''} · 재실행 ${fmtDuration(ms)} — 재실행은 다시 돌린 케이스만 잰 시간입니다`
           : '실행 시작 → 종료'
       }
     >
       <span>
-        {rerun ? '마지막 재실행' : '소요'}{' '}
-        <span className="font-mono font-semibold tabular-nums text-ink">{fmtDuration(ms)}</span>
-        <Paren ms={ms} />
+        <span className="font-mono font-semibold tabular-nums text-ink">{fmtDuration(headMs)}</span>
+        <Paren ms={headMs} />
       </span>
-      {rerun && firstMs !== null && (
+      {rerun && (
         <span className="text-[11px]">
-          최초 <span className="font-mono tabular-nums">{fmtDuration(firstMs)}</span>
-          <Paren ms={firstMs} />
-          {firstAt && <span className="ml-1 text-muted-soft">{firstAt}</span>}
+          재실행 <span className="font-mono tabular-nums">{fmtDuration(ms)}</span>
+          <Paren ms={ms} />
         </span>
       )}
     </span>
@@ -250,14 +249,20 @@ export function fmtMinutes(ms: number): string | null {
   return h > 0 ? `${h}시간 ${m}분 ${s}초` : `${m}분 ${s}초`;
 }
 
-/** 목록 칸의 소요시간 — 초, 그리고 그 아래 분(60초 이상) 또는 최초 실행 소요
- * (재실행을 거친 실행). 좁은 칸이라 둘 중 하나만 서고, 전부는 툴팁에 있다. */
+/**
+ * 목록 칸의 소요시간. 위는 그 실행에 걸린 시간, 아래는 재실행을 거쳤으면 그 시간.
+ *
+ * 머리줄 표기(RunDurationTag)와 같은 순서·같은 규칙이다 — 같은 값을 두 화면에서
+ * 다른 순서로 적으면, 목록에서 본 수와 상세에서 본 수가 다른 줄에 서서 같은 것인지
+ * 의심하게 된다. 재실행이 없는 실행에서는 아래 줄이 분 환산 자리로 돌아간다.
+ */
 export function RunDurationStack({ runs }: { runs: Timed[] }) {
   const ms = runSpanMs(...runs);
   if (ms === null) return <span className="text-muted">—</span>;
   const rerun = wasRerun(...runs);
   const firstMs = rerun ? runFirstSpanMs(...runs) : null;
-  const min = fmtMinutes(ms);
+  const headMs = firstMs ?? ms;
+  const min = fmtMinutes(headMs);
   const firstAt = firstStartedText(runs);
   return (
     <span
@@ -265,15 +270,15 @@ export function RunDurationStack({ runs }: { runs: Timed[] }) {
       title={
         rerun
           ? [
-              `최초 ${firstAt ?? ''}${firstMs !== null ? ` · ${fmtDuration(firstMs)}` : ''}`,
-              `마지막 재실행 ${fmtDuration(ms)}`,
+              `실행 ${fmtDuration(headMs)}${firstAt ? ` (${firstAt})` : ''}`,
+              `재실행 ${fmtDuration(ms)} — 다시 돌린 케이스만 잰 시간`,
             ].join('\n')
           : undefined
       }
     >
-      <span>{rerun ? `재실행 ${fmtDuration(ms)}` : fmtDuration(ms)}</span>
-      {rerun && firstMs !== null ? (
-        <span className="text-[10.5px] text-muted-soft">최초 {fmtDuration(firstMs)}</span>
+      <span>{fmtDuration(headMs)}</span>
+      {rerun ? (
+        <span className="text-[10.5px] text-muted-soft">재실행 {fmtDuration(ms)}</span>
       ) : (
         min && <span className="text-[10.5px] text-muted-soft">{min}</span>
       )}

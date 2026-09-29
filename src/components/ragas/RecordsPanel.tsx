@@ -118,7 +118,7 @@ function TargetCell({
  * 대상 칸과 같은 크기·같은 굵기다. 무엇을 시험했는지와 무엇으로 쟀는지는 한쪽이
  * 다른 쪽의 부연이 아니라 나란한 두 사실이고, 5건짜리 폴더와 24건짜리 전체를
  * 흐린 잔글씨로 적어 두면 그걸 못 보고 점수를 나란히 놓게 된다. 나머지 칸
- * (유형·상태·엔진·시각)은 muted 로 남아서, 이 둘이 행의 내용이 된다. */
+ * (유형·상태·시각)은 muted 로 남아서, 이 둘이 행의 내용이 된다. */
 function ScopeCell({ text, count, desc }: { text: string | null; count: string | null; desc?: string | null }) {
   return (
     <TD title={[text, count].filter(Boolean).join(' ') || undefined}>
@@ -418,7 +418,11 @@ export default function RecordsPanel() {
               {/* 대상과 데이터를 두 칸으로 나눠 둔다. 한 줄에 이어 붙이면 행마다
                   길이가 달라져, 같은 API 로 여러 번 돌린 기록이 세로로 안 맞는다. */}
               <TH className="w-14">#</TH>
-              <TH>대상</TH><TH>데이터</TH><TH>유형</TH><TH>상태</TH><TH>엔진</TH>
+              {/* 엔진(RAGAS · FALLBACK · exact)은 목록에서 뺐다. 이 환경에서는 심판
+                  LLM 을 붙이지 않는 한 모든 채점이 FALLBACK 이라 줄마다 같은 값이
+                  서고, 같은 값만 적힌 칸은 자리만 차지한다. 잃지는 않는다 —
+                  기록 상세 머리줄이 'Engine …' 으로 그대로 말한다. */}
+              <TH>대상</TH><TH>데이터</TH><TH>유형</TH><TH>상태</TH>
               <SortTH k="avg" label="점수" sort={sort} onSort={toggleSort} />
               <TH>소요</TH>
               <SortTH k="created" label="생성일시" sort={sort} onSort={toggleSort} />
@@ -455,7 +459,6 @@ export default function RecordsPanel() {
                     <ScopeCell text={single.scope} count={single.count} desc={r.is_manual ? null : r.dataset_desc} />
                     <TD><TypeText t="single" /></TD>
                     <TD><StatusText s={r.status} /></TD>
-                    <TD className="text-xs text-muted">{r.engine === 'direct' ? '—' : (r.engine ?? '—')}</TD>
                     <AvgCell
                       mean={mean}
                       ex={r.exact_match != null ? Number(r.exact_match) : null}
@@ -496,7 +499,6 @@ export default function RecordsPanel() {
                   <ScopeCell text={pair.scope} count={pair.count} desc={g.a.is_manual ? null : g.a.dataset_desc} />
                   <TD><TypeText t="compare" /></TD>
                   <TD><StatusText s={stat} /></TD>
-                  <TD className="text-xs text-muted">{g.b.engine ?? '—'}</TD>
                   <AvgCell
                     meanA={runMean(g.a)}
                     meanB={runMean(g.b)}
@@ -514,7 +516,7 @@ export default function RecordsPanel() {
               );
             })}
             {groups.length === 0 && (
-              <TR><TD colSpan={11} className="py-10 text-center text-sm text-muted">
+              <TR><TD colSpan={10} className="py-10 text-center text-sm text-muted">
                 {ragas.length === 0 ? '실행 기록이 없습니다' : '검색 결과 없음'}
               </TD></TR>
             )}

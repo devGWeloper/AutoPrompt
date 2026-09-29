@@ -1311,9 +1311,9 @@ function abVerdict(r: PairRow): AbVerdict {
 
 const AB_LABEL: Record<AbVerdict, string> = {
   'same-ok': '동일',
-  'same-bad': '둘 다 불일치',
-  a: 'A만 맞음',
-  b: 'B만 맞음',
+  'same-bad': '둘 다 FAIL',
+  a: 'A만 PASS',
+  b: 'B만 PASS',
 };
 
 const pairTier = (r: PairRow): Tier =>
