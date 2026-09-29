@@ -1153,15 +1153,11 @@ export function MatchDiff({ row, flush }: { row: RagasResultRow; flush?: boolean
 
   // 제목 · 판정 · 키 수는 한 덩어리로 다닌다: 키별 보기에서는 표 막대 안으로
   // 들어가고, 원본 보기에서는 제 머리줄이 된다.
+  // 제목('채점 대상 · 기대 정답')과 중간 변수 이름은 적지 않는다. 바로 아래 표의
+  // 열 이름이 이미 '기대값 · 실제값' 이라고 말하고, 무엇을 채점했는지는 값 자체가
+  // 말한다 — 같은 말을 머리줄에서 한 번 더 하면 판정과 키 수가 그만큼 밀린다.
   const head = (
     <>
-      <span className="eyebrow">채점 대상 · 기대 정답</span>
-      {/* 키별 표에는 변수 이름을 적을 자리가 없다 — 무엇을 채점했는지는 어느
-          보기에서든 이 줄이 말한다. */}
-      {row.trace_value && <TraceTag name={row.trace_var_nm} />}
-      {(row.exact_match != null || fields) && (
-        <span aria-hidden className="h-3 w-px self-center bg-line-strong" />
-      )}
       {row.exact_match != null && <OxBadge value={row.exact_match} />}
       {fields && (
         <span className="font-mono text-xs tabular-nums text-muted">
