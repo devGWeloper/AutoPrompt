@@ -176,19 +176,32 @@ const rankOf = (s: FieldStatus) => RANK[s];
 
 const FAIL_KINDS: FieldStatus[] = ['diff', 'type', 'missing', 'extra'];
 
-// 격자선은 line 이 아니라 line-strong 이다. 표 밖의 헤어라인(패널 경계, 목록
-// 구분선)은 있는지 없는지 모를 만큼 옅어야 하지만, 이 표에서 선은 장식이 아니라
-// 칸의 경계 — 값을 위아래·좌우로 견주라고 만든 격자라, 선이 보이지 않으면 표가
-// 아니라 글자 무더기가 된다.
-const CELL = 'border-b border-line-strong px-3 py-2 align-top';
-/** 열 사이 세로 헤어라인. 값이 두 칸에 걸쳐 읽히는 표라 가로줄만으로는 어느
- * 칸까지가 기대값인지 눈이 자꾸 놓친다. */
-const COL = 'border-r border-line-strong';
+/**
+ * 격자선. 표 밖의 헤어라인(패널 경계, 목록 구분선)은 있는지 없는지 모를 만큼 옅어야
+ * 하지만, 이 표에서 선은 장식이 아니라 칸의 경계다 — 값을 위아래·좌우로 견주라고
+ * 만든 격자라, 선이 보이지 않으면 표가 아니라 글자 무더기가 된다. 그래서 디자인의
+ * line 램프(가장 진한 line-strong 도 #d0d4da)보다 진한 제 색을 쓴다.
+ *
+ * 바깥 테두리를 한 단 더 진하게 두는 건 위아래가 뚫린 표가 아니라 하나의 덩어리로
+ * 읽히게 하려는 것이다 — 안쪽 선과 같은 굵기·같은 색이면 테두리가 격자의 한 줄로
+ * 보여, 표가 어디서 끝나는지가 흐려진다.
+ *
+ * 색을 tailwind.config 의 토큰이 아니라 여기 적는 까닭은 COL_KEY 와 같다: 토큰은
+ * config 를 읽는 시점에만 반영돼, 떠 있는 서버에서는 클래스가 생성되지 않는다.
+ */
+const GRID_LINE = 'border-[#b0b8c1]';
+const TABLE_FRAME = 'border-[#97a0ab]';
+
+const CELL = `border-b ${GRID_LINE} px-3 py-2 align-top`;
+/** 열 사이 세로선. 값이 두 칸에 걸쳐 읽히는 표라 가로줄만으로는 어느 칸까지가
+ * 기대값인지 눈이 자꾸 놓친다. */
+const COL = `border-r ${GRID_LINE}`;
 
 /**
  * 키 칸의 면. 헤어라인만으로는 다 맞은 표가 흰 종이 한 장이 되어, 어디까지가
  * 키고 어디부터가 값인지 눈이 자꾸 놓친다 — 스프레드시트의 머리 열처럼 키 칸에만
- * 흙빛을 깔아, 흰 값 칸들과 갈리게 한다.
+ * 옅은 파랑을 깔아, 흰 값 칸들과 갈리게 한다. 상태가 쓰는 색(틀림의 붉은 면, 추가의
+ * 노란 면)과 계열이 겹치지 않아, 면이 판정으로 읽힐 일이 없다.
  *
  * 값 칸끼리는 같은 면이다. 기대값과 실제값(또는 A 와 B)은 나란히 견주라고 놓은
  * 같은 성격의 칸이라, 서로 농도를 달리하면 한쪽이 더 중요한 것처럼 읽힌다.
@@ -202,7 +215,7 @@ const COL = 'border-r border-line-strong';
  * 줄에 마우스를 올리면 이 면을 비워 줄 전체가 한 색으로 덮이게 한다. 비우지
  * 않으면 tr 의 hover 가 이 면에 가려 어느 줄에 있는지가 보이지 않는다.
  */
-const COL_KEY = 'bg-[#e8d9a8] group-hover:bg-transparent';
+const COL_KEY = 'bg-[#d8e4f3] group-hover:bg-transparent';
 
 /** 이 길이를 넘는 값은 두 줄로 접어 둔다. 한 줄이 화면을 다 먹으면 위아래를
  * 나란히 읽으라고 만든 표가 아니게 된다. */
@@ -499,7 +512,7 @@ function ParentRow({
 }) {
   return (
     <tr className="cursor-pointer" onClick={onToggle}>
-      <td colSpan={cols} className="border-b border-line-strong bg-surface-3 px-3 py-1.5 transition-colors hover:bg-surface-2">
+      <td colSpan={cols} className={cn('border-b bg-surface-3 px-3 py-1.5 transition-colors hover:bg-surface-2', GRID_LINE)}>
         <span className="flex flex-wrap items-center gap-x-2.5 text-xs">
           <Chevron open={!collapsed} />
           <span className="break-all font-mono font-semibold text-ink">{parent || '(최상위)'}</span>
@@ -555,16 +568,6 @@ function Val({
   );
 }
 
-/** 기대값과 같은 칸 — 값을 되풀이하지 않고 `=` 하나. 같은 글자를 두 칸에 두 번
- * 쓰면 틀린 칸이 도리어 묻힌다. */
-function SameMark() {
-  return (
-    <span className="select-none font-mono text-muted-soft" title="기대값과 같음">
-      =
-    </span>
-  );
-}
-
 /** 틀린 실제값 칸의 면. 누락도 빈 칸이 아니라 틀린 칸이라 같은 면을 깐다. */
 const missFill = (s: FieldStatus) => (s === 'missing' ? 'bg-bad-soft' : STATUS[s].actual);
 
@@ -612,7 +615,7 @@ const isLong = (...texts: (string | null | undefined)[]) => texts.some((t) => (t
 
 // 머리줄은 격자를 위에서 닫는다 — 두 겹 선과 진한 글자로, 첫 줄이 데이터가 아니라
 // 열 이름이라는 것이 한눈에 갈리게.
-const TH = 'border-b-2 border-line-strong px-3 py-2 font-semibold text-ink';
+const TH = `border-b-2 ${GRID_LINE} px-3 py-2 text-center font-semibold text-ink`;
 
 // ---------------------------------------------------------------------------
 // 표의 부품 — 단일 표와 A/B 표가 같은 것을 쓴다
@@ -977,15 +980,18 @@ function FieldRow({
           />
         )}
       </ValueTd>
+      {/* 맞은 줄도 값을 그대로 적는다. '=' 한 글자로 줄이면 칸을 아껴지만, 표를
+          훑다가 실제로 무엇이 왔는지 보려면 기대값 칸으로 눈을 옮겨야 한다 —
+          두 칸을 나란히 두는 표에서 한쪽이 다른 쪽을 가리키기만 하면 표가 아니다. */}
       <ValueTd
-        long={!ok && isLong(f.actual)}
+        long={isLong(f.actual)}
         expanded={expanded}
         onToggle={onExpand}
-        copy={ok ? null : f.actual}
+        copy={f.actual}
         className={ok ? undefined : missFill(f.status)}
       >
         {ok ? (
-          <SameMark />
+          <SameValue text={f.actual ?? f.expected} dim={dim} clamp={clampOf(f.actual)} expanded={expanded} />
         ) : (
           <Val
             text={f.actual}
@@ -1072,7 +1078,7 @@ function FieldTable({ m, lead, trailing }: { m: StructuredMatch; lead?: ReactNod
       ) : (
         // 안쪽 세로 스크롤은 두지 않는다 — 페이지 스크롤 안에 스크롤이 또 생기면
         // 표를 읽다 말고 어느 쪽을 굴릴지부터 골라야 한다.
-        <div className="m-3 overflow-x-auto rounded-sm border border-line-strong">
+        <div className={cn('m-3 overflow-x-auto rounded-sm border', TABLE_FRAME)}>
           <table className="w-full min-w-[460px] table-fixed border-separate border-spacing-0 text-[13px] leading-normal">
             <colgroup>
               <col style={{ width: `${keyRem}rem` }} />
@@ -1345,15 +1351,26 @@ function PairFieldRow({
   const warnOnly = [r.a, r.b].every((f) => !f || f.status === 'match' || f.status === 'extra');
   const type = [r.a, r.b].some((f) => f?.status === 'type');
   const clampOf = (t: string | null) => isLong(t) && !expanded;
-  // 맞은 쪽은 값을 되풀이하지 않고 `=` 만 — 그래야 같은 줄에서 틀린 쪽의 값이 혼자
-  // 선다. 값 자체는 왼쪽 기대값이다.
+  // 맞은 쪽도 값을 그대로 적는다. 되풀이처럼 보이지만, A 와 B 를 나란히 놓은 표에서
+  // 한쪽이 '기대값과 같음' 이라고만 말하면 두 사이드가 실제로 무엇을 냈는지를 한
+  // 줄에서 읽을 수 없다.
   const sideCell = (f: FieldResult | undefined) => {
     if (!f) return <td className={cn(CELL, COL, 'text-muted')}>—</td>;
     if (f.status === 'match') {
       return (
-        <td className={cn(CELL, COL)}>
-          <SameMark />
-        </td>
+        <ValueTd
+          long={isLong(f.actual)}
+          expanded={expanded}
+          onToggle={onExpand}
+          copy={f.actual}
+        >
+          <SameValue
+            text={f.actual ?? r.expected}
+            dim={dim}
+            clamp={clampOf(f.actual)}
+            expanded={expanded}
+          />
+        </ValueTd>
       );
     }
     const mark = markPair(r.expected, f.actual, f.status === 'diff');
@@ -1501,7 +1518,7 @@ export function FieldCompareTable({
       {t.shown.length === 0 ? (
         <NoRows>{t.q.trim() ? '검색과 맞는 키가 없습니다' : '해당하는 키가 없습니다'}</NoRows>
       ) : (
-        <div className="m-3 overflow-x-auto rounded-sm border border-line-strong">
+        <div className={cn('m-3 overflow-x-auto rounded-sm border', TABLE_FRAME)}>
           <table className="w-full min-w-[520px] table-fixed border-separate border-spacing-0 text-[13px] leading-normal">
             <colgroup>
               <col style={{ width: `${keyRem}rem` }} />
@@ -1601,7 +1618,7 @@ function ValueTable({ fields, lead, trailing }: { fields: FieldResult[]; lead?: 
       {shown.length === 0 ? (
         <NoRows>검색과 맞는 키가 없습니다</NoRows>
       ) : (
-        <div className="m-3 overflow-x-auto rounded-sm border border-line-strong">
+        <div className={cn('m-3 overflow-x-auto rounded-sm border', TABLE_FRAME)}>
           <table className="w-full min-w-[420px] table-fixed border-separate border-spacing-0 text-[13px] leading-normal">
             <colgroup>
               <col style={{ width: '32%' }} />
