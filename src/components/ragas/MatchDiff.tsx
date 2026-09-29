@@ -212,10 +212,20 @@ const COL = `border-r ${GRID_LINE}`;
  * 색이 바뀌지 않는 게 아니라 면이 없는 상태가 되고, 그걸 알아채려면 빌드된 CSS 를
  * 뒤져야 한다. 한 군데서만 쓰는 색이니 여기 두고 여기서 고친다.
  *
- * 줄에 마우스를 올리면 이 면을 비워 줄 전체가 한 색으로 덮이게 한다. 비우지
- * 않으면 tr 의 hover 가 이 면에 가려 어느 줄에 있는지가 보이지 않는다.
+ * 줄에 마우스를 올려도 이 면은 그대로다. 키 열은 어느 줄에 있든 '머리 열' 이라는
+ * 자리가 변하지 않아서 — 올린 줄만 머리 열이 사라지면 그 줄에서 표의 왼쪽 끝이
+ * 어디인지가 흐려진다. 덮이는 것은 값 칸들뿐이고, 그것으로 줄은 충분히 드러난다.
  */
-const COL_KEY = 'bg-[#d8e4f3] group-hover:bg-transparent';
+const COL_KEY = 'bg-[#d8e4f3]';
+
+/**
+ * 줄에 마우스를 올렸을 때 값 칸에 깔리는 면. 키 열의 파랑보다 옅은 같은 계열이라,
+ * 덮여도 키 열이 여전히 한 단 진한 머리 열로 남는다.
+ *
+ * 틀린 칸은 덮이지 않는다 — 그 칸의 붉은·노란 면은 상태이지 줄 꾸밈이 아니라,
+ * 제 면을 들고 있어서 이 면이 닿지 않는다.
+ */
+const ROW_HOVER = 'hover:bg-[#e9f1fc]';
 
 /** 이 길이를 넘는 값은 두 줄로 접어 둔다. 한 줄이 화면을 다 먹으면 위아래를
  * 나란히 읽으라고 만든 표가 아니게 된다. */
@@ -962,7 +972,7 @@ function FieldRow({
   const type = f.status === 'type';
   const clampOf = (t: string | null) => isLong(t) && !expanded;
   return (
-    <tr className="group transition-colors hover:bg-surface-2/70">
+    <tr className={cn('group transition-colors', ROW_HOVER)}>
       <KeyCell path={f.path} label={label} depth={depth} rail={s.rail} dim={dim}>
         {f.status !== 'match' && <StatusChip status={f.status} />}
       </KeyCell>
@@ -1394,7 +1404,7 @@ function PairFieldRow({
     );
   };
   return (
-    <tr className="group transition-colors hover:bg-surface-2/70">
+    <tr className={cn('group transition-colors', ROW_HOVER)}>
       <KeyCell
         path={r.path}
         label={label}
@@ -1646,7 +1656,7 @@ function ValueTable({ fields, lead, trailing }: { fields: FieldResult[]; lead?: 
                 }
                 const dim = tierOf(true, r.item.actual, r.item.actual) === 'blank';
                 return (
-                  <tr key={r.path} className="group transition-colors hover:bg-surface-2/70">
+                  <tr key={r.path} className={cn('group transition-colors', ROW_HOVER)}>
                     <KeyCell
                       path={r.path}
                       label={r.label}
