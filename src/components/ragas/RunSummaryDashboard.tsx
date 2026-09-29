@@ -56,6 +56,22 @@ const CARD = 'flex flex-col justify-between rounded-sm border bg-surface p-3.5';
 const CARD_LINE = 'border-line';
 const CARD_LEAD = 'border-[#97a0ab]';
 
+/**
+ * 카드 제목. 단일 실행과 A·B 가 같은 것을 쓴다.
+ *
+ * 전에는 단일이 eyebrow(작은 대문자 + 자간)였고 A·B 는 굵은 본문이라, 같은 지표
+ * 이름이 두 화면에서 다른 글씨로 적혔다. 지표 이름은 '충실도' 처럼 한글이라
+ * uppercase 가 하는 일이 없고 자간만 벌어져 읽기 나빴으므로, A·B 쪽 꼴로 모았다.
+ */
+const CARD_LABEL = 'block truncate text-xs font-semibold text-ink';
+
+/**
+ * A·B 카드의 두 값. 단일 카드의 FIGURE(22px) 만큼 키울 수는 없다 — 한 카드에 숫자가
+ * 둘이라서다. 대신 본문보다 한 단 크게 잡아, 카드가 저마다 다른 부품처럼 보이지
+ * 않게 한다(이전에는 text-xs 로 라벨보다도 작았다).
+ */
+const PAIR_FIGURE = 'font-mono text-sm tabular-nums';
+
 /** 먼저 읽히는 카드인가 — RAGAS 평균(지표 없음)과 Action Test. */
 const isLead = (m?: RagasMetric) => m === undefined || m === EXACT_MATCH;
 
@@ -129,9 +145,7 @@ export function SingleRunSummaryDashboard({ detail }: { detail: RagasRunDetail }
         {withOverall && (
           <div className={cn(CARD, CARD_LEAD, 'bg-surface-2')}>
             <div>
-              <span className="block truncate text-caption uppercase tracking-[0.9px] text-muted">
-                RAGAS Mean
-              </span>
+              <span className={CARD_LABEL}>RAGAS Mean</span>
               <div className="mt-2 flex items-baseline justify-between">
                 <span className={FIGURE}>{fmt3(mean)}</span>
                 <ScoreBadge score={mean} />
@@ -148,11 +162,9 @@ export function SingleRunSummaryDashboard({ detail }: { detail: RagasRunDetail }
           return (
             <div key={m} className={cn(CARD, isLead(m) ? CARD_LEAD : CARD_LINE)}>
               <div>
-                <span
-                  className="block truncate text-caption uppercase tracking-[0.9px] text-muted cursor-help"
-                >
-                  {METRIC_LABELS[m]}
-                </span>
+                {/* cursor-help 은 걷었다 — 붙일 title 이 없는데 커서만 물음표로 바뀌어,
+                    가리키면 설명이 뜰 것처럼 말하고 아무것도 뜨지 않았다. */}
+                <span className={CARD_LABEL}>{METRIC_LABELS[m]}</span>
                 <div className="mt-2 flex items-baseline justify-between gap-2">
                   <span className={FIGURE}>{isExact ? `${emHit}/${emTotal}` : fmt3(val)}</span>
                   {isExact ? <OxBadge value={val} rate /> : <ScoreBadge score={val} />}
@@ -241,22 +253,26 @@ export function CompareSummaryDashboard({
           return (
             <div key={key} className={cn(CARD, isLead(m) ? CARD_LEAD : CARD_LINE)}>
               <div>
-                <span className="block truncate text-xs font-semibold text-ink">{label}</span>
-                <div className="mt-2 flex items-center justify-between text-xs font-mono tabular-nums">
-                  <span className={cn(d != null && d < 0 ? 'font-semibold text-ink' : 'text-muted')}>
-                    A {cardValue(m, av)}
-                  </span>
-                  <span className={cn(d != null && d > 0 ? 'font-semibold text-ink' : 'text-muted')}>
-                    B {cardValue(m, bv)}
-                  </span>
+                <span className={CARD_LABEL}>{label}</span>
+                {/* 사이드마다 한 줄 — 왼쪽에 A · B 와 그 값, 그 옆에 제 막대.
+                    값과 막대가 같은 줄에 있어야 '이 숫자가 이 길이' 가 한 번에
+                    읽힌다. 값 두 줄과 막대 두 줄을 따로 쌓아 두었을 때는 위아래로
+                    짝을 맞춰 봐야 했다.
+                    값 칸은 고정 폭이다 — 자리가 흔들리면 두 막대가 다른 x 에서
+                    시작해, 길이를 견주라고 그린 막대에서 그것만은 일어나면 안 된다. */}
+                <div className="mt-2 space-y-1">
+                  {([
+                    ['A', av, 'bg-muted-soft', d != null && d < 0],
+                    ['B', bv, 'bg-accent', d != null && d > 0],
+                  ] as const).map(([side, v, tone, ahead]) => (
+                    <div key={side} className="flex items-center gap-2">
+                      <span className={cn(PAIR_FIGURE, 'w-[4.5rem] shrink-0', ahead ? 'font-semibold text-ink' : 'text-muted')}>
+                        {side} {cardValue(m, v)}
+                      </span>
+                      <Bar value={v} tone={tone} className="min-w-0 flex-1" />
+                    </div>
+                  ))}
                 </div>
-              </div>
-
-              {/* A · B 두 줄. 같은 자리에서 시작해 같은 자리에서 끝나는 막대라야
-                  길이 차이가 곧 점수 차이로 읽힌다. */}
-              <div className="mt-3 space-y-1">
-                <Bar value={av} tone="bg-muted-soft" />
-                <Bar value={bv} tone="bg-accent" />
               </div>
 
               <div className="mt-2 flex items-center justify-between border-t border-line pt-2 text-[11px]">
