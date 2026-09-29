@@ -38,7 +38,7 @@ const config: Config = {
         // 흰색과 너무 가까워 표가 통째로 흰 종이로 읽혔다.
         // warn.soft(#fdf2e5) 보다 노란기를 키우고 한 단 깊게 잡았다: 그 tint 는 같은
         // 표에서 '추가' 키가 쓰는 말이라, 옅게 잡으면 열의 면과 상태가 섞인다.
-        keycol: { DEFAULT: "#f5eed9", strong: "#efe4c4" },
+        keycol: { DEFAULT: "#f0e4c2", strong: "#e7d7a9" },
         // Category hues. Surface/marker fills only — never a button background.
         chroma: {
           purple: "#7c3aed",
