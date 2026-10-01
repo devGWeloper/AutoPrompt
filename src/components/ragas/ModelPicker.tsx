@@ -4,7 +4,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Input } from '@/components/ui/Field';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import type { ModelRole, ModelSelection } from '@/lib/types';
+import type { LlmModel, ModelRole, ModelSelection } from '@/lib/types';
 import { SettingsLink, useLlmModels } from './shared';
 
 /**
@@ -22,9 +22,15 @@ import { SettingsLink, useLlmModels } from './shared';
  */
 
 /** Editable fields as text. '' means "not pinned", which is a different thing
- * from 0 — and only a string can hold a half-typed number without snapping. */
+ * from 0 — and only a string can hold a half-typed number without snapping.
+ *
+ * `server` rides along with the model rather than being picked separately: the
+ * same model name can be registered on more than one server, and which one it
+ * is decides the address the run is sent to. It is set by choosing a model, so
+ * there is no way to pin a model to a server it is not registered on. */
 export interface ModelDraft {
   model: string;
+  server: string;
   temperature: string;
 }
 
@@ -78,7 +84,13 @@ export function draftsFromRoles(roles: ModelRole[]): ModelDrafts {
   return Object.fromEntries(
     roles.map((r) => [
       r.role_cd,
-      { model: r.model_nm ?? '', temperature: r.temperature === null ? '' : String(r.temperature) },
+      {
+        model: r.model_nm ?? '',
+        // 저장된 기본값은 모델명만 들고 있다 — 그 이름이 목록에서 하나로
+        // 좁혀지면 select 가 알아서 그 줄을 짚고, 아니면 서버 지정 없음이다.
+        server: '',
+        temperature: r.temperature === null ? '' : String(r.temperature),
+      },
     ]),
   );
 }
@@ -95,6 +107,7 @@ export function toSelection(drafts: ModelDrafts): ModelSelection {
     const t = d.temperature.trim();
     out[role] = {
       model: d.model.trim() || null,
+      server: d.server.trim() || null,
       temperature: t === '' ? null : Number(t),
     };
   }
@@ -124,7 +137,10 @@ function pinText(drafts: ModelDrafts): string {
     .filter(([, d]) => pinned(d))
     .map(([role, d]) => {
       const t = d.temperature.trim();
-      return `${role}=${d.model.trim() || 'As-is'}${t ? ` (t${t})` : ''}`;
+      // 서버는 모델 뒤에 붙여 한 줄로 — 주소가 어디로 나가는지가 모델 선택의
+      // 절반이라, 요약에서 빠지면 A·B 가 왜 다른지 읽히지 않는다.
+      const svr = d.server.trim();
+      return `${role}=${d.model.trim() || 'As-is'}${svr ? `@${svr}` : ''}${t ? ` (t${t})` : ''}`;
     });
   return parts.length ? parts.join(' · ') : '—';
 }
@@ -147,7 +163,36 @@ export function ModelPicker({
   // 않도록 그 값만 따로 남겨 둔다.
   const catalogAll = useLlmModels();
   const catalog = useMemo(() => catalogAll.filter((m) => m.is_active === 'Y'), [catalogAll]);
-  const catalogMissing = (v: string) => v !== '' && !catalog.some((o) => o.llm_nm === v);
+  // 서버별로 묶어 보여 준다 — 같은 모델명이 서버마다 떠 있을 수 있어서, 이름만
+  // 나열하면 똑같은 줄이 두 개 뜬다.
+  const groups = useMemo(() => {
+    const m = new Map<string, LlmModel[]>();
+    for (const o of catalog) {
+      const k = o.server_nm ?? '';
+      const cur = m.get(k);
+      if (cur) cur.push(o);
+      else m.set(k, [o]);
+    }
+    // 서버 미지정 묶음은 맨 뒤 — 주소가 정해진 것부터 보이는 게 맞다.
+    return [...m.entries()].sort(([a], [b]) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b)));
+  }, [catalog]);
+  const grouped = groups.length > 1 || (groups.length === 1 && groups[0][0] !== '');
+
+  /** 초안이 가리키는 목록 줄. 저장돼 있던 값이 목록에서 빠졌으면 MISSING. */
+  const optionOf = (d: ModelDraft): LlmModel | null => {
+    if (!d.model) return null;
+    const exact = catalog.find((o) => o.llm_nm === d.model && (o.server_nm ?? '') === d.server);
+    if (exact) return exact;
+    // 서버를 안 들고 있는 초안(저장된 role 기본값)은 이름이 하나로 좁혀질 때만
+    // 그 줄로 본다. 서버 쪽 스냅샷이 같은 규칙으로 주소를 고른다 (models.ts).
+    if (!d.server) {
+      const byName = catalog.filter((o) => o.llm_nm === d.model);
+      if (byName.length === 1) return byName[0];
+    }
+    return null;
+  };
+  const MISSING = '__missing__';
+  const valueOf = (d: ModelDraft) => (!d.model ? '' : (optionOf(d)?.llm_id ?? MISSING).toString());
   const saved = useMemo(() => draftsFromRoles(roles), [roles]);
   const dirty = columns.some((c) => !sameDrafts(c.drafts, saved));
   // Two columns holding the same thing is the ordinary case (both pre-filled
@@ -209,10 +254,16 @@ export function ModelPicker({
               ))}
             </div>
             {roles.map((r) => {
-              const cells = columns.map((c) => c.drafts[r.role_cd] ?? { model: '', temperature: '' });
+              const cells = columns.map((c) => c.drafts[r.role_cd] ?? { model: '', server: '', temperature: '' });
               // The one thing worth marking in a comparison: this role is not
               // the same on both sides, so it is part of what is being tested.
-              const differs = cells.some((d) => d.model.trim() !== cells[0].model.trim() || d.temperature.trim() !== cells[0].temperature.trim());
+              // 같은 모델이라도 서버가 다르면 다른 실행이다.
+              const differs = cells.some(
+                (d) =>
+                  d.model.trim() !== cells[0].model.trim() ||
+                  d.server.trim() !== cells[0].server.trim() ||
+                  d.temperature.trim() !== cells[0].temperature.trim(),
+              );
               return (
                 <div
                   key={r.role_cd}
@@ -227,22 +278,40 @@ export function ModelPicker({
                   {columns.map((c, i) => (
                     <Fragment key={c.key}>
                       {/* 설정에 등록된 모델만 고를 수 있다 — 오타로 존재하지 않는
-                          모델을 고정해 버리는 일이 여기서 사라진다. */}
+                          모델을 고정해 버리는 일이 여기서 사라진다. 고른 줄이
+                          곧 서버이기도 해서, 주소는 따로 고를 것이 없다. */}
                       <select
-                        value={cells[i].model}
-                        onChange={(e) => set(c, r.role_cd, { model: e.target.value })}
+                        value={valueOf(cells[i])}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v === MISSING) return;
+                          const o = catalog.find((x) => String(x.llm_id) === v);
+                          set(c, r.role_cd, o
+                            ? { model: o.llm_nm, server: o.server_nm ?? '' }
+                            : { model: '', server: '' });
+                        }}
                         className={cn(
                           'h-9 w-full rounded-sm border bg-surface px-2 font-mono text-xs text-ink transition',
                           'hover:border-line-strong focus:border-accent focus:shadow-ring focus:outline-none',
-                          catalogMissing(cells[i].model) ? 'border-warn' : 'border-line',
+                          valueOf(cells[i]) === MISSING ? 'border-warn' : 'border-line',
                         )}
-                        title={cells[i].model || undefined}
+                        title={optionOf(cells[i])?.base_url ?? cells[i].model ?? undefined}
                       >
                         <option value="">—</option>
-                        {catalogMissing(cells[i].model) && <option value={cells[i].model}>{cells[i].model}</option>}
-                        {catalog.map((o) => (
-                          <option key={o.llm_id} value={o.llm_nm}>{o.llm_nm}</option>
-                        ))}
+                        {valueOf(cells[i]) === MISSING && (
+                          <option value={MISSING}>{cells[i].model}</option>
+                        )}
+                        {grouped
+                          ? groups.map(([svr, items]) => (
+                              <optgroup key={svr || '—'} label={svr || '서버 미지정'}>
+                                {items.map((o) => (
+                                  <option key={o.llm_id} value={o.llm_id}>{o.llm_nm}</option>
+                                ))}
+                              </optgroup>
+                            ))
+                          : catalog.map((o) => (
+                              <option key={o.llm_id} value={o.llm_id}>{o.llm_nm}</option>
+                            ))}
                       </select>
                       <Input
                         value={cells[i].temperature}

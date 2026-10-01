@@ -1302,22 +1302,49 @@ const TONE_CHIP: Record<'ok' | 'warn' | 'bad' | 'none', string> = {
   none: 'border-line bg-surface-2 text-muted',
 };
 
-export function OxBadge({ value, rate, passed }: { value: number | null; rate?: boolean; passed?: boolean }) {
-  if (value == null && !passed) return <span className="text-[11px] text-muted">—</span>;
-  const ok = passed || (rate ? (value ?? 0) >= 1 : (value ?? 0) >= 0.5);
+/**
+ * 실행 전체의 통과 상태 — 케이스 한 건의 PASS/FAIL 이 아니라 '몇 건이 남았나'.
+ *
+ * 전에는 통과율을 그대로 적어(`PASS 92%`) 빨간 배지에도 PASS 라고 쓰여 있었다.
+ * 0% 일 때 'PASS 0%' 는 말이 되지 않는다. 그렇다고 색에 따라 PASS/FAIL 을 바꿔
+ * 달면 숫자의 뜻이 색마다 달라져(통과율인지 실패율인지) 열을 훑을 수 없다.
+ *
+ * 그래서 비율이 아니라 남은 건수를 적는다. 다 통과했으면 그렇다고 말하고, 아니면
+ * 몇 건이 걸렸는지 말한다 — 어느 쪽이든 글자와 색이 같은 것을 가리킨다. 비율은
+ * 옆의 막대가, 분자·분모는 카드의 'N/M' 이 이미 말한다.
+ */
+export function PassRateBadge({ hit, total }: { hit: number; total: number }) {
+  if (!total) return <span className="text-[11px] text-muted">—</span>;
+  const left = total - hit;
+  const tone = rateTone(hit / total);
   return (
     <span
       className={cn(
         'inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold',
-        rate ? '' : 'min-w-[52px] justify-center',
-        rate && !passed ? TONE_CHIP[rateTone(value)] : ok ? TONE_CHIP.ok : TONE_CHIP.bad,
+        TONE_CHIP[tone],
+      )}
+      title={`${total}건 중 ${hit}건 통과`}
+    >
+      {left === 0 ? '전체 PASS' : `FAIL ${left}건`}
+    </span>
+  );
+}
+
+export function OxBadge({ value, passed }: { value: number | null; passed?: boolean }) {
+  if (value == null && !passed) return <span className="text-[11px] text-muted">—</span>;
+  const ok = passed || (value ?? 0) >= 0.5;
+  return (
+    <span
+      className={cn(
+        'inline-flex min-w-[52px] items-center justify-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold',
+        ok ? TONE_CHIP.ok : TONE_CHIP.bad,
       )}
       // 사람이 통과시킨 줄은 테두리가 점선이다 — 같은 PASS 라도 채점이 낸 것과
       // 사람이 낸 것을 한눈에 가를 수 있어야 실행 점수를 읽을 때 오해가 없다.
       style={passed ? { borderStyle: 'dashed' } : undefined}
       title={passed ? '사람이 통과시킨 케이스 — 채점은 FAIL 이었습니다' : undefined}
     >
-      {rate ? `PASS ${Math.round((value ?? 0) * 100)}%` : passed ? 'PASS (수동)' : ok ? 'PASS' : 'FAIL'}
+      {passed ? 'PASS (수동)' : ok ? 'PASS' : 'FAIL'}
     </span>
   );
 }

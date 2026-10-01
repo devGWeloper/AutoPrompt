@@ -19,7 +19,7 @@ import { getCaseDelayMs, resolveRagasEngine } from "@/lib/config";
 import { sleep } from "@/lib/sleep";
 import { requireDataset } from "./datasets";
 import { CONFIG_ENDPOINT_A, CONFIG_ENDPOINT_B, resolveEndpoint } from "./endpoints";
-import { currentModelSnapshot, explicitSnapshot, modelSnapshot } from "./models";
+import { currentModelSnapshot, explicitSnapshot, modelSnapshot, pinContext } from "./models";
 import { stageCallConfig, writeCallConfig } from "./callConfig";
 import * as agent from "./externalAgent";
 import { readTraceVar } from "./trace";
@@ -85,7 +85,9 @@ async function runModels(
   conn: OracleConnection,
   sel: ModelSelection | null | undefined,
 ): Promise<string | null> {
-  return sel ? explicitSnapshot(sel) : modelSnapshot(conn);
+  // The picked model carries the server it runs on; the address behind that
+  // name is resolved here rather than trusted from the request.
+  return sel ? explicitSnapshot(sel, await pinContext(conn)) : modelSnapshot(conn);
 }
 
 async function fetchRun(conn: OracleConnection, runId: number): Promise<RagasRunOut | null> {
@@ -482,7 +484,9 @@ export async function recordDirectRun(argsIn: DirectRunArgs): Promise<DirectRunR
     : argsIn;
   // What the run tab had on screen. No selection at all (a caller outside the
   // tabs) falls back to the saved role defaults.
-  const models = args.models ? explicitSnapshot(args.models) : await currentModelSnapshot();
+  const models = args.models
+    ? explicitSnapshot(args.models, await pinContext())
+    : await currentModelSnapshot();
   // Issued up front so the config can be staged under it before the call. The run
   // row does not exist yet — RUN_ID is backfilled once it does.
   const callId = agent.nextTraceId();

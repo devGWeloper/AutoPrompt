@@ -167,9 +167,15 @@ export interface ModelRoleCreate {
  * an omitted field is stored as NULL, not left alone. */
 
 /** What one role runs for one execution. A null/absent field is not a pin — the
- * agent keeps whatever its own config says for it. */
+ * agent keeps whatever its own config says for it.
+ *
+ * `server` is the registered LLM server the chosen model is served from
+ * (PTX_LLMSVR_MAS.SERVER_NM). The client sends the *name*; the address and the
+ * key reference behind it are resolved server-side on the way into the
+ * snapshot, so a server whose URL changed is never called at a stale address. */
 export interface ModelPin {
   model?: string | null;
+  server?: string | null;
   temperature?: number | null;
 }
 
@@ -575,6 +581,11 @@ export interface EndpointInput {
 export interface LlmModel {
   llm_id: number;
   llm_nm: string;
+  /** 이 모델이 떠 있는 서버. null = 지정 없음 → 에이전트 config 의 주소를 쓴다. */
+  server_id: number | null;
+  /** 조인해 온 표시용 값 — 목록을 서버별로 묶고, 고른 모델의 주소를 알려준다. */
+  server_nm: string | null;
+  base_url: string | null;
   description: string | null;
   is_active: "Y" | "N";
   updated_by: string;
@@ -584,6 +595,37 @@ export interface LlmModel {
 
 export interface LlmModelInput {
   llm_nm: string;
+  server_id?: number | null;
+  description?: string | null;
+  is_active?: "Y" | "N";
+}
+
+/**
+ * 모델이 떠 있는 LLM 서버 하나 (PTX_LLMSVR_MAS).
+ *
+ * 주소를 모델 행마다 적지 않고 여기 한 번만 적는 이유는, 한 서버에 모델이
+ * 여러 개 뜨는 게 보통이고 주소가 바뀌면 그 한 줄만 고치면 되기 때문이다.
+ *
+ * `key_ref` 는 API 키의 **이름**이다 — 에이전트 호스트의 환경변수명(또는
+ * 에이전트 config 의 키 이름)이고, 키 값은 DB 에 저장하지 않는다. 값을 여기
+ * 두면 실행 스냅샷(PTX_RUN_MAS.MODEL_CTN)·감사로그·CSV 로 평문 복제된다.
+ */
+export interface LlmServer {
+  server_id: number;
+  server_nm: string;
+  base_url: string;
+  key_ref: string | null;
+  description: string | null;
+  is_active: "Y" | "N";
+  updated_by: string;
+  updated_dt: string | null;
+  created_dt: string;
+}
+
+export interface LlmServerInput {
+  server_nm: string;
+  base_url: string;
+  key_ref?: string | null;
   description?: string | null;
   is_active?: "Y" | "N";
 }

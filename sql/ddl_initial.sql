@@ -238,7 +238,8 @@ COMMIT;
 -- 10) 설정 레지스트리 — 실행 화면은 여기 등록된 것 중에서만 고른다.
 --     PTX_ENDPOINT_MAS: 호출 가능한 외부 API (URL + 헤더). config.yml 의 agent.a/b 는
 --       목록이 비었을 때의 기본값으로만 남는다.
---     PTX_LLM_MAS: role 에 지정할 수 있는 모델명 목록.
+--     PTX_LLMSVR_MAS: 모델이 떠 있는 LLM 서버 (주소 + 키 이름).
+--     PTX_LLM_MAS: role 에 지정할 수 있는 모델 목록. 각 모델은 자기 서버를 가리킨다.
 --     실행 기록과 FK 로 엮지 않는다 — 실행은 시작 시점 값을 스냅샷으로 들고 있다.
 CREATE TABLE PTX_ENDPOINT_MAS (
     ENDPOINT_ID   NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -253,15 +254,35 @@ CREATE TABLE PTX_ENDPOINT_MAS (
     CONSTRAINT UQ_PTX_ENDPOINT_NM UNIQUE (ENDPOINT_NM)
 );
 
+-- 모델이 떠 있는 서버. 모델마다 주소가 다르므로 주소는 여기서 한 번만 적고
+-- 모델이 그걸 가리킨다. KEY_REF 는 API 키의 '이름'(에이전트 호스트의 환경변수명)
+-- 이고 키 값이 아니다 — 키는 DB 에 넣지 않는다 (docs/model-roles-agent.md).
+CREATE TABLE PTX_LLMSVR_MAS (
+    SERVER_ID   NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    SERVER_NM   VARCHAR2(100) NOT NULL,
+    BASE_URL    VARCHAR2(500) NOT NULL,   -- ex) http://10.0.0.5:8000/v1
+    KEY_REF     VARCHAR2(100),
+    DESC_CTN    VARCHAR2(500),
+    ACTIVE_YN   CHAR(1) DEFAULT 'Y' NOT NULL,
+    USER_ID     VARCHAR2(50) NOT NULL,
+    UPDATE_TM   TIMESTAMP,
+    CRT_TM      TIMESTAMP DEFAULT SYSTIMESTAMP,
+    CONSTRAINT UQ_PTX_LLMSVR_NM UNIQUE (SERVER_NM)
+);
+
+-- SERVER_ID 가 NULL 이면 주소 지정 없음 = 에이전트 config 의 주소를 그대로 쓴다.
 CREATE TABLE PTX_LLM_MAS (
     LLM_ID     NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     LLM_NM     VARCHAR2(200) NOT NULL,
+    SERVER_ID  NUMBER,
     DESC_CTN   VARCHAR2(500),
     ACTIVE_YN  CHAR(1) DEFAULT 'Y' NOT NULL,
     USER_ID    VARCHAR2(50) NOT NULL,
     UPDATE_TM  TIMESTAMP,
     CRT_TM     TIMESTAMP DEFAULT SYSTIMESTAMP,
-    CONSTRAINT UQ_PTX_LLM_NM UNIQUE (LLM_NM)
+    CONSTRAINT UQ_PTX_LLM_NM_SVR UNIQUE (LLM_NM, SERVER_ID),
+    CONSTRAINT FK_PTX_LLM_SERVER FOREIGN KEY (SERVER_ID)
+        REFERENCES PTX_LLMSVR_MAS(SERVER_ID)
 );
 
 -- 6-1) 데이터셋 폴더. 데이터셋 하나 안에서 케이스를 나누는 묶음이고, 케이스는

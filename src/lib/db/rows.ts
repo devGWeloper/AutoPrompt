@@ -11,6 +11,7 @@ import type {
   Endpoint,
   EndpointHeader,
   LlmModel,
+  LlmServer,
   ModelRole,
   PromptVersionDetail,
   PromptVersionSummary,
@@ -36,8 +37,8 @@ export function num(v: unknown): number | null {
 /** TO_CHAR a DATE/TIMESTAMP column to an ISO-ish string, aliased back to the
  * same name. No fractional seconds (FF) so the same format works for plain DATE
  * columns too (FF on a DATE raises ORA-01821). */
-export function tsCol(col: string): string {
-  return `TO_CHAR(${col}, 'YYYY-MM-DD"T"HH24:MI:SS') AS ${col}`;
+export function tsCol(col: string, alias = col): string {
+  return `TO_CHAR(${col}, 'YYYY-MM-DD"T"HH24:MI:SS') AS ${alias}`;
 }
 
 /** tsCol 과 같되 밀리초까지 — 실행 전체 소요시간을 소수점 둘째 자리까지 재려면 초
@@ -448,9 +449,36 @@ export const ENDPOINT_COLS = [
   tsCol("CRT_TM"),
 ].join(", ");
 
+/** 서버를 조인하지 않는, 컬럼이 아직 없는 DB 용 목록 (optionalColumn 참고). */
 export const LLM_COLS = [
   "LLM_ID",
   "LLM_NM",
+  "DESC_CTN",
+  "ACTIVE_YN",
+  "USER_ID",
+  tsCol("UPDATE_TM"),
+  tsCol("CRT_TM"),
+].join(", ");
+
+/** 같은 것에 서버를 붙인 것 — `PTX_LLM_MAS l LEFT JOIN PTX_LLMSVR_MAS s` 용. */
+export const LLM_JOIN_COLS = [
+  "l.LLM_ID",
+  "l.LLM_NM",
+  "l.SERVER_ID",
+  "l.DESC_CTN",
+  "l.ACTIVE_YN",
+  "l.USER_ID",
+  tsCol("l.UPDATE_TM", "UPDATE_TM"),
+  tsCol("l.CRT_TM", "CRT_TM"),
+  "s.SERVER_NM",
+  "s.BASE_URL",
+].join(", ");
+
+export const LLMSVR_COLS = [
+  "SERVER_ID",
+  "SERVER_NM",
+  "BASE_URL",
+  "KEY_REF",
   "DESC_CTN",
   "ACTIVE_YN",
   "USER_ID",
@@ -488,10 +516,30 @@ export function mapEndpoint(r: Row): Endpoint {
   };
 }
 
+export function mapLlmServer(r: Row): LlmServer {
+  return {
+    server_id: num(r.SERVER_ID)!,
+    server_nm: String(r.SERVER_NM),
+    base_url: String(r.BASE_URL),
+    key_ref: str(r.KEY_REF),
+    description: str(r.DESC_CTN),
+    is_active: r.ACTIVE_YN === "N" ? "N" : "Y",
+    updated_by: String(r.USER_ID),
+    updated_dt: str(r.UPDATE_TM),
+    created_dt: String(r.CRT_TM),
+  };
+}
+
+/** SERVER_* 는 조인해 온 값이라 없을 수 있다 — 마이그레이션 전 DB 에서는 컬럼
+ * 자체가 없고, 서버를 지정하지 않은 모델은 조인이 비어서 온다. 둘 다 '주소
+ * 지정 없음' 으로 같게 떨어진다. */
 export function mapLlmModel(r: Row): LlmModel {
   return {
     llm_id: num(r.LLM_ID)!,
     llm_nm: String(r.LLM_NM),
+    server_id: num(r.SERVER_ID),
+    server_nm: str(r.SERVER_NM),
+    base_url: str(r.BASE_URL),
     description: str(r.DESC_CTN),
     is_active: r.ACTIVE_YN === "N" ? "N" : "Y",
     updated_by: String(r.USER_ID),

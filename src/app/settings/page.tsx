@@ -6,12 +6,12 @@ import PageHeader from '@/components/ui/PageHeader';
 import Modal from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { Input } from '@/components/ui/Field';
+import { Input, Select } from '@/components/ui/Field';
 import { Table, TBody, THead, TD, TH, TR } from '@/components/ui/Table';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { SHELL } from '@/lib/layout';
-import { type Endpoint, type EndpointHeader, type LlmModel, type ModelRole } from '@/lib/types';
+import { type Endpoint, type EndpointHeader, type LlmModel, type LlmServer, type ModelRole } from '@/lib/types';
 import { errText, PencilIcon, refreshEndpoints, setLlmCatalog, TrashIcon, useArmed } from '@/components/ragas/shared';
 import { setRoleCatalog } from '@/components/ragas/ModelPicker';
 
@@ -328,13 +328,202 @@ function EndpointsSection({
   );
 }
 
+// ---- llm servers -----------------------------------------------------------
+
+function LlmServerModal({
+  initial,
+  onClose,
+  onSaved,
+}: {
+  /** null = 새로 추가. */
+  initial: LlmServer | null;
+  onClose: () => void;
+  onSaved: (next: LlmServer[]) => void;
+}) {
+  const [nm, setNm] = useState(initial?.server_nm ?? '');
+  const [url, setUrl] = useState(initial?.base_url ?? '');
+  const [keyRef, setKeyRef] = useState(initial?.key_ref ?? '');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const refOk = keyRef.trim() === '' || /^[A-Za-z_][A-Za-z0-9_]*$/.test(keyRef.trim());
+  const valid = nm.trim() !== '' && /^https?:///i.test(url.trim()) && refOk;
+
+  async function save() {
+    setBusy(true);
+    setErr(null);
+    const body = {
+      server_nm: nm.trim(),
+      base_url: url.trim(),
+      key_ref: keyRef.trim() || null,
+      is_active: initial?.is_active ?? ('Y' as const),
+    };
+    try {
+      const next = initial
+        ? await api.put<LlmServer[]>(`/llm-servers/${initial.server_id}`, body)
+        : await api.post<LlmServer[]>('/llm-servers', body);
+      onSaved(next);
+      onClose();
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      open
+      title={initial ? initial.server_nm : 'LLM 서버 추가'}
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>취소</Button>
+          <Button onClick={save} disabled={!valid || busy}>저장</Button>
+        </>
+      }
+    >
+      {err && <div className="mb-4 rounded-sm border border-bad-line bg-bad-soft px-3 py-2 text-body-sm text-bad">{err}</div>}
+      <label className="mb-4 block">
+        <span className="eyebrow">이름</span>
+        <Input value={nm} onChange={(e) => setNm(e.target.value)} placeholder="vllm-a" className="mt-1.5 w-full" />
+      </label>
+      <label className="mb-4 block">
+        <span className="eyebrow">Base URL</span>
+        <Input
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="http://host:port/v1"
+          className="mt-1.5 w-full font-mono text-xs"
+        />
+      </label>
+      {/* 키 '값' 은 여기 들어오지 않는다 — 이름만 받고, 에이전트가 자기 호스트의
+          환경변수에서 값을 찾는다. placeholder 와 아래 한 줄이 그걸 말한다. */}
+      <label className="block">
+        <span className="eyebrow">API 키 환경변수</span>
+        <Input
+          value={keyRef}
+          onChange={(e) => setKeyRef(e.target.value)}
+          placeholder="VLLM_A_KEY"
+          className={cn('mt-1.5 w-full font-mono text-xs', !refOk && 'border-bad')}
+        />
+        <span className="mt-1.5 block text-caption text-muted-soft">
+          에이전트 호스트의 환경변수 이름. 키 값은 저장하지 않습니다
+        </span>
+      </label>
+    </Modal>
+  );
+}
+
+/**
+ * 모델이 떠 있는 서버. 모델마다 주소가 다른데 모델 목록이 이름만 들고 있으면
+ * 실행은 에이전트 config 의 주소 한 곳으로만 나간다 — 주소를 여기서 관리하고
+ * 모델이 그중 하나를 가리킨다.
+ */
+function LlmServersSection({ list, setList }: { list: LlmServer[]; setList: (next: LlmServer[]) => void }) {
+  const [editing, setEditing] = useState<LlmServer | null | undefined>(undefined);
+  const [err, setErr] = useState<string | null>(null);
+
+  const run = async (fn: () => Promise<LlmServer[]>) => {
+    setErr(null);
+    try {
+      setList(await fn());
+    } catch (e) {
+      setErr(errText(e));
+    }
+  };
+
+  return (
+    <Section
+      title="LLM 서버"
+      count={list.length}
+      action={<Button size="sm" onClick={() => setEditing(null)}>+ 추가</Button>}
+    >
+      <ErrLine msg={err} />
+      {list.length === 0 ? (
+        <Empty>—</Empty>
+      ) : (
+        <Table>
+          <THead>
+            <TR>
+              <TH className="w-14">사용</TH>
+              <TH>이름</TH>
+              <TH>Base URL</TH>
+              <TH className="w-44">API 키 환경변수</TH>
+              <TH className="w-24" />
+            </TR>
+          </THead>
+          <TBody>
+            {list.map((s) => (
+              <TR key={s.server_id}>
+                <TD className="align-middle">
+                  <Toggle
+                    on={s.is_active === 'Y'}
+                    label={s.is_active === 'Y' ? '모델에 지정 가능' : '모델에 지정 불가'}
+                    onChange={(v) =>
+                      run(() =>
+                        api.put<LlmServer[]>(`/llm-servers/${s.server_id}`, {
+                          server_nm: s.server_nm,
+                          base_url: s.base_url,
+                          key_ref: s.key_ref,
+                          description: s.description,
+                          is_active: v ? 'Y' : 'N',
+                        }),
+                      )
+                    }
+                  />
+                </TD>
+                <TD className="align-middle font-medium text-ink">{s.server_nm}</TD>
+                <TD className="max-w-[26rem] align-middle">
+                  <span className="block truncate font-mono text-caption-mono text-muted" title={s.base_url}>
+                    {s.base_url}
+                  </span>
+                </TD>
+                <TD className="align-middle">
+                  <span className="font-mono text-caption-mono text-muted">{s.key_ref ?? '—'}</span>
+                </TD>
+                <TD className="align-middle">
+                  <div className="flex items-center justify-end gap-0.5">
+                    <IconBtn title="수정" onClick={() => setEditing(s)}>
+                      <PencilIcon />
+                    </IconBtn>
+                    <DeleteBtn
+                      title="삭제"
+                      onConfirm={() => run(() => api.del<LlmServer[]>(`/llm-servers/${s.server_id}`))}
+                    />
+                  </div>
+                </TD>
+              </TR>
+            ))}
+          </TBody>
+        </Table>
+      )}
+      {editing !== undefined && (
+        <LlmServerModal initial={editing} onClose={() => setEditing(undefined)} onSaved={setList} />
+      )}
+    </Section>
+  );
+}
+
 // ---- model catalog ---------------------------------------------------------
 
-function ModelsSection({ list, setList }: { list: LlmModel[]; setList: (next: LlmModel[]) => void }) {
+function ModelsSection({
+  list,
+  setList,
+  servers,
+}: {
+  list: LlmModel[];
+  setList: (next: LlmModel[]) => void;
+  servers: LlmServer[];
+}) {
   const [draft, setDraft] = useState('');
+  const [server, setServer] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const name = draft.trim();
-  const duplicate = list.some((m) => m.llm_nm === name);
+  const sid = server === '' ? null : Number(server);
+  // 같은 이름이라도 서버가 다르면 다른 모델이다 — 중복은 한 쌍으로 본다.
+  const duplicate = list.some((m) => m.llm_nm === name && m.server_id === sid);
+  const active = servers.filter((s) => s.is_active === 'Y');
 
   const run = async (fn: () => Promise<LlmModel[]>) => {
     setErr(null);
@@ -347,7 +536,7 @@ function ModelsSection({ list, setList }: { list: LlmModel[]; setList: (next: Ll
 
   async function add() {
     if (!name || duplicate) return;
-    await run(() => api.post<LlmModel[]>('/llms', { llm_nm: name }));
+    await run(() => api.post<LlmModel[]>('/llms', { llm_nm: name, server_id: sid }));
     setDraft('');
   }
 
@@ -362,6 +551,19 @@ function ModelsSection({ list, setList }: { list: LlmModel[]; setList: (next: Ll
           placeholder="claude-sonnet-4-6"
           className={cn('h-9 w-72 font-mono text-xs', duplicate && 'border-bad')}
         />
+        {/* 서버를 고르지 않으면 주소 지정 없음 = 에이전트 config 의 주소로 나간다. */}
+        <Select
+          value={server}
+          onChange={(e) => setServer(e.target.value)}
+          disabled={active.length === 0}
+          title={active.find((s) => String(s.server_id) === server)?.base_url}
+          className="h-9 w-44 text-xs"
+        >
+          <option value="">서버 —</option>
+          {active.map((s) => (
+            <option key={s.server_id} value={s.server_id}>{s.server_nm}</option>
+          ))}
+        </Select>
         <Button size="sm" onClick={add} disabled={!name || duplicate}>+ 추가</Button>
       </div>
       {list.length === 0 ? (
@@ -371,6 +573,13 @@ function ModelsSection({ list, setList }: { list: LlmModel[]; setList: (next: Ll
           {list.map((m) => (
             <li key={m.llm_id} className="flex items-center gap-3 px-5 py-2.5">
               <span className="min-w-0 flex-1 truncate font-mono text-body-sm text-ink">{m.llm_nm}</span>
+              {/* 주소는 서버 섹션의 것이라 이름만 — 전체 주소는 툴팁으로 남는다. */}
+              <span
+                className={cn('shrink-0 font-mono text-caption-mono', m.server_nm ? 'text-muted' : 'text-muted-soft')}
+                title={m.base_url ?? '서버 미지정 — 에이전트 config 주소'}
+              >
+                {m.server_nm ?? '—'}
+              </span>
               <DeleteBtn title="삭제" onConfirm={() => run(() => api.del<LlmModel[]>(`/llms/${m.llm_id}`))} />
             </li>
           ))}
@@ -453,14 +662,25 @@ function RolesSection({ roles, setRoles }: { roles: ModelRole[]; setRoles: (next
 
 export default function SettingsPage() {
   const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
+  const [servers, setServers] = useState<LlmServer[]>([]);
   const [models, setModels] = useState<LlmModel[]>([]);
   const [roles, setRoles] = useState<ModelRole[]>([]);
 
+  const saveModels = useCallback((next: LlmModel[]) => {
+    setModels(next);
+    setLlmCatalog(next);
+  }, []);
+
+  const loadModels = useCallback(() => {
+    api.get<LlmModel[]>('/llms').then(saveModels).catch(() => saveModels([]));
+  }, [saveModels]);
+
   const load = useCallback(() => {
     api.get<Endpoint[]>('/endpoints').then(setEndpoints).catch(() => setEndpoints([]));
-    api.get<LlmModel[]>('/llms').then(setModels).catch(() => setModels([]));
+    api.get<LlmServer[]>('/llm-servers').then(setServers).catch(() => setServers([]));
+    loadModels();
     api.get<ModelRole[]>('/models').then(setRoles).catch(() => setRoles([]));
-  }, []);
+  }, [loadModels]);
 
   useEffect(load, [load]);
 
@@ -473,10 +693,15 @@ export default function SettingsPage() {
     // credential-masked view, which is not what this page is holding.
     refreshEndpoints();
   }, []);
-  const saveModels = useCallback((next: LlmModel[]) => {
-    setModels(next);
-    setLlmCatalog(next);
-  }, []);
+  // 서버를 고치면 모델 행에 붙어 다니는 이름·주소가 같이 달라진다. 모델 목록은
+  // 서버를 조인해 오므로 여기서 다시 읽어야 화면 두 곳이 어긋나지 않는다.
+  const saveServers = useCallback(
+    (next: LlmServer[]) => {
+      setServers(next);
+      loadModels();
+    },
+    [loadModels],
+  );
   const saveRoles = useCallback((next: ModelRole[]) => {
     setRoles(next);
     setRoleCatalog(next);
@@ -488,7 +713,8 @@ export default function SettingsPage() {
         <PageHeader title="설정" />
         <div className="flex flex-col gap-5">
           <EndpointsSection list={endpoints} setList={saveEndpoints} />
-          <ModelsSection list={models} setList={saveModels} />
+          <LlmServersSection list={servers} setList={saveServers} />
+          <ModelsSection list={models} setList={saveModels} servers={servers} />
           <RolesSection roles={roles} setRoles={saveRoles} />
         </div>
       </div>

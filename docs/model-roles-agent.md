@@ -5,7 +5,8 @@
 에이전트가 호출 단위로 읽어 간다.**
 
 ```
-PTX Single·Compare 탭의 '모델' 칸        ← 실행마다 지정 (PTX_MODEL_MAS 기본값이 미리 채워짐)
+PTX Single·Compare 탭의 '모델' 칸        ← 실행마다 지정. 고른 모델이 등록된
+                                          LLM 서버의 주소가 같이 실려 나간다
               │  PTX 가 호출 직전에 적음
               ▼
         PTX_CALL_MAS (TRACE_ID, MODEL_CTN)
@@ -13,8 +14,9 @@ PTX Single·Compare 탭의 '모델' 칸        ← 실행마다 지정 (PTX_MODE
     에이전트가 TRACE_ID 로 SELECT — 그 호출에만 적용
 ```
 
-`PTX_MODEL_MAS` 는 PTX 전용 설정 테이블(role 목록 + 기본값)이라 **에이전트는 볼 필요가 없다.**
-에이전트가 읽는 건 `PTX_CALL_MAS` 하나다.
+`PTX_MODEL_MAS`(role 목록) 와 `PTX_LLMSVR_MAS`(LLM 서버 목록) 는 PTX 전용 설정 테이블이라
+**에이전트는 볼 필요가 없다.** 고른 모델의 주소는 PTX 가 풀어서 `MODEL_CTN` 에 실어 보내므로,
+에이전트가 읽는 건 여전히 `PTX_CALL_MAS` 하나이고 **GRANT 는 늘어나지 않는다.**
 
 `TRACE_ID` 는 PTX 가 발급해 `session_system_prompt` 로 **원래부터 보내던 값**이다
 (`PTX_TRACE_HIS` 상관키). **요청 형식은 바뀌지 않는다.**
@@ -48,14 +50,26 @@ A/B 는 사이드마다 `TRACE_ID` 가 다르고 PTX 가 사이드별로 행을 
 
 ```json
 {
-  "LLM": { "model": "Qwen3-235B-A22B-Instruct-2507-AWQ", "temperature": 0.3 },
+  "LLM": {
+    "model": "Qwen3-235B-A22B-Instruct-2507-AWQ",
+    "temperature": 0.3,
+    "server": "vllm-a",
+    "base_url": "http://10.0.0.5:8000/v1",
+    "api_key_ref": "VLLM_A_KEY"
+  },
   "VLM": { "model": "qwen2-vl-72b" }
 }
 ```
 
 - **키는 role 이름** — `LLMModel` enum 의 **멤버 이름(`.name`)** 과 글자까지 같다 (§2).
 - **지정 없는 role 은 아예 빠진다.** 그 role 은 config 값 그대로 쓴다.
-- `model` / `temperature` 도 **각각 없을 수 있다.** 없는 항목은 건드리지 않는다.
+- 각 항목은 **따로따로 없을 수 있다.** 없는 항목은 건드리지 않는다.
+- `base_url` 은 그 모델이 떠 있는 서버다 (PTX 설정의 **LLM 서버** 목록).
+  모델마다 서빙 주소가 다르기 때문에 모델명만으로는 부족하다 — 이게 없으면
+  에이전트는 config 의 주소 한 곳에 없는 모델을 달라고 하게 된다.
+  없으면 지금까지처럼 config 의 `base_url` 을 쓴다.
+- `server` 는 그 주소의 등록 이름이다. **로그·기록용**이고 호출에는 안 쓴다.
+- `api_key_ref` 는 API 키의 **이름**이다 — 키 값이 아니다 (§1-1).
 
 **에이전트가 지켜야 하는 것**
 
@@ -64,7 +78,28 @@ A/B 는 사이드마다 `TRACE_ID` 가 다르고 PTX 가 사이드별로 행을 
   영향받으면 A/B 가 무의미해진다.
 - **모르는 role 은 무시한다.**
 - **조회 실패는 무시한다.** 경고 로그만 남기고 config 로 진행한다.
-- **`base_url` / `api_key` 는 계속 config 에서 온다.** role 공통 값이다.
+- **키 값은 DB 에서 오지 않는다.** `api_key_ref` 로 에이전트 쪽에서 푼다 (§1-1).
+
+### 1-1. API 키는 DB 에 없다
+
+`MODEL_CTN` 에 실려 오는 건 키가 아니라 **키를 찾을 이름**이다. PTX 는 이 값을
+에이전트 호스트의 환경변수 이름으로 보고 넘긴다.
+
+```
+MODEL_CTN.api_key_ref = "VLLM_A_KEY"
+        │
+        ▼
+os.environ["VLLM_A_KEY"]   → 없으면 에이전트 config 의 키 맵
+                           → 그것도 없으면 지금 쓰던 기본 api_key
+```
+
+키를 DB 에 넣지 않는 건 정책이기도 하지만 구조 때문이기도 하다 — 실행은
+`MODEL_CTN` 을 `PTX_RUN_MAS` 에 스냅샷으로 박고, 그 문자열이 감사로그와 CSV
+내보내기로 그대로 복제된다. 키가 거기 있으면 세 곳에 평문으로 남는다.
+
+**새 주소를 시험해 보는 데 에이전트 재기동은 필요 없다.** 키가 이미 그 호스트에
+있으면 PTX 설정에서 서버를 하나 추가하는 것으로 끝이고, 재기동이 필요한 건
+**환경변수를 새로 만들 때**뿐이다.
 
 ---
 
@@ -206,17 +241,40 @@ def _get_overridden_model(name: str, ov: dict) -> BaseChatModel:
     model = ov.get("model") or base.model              # 없으면 config 값 유지
     temp = ov.get("temperature")
     temp = base.temperature if temp is None else float(temp)
-    return _cached_override(name, model, temp)
+    url = ov.get("base_url") or base.base_url          # 모델이 떠 있는 서버
+    key = _resolve_key(ov.get("api_key_ref")) or base.api_key
+    return _cached_override(name, model, temp, url, key)
+
+
+def _resolve_key(ref: str | None) -> str | None:
+    """키 '이름' → 이 호스트의 키 값. DB 에는 이름만 온다 (§1-1)."""
+    if not ref:
+        return None
+    return os.environ.get(ref) or (config.API_KEYS or {}).get(ref)
 
 
 @lru_cache(maxsize=64)
-def _cached_override(name: str, model: str, temperature: float) -> BaseChatModel:
+def _cached_override(name: str, model: str, temperature: float,
+                     base_url: str, api_key: str | None) -> BaseChatModel:
     base = _model_configs[name]
-    return _create_model(replace(base, model=model, temperature=temperature))
+    return _create_model(
+        replace(base, model=model, temperature=temperature,
+                base_url=base_url, api_key=api_key)
+    )
 ```
 
-`replace` 는 `dataclasses.replace` — `base_url` / `api_key` / `extra_body` 는 그대로 두고
-바뀐 것만 갈아끼운다.
+`replace` 는 `dataclasses.replace` — `extra_body` 같은 나머지는 그대로 두고 바뀐
+것만 갈아끼운다.
+
+> ⚠️ **캐시 키에 `base_url` 이 들어가야 한다.** 모델명만 키로 잡으면 같은 모델을
+> 다른 서버로 돌리는 두 실행이 먼저 만들어진 인스턴스를 같이 쓴다 — A/B 가
+> 조용히 한쪽 주소로만 나가고, 그게 바로 이 기능을 넣은 이유를 무효로 만든다.
+> `api_key` 를 캐시 키에 넣기 싫으면 `base_url` 까지만 키로 잡고 키는 그때 풀되,
+> **같은 주소에 키만 다른 경우가 없다는 전제**가 필요하다.
+>
+> ⚠️ `_resolve_key` 가 `None` 을 돌려주면 (환경변수가 없으면) config 의 키로
+> 떨어진다. 새 서버에 새 키가 필요한데 환경변수를 안 만들어 두면 이 경로로
+> 조용히 401 을 받게 되므로, 기동 로그에 못 푼 `api_key_ref` 를 한 줄 남긴다.
 
 > ⚠️ **`maxsize` 를 무제한으로 두지 말 것.** 캐시 키에 임의의 모델명이 들어오므로
 > `maxsize=None` 이면 테스트를 돌릴수록 인스턴스가 무한히 쌓인다. 운영 경로(`get_llm`)의
@@ -253,7 +311,10 @@ if config.ORACLE_DB_DSN:                  # DSN 이 비면 initialize() 가 던�
 3. **role 이름** — `[e.name for e in LLMModel]` 과 `모델` 칸에 뜨는 이름을 대조.
 4. **운영 경로** — `TRACE_ID` 없이 호출 → 로그의 모델명이 **기존 그대로**인지.
    바뀌거나 DB 조회 로그가 찍히면 게이트가 새는 것이다 (Step 2 ⚠️).
-5. **적용 경로** — Single 탭 모델 칸에 모델을 넣고 실행 → 로그의 모델명이 그 값인지.
+5. **적용 경로** — Single 탭 모델 칸에서 모델을 고르고 실행 → 로그의 모델명과
+   **호출 주소**가 그 모델이 등록된 서버인지.
+5-1. **서버별 분리** — 서로 다른 서버에 등록된 두 모델을 번갈아 돌려 주소가
+   실제로 따라 바뀌는지. 안 바뀌면 캐시 키 문제다 (Step 3 ⚠️).
 6. **A/B** — Compare 에서 A 와 B 에 **서로 다른 모델**을 넣고 실행 → 로그에 두 모델이
    각각 찍혀야 한다. 같으면 에이전트가 전역에 적용한 것이다 (Step 3 ⚠️).
 7. **부분 지정** — `temperature` 만 있는 role 이 모델명은 config 값을 유지하는지.
@@ -268,6 +329,9 @@ if config.ORACLE_DB_DSN:                  # DSN 이 비면 initialize() 가 던�
 | A 와 B 가 같은 모델로 돎 | override 를 전역에 적용 (Step 3 을 `initialize()` 재호출로 구현) |
 | 운영 트래픽까지 바뀜 / DB 를 매번 때림 | `_resolve_trace_id()` 로 조회 (Step 2 ⚠️) |
 | 특정 role 만 반영 안 됨 | role 이름 ≠ `LLMModel.<멤버>.name` |
+| 모델은 바뀌는데 주소는 그대로 | `replace` 에 `base_url` 을 안 넘김 (Step 3) |
+| A/B 가 같은 주소로 나감 | override 캐시 키에 `base_url` 이 없음 (Step 3 ⚠️) |
+| 새 서버에서만 401 | `api_key_ref` 이름의 환경변수가 그 호스트에 없음 (§1-1) |
 | 전부 무시됨 | 조회 실패 — `PTX_CALL_MAS 조회 실패` 경고 로그 확인. 다른 DB 를 보고 있을 수도 |
 | `MODEL_CTN` 이 비어 보임 | CLOB 을 `.read()` 안 함 (Step 1 주석) |
 | 메모리가 계속 늚 | override 캐시가 무제한 (Step 3 ⚠️) |
@@ -286,7 +350,10 @@ if config.ORACLE_DB_DSN:                  # DSN 이 비면 initialize() 가 던�
 - [ ] 요청당 1회 조회 (노드마다 반복 금지)
 - [ ] `call_llm` 이 `ContextVar` 에서 읽어 **그 호출에만** 적용
 - [ ] override 캐시 `maxsize` 유한
-- [ ] `model` / `temperature` 각각 없을 때 config 값 유지 (`temperature=0.0` 포함)
+- [ ] `model` / `temperature` / `base_url` 각각 없을 때 config 값 유지 (`temperature=0.0` 포함)
+- [ ] override 캐시 키에 `base_url` 포함
+- [ ] `api_key_ref` → 환경변수 → config 키맵 → 기본 키 순서로 품 (§1-1)
+- [ ] PTX 설정의 **LLM 서버** 이름·주소가 실제 서빙 주소와 맞는지
 - [ ] `v1_0` / `v1_1` 양쪽 적용
 - [ ] 검증 1~8 통과 (특히 4번과 6번)
 

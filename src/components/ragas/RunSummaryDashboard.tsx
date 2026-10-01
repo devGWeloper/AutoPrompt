@@ -7,7 +7,7 @@ import {
   type RagasMetric,
   type RagasRunDetail,
 } from '@/lib/types';
-import { compareSideLabel, fmt3, OxBadge, rateTone, runMean, scoredMetrics } from './shared';
+import { compareSideLabel, fmt3, PassRateBadge, rateTone, runMean, scoredMetrics } from './shared';
 
 // Card grid width follows the card count so a 정답 일치 only run doesn't leave
 // four empty columns.
@@ -186,7 +186,7 @@ export function SingleRunSummaryDashboard({ detail }: { detail: RagasRunDetail }
                 <span className={CARD_LABEL}>{METRIC_LABELS[m]}</span>
                 <div className="mt-2 flex items-baseline justify-between gap-2">
                   <span className={FIGURE}>{isExact ? `${emHit}/${emTotal}` : fmt3(val)}</span>
-                  {isExact ? <OxBadge value={val} rate /> : <ScoreBadge score={val} />}
+                  {isExact ? <PassRateBadge hit={emHit} total={emTotal} /> : <ScoreBadge score={val} />}
                 </div>
               </div>
               <Bar value={val} tone={isExact ? rateFill(val) : undefined} className="mt-3" />
@@ -303,7 +303,7 @@ export function CompareSummaryDashboard({
                       {/* Action Test 는 0/1 판정이라 점수 막대만으로는 '통과인가' 가
                           안 읽힌다 — 단일 실행 카드가 11/12 옆에 PASS 배지를 두는
                           까닭이고, 여기에도 사이드마다 같은 배지가 선다. */}
-                      {m === EXACT_MATCH && <OxBadge value={v} rate />}
+                      {m === EXACT_MATCH && <PassRateBadge {...exactCount(det)} />}
                     </div>
                   ))}
                 </div>

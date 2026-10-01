@@ -3,14 +3,20 @@
 // way to tell a "before the model change" run from an "after" one once you come
 // back to Records the next day.
 //
-// Shape: {"LLM": {"model": "qwen3", "temperature": 0.3}, "VLM": {"model": "x"}}
+// Shape: {"LLM": {"model": "qwen3", "temperature": 0.3, "server": "vllm-a",
+//                  "base_url": "http://10.0.0.5:8000/v1", "api_key_ref": "VLLM_A_KEY"}}
 //   - roles with nothing pinned are absent (they ran the agent's own default)
 //   - `temperature` is present only when it was pinned
+//   - `server` / `base_url` say which host answered; absent = the agent's own
+//     config address. `api_key_ref` is the key's name, never its value
 //   - nothing pinned at all → the column is NULL
 
 export interface RunModelEntry {
   model?: string;
   temperature?: number;
+  server?: string;
+  base_url?: string;
+  api_key_ref?: string;
 }
 
 export type RunModelSnapshot = Record<string, RunModelEntry>;
@@ -33,7 +39,11 @@ export function parseModelSnapshot(raw: string | null | undefined): RunModelSnap
 function entryText(e: RunModelEntry | undefined): string | undefined {
   if (!e) return undefined;
   // A role pinned only by temperature still ran the config's model name.
-  return `${e.model ?? "기본값"}${e.temperature !== undefined ? ` (t${e.temperature})` : ""}`;
+  // 서버는 이름만 — 같은 모델을 다른 서버로 돌린 두 실행이 기록에서 구별되어야
+  // 하고, 전체 주소는 한 줄 요약에 들어가기엔 길다.
+  return `${e.model ?? "기본값"}${e.server ? `@${e.server}` : ""}${
+    e.temperature !== undefined ? ` (t${e.temperature})` : ""
+  }`;
 }
 
 /** `LLM=qwen3 · VLM=x (t0.3)` — compact enough for a table subline. */

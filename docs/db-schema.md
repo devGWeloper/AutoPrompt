@@ -21,6 +21,7 @@ Prompt Trace eXplorer(PTX) 소유 테이블 9개. 외부 테이블(`CHAT_VER_MAS
 | `PTX_AUDIT_HIS`   | 변경 감사 로그           | `LOG_ID`    | 없음 (`TARGET_TABLE_NM`+`TARGET_ID`만 기록)                        |
 | `PTX_TRACE_HIS`   | 호출 중 중간 변수         | `TRACE_SEQ_ID` | 없음 (**에이전트가 쓰고 PTX가 읽는** 유일한 테이블)                 |
 | `PTX_MODEL_MAS`   | LLM role 별 모델         | `MODEL_ID`  | 없음 (PTX 전용 설정)                                              |
+| `PTX_LLMSVR_MAS`  | LLM 서버 (주소 + 키 이름) | `SERVER_ID` | 없음 (PTX 전용 설정). `PTX_LLM_MAS.SERVER_ID` 가 여기를 가리킨다     |
 | `PTX_CALL_MAS`    | 호출별 모델 지정         | `TRACE_ID`  | 없음 (**PTX가 쓰고 에이전트가 읽는다** — 상관키 `TRACE_ID`)         |
 
 ---
@@ -206,7 +207,13 @@ A/B 는 사이드마다 `TRACE_ID` 가 달라 사이드별로 행이 남는다 �
 |---|---|---|---|---|
 | `TRACE_ID` | VARCHAR2(50) | N | — | PK. PTX 가 발급한 호출 식별자 |
 | `RUN_ID` | NUMBER | Y | — | 정리용. 수동 호출은 행이 먼저 생기므로 나중에 backfill |
-| `MODEL_CTN` | CLOB | Y | — | `{"LLM":{"model":"…","temperature":0.3}}` — 지정 없는 role 은 빠짐 |
+| `MODEL_CTN` | CLOB | Y | — | `{"LLM":{"model":"…","temperature":0.3,"server":"vllm-a","base_url":"http://…/v1","api_key_ref":"VLLM_A_KEY"}}` — 지정 없는 role 은 빠짐 |
+
+`base_url` 은 고른 모델이 떠 있는 서버(`PTX_LLMSVR_MAS`)의 주소다. 모델마다 서빙 주소가
+달라서 모델명만으로는 호출이 성립하지 않는다 — PTX 가 실행 시작 시점에 이름을 주소로
+풀어 여기 적고, 에이전트는 이 행만 읽으면 된다 (서버 목록 테이블은 볼 필요가 없다).
+`api_key_ref` 는 API 키의 **이름**(에이전트 호스트의 환경변수명)이고 키 값이 아니다 —
+이 문자열은 `PTX_RUN_MAS.MODEL_CTN`·감사로그·CSV 로 복제되므로 키를 담지 않는다.
 | `CRT_TM` | TIMESTAMP | Y | SYSTIMESTAMP | |
 
 > FK 없음 — 수동 호출은 실행 기록보다 이 행이 먼저 생긴다. 실행을 지우면 PTX 가 `RUN_ID` 로
@@ -248,3 +255,6 @@ IDX_PTX_TRACE_ID        ON PTX_TRACE_HIS (TRACE_ID)
   role 4종 seed). 에이전트 쪽 연동은 `docs/model-roles-agent.md`.
 - 실행 기록에 모델 스냅샷을 남길 때 → `sql/migrate_run_model.sql` (`PTX_RUN_MAS.MODEL_CTN` 추가).
 - 지정한 모델을 실제로 적용할 때 → `sql/migrate_call_config.sql` (`PTX_CALL_MAS` 생성).
+- 모델마다 서빙 주소가 다를 때 → `sql/migrate_llm_server.sql` (`PTX_LLMSVR_MAS` 생성 +
+  `PTX_LLM_MAS.SERVER_ID` 추가 + 유일 제약을 `(LLM_NM, SERVER_ID)` 로 교체).
+  에이전트 쪽 연동은 `docs/model-roles-agent.md` §1-1·Step 3.

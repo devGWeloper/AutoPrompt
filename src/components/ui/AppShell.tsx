@@ -40,37 +40,37 @@ const stroke = {
  * icon rail alone is a guessing game and a text list has no shape. */
 const ICONS: Record<SectionId, ReactNode> = {
   single: (
-    <svg viewBox="0 0 20 20" width="17" height="17" {...stroke}>
+    <svg viewBox="0 0 20 20" width="16" height="16" {...stroke}>
       <circle cx="10" cy="10" r="7" />
       <path d="M8.4 7.3 13 10l-4.6 2.7z" />
     </svg>
   ),
   compare: (
-    <svg viewBox="0 0 20 20" width="17" height="17" {...stroke}>
+    <svg viewBox="0 0 20 20" width="16" height="16" {...stroke}>
       <rect x="2.5" y="3.5" width="6" height="13" rx="1.2" />
       <rect x="11.5" y="3.5" width="6" height="13" rx="1.2" />
     </svg>
   ),
   datasets: (
-    <svg viewBox="0 0 20 20" width="17" height="17" {...stroke}>
+    <svg viewBox="0 0 20 20" width="16" height="16" {...stroke}>
       <rect x="2.5" y="3.5" width="15" height="13" rx="1.5" />
       <path d="M2.5 8h15M7.5 8v8.5" />
     </svg>
   ),
   records: (
-    <svg viewBox="0 0 20 20" width="17" height="17" {...stroke}>
+    <svg viewBox="0 0 20 20" width="16" height="16" {...stroke}>
       <circle cx="10" cy="10" r="7" />
       <path d="M10 6v4.2l2.8 1.8" />
     </svg>
   ),
   prompts: (
-    <svg viewBox="0 0 20 20" width="17" height="17" {...stroke}>
+    <svg viewBox="0 0 20 20" width="16" height="16" {...stroke}>
       <path d="M5 2.8h6.4L15.5 7v10.2H5z" />
       <path d="M11 2.8V7h4.5M7.6 10.5h5M7.6 13.4h3.4" />
     </svg>
   ),
   settings: (
-    <svg viewBox="0 0 20 20" width="17" height="17" {...stroke}>
+    <svg viewBox="0 0 20 20" width="16" height="16" {...stroke}>
       <path d="M3 6h9M15.5 6h1.5M3 14h1.5M8 14h9" />
       <circle cx="13.6" cy="6" r="2" />
       <circle cx="6.2" cy="14" r="2" />
@@ -190,6 +190,16 @@ function BrandMark() {
   );
 }
 
+/**
+ * 메뉴 한 줄 — inview 의 `.sidenav-item` 을 그대로 옮긴 치수다.
+ *
+ * 38px 높이 · 8px 모서리 · 13.5px semibold. 알약처럼 둥근 줄이 목록의 기본형이고,
+ * 고른 줄만 면을 얻는다.
+ *
+ * 아이콘은 색을 바꾸지 않고 투명도만 오간다(.8 → 1). 줄의 글자색이 이미 상태를
+ * 말하는데 아이콘까지 따로 칠하면, 고르지 않은 줄에서 글자와 아이콘이 서로 다른
+ * 회색으로 갈려 목록이 두 겹으로 읽힌다.
+ */
 function NavRow({
   item,
   active,
@@ -207,23 +217,26 @@ function NavRow({
       title={item.label}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'group relative flex items-center gap-2.5 overflow-hidden rounded-sm py-2 pl-3 pr-2.5 text-left text-body-sm transition-colors',
-        compact ? 'shrink-0 pl-2.5' : 'w-full',
-        active
-          ? 'bg-accent-soft font-semibold text-accent'
-          : 'text-body hover:bg-surface-3 hover:text-ink',
+        'group relative flex h-[38px] items-center gap-2.5 rounded-lg px-2.5 text-left',
+        'text-[13.5px] font-semibold tracking-[0.2px] transition-colors',
+        compact ? 'shrink-0' : 'w-full',
+        active ? 'bg-accent-soft text-accent' : 'text-body hover:bg-surface-3 hover:text-ink',
       )}
     >
-      {/* Selected rows carry a solid accent bar at the leading edge — the same
-          mark inview puts on the active row of a list. */}
-      <span
-        aria-hidden
-        className={cn('absolute bottom-0 left-0 top-0 w-[3px]', active ? 'bg-accent' : 'bg-transparent')}
-      />
-      <span className={cn('shrink-0 transition-colors', active ? 'text-accent' : 'text-muted-soft group-hover:text-muted')}>
+      {/* 고른 줄의 표시 막대. 줄 안이 아니라 사이드바 여백(-10px)에 서고, 위아래로
+          8px 물러나 모서리가 둥근 줄과 부딪히지 않는다 — 줄에 붙여 놓으면 면과 막대가
+          한 덩어리가 되어 막대가 그냥 왼쪽이 두꺼운 면으로 보인다.
+          레일에서는 줄이 가로로 늘어서므로 왼쪽 막대가 뜻을 잃어 서지 않는다. */}
+      {active && !compact && (
+        <span
+          aria-hidden
+          className="absolute -left-2.5 bottom-2 top-2 w-[3px] rounded-r-[3px] bg-gradient-to-b from-accent to-chroma-purple"
+        />
+      )}
+      <span className={cn('shrink-0 transition-opacity', active ? 'opacity-100' : 'opacity-80 group-hover:opacity-100')}>
         {item.icon}
       </span>
-      {!compact && <span className="truncate">{item.label}</span>}
+      {!compact && <span className="min-w-0 flex-1 truncate">{item.label}</span>}
     </button>
   );
 }
@@ -249,7 +262,7 @@ export default function AppShell({
   return (
     <div className="flex h-full">
       {/* Sidebar — the whole map of the product in one column. */}
-      <aside className="hidden w-[228px] shrink-0 flex-col border-r border-line bg-surface md:flex">
+      <aside className="hidden w-[232px] shrink-0 flex-col border-r border-line bg-surface md:flex">
         <button
           onClick={() => router.push('/')}
           className="flex h-16 shrink-0 items-center gap-2.5 border-b border-line bg-gradient-to-b from-white to-[#fbfcfe] px-4"
@@ -260,10 +273,15 @@ export default function AppShell({
             <span className="bg-gradient-to-br from-accent to-chroma-purple bg-clip-text text-transparent">X</span>
           </span>
         </button>
-        <nav className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-4">
-          {GROUPS.map((g) => (
-            <div key={g.label} className="mb-4">
-              <p className="eyebrow px-3 pb-1.5">{g.label}</p>
+        {/* 좌우 여백 10px — 고른 줄의 표시 막대가 이 여백에 선다. overflow-x 를 숨기는
+            건 세로 스크롤이 생길 때 그 막대까지 가로 스크롤 거리로 세지 않게 하려는 것. */}
+        <nav className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2.5 pb-2.5 pt-1">
+          {GROUPS.map((g, i) => (
+            <div key={g.label} className={i === 0 ? 'pt-1' : 'pt-3'}>
+              {/* 그룹 이름 — 11px bold, 대문자, 자간 0.6px (inview .sidenav-label). */}
+              <p className="whitespace-nowrap px-2.5 pb-1.5 text-[11px] font-bold uppercase tracking-[0.6px] text-muted">
+                {g.label}
+              </p>
               <div className="flex flex-col gap-0.5">
                 {g.items.map((it) => (
                   <NavRow key={it.id} item={it} active={it.id === section} onClick={() => go(it)} />

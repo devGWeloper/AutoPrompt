@@ -17,6 +17,29 @@ import { logger } from "@/lib/logger";
  */
 const cache = new Map<string, boolean>();
 
+/** Same question for a whole table — a registry that arrives by migration
+ * (PTX_LLMSVR_MAS) must not turn every settings read into ORA-00942 on a
+ * database that has not had it applied yet. */
+export async function hasTable(conn: OracleConnection, table: string): Promise<boolean> {
+  const key = `${table}.*`;
+  const hit = cache.get(key);
+  if (hit !== undefined) return hit;
+  let present = false;
+  try {
+    const res = await conn.execute(`SELECT COUNT(*) AS N FROM user_tables WHERE table_name = :t`, {
+      t: table,
+    });
+    const row = (res.rows ?? [])[0] as { N?: unknown } | undefined;
+    present = Number(row?.N ?? 0) > 0;
+  } catch (e) {
+    logger.warn("optional table check failed", { table, err: String(e) });
+    present = false;
+  }
+  if (!present) logger.info("optional table absent — migration not applied", { table });
+  cache.set(key, present);
+  return present;
+}
+
 export async function hasColumn(conn: OracleConnection, table: string, column: string): Promise<boolean> {
   const key = `${table}.${column}`;
   const hit = cache.get(key);

@@ -2,8 +2,13 @@ import { readConn, withConn } from "@/lib/db";
 import type { OracleConnection } from "@/lib/db";
 import { badRequest, conflict, notFound } from "@/lib/http";
 import { MODEL_COLS, insertReturningId, mapModelRole } from "@/lib/db/rows";
+import { logger } from "@/lib/logger";
 import type { ModelRole, ModelRoleCreate, ModelSelection } from "@/lib/types";
 import { writeAudit } from "./audit";
+import { listLlmModels, llmModelsOn } from "./llms";
+import { serverMap } from "./llmServers";
+import type { ServerMap } from "./llmServers";
+import type { LlmModel } from "@/lib/types";
 
 // PTX_MODEL_MAS holds one row per LLM role the external agent defines in its
 // config, plus the model each role should run by default. It is a settings
@@ -24,21 +29,109 @@ export async function listModelRoles(): Promise<ModelRole[]> {
   return readConn(fetchAll, []);
 }
 
+/**
+ * One role's entry in the staged JSON.
+ *
+ * `server` / `base_url` / `api_key_ref` are what make a model on a different
+ * host reachable at all: the agent's config has one base_url for every role, so
+ * without an address a pinned model name is just asked of whatever server that
+ * config points at. The address is resolved here, at the moment the run
+ * starts, rather than carried in the request from the browser — a server whose
+ * URL was edited in settings takes effect on the next run with no stale copy
+ * anywhere. `api_key_ref` is the key's *name*; the agent resolves the value on
+ * its own host (docs/model-roles-agent.md).
+ */
+interface PinEntry {
+  model?: string;
+  temperature?: number;
+  server?: string;
+  base_url?: string;
+  api_key_ref?: string;
+}
+
 /** Drop the empty halves and refuse a temperature that would change every answer
  * by accident. Returns undefined when nothing about the role was actually
  * pinned, which is different from `{}` — see :func:`explicitSnapshot`. */
-function pin(model: string | null, temp: number | null): { model?: string; temperature?: number } | undefined {
-  const e: { model?: string; temperature?: number } = {};
+function pin(
+  model: string | null,
+  temp: number | null,
+  server: string | null,
+  ctx: PinContext,
+): PinEntry | undefined {
+  const e: PinEntry = {};
   if (model !== null && model !== "") e.model = model;
   // Temperature alone is still a pin worth recording: it changes the answers.
   if (temp !== null && Number.isFinite(temp) && temp >= 0 && temp <= 2) e.temperature = temp;
-  return Object.keys(e).length ? e : undefined;
+  // A server on its own pins nothing — it only says where the pinned model runs.
+  if (!Object.keys(e).length) return undefined;
+  // No server named: fall back to the one the catalogue lists this model on.
+  const nm = server || (e.model ? ctx.byModel.get(e.model) ?? null : null);
+  if (nm) {
+    e.server = nm;
+    const s = ctx.servers.get(nm);
+    if (s) {
+      e.base_url = s.base_url;
+      if (s.key_ref) e.api_key_ref = s.key_ref;
+    } else {
+      // Deleted or renamed between opening the form and pressing the button.
+      // The run still goes ahead on the agent's own address, and this line is
+      // the only way to tell that apart afterwards from never having picked one.
+      logger.warn("pinned LLM server is not registered — agent config address used", { server: nm });
+    }
+  }
+  return e;
+}
+
+/**
+ * What a pin needs besides the numbers on screen: which servers exist, and
+ * which one a bare model name means.
+ *
+ * Both snapshot paths take the same context, so a run started from the form and
+ * one started with no selection at all resolve an address the same way. Built
+ * once per run rather than per role — four roles would otherwise be four pairs
+ * of the same two queries.
+ */
+export interface PinContext {
+  servers: ServerMap;
+  byModel: Map<string, string>;
+}
+
+export async function pinContext(conn?: OracleConnection): Promise<PinContext> {
+  const [servers, models] = await Promise.all([
+    serverMap(conn),
+    (conn ? llmModelsOn(conn) : listLlmModels()).catch(() => [] as LlmModel[]),
+  ]);
+  return { servers, byModel: uniqueByName(models) };
+}
+
+/**
+ * Model name → the server it is served from, for names that settle it alone.
+ *
+ * A saved role default (PTX_MODEL_MAS) holds a model *name* and nothing about
+ * where it runs, so the server has to be worked back out of the catalogue. The
+ * same name registered twice is exactly the case a name cannot settle — even
+ * when one of the two rows has no server, since "no server" is itself an answer
+ * (the agent's own address) and the two rows disagree. Those are left out and
+ * fall through to the agent's config, as before the registry existed.
+ */
+function uniqueByName(models: LlmModel[]): Map<string, string> {
+  const out = new Map<string, string>();
+  const seen = new Set<string>();
+  for (const m of models) {
+    if (seen.has(m.llm_nm)) {
+      out.delete(m.llm_nm);
+      continue;
+    }
+    seen.add(m.llm_nm);
+    if (m.server_nm) out.set(m.llm_nm, m.server_nm);
+  }
+  return out;
 }
 
 /** Serialise, treating "nothing pinned" as null rather than `{}`. That call goes
  * out on the agent's own config, and an empty object would read like "we pinned
  * something" to anyone looking at the stored value later. */
-function serialize(out: Record<string, { model?: string; temperature?: number }>): string | null {
+function serialize(out: Record<string, PinEntry>): string | null {
   return Object.keys(out).length ? JSON.stringify(out) : null;
 }
 
@@ -54,14 +147,22 @@ function serialize(out: Record<string, { model?: string; temperature?: number }>
  * on the run record (PTX_RUN_MAS.MODEL_CTN), so what a run claims and what it
  * actually ran under cannot drift apart.
  */
-export function explicitSnapshot(sel: ModelSelection | null | undefined): string | null {
-  const out: Record<string, { model?: string; temperature?: number }> = {};
+export function explicitSnapshot(
+  sel: ModelSelection | null | undefined,
+  ctx: PinContext,
+): string | null {
+  const out: Record<string, PinEntry> = {};
   for (const [role, p] of Object.entries(sel ?? {})) {
     const r = role.trim();
     // An unparseable role name can only be a client bug; it would reach the
     // agent as a key that matches no enum member and be ignored there anyway.
     if (!r || !ROLE_RE.test(r) || !p) continue;
-    const e = pin((p.model ?? "").trim(), typeof p.temperature === "number" ? p.temperature : null);
+    const e = pin(
+      (p.model ?? "").trim(),
+      typeof p.temperature === "number" ? p.temperature : null,
+      (p.server ?? "").trim() || null,
+      ctx,
+    );
     if (e) out[r] = e;
   }
   return serialize(out);
@@ -81,13 +182,15 @@ export async function modelSnapshot(conn: OracleConnection): Promise<string | nu
   } catch {
     return null;
   }
-  const out: Record<string, { model?: string; temperature?: number }> = {};
+  const ctx = await pinContext(conn);
+  const out: Record<string, PinEntry> = {};
   for (const m of rows) {
-    const e = pin(m.model_nm, m.temperature);
+    const e = pin(m.model_nm, m.temperature, null, ctx);
     if (e) out[m.role_cd] = e;
   }
   return serialize(out);
 }
+
 
 /** :func:`modelSnapshot` on its own connection, for callers with none open.
  * Null (rather than throwing) when the DB is unavailable. */
