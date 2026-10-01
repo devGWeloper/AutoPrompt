@@ -426,175 +426,264 @@ function LlmServerModal({
   );
 }
 
-/**
- * 모델이 떠 있는 서버. 모델마다 주소가 다른데 모델 목록이 이름만 들고 있으면
- * 실행은 에이전트 config 의 주소 한 곳으로만 나간다 — 주소를 여기서 관리하고
- * 모델이 그중 하나를 가리킨다.
- */
-function LlmServersSection({ list, setList }: { list: LlmServer[]; setList: (next: LlmServer[]) => void }) {
-  const [editing, setEditing] = useState<LlmServer | null | undefined>(undefined);
-  const [err, setErr] = useState<string | null>(null);
+// ---- llm (servers + their models) ------------------------------------------
 
-  const run = async (fn: () => Promise<LlmServer[]>) => {
-    setErr(null);
+/** Model rows sit under their server, indented to line up with its name. */
+const MODEL_INDENT = 'pl-[3.75rem]';
+
+/** One model row in edit mode: name + server, saved in place. Enter saves,
+ * Escape cancels. The server select is how a model moves to another server. */
+function ModelEditRow({
+  model,
+  models,
+  servers,
+  onCancel,
+  onSave,
+}: {
+  model: LlmModel;
+  models: LlmModel[];
+  servers: LlmServer[];
+  onCancel: () => void;
+  onSave: (body: {
+    llm_nm: string;
+    server_id: number | null;
+    description: string | null;
+    is_active: 'Y' | 'N';
+  }) => Promise<void>;
+}) {
+  const [nm, setNm] = useState(model.llm_nm);
+  const [server, setServer] = useState(model.server_id === null ? '' : String(model.server_id));
+  const [busy, setBusy] = useState(false);
+
+  const name = nm.trim();
+  const sid = server === '' ? null : Number(server);
+  const duplicate = models.some((m) => m.llm_id !== model.llm_id && m.llm_nm === name && m.server_id === sid);
+  const changed = name !== model.llm_nm || sid !== model.server_id;
+  const canSave = name !== '' && !duplicate && changed && !busy;
+  // 꺼 둔 서버는 새로 고를 수 없지만, 지금 붙어 있는 서버라면 목록에 남겨 둔다 —
+  // 이름만 고치려다 서버가 조용히 '—' 로 바뀌는 일이 없도록.
+  const options = servers.filter((s) => s.is_active === 'Y' || s.server_id === model.server_id);
+
+  async function save() {
+    if (!canSave) return;
+    setBusy(true);
     try {
-      setList(await fn());
-    } catch (e) {
-      setErr(errText(e));
+      await onSave({ llm_nm: name, server_id: sid, description: model.description, is_active: model.is_active });
+    } finally {
+      setBusy(false);
     }
+  }
+
+  const keys = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') save();
+    if (e.key === 'Escape') onCancel();
   };
 
   return (
-    <Section
-      title="LLM 서버"
-      count={list.length}
-      action={<Button size="sm" onClick={() => setEditing(null)}>+ 추가</Button>}
-    >
-      <ErrLine msg={err} />
-      {list.length === 0 ? (
-        <Empty>—</Empty>
-      ) : (
-        <Table>
-          <THead>
-            <TR>
-              <TH className="w-14">사용</TH>
-              <TH>이름</TH>
-              <TH>Base URL</TH>
-              <TH className="w-44">API 키</TH>
-              <TH className="w-24" />
-            </TR>
-          </THead>
-          <TBody>
-            {list.map((s) => (
-              <TR key={s.server_id}>
-                <TD className="align-middle">
-                  <Toggle
-                    on={s.is_active === 'Y'}
-                    label={s.is_active === 'Y' ? '모델에 지정 가능' : '모델에 지정 불가'}
-                    onChange={(v) =>
-                      run(() =>
-                        api.put<LlmServer[]>(`/llm-servers/${s.server_id}`, {
-                          server_nm: s.server_nm,
-                          base_url: s.base_url,
-                          key_ref: s.key_ref,
-                          description: s.description,
-                          is_active: v ? 'Y' : 'N',
-                        }),
-                      )
-                    }
-                  />
-                </TD>
-                <TD className="align-middle font-medium text-ink">{s.server_nm}</TD>
-                <TD className="max-w-[26rem] align-middle">
-                  <span className="block truncate font-mono text-caption-mono text-muted" title={s.base_url}>
-                    {s.base_url}
-                  </span>
-                </TD>
-                <TD className="align-middle">
-                  <span className="font-mono text-caption-mono text-muted">{s.key_ref ?? '—'}</span>
-                </TD>
-                <TD className="align-middle">
-                  <div className="flex items-center justify-end gap-0.5">
-                    <IconBtn title="수정" onClick={() => setEditing(s)}>
-                      <PencilIcon />
-                    </IconBtn>
-                    <DeleteBtn
-                      title="삭제"
-                      onConfirm={() => run(() => api.del<LlmServer[]>(`/llm-servers/${s.server_id}`))}
-                    />
-                  </div>
-                </TD>
-              </TR>
-            ))}
-          </TBody>
-        </Table>
-      )}
-      {editing !== undefined && (
-        <LlmServerModal initial={editing} onClose={() => setEditing(undefined)} onSaved={setList} />
-      )}
-    </Section>
+    <div className={cn('flex items-center gap-2 bg-surface-2 py-1.5 pr-5', MODEL_INDENT)}>
+      <Input
+        autoFocus
+        value={nm}
+        onChange={(e) => setNm(e.target.value)}
+        onKeyDown={keys}
+        className={cn('h-8 min-w-0 flex-1 font-mono text-xs', duplicate && 'border-bad')}
+      />
+      <Select
+        value={server}
+        onChange={(e) => setServer(e.target.value)}
+        onKeyDown={keys}
+        title={options.find((s) => String(s.server_id) === server)?.base_url}
+        className="h-8 w-44 text-xs"
+      >
+        <option value="">서버 미지정</option>
+        {options.map((s) => (
+          <option key={s.server_id} value={s.server_id}>{s.server_nm}</option>
+        ))}
+      </Select>
+      <Button size="sm" onClick={save} disabled={!canSave}>저장</Button>
+      <Button size="sm" variant="secondary" onClick={onCancel}>취소</Button>
+    </div>
   );
 }
 
-// ---- model catalog ---------------------------------------------------------
-
-function ModelsSection({
-  list,
-  setList,
-  servers,
+/** The add bar under a server: a name is all it takes, the server is implied. */
+function ModelAddRow({
+  serverId,
+  models,
+  onAdd,
 }: {
-  list: LlmModel[];
-  setList: (next: LlmModel[]) => void;
-  servers: LlmServer[];
+  serverId: number | null;
+  models: LlmModel[];
+  onAdd: (name: string) => Promise<boolean>;
 }) {
   const [draft, setDraft] = useState('');
-  const [server, setServer] = useState('');
-  const [err, setErr] = useState<string | null>(null);
   const name = draft.trim();
-  const sid = server === '' ? null : Number(server);
-  // 같은 이름이라도 서버가 다르면 다른 모델이다 — 중복은 한 쌍으로 본다.
-  const duplicate = list.some((m) => m.llm_nm === name && m.server_id === sid);
-  const active = servers.filter((s) => s.is_active === 'Y');
-
-  const run = async (fn: () => Promise<LlmModel[]>) => {
-    setErr(null);
-    try {
-      setList(await fn());
-    } catch (e) {
-      setErr(errText(e));
-    }
-  };
+  const duplicate = models.some((m) => m.llm_nm === name && m.server_id === serverId);
+  const canAdd = name !== '' && !duplicate;
 
   async function add() {
-    if (!name || duplicate) return;
-    await run(() => api.post<LlmModel[]>('/llms', { llm_nm: name, server_id: sid }));
-    setDraft('');
+    if (!canAdd) return;
+    if (await onAdd(name)) setDraft('');
   }
 
   return (
-    <Section title="모델" count={list.length}>
-      <ErrLine msg={err} />
-      <div className="flex items-center gap-2 border-b border-line px-5 py-3">
-        <Input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && add()}
-          placeholder="claude-sonnet-4-6"
-          className={cn('h-9 w-72 font-mono text-xs', duplicate && 'border-bad')}
+    <div className={cn('flex items-center gap-2 py-1.5 pr-5', MODEL_INDENT)}>
+      <Input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && add()}
+        placeholder="모델명"
+        className={cn('h-8 w-72 font-mono text-xs', duplicate && 'border-bad')}
+      />
+      <button
+        type="button"
+        onClick={add}
+        disabled={!canAdd}
+        className="rounded-sm border border-line px-2 py-1 text-caption text-muted transition-colors hover:border-line-strong hover:text-ink disabled:pointer-events-none disabled:opacity-40"
+      >
+        + 모델
+      </button>
+    </div>
+  );
+}
+
+/**
+ * LLM 서버와 그 위에 떠 있는 모델을 한 곳에서. 모델은 언제나 어느 서버의 것이라
+ * 서버 아래에 묶어 두고, 모델 추가는 그 서버 줄 바로 밑에서 한다 — 이름을 쓰고
+ * 서버를 따로 고르는 두 단계가 없어진다. 서버 없이 등록된 모델(에이전트 config
+ * 의 주소로 나가는 것)은 맨 아래 '서버 미지정' 에 모인다.
+ */
+function LlmSection({
+  servers,
+  setServers,
+  models,
+  setModels,
+}: {
+  servers: LlmServer[];
+  setServers: (next: LlmServer[]) => void;
+  models: LlmModel[];
+  setModels: (next: LlmModel[]) => void;
+}) {
+  const [editingServer, setEditingServer] = useState<LlmServer | null | undefined>(undefined);
+  // 한 번에 한 줄만 고친다 — 두 줄이 동시에 열려 있으면 어느 저장이 먼저
+  // 반영됐는지 화면에서 읽히지 않는다.
+  const [editingModel, setEditingModel] = useState<number | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function run<T>(fn: () => Promise<T>, apply: (next: T) => void): Promise<boolean> {
+    setErr(null);
+    try {
+      apply(await fn());
+      return true;
+    } catch (e) {
+      setErr(errText(e));
+      return false;
+    }
+  }
+  const runServers = (fn: () => Promise<LlmServer[]>) => run(fn, setServers);
+  const runModels = (fn: () => Promise<LlmModel[]>) => run(fn, setModels);
+
+  const modelsOf = (serverId: number | null) => models.filter((m) => m.server_id === serverId);
+  const unassigned = modelsOf(null);
+  // 서버가 하나도 없을 때는 모델을 넣을 곳이 '미지정' 뿐이라 비어 있어도 보인다.
+  const showUnassigned = unassigned.length > 0 || servers.length === 0;
+
+  const modelRows = (list: LlmModel[]) =>
+    list.map((m) =>
+      editingModel === m.llm_id ? (
+        <ModelEditRow
+          key={m.llm_id}
+          model={m}
+          models={models}
+          servers={servers}
+          onCancel={() => setEditingModel(null)}
+          onSave={async (body) => {
+            if (await runModels(() => api.put<LlmModel[]>(`/llms/${m.llm_id}`, body))) setEditingModel(null);
+          }}
         />
-        {/* 서버를 고르지 않으면 주소 지정 없음 = 에이전트 config 의 주소로 나간다. */}
-        <Select
-          value={server}
-          onChange={(e) => setServer(e.target.value)}
-          disabled={active.length === 0}
-          title={active.find((s) => String(s.server_id) === server)?.base_url}
-          className="h-9 w-44 text-xs"
-        >
-          <option value="">서버 —</option>
-          {active.map((s) => (
-            <option key={s.server_id} value={s.server_id}>{s.server_nm}</option>
-          ))}
-        </Select>
-        <Button size="sm" onClick={add} disabled={!name || duplicate}>+ 추가</Button>
-      </div>
-      {list.length === 0 ? (
-        <Empty>—</Empty>
       ) : (
-        <ul className="divide-y divide-line">
-          {list.map((m) => (
-            <li key={m.llm_id} className="flex items-center gap-3 px-5 py-2.5">
-              <span className="min-w-0 flex-1 truncate font-mono text-body-sm text-ink">{m.llm_nm}</span>
-              {/* 주소는 서버 섹션의 것이라 이름만 — 전체 주소는 툴팁으로 남는다. */}
-              <span
-                className={cn('shrink-0 font-mono text-caption-mono', m.server_nm ? 'text-muted' : 'text-muted-soft')}
-                title={m.base_url ?? '서버 미지정 — 에이전트 config 주소'}
-              >
-                {m.server_nm ?? '—'}
-              </span>
-              <DeleteBtn title="삭제" onConfirm={() => run(() => api.del<LlmModel[]>(`/llms/${m.llm_id}`))} />
-            </li>
-          ))}
-        </ul>
+        <div key={m.llm_id} className={cn('flex items-center gap-3 py-1.5 pr-5', MODEL_INDENT)}>
+          <span className="min-w-0 flex-1 truncate font-mono text-body-sm text-ink">{m.llm_nm}</span>
+          <div className="flex shrink-0 items-center gap-0.5">
+            <IconBtn title="수정" onClick={() => setEditingModel(m.llm_id)}>
+              <PencilIcon />
+            </IconBtn>
+            <DeleteBtn title="삭제" onConfirm={() => runModels(() => api.del<LlmModel[]>(`/llms/${m.llm_id}`))} />
+          </div>
+        </div>
+      ),
+    );
+
+  const addModel = (serverId: number | null) => (name: string) =>
+    runModels(() => api.post<LlmModel[]>('/llms', { llm_nm: name, server_id: serverId }));
+
+  return (
+    <Section
+      title="LLM"
+      count={servers.length}
+      action={<Button size="sm" onClick={() => setEditingServer(null)}>+ 서버</Button>}
+    >
+      <ErrLine msg={err} />
+      <div className="divide-y divide-line">
+        {servers.map((s) => {
+          const on = s.is_active === 'Y';
+          return (
+            <div key={s.server_id} className="py-1.5">
+              <div className="flex items-center gap-3 px-5 py-1.5">
+                <Toggle
+                  on={on}
+                  label={on ? '모델에 지정 가능' : '모델에 지정 불가'}
+                  onChange={(v) =>
+                    runServers(() =>
+                      api.put<LlmServer[]>(`/llm-servers/${s.server_id}`, {
+                        server_nm: s.server_nm,
+                        base_url: s.base_url,
+                        key_ref: s.key_ref,
+                        description: s.description,
+                        is_active: v ? 'Y' : 'N',
+                      }),
+                    )
+                  }
+                />
+                <span className={cn('shrink-0 font-medium', on ? 'text-ink' : 'text-muted')}>{s.server_nm}</span>
+                <span className="min-w-0 flex-1 truncate font-mono text-caption-mono text-muted" title={s.base_url}>
+                  {s.base_url}
+                </span>
+                <span className="shrink-0 font-mono text-caption-mono text-muted" title="API 키 · config.yml llmKeys">
+                  {s.key_ref ?? '—'}
+                </span>
+                <div className="flex shrink-0 items-center gap-0.5">
+                  <IconBtn title="서버 수정" onClick={() => setEditingServer(s)}>
+                    <PencilIcon />
+                  </IconBtn>
+                  <DeleteBtn
+                    title="서버 삭제"
+                    onConfirm={() => runServers(() => api.del<LlmServer[]>(`/llm-servers/${s.server_id}`))}
+                  />
+                </div>
+              </div>
+              {modelRows(modelsOf(s.server_id))}
+              {/* 꺼 둔 서버에는 새 모델을 붙이지 않는다 — 토글이 말하는 그대로. */}
+              {on && <ModelAddRow serverId={s.server_id} models={models} onAdd={addModel(s.server_id)} />}
+            </div>
+          );
+        })}
+        {showUnassigned && (
+          <div className="py-1.5">
+            <div
+              className="flex items-center gap-3 px-5 py-1.5"
+              title="에이전트 config 의 주소로 나간다"
+            >
+              <span className="h-4 w-7 shrink-0" />
+              <span className="font-medium text-muted">서버 미지정</span>
+            </div>
+            {modelRows(unassigned)}
+            <ModelAddRow serverId={null} models={models} onAdd={addModel(null)} />
+          </div>
+        )}
+      </div>
+      {editingServer !== undefined && (
+        <LlmServerModal initial={editingServer} onClose={() => setEditingServer(undefined)} onSaved={setServers} />
       )}
     </Section>
   );
@@ -724,8 +813,7 @@ export default function SettingsPage() {
         <PageHeader title="설정" />
         <div className="flex flex-col gap-5">
           <EndpointsSection list={endpoints} setList={saveEndpoints} />
-          <LlmServersSection list={servers} setList={saveServers} />
-          <ModelsSection list={models} setList={saveModels} servers={servers} />
+          <LlmSection servers={servers} setServers={saveServers} models={models} setModels={saveModels} />
           <RolesSection roles={roles} setRoles={saveRoles} />
         </div>
       </div>
