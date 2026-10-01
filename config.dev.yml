@@ -66,3 +66,10 @@ embedding:
   endpoint: ""
   apiKey: ""
   model: ""
+
+# 에이전트가 부르는 LLM 서버의 API 키. 설정 화면 'LLM 서버' 가 여기 이름을 가리킨다.
+#   값은 DB 에 저장되지 않는다 — 호출할 때마다 X-PTX-LLM-KEYS 헤더로만 에이전트에
+#   넘어간다 (docs/model-roles-agent.md §1-1). 이름은 영문·숫자·_ 만.
+#   값이 빈 항목은 없는 것으로 친다.
+llmKeys:
+  # VLLM_A_KEY: "sk-..."

@@ -606,9 +606,9 @@ export interface LlmModelInput {
  * 주소를 모델 행마다 적지 않고 여기 한 번만 적는 이유는, 한 서버에 모델이
  * 여러 개 뜨는 게 보통이고 주소가 바뀌면 그 한 줄만 고치면 되기 때문이다.
  *
- * `key_ref` 는 API 키의 **이름**이다 — 에이전트 호스트의 환경변수명(또는
- * 에이전트 config 의 키 이름)이고, 키 값은 DB 에 저장하지 않는다. 값을 여기
- * 두면 실행 스냅샷(PTX_RUN_MAS.MODEL_CTN)·감사로그·CSV 로 평문 복제된다.
+ * `key_ref` 는 API 키의 **이름**이다 — PTX config.yml `llmKeys` 의 항목이고, 키
+ * 값은 DB 에 저장하지 않는다. 값을 여기 두면 실행 스냅샷(PTX_RUN_MAS.MODEL_CTN)·
+ * 감사로그·CSV 로 평문 복제된다. 값은 호출 때 요청 헤더로만 에이전트에 간다.
  */
 export interface LlmServer {
   server_id: number;

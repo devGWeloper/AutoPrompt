@@ -212,8 +212,9 @@ A/B 는 사이드마다 `TRACE_ID` 가 달라 사이드별로 행이 남는다 �
 `base_url` 은 고른 모델이 떠 있는 서버(`PTX_LLMSVR_MAS`)의 주소다. 모델마다 서빙 주소가
 달라서 모델명만으로는 호출이 성립하지 않는다 — PTX 가 실행 시작 시점에 이름을 주소로
 풀어 여기 적고, 에이전트는 이 행만 읽으면 된다 (서버 목록 테이블은 볼 필요가 없다).
-`api_key_ref` 는 API 키의 **이름**(에이전트 호스트의 환경변수명)이고 키 값이 아니다 —
-이 문자열은 `PTX_RUN_MAS.MODEL_CTN`·감사로그·CSV 로 복제되므로 키를 담지 않는다.
+`api_key_ref` 는 API 키의 **이름**(PTX `config.yml` `llmKeys` 의 항목)이고 키 값이 아니다 —
+이 문자열은 `PTX_RUN_MAS.MODEL_CTN`·감사로그·CSV 로 복제되므로 키를 담지 않는다. 값은 PTX 가
+호출 직전에 config 에서 꺼내 요청 헤더 `X-PTX-LLM-KEYS` 로만 에이전트에 넘긴다.
 | `CRT_TM` | TIMESTAMP | Y | SYSTIMESTAMP | |
 
 > FK 없음 — 수동 호출은 실행 기록보다 이 행이 먼저 생긴다. 실행을 지우면 PTX 가 `RUN_ID` 로

@@ -255,8 +255,8 @@ CREATE TABLE PTX_ENDPOINT_MAS (
 );
 
 -- 모델이 떠 있는 서버. 모델마다 주소가 다르므로 주소는 여기서 한 번만 적고
--- 모델이 그걸 가리킨다. KEY_REF 는 API 키의 '이름'(에이전트 호스트의 환경변수명)
--- 이고 키 값이 아니다 — 키는 DB 에 넣지 않는다 (docs/model-roles-agent.md).
+-- 모델이 그걸 가리킨다. KEY_REF 는 API 키의 '이름'(PTX config.yml 의 llmKeys 항목)
+-- 이고 키 값이 아니다 — 키는 DB 에 넣지 않는다 (docs/model-roles-agent.md §1-1).
 CREATE TABLE PTX_LLMSVR_MAS (
     SERVER_ID   NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     SERVER_NM   VARCHAR2(100) NOT NULL,

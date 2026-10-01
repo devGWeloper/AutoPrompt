@@ -343,11 +343,18 @@ function LlmServerModal({
   const [nm, setNm] = useState(initial?.server_nm ?? '');
   const [url, setUrl] = useState(initial?.base_url ?? '');
   const [keyRef, setKeyRef] = useState(initial?.key_ref ?? '');
+  const [keyNames, setKeyNames] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const refOk = keyRef.trim() === '' || /^[A-Za-z_][A-Za-z0-9_]*$/.test(keyRef.trim());
-  const valid = nm.trim() !== '' && /^https?:///i.test(url.trim()) && refOk;
+  useEffect(() => {
+    api.get<string[]>('/llm-servers/key-names').then(setKeyNames).catch(() => setKeyNames([]));
+  }, []);
+
+  // 저장돼 있던 이름이 config 에서 빠졌으면 조용히 '—' 로 바꾸지 않고 그 이름을
+  // 남긴 채 표시만 한다 — 저장 시 서버가 거절하므로 고르거나 비워야 넘어간다.
+  const refMissing = keyRef !== '' && keyNames !== null && !keyNames.includes(keyRef);
+  const valid = nm.trim() !== '' && /^https?:\/\//i.test(url.trim()) && !refMissing;
 
   async function save() {
     setBusy(true);
@@ -397,19 +404,23 @@ function LlmServerModal({
           className="mt-1.5 w-full font-mono text-xs"
         />
       </label>
-      {/* 키 '값' 은 여기 들어오지 않는다 — 이름만 받고, 에이전트가 자기 호스트의
-          환경변수에서 값을 찾는다. placeholder 와 아래 한 줄이 그걸 말한다. */}
+      {/* 키 '값' 은 여기 들어오지 않는다 — config.yml llmKeys 의 이름 중에서만
+          고르고, 값은 호출할 때 PTX 가 config 에서 꺼내 헤더로 넘긴다. */}
       <label className="block">
-        <span className="eyebrow">API 키 환경변수</span>
-        <Input
+        <span className="eyebrow">API 키</span>
+        <Select
           value={keyRef}
           onChange={(e) => setKeyRef(e.target.value)}
-          placeholder="VLLM_A_KEY"
-          className={cn('mt-1.5 w-full font-mono text-xs', !refOk && 'border-bad')}
-        />
-        <span className="mt-1.5 block text-caption text-muted-soft">
-          에이전트 호스트의 환경변수 이름. 키 값은 저장하지 않습니다
-        </span>
+          disabled={keyNames === null || (keyNames.length === 0 && !refMissing)}
+          title="config.yml · llmKeys"
+          className={cn('mt-1.5 w-full font-mono text-xs', refMissing && 'border-warn')}
+        >
+          <option value="">{keyNames?.length === 0 ? 'config.yml llmKeys 비어 있음' : '—'}</option>
+          {refMissing && <option value={keyRef}>{keyRef}</option>}
+          {(keyNames ?? []).map((k) => (
+            <option key={k} value={k}>{k}</option>
+          ))}
+        </Select>
       </label>
     </Modal>
   );
@@ -449,7 +460,7 @@ function LlmServersSection({ list, setList }: { list: LlmServer[]; setList: (nex
               <TH className="w-14">사용</TH>
               <TH>이름</TH>
               <TH>Base URL</TH>
-              <TH className="w-44">API 키 환경변수</TH>
+              <TH className="w-44">API 키</TH>
               <TH className="w-24" />
             </TR>
           </THead>

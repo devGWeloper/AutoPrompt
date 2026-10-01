@@ -74,6 +74,11 @@ interface AppConfig {
   embedding: OpenAiCompatConfig;
   /** auto (LLM engine when llm configured, else fallback) | fallback | ragas. */
   ragasEngine: RagasEngineMode;
+  /** API keys of the LLM servers the *agent* calls, by name. A registered LLM
+   * server (PTX_LLMSVR_MAS.KEY_REF) points at one of these names; the value
+   * lives only here and is handed to the agent per call in a request header,
+   * never written to the DB. Empty values are dropped. */
+  llmKeys: Record<string, string>;
   sourceFile: string | null;
 }
 
@@ -95,6 +100,7 @@ interface RawConfig {
   llm?: Partial<OpenAiCompatConfig>;
   embedding?: Partial<OpenAiCompatConfig>;
   ragasEngine?: string;
+  llmKeys?: Record<string, unknown>;
 }
 
 const DEV_FILE = "config.dev.yml";
@@ -170,6 +176,26 @@ function normalizeOpenAi(raw: Partial<OpenAiCompatConfig> | undefined): OpenAiCo
   };
 }
 
+/** Names are what the settings screen offers and what the DB stores, so they
+ * are held to the same identifier rule the server-side check uses. A malformed
+ * name is skipped with a warning rather than failing the whole config load. */
+const LLM_KEY_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function normalizeLlmKeys(raw: Record<string, unknown> | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  for (const [k, v] of Object.entries(raw)) {
+    const name = k.trim();
+    const value = typeof v === "string" || typeof v === "number" ? String(v).trim() : "";
+    if (!LLM_KEY_NAME_RE.test(name)) {
+      logger.warn("llmKeys entry skipped — bad name", { name });
+      continue;
+    }
+    if (value) out[name] = value;
+  }
+  return out;
+}
+
 function normalizeRagasEngine(v: string | undefined): RagasEngineMode {
   const m = (v ?? "").trim().toLowerCase();
   return m === "fallback" || m === "ragas" ? m : "auto";
@@ -207,6 +233,7 @@ export function loadConfig(): AppConfig {
     llm: normalizeOpenAi(raw?.llm),
     embedding: normalizeOpenAi(raw?.embedding),
     ragasEngine: normalizeRagasEngine(raw?.ragasEngine),
+    llmKeys: normalizeLlmKeys(raw?.llmKeys),
     sourceFile,
   };
   logger.info("config loaded", {
@@ -224,6 +251,8 @@ export function loadConfig(): AppConfig {
     ragasEngine: cached.ragasEngine,
     llmConfigured: cached.llm.endpoint !== "",
     embeddingConfigured: cached.embedding.endpoint !== "",
+    // Names only, as with the agent headers above.
+    llmKeys: Object.keys(cached.llmKeys),
   });
   return cached;
 }
@@ -279,6 +308,16 @@ export function getLlmConfig(): OpenAiCompatConfig {
 
 export function getEmbeddingConfig(): OpenAiCompatConfig {
   return loadConfig().embedding;
+}
+
+/** The agent's LLM-server keys, name → value. Server-side only. */
+export function getLlmKeys(): Record<string, string> {
+  return loadConfig().llmKeys;
+}
+
+/** Just the names — what the settings screen may offer. */
+export function getLlmKeyNames(): string[] {
+  return Object.keys(loadConfig().llmKeys);
 }
 
 export function getRagasEngineMode(): RagasEngineMode {

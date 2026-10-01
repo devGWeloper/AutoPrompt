@@ -20,6 +20,7 @@ import { sleep } from "@/lib/sleep";
 import { requireDataset } from "./datasets";
 import { CONFIG_ENDPOINT_A, CONFIG_ENDPOINT_B, resolveEndpoint } from "./endpoints";
 import { currentModelSnapshot, explicitSnapshot, modelSnapshot, pinContext } from "./models";
+import { llmKeyHeaders } from "./llmServers";
 import { stageCallConfig, writeCallConfig } from "./callConfig";
 import * as agent from "./externalAgent";
 import { readTraceVar } from "./trace";
@@ -493,7 +494,7 @@ export async function recordDirectRun(argsIn: DirectRunArgs): Promise<DirectRunR
   await stageCallConfig(callId, null, models);
   // Same measurement a dataset case gets: the endpoint call alone.
   const startedAt = Date.now();
-  const data = await callForPrompt({ ...args, traceId: callId });
+  const data = await callForPrompt({ ...args, traceId: callId, extraHeaders: llmKeyHeaders(models) });
   const elapsedMs = Date.now() - startedAt;
   // Timed inside the client, at the first token off the wire — null unless the
   // endpoint streamed its answer.
@@ -942,7 +943,16 @@ async function phase1(conn: OracleConnection, oracle: OracleModule, ctx: RunCtx,
     // to catch, and reporting the total under that name would be a lie.
     let ttftMs: number | null = null;
     try {
-      const data = await agent.flowAnswer(message, ctx.baseUrl, ctx.side, callId, ctx.headers);
+      // The LLM keys for this run's models go out with the request only — read
+      // from config.yml now, never staged in PTX_CALL_MAS alongside the rest.
+      const data = await agent.flowAnswer(
+        message,
+        ctx.baseUrl,
+        ctx.side,
+        callId,
+        ctx.headers,
+        llmKeyHeaders(ctx.models),
+      );
       elapsedMs = Date.now() - startedAt;
       ttftMs = data.ttftMs ?? null;
       answer = data.response;

@@ -241,18 +241,22 @@ async function parseChatResponse(resp: Response, startedAt: number): Promise<Age
  * settings registry; without it the side's config headers are used, so a run
  * that names no endpoint behaves exactly as before. ``authKey`` is the key typed
  * into the UI for a one-off call; it overrides the FIRST header's value, that
- * slot being the endpoint's credential. */
+ * slot being the endpoint's credential. ``extra`` is added on top of whichever
+ * set applies — it is per call (the LLM keys of this run's models) and must not
+ * stand in for the endpoint's own headers, which a non-empty ``registered``
+ * would. */
 function requestHeaders(
   side?: FlowSide | null,
   authKey?: string | null,
   registered?: EndpointHeader[] | null,
+  extra?: Record<string, string> | null,
 ): Record<string, string> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const configured = registered?.length ? registered : getFlowHeaders(side);
   for (const h of configured) headers[h.name] = h.value;
   const override = (authKey ?? "").trim();
   if (override && configured.length) headers[configured[0].name] = override;
-  return headers;
+  return { ...headers, ...(extra ?? {}) };
 }
 
 /** The request body — exactly these five keys, the endpoint's spec and nothing
@@ -414,8 +418,10 @@ export async function runFlow(
   side?: FlowSide | null,
   traceIdIn?: string | null,
   headers?: EndpointHeader[] | null,
+  extraHeaders?: Record<string, string> | null,
 ): Promise<AgentAnswer> {
   // Kept outside the try so a failure can log exactly what went on the wire.
+  // (The body only — headers carry credentials and are never logged.)
   let url = "";
   let body: unknown = null;
   let traceId = "";
@@ -425,7 +431,7 @@ export async function runFlow(
     // Started here, immediately before the request goes out — URL building and
     // payload assembly above are ours, and TTFT must not carry them.
     const startedAt = Date.now();
-    const resp = await post(url, body, requestHeaders(side, null, headers));
+    const resp = await post(url, body, requestHeaders(side, null, headers, extraHeaders));
     if (!resp.ok) throw await httpError(resp, body);
     const parsed = await parseChatResponse(resp, startedAt);
     return { response: parsed.response, docs: parsed.docs, traceId, ttftMs: parsed.ttftMs ?? null };
@@ -458,13 +464,15 @@ export async function runDirect(args: {
   headers?: EndpointHeader[] | null;
   /** Pre-issued correlation id when the caller staged rows under it. */
   traceId?: string | null;
+  /** Per-call headers on top of the endpoint's own — the LLM keys. */
+  extraHeaders?: Record<string, string> | null;
 }): Promise<AgentAnswer> {
   const side = args.side ?? "a";
   const url = ensureDirectUrl(args.baseUrl, side);
   const { body, traceId } = buildPayload(args.message, args.userId, args.traceId);
   try {
     const startedAt = Date.now();
-    const resp = await post(url, body, requestHeaders(side, args.authKey, args.headers));
+    const resp = await post(url, body, requestHeaders(side, args.authKey, args.headers, args.extraHeaders));
     if (!resp.ok) throw await httpError(resp, body);
     return { ...(await parseChatResponse(resp, startedAt)), traceId };
   } catch (e) {
@@ -493,10 +501,11 @@ export async function flowAnswer(
   side?: FlowSide | null,
   traceId?: string | null,
   headers?: EndpointHeader[] | null,
+  extraHeaders?: Record<string, string> | null,
 ): Promise<AgentAnswer> {
   // A picked endpoint brings its own headers; without one the side's config
   // headers decide, even when the URL came from the UI.
-  if (urlOverride) return runFlow(message, urlOverride, side, traceId, headers);
-  if (externalEnabled()) return runFlow(message, null, side, traceId, headers);
+  if (urlOverride) return runFlow(message, urlOverride, side, traceId, headers, extraHeaders);
+  if (externalEnabled()) return runFlow(message, null, side, traceId, headers, extraHeaders);
   return stubRunFlow(message);
 }

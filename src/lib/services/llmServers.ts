@@ -1,5 +1,8 @@
+import { getLlmKeyNames, getLlmKeys } from "@/lib/config";
 import { readConn, withConn } from "@/lib/db";
 import type { OracleConnection } from "@/lib/db";
+import { logger } from "@/lib/logger";
+import { parseModelSnapshot } from "@/lib/modelSnapshot";
 import { hasTable } from "@/lib/db/optionalColumn";
 import { badRequest, conflict, notFound } from "@/lib/http";
 import { LLMSVR_COLS, insertReturningId, mapLlmServer } from "@/lib/db/rows";
@@ -12,12 +15,14 @@ import { writeAudit } from "./audit";
 // one base_url in the agent's own config. A model now points at a server here,
 // and the run carries that server's URL along with the model name.
 //
-// KEY_REF is the *name* of the API key, not the key: an environment variable on
-// the agent host (or an entry in the agent's own config), which the agent
-// resolves at call time. The value never enters this database, because a run
+// KEY_REF is the *name* of the API key, not the key: an entry under `llmKeys`
+// in PTX's own config.yml. The value never enters this database, because a run
 // stamps its model config into PTX_RUN_MAS.MODEL_CTN and that string is copied
 // on into the audit log and the CSV export — a key stored here would be
-// duplicated in plaintext across all three. See docs/model-roles-agent.md.
+// duplicated in plaintext across all three. PTX looks the value up at call time
+// and hands it to the agent in a request header (:func:`llmKeyHeaders`), so
+// the key exists in exactly two places: config.yml and the request in flight.
+// See docs/model-roles-agent.md §1-1.
 
 const TABLE = "PTX_LLMSVR_MAS";
 
@@ -75,19 +80,46 @@ function baseUrl(v: string | null | undefined): string {
   return s;
 }
 
-/** An environment-variable name, not a secret. Checked as an identifier partly
- * so a pasted key is rejected here instead of being stored: keys carry
- * characters this pattern does not allow. */
-const KEY_REF_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
-
+/** A name from config.yml `llmKeys`, never a value. Checking it against the
+ * config (rather than just its shape) is also what keeps a pasted key out of
+ * the DB: a key is not one of the configured names. */
 function keyRef(v: string | null | undefined): string | null {
   const s = (v ?? "").trim();
   if (!s) return null;
-  if (s.length > 100) throw badRequest("키 이름이 너무 깁니다 (최대 100자)");
-  if (!KEY_REF_RE.test(s)) {
-    throw badRequest("키 이름에는 영문·숫자·_ 만 쓸 수 있습니다 (키 값이 아니라 환경변수 이름입니다)");
+  if (!getLlmKeyNames().includes(s)) {
+    throw badRequest(`config.yml 의 llmKeys 에 없는 이름입니다: ${s.length > 40 ? `${s.slice(0, 8)}…` : s}`);
   }
   return s;
+}
+
+/** The header the agent reads the keys from. */
+export const LLM_KEYS_HEADER = "X-PTX-LLM-KEYS";
+
+/**
+ * This call's LLM keys as a request header: `{"LLM": "<key>", ...}`, keyed by
+ * role like MODEL_CTN itself, so the agent pairs each role's override with its
+ * key without a second lookup.
+ *
+ * Built from the run's model snapshot, which carries each role's `api_key_ref`
+ * (a name); the value is read from config.yml now, at call time. Empty when no
+ * pinned role names a key that config has — the agent then keeps its own key,
+ * exactly as before the registry existed. A name config no longer has is
+ * logged rather than failing the run: the call still goes out, and the log
+ * line is what tells "no key configured" apart from a 401 on the agent side.
+ */
+export function llmKeyHeaders(models: string | null | undefined): Record<string, string> {
+  const snap = parseModelSnapshot(models);
+  if (!snap) return {};
+  const keys = getLlmKeys();
+  const out: Record<string, string> = {};
+  for (const [role, e] of Object.entries(snap)) {
+    const ref = e.api_key_ref;
+    if (!ref) continue;
+    const v = keys[ref];
+    if (v) out[role] = v;
+    else logger.warn("LLM key name not in config.yml llmKeys — agent's own key used", { role, ref });
+  }
+  return Object.keys(out).length ? { [LLM_KEYS_HEADER]: JSON.stringify(out) } : {};
 }
 
 function memo(v: string | null | undefined): string | null {

@@ -12,17 +12,18 @@
 --   PTX_LLM_MAS.SERVER_ID: 그 모델이 어느 서버에 있는지. NULL = 지정 없음
 --                          (에이전트가 자기 config 의 주소를 그대로 쓴다)
 --
---   ⚠ API 키 '값' 은 DB 에 들어가지 않는다. KEY_REF 는 에이전트 호스트의
---     환경변수(또는 에이전트 config) 이름일 뿐이고, 실제 값은 에이전트가
---     자기 쪽에서 푼다. 그래서 실행 스냅샷·감사로그·CSV 어디에도 키가
---     복제되지 않는다. 자세한 계약은 docs/model-roles-agent.md.
+--   ⚠ API 키 '값' 은 DB 에 들어가지 않는다. KEY_REF 는 PTX config.yml 의
+--     llmKeys 항목 이름일 뿐이고, 실제 값은 PTX 가 호출할 때 config 에서
+--     꺼내 요청 헤더(X-PTX-LLM-KEYS)로만 에이전트에 넘긴다. 그래서 실행
+--     스냅샷·감사로그·CSV 어디에도 키가 복제되지 않는다.
+--     자세한 계약은 docs/model-roles-agent.md §1-1.
 -- ============================================================
 
 CREATE TABLE PTX_LLMSVR_MAS (
     SERVER_ID   NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     SERVER_NM   VARCHAR2(100) NOT NULL,
     BASE_URL    VARCHAR2(500) NOT NULL,   -- OpenAI 호환 base_url  ex) http://10.0.0.5:8000/v1
-    KEY_REF     VARCHAR2(100),            -- 키 '이름' (환경변수명). 키 값이 아니다
+    KEY_REF     VARCHAR2(100),            -- 키 '이름' (config.yml llmKeys). 키 값이 아니다
     DESC_CTN    VARCHAR2(500),
     ACTIVE_YN   CHAR(1) DEFAULT 'Y' NOT NULL,
     USER_ID     VARCHAR2(50) NOT NULL,
