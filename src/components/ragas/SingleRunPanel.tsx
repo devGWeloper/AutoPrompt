@@ -27,8 +27,10 @@ import {
 } from '@/lib/types';
 import {
   CategorySelect,
+  DatasetPurpose,
   DatasetPurposeLine,
   DatasetSelect,
+  folderLabel,
   EndpointSelect,
   InlineDivider,
   InlineField,
@@ -67,6 +69,15 @@ import {
   useModelRoles,
   type ModelDrafts,
 } from './ModelPicker';
+// 임시 — 실행 조건 폼의 E안(머리띠 한 줄)을 지금 폼과 토글해서 보기 위한 것.
+import {
+  FormSkinToggle,
+  PlayIcon,
+  RunToolbar,
+  ToolbarMenu,
+  ToolbarSep,
+  useFormSkin,
+} from './RunSetupToolbar';
 
 // ---- direct call (raw external-API smoke test, no scoring) ------------------
 
@@ -185,6 +196,38 @@ export default function SingleRunPanel() {
   // 기대 정답이 쓰이는 곳은 정답 일치만이 아니다 — RAGAS 의 answer_correctness ·
   // context_recall 도 이 값으로 채점하므로, 채점을 켠 실행이면 늘 받는다.
   const wantsExpected = scoreOn;
+
+  // ---- 임시: 실행 조건 폼 프로토타입(E안) --------------------------------
+  // 아래 카드와 완전히 같은 상태를 읽고 쓴다. 어느 쪽 폼으로 고르든 실행되는
+  // 내용은 같고, 머리띠는 값을 버튼에 적어 두는 것만 다르다.
+  const [skin, setSkin] = useFormSkin();
+  const pickedDataset = datasets.find((d) => d.dataset_id === datasetId);
+  const folderHit = caseType != null ? folders.find((c) => c.type_cd === caseType) : null;
+  // 몇 건이 도는지 — 고른 케이스가 있으면 그 수, 폴더를 좁혔으면 폴더의 수,
+  // 아니면 데이터셋 전체. 실행 버튼에 그대로 적는 값이다.
+  const runCount = pickedCases
+    ? pickedCases.size
+    : folderHit
+      ? folderHit.case_count
+      : pickedDataset?.case_count ?? null;
+  const targetLabel = target === 'endpoint' ? 'Default' : target === 'model' ? 'Model' : 'Prompt';
+  const agentLabel = endpoints.find((e) => e.endpoint_id === endpointId)?.endpoint_nm ?? 'API 선택';
+  const dataLabel = source === 'manual'
+    ? '직접 입력'
+    : !pickedDataset
+      ? '데이터셋 선택'
+      : [
+          pickedDataset.dataset_nm,
+          folderHit ? folderLabel(folderHit.type_cd) : null,
+          pickedCases ? `선택 ${pickedCases.size}건` : runCount != null ? `${runCount}건` : null,
+        ].filter(Boolean).join(' · ');
+  const ragasCount = metrics.filter((m) => m !== EXACT_MATCH).length;
+  const scoreLabel = !scoreOn
+    ? '없음'
+    : metrics.length === 0
+      ? '지표 선택'
+      : [metrics.includes(EXACT_MATCH) ? 'Action Test' : null, ragasCount ? `RAGAS ${ragasCount}` : null]
+          .filter(Boolean).join(' + ');
 
   useEffect(() => {
     if (!nodeNm) { setVersions([]); return; }
@@ -387,8 +430,14 @@ export default function SingleRunPanel() {
 
   return (
     <div className="space-y-5">
+      {/* 임시 — 어느 폼으로 볼지. 고르고 나면 이 줄과 안 고른 쪽을 지운다. */}
+      <div className="flex items-center justify-end">
+        <FormSkinToggle value={skin} onChange={setSkin} />
+      </div>
+
       {/* 실행 조건은 두 줄이다: API·대상 한 줄, 입력·채점·실행 한 줄. 항목마다
           한 행을 주면 화면의 절반이 아직 누르지도 않은 폼이 된다. */}
+      {skin === 'card' && (
       <Card className="px-4 py-3">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
           {/* 대상 = 무엇을 바꾸는가. 셋 중 하나만 변인이고 나머지는 손대지
@@ -559,6 +608,179 @@ export default function SingleRunPanel() {
 
         
       </Card>
+      )}
+
+      {/* 임시 — E안. 조건을 48px 한 줄에 값으로만 적고, 컨트롤은 누를 때 아래로
+          열린다. 담는 컨트롤은 위 카드와 똑같은 것들이다. */}
+      {skin === 'toolbar' && (
+        <div className="space-y-2.5">
+          <RunToolbar>
+            <ToolbarMenu label="Agent" value={agentLabel} muted={endpointId == null} width={236}>
+              <EndpointSelect endpoints={endpoints} value={endpointId} onChange={setEndpointId} className="h-9 w-full text-sm" />
+            </ToolbarMenu>
+
+            <ToolbarSep />
+
+            <ToolbarMenu label="대상" value={targetLabel} width={target === 'model' ? 540 : 320}>
+              <div className="space-y-2.5">
+                <SegToggle
+                  value={target}
+                  onChange={setTarget}
+                  options={[
+                    { id: 'endpoint', label: 'Default', title: '프롬프트도 모델도 건드리지 않고, 고른 Agent 를 지금 상태 그대로 호출합니다' },
+                    { id: 'model', label: 'Model', title: 'role 별 모델을 바꿔서 실행합니다' },
+                    { id: 'prompt', label: 'Prompt', title: '고른 프롬프트 버전을 활성화한 뒤 실행합니다', disabled: !PROMPT_TARGET_ENABLED },
+                  ]}
+                />
+                {target === 'prompt' && (
+                  <div className="flex gap-2">
+                    <Select value={nodeNm} onChange={(e) => setNodeNm(e.target.value)} className="h-9 w-40">
+                      <option value="" disabled>노드</option>
+                      {nodes.map((n) => (
+                        <option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>
+                      ))}
+                    </Select>
+                    <VersionSelect versions={versions} value={ver} onChange={setVer} className="h-9 w-28" placeholder="버전" />
+                  </div>
+                )}
+                {target === 'model' && (
+                  <div className="border-t border-line pt-2.5">
+                    <ModelPicker roles={roles} columns={[{ key: 'a', drafts: models, onChange: setModels }]} />
+                  </div>
+                )}
+              </div>
+            </ToolbarMenu>
+
+            <ToolbarSep />
+
+            <ToolbarMenu
+              label="데이터"
+              value={dataLabel}
+              muted={source === 'dataset' && !pickedDataset}
+              width={330}
+            >
+              <div className="space-y-2.5">
+                <SegToggle
+                  value={source}
+                  onChange={setSource}
+                  options={[{ id: 'dataset', label: '데이터셋' }, { id: 'manual', label: '직접 입력' }]}
+                />
+                {source === 'dataset' && (
+                  <div className="space-y-2.5">
+                    <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />
+                    <CategorySelect cats={folders} value={caseType} onChange={setCaseType} />
+                    {datasetId != null && (
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="secondary"
+                          size="md"
+                          onClick={() => setPicking(true)}
+                          title="이 데이터셋(폴더)에서 돌릴 케이스만 고릅니다"
+                        >
+                          {pickedCases ? `선택 ${pickedCases.size}건` : '케이스 선택'}
+                        </Button>
+                        {pickedCases && (
+                          <button
+                            type="button"
+                            aria-label="선택 해제"
+                            title="선택 해제 — 전체 실행"
+                            onClick={() => setPickedCases(null)}
+                            className="rounded-full p-1 text-muted-soft transition-colors hover:bg-surface-3 hover:text-ink"
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
+                              <path d="M18 6 6 18M6 6l12 12" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    <DatasetPurpose text={pickedDataset?.description} />
+                  </div>
+                )}
+              </div>
+            </ToolbarMenu>
+
+            <ToolbarSep />
+
+            <ToolbarMenu label="채점" value={scoreLabel} muted={scoreOn && metrics.length === 0} width={430}>
+              <div className="space-y-2.5">
+                <div className="flex items-center gap-2">
+                  <ScoreToggle on={scoreOn} onChange={setScoreOn} />
+                  <span className="text-caption text-muted">{scoreOn ? '채점함' : '채점 없이 응답만'}</span>
+                </div>
+                {scoreOn && (
+                  <div className="border-t border-line pt-2.5">
+                    <EvalOptions metrics={metrics} setMetrics={setMetrics} />
+                    {metrics.length === 0 && <span className="text-caption text-bad">하나 이상</span>}
+                  </div>
+                )}
+              </div>
+            </ToolbarMenu>
+
+            <span className="flex-grow" />
+
+            <div className="flex shrink-0 items-center gap-2.5 pl-2">
+              {modelErr && <span className="text-caption text-bad">{modelErr}</span>}
+              <StatusPill status={source === 'dataset' ? status : callStatus} />
+              {source === 'dataset' ? (
+                <Button
+                  size="md"
+                  variant={status === 'running' ? 'secondary' : 'primary'}
+                  className="whitespace-nowrap"
+                  disabled={status === 'running' ? cancelling : !canRun}
+                  onClick={status === 'running' ? cancel : run}
+                >
+                  {status === 'running' ? (
+                    cancelling ? '취소 중…' : '취소'
+                  ) : (
+                    <>
+                      <PlayIcon />
+                      {runCount != null ? `${runCount}건 실행` : '실행'}
+                    </>
+                  )}
+                </Button>
+              ) : (
+                <Button size="md" variant="primary" className="whitespace-nowrap" disabled={!canCall} onClick={call}>
+                  {callStatus === 'running' ? '호출 중…' : '호출'}
+                </Button>
+              )}
+            </div>
+          </RunToolbar>
+
+          {source === 'manual' && (
+            <Card className="grid gap-2.5 px-4 py-3 sm:grid-cols-2">
+              <Textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                rows={3}
+                placeholder="메시지 *"
+                className="w-full text-sm"
+              />
+              {wantsExpected && (
+                <Textarea
+                  value={expected}
+                  onChange={(e) => setExpected(e.target.value)}
+                  rows={3}
+                  placeholder="기대 정답"
+                  className="w-full text-sm"
+                />
+              )}
+            </Card>
+          )}
+
+          {/* 케이스 고르기 판은 메뉴 밖에 둔다 — 메뉴 안에 두면 판을 누르는 순간
+              메뉴가 닫히면서 판까지 사라진다. */}
+          {picking && datasetId != null && (
+            <CasePickerModal
+              datasetId={datasetId}
+              caseType={caseType}
+              value={pickedCases}
+              onClose={() => setPicking(false)}
+              onApply={setPickedCases}
+            />
+          )}
+        </div>
+      )}
 
       {source === 'manual' ? (
         <>
