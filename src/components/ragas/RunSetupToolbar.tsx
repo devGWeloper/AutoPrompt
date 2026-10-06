@@ -107,7 +107,9 @@ export function ToolbarMenu({
   lead?: boolean;
   /** 값 뒤에 붙는 작은 수 — 건수처럼 값의 일부가 아니면서 같이 읽혀야 하는 것. */
   badge?: string;
-  children: ReactNode;
+  /** 함수로 주면 판을 닫는 손잡이를 받는다 — 하나를 고르는 줄은 누른 뒤 판이 닫혀야
+   * 메뉴로 읽힌다. 여럿을 켜고 끄는 줄(지표)은 닫지 않는다. */
+  children: ReactNode | ((close: () => void) => ReactNode);
 }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
@@ -162,13 +164,103 @@ export function ToolbarMenu({
       </button>
 
       {open && (
+        // 줄이 자기 여백을 들고 있으므로 판의 안쪽 여백은 6px 뿐이다. 그림자는
+        // lift — modal 급 그림자를 작은 판에 쓰면 네 칸 중 하나를 눌렀을 뿐인데
+        // 화면 전체가 뒤로 물러난 것처럼 보인다.
         <div
           style={{ width }}
-          className="absolute left-0 top-11 z-20 rounded-md border border-line-strong bg-surface p-3 shadow-modal"
+          className="absolute left-0 top-[42px] z-20 rounded-md border border-line-strong bg-surface p-1.5 shadow-lift"
         >
-          {children}
+          {typeof children === 'function' ? children(() => setOpen(false)) : children}
         </div>
       )}
+    </div>
+  );
+}
+
+// ---- 판 안의 줄 ------------------------------------------------------------
+
+/**
+ * 고르는 줄. 판 안의 기본 단위다.
+ *
+ * 하나만 고르는 줄(`check` 없음)은 고른 것에 체크 표시가 서고, 여러 개를 켜고 끄는
+ * 줄(`check` 있음)은 왼쪽에 상자가 선다 — 같은 모양으로 두면 눌렀을 때 하나가
+ * 바뀌는지 하나가 더해지는지 알 수 없다.
+ */
+export function MenuRow({
+  label, note, selected, check, disabled, indent, title, onClick,
+}: {
+  label: string;
+  note?: string;
+  selected?: boolean;
+  /** 주면 여럿 고르기 — 왼쪽에 체크 상자가 선다. */
+  check?: boolean;
+  disabled?: boolean;
+  indent?: boolean;
+  title?: string;
+  onClick: () => void;
+}) {
+  const on = check ?? selected;
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      title={title}
+      onClick={onClick}
+      className={cn(
+        'flex h-8 w-full items-center gap-2 rounded-sm px-2 text-left transition-colors',
+        indent && 'pl-6',
+        disabled
+          ? 'cursor-not-allowed text-muted-soft'
+          : on && check === undefined
+            ? 'bg-accent-soft text-accent'
+            : 'text-ink hover:bg-surface-3',
+      )}
+    >
+      {check !== undefined && (
+        <span
+          className={cn(
+            'flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-xs border',
+            check ? 'border-accent bg-accent text-white' : 'border-line-strong bg-surface text-transparent',
+          )}
+        >
+          <svg width="9" height="9" viewBox="0 0 16 16" fill="none" aria-hidden>
+            <path d="M3 8.5l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+      )}
+      <span className={cn('min-w-0 flex-1 truncate text-[13px]', on ? 'font-semibold' : 'font-medium')}>{label}</span>
+      {note && <span className="shrink-0 text-[11px] text-muted-soft">{note}</span>}
+      {check === undefined && selected && (
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden className="shrink-0 text-accent">
+          <path d="M3 8.5l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
+/** 판 안의 묶음 이름. 윗줄과 선으로 끊어 '여기부터 다른 것' 을 말한다. */
+export function MenuSection({ label, className }: { label: string; className?: string }) {
+  return (
+    <div className={cn('mt-1 border-t border-line px-2 pb-1 pt-2 text-[10px] font-bold uppercase tracking-[0.6px] text-muted-soft', className)}>
+      {label}
+    </div>
+  );
+}
+
+/** 판 맨 아래의 동작 — 고르는 줄이 아니라 '여기서 나가서 하는 일'(케이스 고르기처럼). */
+export function MenuFoot({ children }: { children: ReactNode }) {
+  return <div className="mt-1 flex items-center gap-1.5 border-t border-line px-1 pt-1.5">{children}</div>;
+}
+
+/** 두 줄기를 나란히 — 데이터셋과 그 폴더처럼, 왼쪽을 고르면 오른쪽이 달라지는 짝. */
+export function MenuCols({ left, right }: { left: ReactNode; right: ReactNode }) {
+  return (
+    <div className="flex items-stretch gap-1.5">
+      <div className="min-w-0 flex-1">{left}</div>
+      <div aria-hidden className="w-px shrink-0 bg-line" />
+      <div className="min-w-0 flex-1">{right}</div>
     </div>
   );
 }

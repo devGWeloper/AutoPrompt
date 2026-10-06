@@ -16,9 +16,14 @@ import { DatasetPurpose, fmtDt, folderLabel, PendingHint, UNFILED } from './shar
  * 여러 데이터셋에 흩어져 있으면 실행을 나눠서 여러 번 해야 한다. 바구니는 고르는
  * 일과 돌리는 일을 떼어 놓아 그 묶음을 먼저 모으게 한다.
  *
- * 바구니와 기록은 한 레일에 위아래로 붙는다. 둘이 같은 시간축이기 때문이다 —
- * 담긴 것(아직 안 돌린) · 도는 것 · 끝난 것. 레일이 왼쪽에 서는 건 둘 다
- * '무엇을 볼지 고르는 것' 이고, 본문은 고른 것의 내용이기 때문이다.
+ * 왼쪽 레일 하나가 '고르는 일' 전부를 가진다 — 위에서 아래로 훑기 · 담긴 것 ·
+ * 실행 · 기록. 고르는 자리가 오른쪽 본문에 있으면 결과와 자리를 다투고, 무엇보다
+ * 담는 곳과 담긴 것이 화면 양쪽으로 갈려 한 동작이 두 군데를 오가게 된다.
+ * 본문은 결과만 쓴다.
+ *
+ * 담긴 것을 따로 목록으로 두지 않는다. 같은 줄을 한 번 더 누르면 빠지고, 머리의
+ * '담은 것만' 으로 걸러 보면 그게 바구니 목록이다 — 목록 두 개가 같은 것을 두 모양
+ * 으로 보여 주면 어느 쪽에서 빼야 하는지가 매번 헷갈린다.
  *
  * 프로토타입 코드다. 단일 실행 패널의 'O · 바구니' 스킨만 쓴다.
  */
@@ -45,6 +50,8 @@ export interface CartApi {
   cart: CartItem[];
   add: (it: CartItem) => void;
   drop: (key: string) => void;
+  /** 담겼으면 빼고, 아니면 담는다 — 같은 줄이 두 동작을 한다. */
+  toggle: (it: CartItem) => void;
   clear: () => void;
   inCart: (key: string) => boolean;
   /** 담은 케이스 수 합계. */
@@ -65,6 +72,9 @@ export function useCart(): CartApi {
   }, []);
   const drop = useCallback((key: string) => {
     setCart((cur) => cur.filter((c) => c.key !== key));
+  }, []);
+  const toggle = useCallback((it: CartItem) => {
+    setCart((cur) => (cur.some((c) => c.key === it.key) ? cur.filter((c) => c.key !== it.key) : [...cur, it]));
   }, []);
   const clear = useCallback(() => setCart([]), []);
 
@@ -89,7 +99,7 @@ export function useCart(): CartApi {
     return { datasetId, caseIds: Array.from(merged) };
   }, [cart]);
 
-  return { cart, add, drop, clear, inCart: (key) => cart.some((c) => c.key === key), cases, perSet, single };
+  return { cart, add, drop, toggle, clear, inCart: (key) => cart.some((c) => c.key === key), cases, perSet, single };
 }
 
 /** 최근 실행 — 레일 아래쪽 기록. 수동 호출은 데이터셋이 없어 담을 것과 짝이 맞지
@@ -111,7 +121,7 @@ export function useRecentRuns(limit = 14, enabled = true) {
 
 // ---- 조각 -----------------------------------------------------------------
 
-const KIND_LABEL: Record<CartKind, string> = { dataset: '데이터셋', folder: '폴더', case: '케이스' };
+const KIND_LABEL: Record<CartKind, string> = { dataset: '셋', folder: '폴더', case: '건' };
 
 const KIND_TONE: Record<CartKind, string> = {
   dataset: 'border-accent-line bg-accent-soft text-accent-deep',
@@ -119,28 +129,41 @@ const KIND_TONE: Record<CartKind, string> = {
   case: 'border-line bg-surface-2 text-muted',
 };
 
+/** 무엇을 담았는지 — 데이터셋 하나와 케이스 하나가 목록에서 같아 보이면 '26건' 이
+ * 어디서 왔는지 셀 수 없다. 레일이 좁으므로 이름은 한 글자로 줄인다. */
 function KindChip({ kind }: { kind: CartKind }) {
   return (
-    <span className={cn('inline-flex h-[19px] shrink-0 items-center rounded-xs border px-1.5 text-[10.5px] font-bold', KIND_TONE[kind])}>
+    <span className={cn('inline-flex h-[18px] shrink-0 items-center rounded-xs border px-1 text-[10px] font-bold', KIND_TONE[kind])}>
       {KIND_LABEL[kind]}
     </span>
   );
 }
 
-/** 이미 담은 것은 눌리지 않고 '담김'으로 남는다 — 단추가 사라지면 방금 누른 줄이
- * 무엇이었는지 흔적이 없다. */
-function AddButton({ has, onAdd }: { has: boolean; onAdd: () => void }) {
+/** 담기·빼기를 한 단추가 겸한다. 담긴 줄은 체크로 서고, 다시 누르면 빠진다. */
+function PickButton({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   return (
     <button
       type="button"
-      disabled={has}
-      onClick={onAdd}
+      onClick={onToggle}
+      aria-pressed={on}
+      aria-label={on ? '빼기' : '담기'}
+      title={on ? '빼기' : '담기'}
       className={cn(
-        'h-7 shrink-0 rounded-sm border px-2.5 text-xs font-semibold transition-colors',
-        has ? 'cursor-default border-line bg-surface-3 text-muted-soft' : 'border-line-strong bg-surface text-ink hover:bg-surface-3',
+        'flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border transition-colors',
+        on
+          ? 'border-accent bg-accent text-white hover:border-accent-deep hover:bg-accent-deep'
+          : 'border-line-strong bg-surface text-muted hover:bg-surface-3 hover:text-ink',
       )}
     >
-      {has ? '담김' : '담기'}
+      {on ? (
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden>
+          <path d="M3 8.5l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ) : (
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden>
+          <path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+        </svg>
+      )}
     </button>
   );
 }
@@ -148,7 +171,7 @@ function AddButton({ has, onAdd }: { has: boolean; onAdd: () => void }) {
 function Caret({ open }: { open: boolean }) {
   return (
     <svg
-      width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden
+      width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden
       className={cn('shrink-0 text-muted-soft transition-transform', !open && '-rotate-90')}
     >
       <path d="M4 6.5 8 10.5l4-4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
@@ -156,7 +179,7 @@ function Caret({ open }: { open: boolean }) {
   );
 }
 
-// ---- 담을 것 훑기 ----------------------------------------------------------
+// ---- 훑기 ------------------------------------------------------------------
 
 /** 펼친 데이터셋의 케이스를 한 번만 읽어 폴더로 묶는다. case-types 를 따로 부르지
  * 않는 건, 담을 수 있는 폴더는 케이스가 있는 폴더뿐이기 때문이다. */
@@ -177,14 +200,9 @@ function useCases(datasetId: number | null) {
   return { cases, loading };
 }
 
-export function CartBrowse({
-  datasets, cart, className,
-}: {
-  datasets: Dataset[];
-  cart: CartApi;
-  className?: string;
-}) {
-  const [q, setQ] = useState('');
+/** 데이터셋 ▸ 폴더 ▸ 케이스. 어느 층에서든 담을 수 있다 — 한 층만 담게 하면
+ * '이 데이터셋 전체와 저기서 한 건' 같은 묶음을 만들 수 없다. */
+function CartTree({ datasets, cart, q }: { datasets: Dataset[]; cart: CartApi; q: string }) {
   const [openDs, setOpenDs] = useState<number | null>(null);
   const [openFolder, setOpenFolder] = useState<string | null>(null);
   const { cases, loading } = useCases(openDs);
@@ -203,101 +221,116 @@ export function CartBrowse({
     return Array.from(by.entries());
   }, [cases]);
 
+  if (shown.length === 0) {
+    return <p className="px-3 py-6 text-xs text-muted-soft">{needle ? '찾는 데이터셋이 없습니다' : '데이터셋이 없습니다'}</p>;
+  }
+
   return (
-    <div className={cn('flex min-h-0 flex-col', className)}>
-      <div className="flex items-center gap-2 border-b border-line px-3.5 py-2.5">
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="데이터셋 검색" className="h-9 flex-1" />
-        <span className="shrink-0 text-caption text-muted-soft">{shown.length}개</span>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {shown.length === 0 && <p className="px-4 py-8 text-sm text-muted-soft">데이터셋이 없습니다</p>}
-
-        {shown.map((d) => {
-          const open = openDs === d.dataset_id;
-          const dsKey = `d:${d.dataset_id}`;
-          return (
-            <div key={d.dataset_id} className="border-b border-line">
-              <div className="flex items-center gap-2.5 px-3.5 py-2">
-                <button
-                  type="button"
-                  onClick={() => { setOpenDs(open ? null : d.dataset_id); setOpenFolder(null); }}
-                  className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
-                >
-                  <Caret open={open} />
-                  <KindChip kind="dataset" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-body-sm font-semibold text-ink">{d.dataset_nm}</span>
-                    <DatasetPurpose text={d.description} />
-                  </span>
-                </button>
-                <span className="shrink-0 text-caption text-muted-soft">{d.case_count ?? 0}건</span>
-                <AddButton
-                  has={cart.inCart(dsKey)}
-                  onAdd={() => cart.add({
-                    key: dsKey, kind: 'dataset', datasetId: d.dataset_id, datasetNm: d.dataset_nm,
-                    label: d.dataset_nm, n: d.case_count ?? 0, caseIds: null,
-                  })}
-                />
-              </div>
-
-              {open && loading && <div className="px-3.5 pb-3 pl-10"><PendingHint label="케이스 읽는 중…" /></div>}
-
-              {open && !loading && folders.map(([type, rows]) => {
-                const fKey = `f:${d.dataset_id}:${type}`;
-                const fOpen = openFolder === fKey;
-                return (
-                  <div key={fKey}>
-                    <div className="flex items-center gap-2.5 bg-surface-2 py-1.5 pl-10 pr-3.5">
-                      <button
-                        type="button"
-                        onClick={() => setOpenFolder(fOpen ? null : fKey)}
-                        className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
-                      >
-                        <Caret open={fOpen} />
-                        <KindChip kind="folder" />
-                        <span className="truncate text-[13px] font-medium text-body">{folderLabel(type)}</span>
-                      </button>
-                      <span className="shrink-0 text-caption text-muted-soft">{rows.length}건</span>
-                      <AddButton
-                        has={cart.inCart(fKey)}
-                        onAdd={() => cart.add({
-                          key: fKey, kind: 'folder', datasetId: d.dataset_id, datasetNm: d.dataset_nm,
-                          label: `${d.dataset_nm} · ${folderLabel(type)}`, n: rows.length,
-                          caseIds: rows.map((c) => c.case_id),
-                        })}
-                      />
-                    </div>
-
-                    {fOpen && rows.map((c) => {
-                      const cKey = `c:${c.case_id}`;
-                      const question = parseCaseInput(c.input_data).question || '(질문 없음)';
-                      return (
-                        <div key={c.case_id} className="flex items-center gap-2.5 py-1.5 pl-[68px] pr-3.5">
-                          <KindChip kind="case" />
-                          <span className="min-w-0 flex-1 truncate text-[13px] text-body" title={question}>{question}</span>
-                          <AddButton
-                            has={cart.inCart(cKey)}
-                            onAdd={() => cart.add({
-                              key: cKey, kind: 'case', datasetId: d.dataset_id, datasetNm: d.dataset_nm,
-                              label: question, n: 1, caseIds: [c.case_id],
-                            })}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
+    <>
+      {shown.map((d) => {
+        const open = openDs === d.dataset_id;
+        const dsKey = `d:${d.dataset_id}`;
+        return (
+          <div key={d.dataset_id} className="border-b border-line">
+            <div className="flex items-center gap-1.5 py-1.5 pl-2 pr-2">
+              <button
+                type="button"
+                onClick={() => { setOpenDs(open ? null : d.dataset_id); setOpenFolder(null); }}
+                className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+              >
+                <Caret open={open} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-semibold text-ink">{d.dataset_nm}</span>
+                  <DatasetPurpose text={d.description} />
+                </span>
+                <span className="shrink-0 text-[11px] text-muted-soft">{d.case_count ?? 0}</span>
+              </button>
+              <PickButton
+                on={cart.inCart(dsKey)}
+                onToggle={() => cart.toggle({
+                  key: dsKey, kind: 'dataset', datasetId: d.dataset_id, datasetNm: d.dataset_nm,
+                  label: d.dataset_nm, n: d.case_count ?? 0, caseIds: null,
+                })}
+              />
             </div>
-          );
-        })}
-      </div>
-    </div>
+
+            {open && loading && <div className="pb-2 pl-6 pr-2"><PendingHint label="케이스 읽는 중…" /></div>}
+
+            {open && !loading && folders.map(([type, rows]) => {
+              const fKey = `f:${d.dataset_id}:${type}`;
+              const fOpen = openFolder === fKey;
+              return (
+                <div key={fKey}>
+                  <div className="flex items-center gap-1.5 bg-surface-2 py-1 pl-5 pr-2">
+                    <button
+                      type="button"
+                      onClick={() => setOpenFolder(fOpen ? null : fKey)}
+                      className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                    >
+                      <Caret open={fOpen} />
+                      <span className="min-w-0 flex-1 truncate text-xs font-medium text-body">{folderLabel(type)}</span>
+                      <span className="shrink-0 text-[11px] text-muted-soft">{rows.length}</span>
+                    </button>
+                    <PickButton
+                      on={cart.inCart(fKey)}
+                      onToggle={() => cart.toggle({
+                        key: fKey, kind: 'folder', datasetId: d.dataset_id, datasetNm: d.dataset_nm,
+                        label: `${d.dataset_nm} · ${folderLabel(type)}`, n: rows.length,
+                        caseIds: rows.map((c) => c.case_id),
+                      })}
+                    />
+                  </div>
+
+                  {fOpen && rows.map((c) => {
+                    const cKey = `c:${c.case_id}`;
+                    const question = parseCaseInput(c.input_data).question || '(질문 없음)';
+                    return (
+                      <div key={c.case_id} className="flex items-center gap-1.5 py-1 pl-9 pr-2">
+                        <span className="min-w-0 flex-1 truncate text-xs text-body" title={question}>{question}</span>
+                        <PickButton
+                          on={cart.inCart(cKey)}
+                          onToggle={() => cart.toggle({
+                            key: cKey, kind: 'case', datasetId: d.dataset_id, datasetNm: d.dataset_nm,
+                            label: question, n: 1, caseIds: [c.case_id],
+                          })}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </>
   );
 }
 
-// ---- 레일: 바구니 + 기록 ---------------------------------------------------
+/** '담은 것만' 으로 걸렀을 때 — 같은 줄들이 층 없이 평평하게 선다. */
+function CartPicked({ cart }: { cart: CartApi }) {
+  if (cart.cart.length === 0) {
+    return (
+      <p className="px-3 py-6 text-xs leading-relaxed text-muted-soft">
+        아직 담은 것이 없습니다. 위를 눌러 전체 목록에서 담으세요
+      </p>
+    );
+  }
+  return (
+    <>
+      {cart.cart.map((it) => (
+        <div key={it.key} className="flex items-center gap-1.5 border-b border-line py-1.5 pl-2 pr-2">
+          <KindChip kind={it.kind} />
+          <span className="min-w-0 flex-1 truncate text-xs font-semibold text-ink" title={it.label}>{it.label}</span>
+          <span className="shrink-0 text-[11px] font-semibold text-body">{it.n}</span>
+          <PickButton on onToggle={() => cart.drop(it.key)} />
+        </div>
+      ))}
+    </>
+  );
+}
+
+// ---- 기록 ------------------------------------------------------------------
 
 function RunRow({ run, active, onOpen }: { run: RagasRunSummary; active: boolean; onOpen: () => void }) {
   const total = run.case_count ?? 0;
@@ -315,18 +348,13 @@ function RunRow({ run, active, onOpen }: { run: RagasRunSummary; active: boolean
       type="button"
       onClick={onOpen}
       className={cn(
-        'flex w-full items-center gap-2 border-b border-line px-3 py-2 text-left transition-colors',
+        'flex w-full items-center gap-2 border-b border-line px-2 py-1.5 text-left transition-colors',
         active ? 'bg-accent-soft' : 'hover:bg-surface-2',
       )}
     >
       <span className="w-[42px] shrink-0 text-[11px] text-muted-soft">{fmtDt(run.started_dt ?? run.created_dt)}</span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-xs font-semibold text-ink">
-          {run.dataset_nm ?? '직접 입력'}{run.case_type ? ` · ${folderLabel(run.case_type)}` : ''}
-        </span>
-        <span className="block text-[10.5px] text-muted-soft">
-          {total ? `${total}건` : ''}{run.endpoint_nm ? ` · ${run.endpoint_nm}` : ''}
-        </span>
+      <span className="min-w-0 flex-1 truncate text-xs font-semibold text-ink">
+        {run.dataset_nm ?? '직접 입력'}{run.case_type ? ` · ${folderLabel(run.case_type)}` : ''}
       </span>
       {running ? (
         <span className="shrink-0 animate-pulse text-[10.5px] font-bold text-accent">도는 중</span>
@@ -339,53 +367,56 @@ function RunRow({ run, active, onOpen }: { run: RagasRunSummary; active: boolean
   );
 }
 
+// ---- 레일 ------------------------------------------------------------------
+
 export function CartRail({
-  cart, runs, openRunId, onOpenRun, onCollapse, onRun, running, blockedReason, conditionText,
+  cart, datasets, runs, openRunId, onOpenRun, onCollapse, onRun, running, blockedReason, conditionText,
 }: {
   cart: CartApi;
+  datasets: Dataset[];
   runs: RagasRunSummary[];
   openRunId: number | null;
   onOpenRun: (id: number) => void;
   onCollapse: () => void;
-  /** 바구니가 데이터셋 하나로 떨어질 때만 받는다. 없으면 단추가 멈춘 이유를 아래
-   * 경고가 말한다. */
+  /** 바구니가 데이터셋 하나로 떨어질 때만 받는다. */
   onRun?: (arg: { datasetId: number; caseIds: number[] | null }) => void;
   running?: boolean;
   /** 바구니는 멀쩡한데 조건이 덜 채워져 실행이 막힌 이유. 멈춘 단추만 두면 눌러
    * 보고도 왜 아무 일이 없는지 알 수 없다. */
   blockedReason?: string | null;
-  /** 조건 한 줄. 패널 쪽은 머리띠가 조건을 들고 있으므로 넘기지 않는다. */
+  /** 조건 한 줄. 머리띠가 조건을 들고 있으면 넘기지 않는다. */
   conditionText?: ReactNode;
 }) {
-  const { cart: items, drop, clear, cases, perSet, single } = cart;
+  const [onlyPicked, setOnlyPicked] = useState(false);
+  const [q, setQ] = useState('');
+  const [histOpen, setHistOpen] = useState(true);
+  const { cases, perSet, single, clear } = cart;
   const split = perSet.length > 1;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-2 border-b border-line bg-surface-2 px-3 py-2.5">
+      {/* 머리 — 담은 양이 늘 보인다. 아래 목록이 '전체' 를 보고 있을 때도 그렇다. */}
+      <div className="flex shrink-0 items-center gap-2 border-b border-line bg-surface-2 px-2.5 py-2">
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden className="shrink-0 text-body">
           <path d="M2 2.5h1.8l1.5 7.2h6.4l1.3-5H4.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
           <circle cx="6.4" cy="13" r="1.1" fill="currentColor" />
           <circle cx="11.2" cy="13" r="1.1" fill="currentColor" />
         </svg>
-        <span className="text-body-sm font-bold text-ink">담은 것</span>
+        <span className="text-body-sm font-bold text-ink">바구니</span>
         <span
           className={cn(
             'inline-flex h-5 items-center rounded-full border px-2 text-[11px] font-bold',
-            items.length ? 'border-accent-line bg-accent-soft text-accent-deep' : 'border-line bg-surface-3 text-muted-soft',
+            cart.cart.length ? 'border-accent-line bg-accent-soft text-accent-deep' : 'border-line bg-surface-3 text-muted-soft',
           )}
         >
-          {items.length}묶음 · {cases}건
+          {cart.cart.length}묶음 · {cases}건
         </span>
-        {items.length > 0 && (
-          <button type="button" onClick={clear} className="ml-auto text-[11px] font-semibold text-muted hover:text-ink">비우기</button>
-        )}
         <button
           type="button"
           onClick={onCollapse}
           aria-label="접기"
           title="접기 — 결과에 폭을 돌려줍니다"
-          className={cn('rounded-sm p-1 text-muted-soft hover:bg-surface-3 hover:text-ink', items.length > 0 ? 'ml-1.5' : 'ml-auto')}
+          className="ml-auto rounded-sm p-1 text-muted-soft hover:bg-surface-3 hover:text-ink"
         >
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
             <path d="M9.5 4.5 6 8l3.5 3.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
@@ -393,34 +424,41 @@ export function CartRail({
         </button>
       </div>
 
-      {/* 담은 것은 레일의 절반까지만 먹는다 — 넘치면 기록이 화면 밖으로 밀리고,
-          둘 다 보이는 것이 이 레일의 이유다. */}
-      <div className="max-h-[42%] min-h-0 shrink-0 overflow-y-auto">
-        {items.length === 0 && (
-          <p className="px-3.5 py-6 text-xs leading-relaxed text-muted-soft">
-            오른쪽에서 담으면 데이터셋을 넘나들어 한 번에 돌릴 수 있습니다
-          </p>
-        )}
-        {items.map((it) => (
-          <div key={it.key} className="flex items-center gap-2 border-b border-line px-3 py-2">
-            <KindChip kind={it.kind} />
-            <span className="min-w-0 flex-1 truncate text-xs font-semibold text-ink" title={it.label}>{it.label}</span>
-            <span className="shrink-0 text-[11px] font-semibold text-body">{it.n}건</span>
+      {/* 고르는 줄: 무엇을 보고 있는지(전체 / 담은 것만)와 검색. */}
+      <div className="flex shrink-0 items-center gap-1.5 border-b border-line px-2.5 py-2">
+        <div className="inline-flex shrink-0 rounded-sm border border-line bg-surface p-0.5">
+          {([[false, '전체'], [true, '담은 것']] as const).map(([v, label]) => (
             <button
+              key={label}
               type="button"
-              onClick={() => drop(it.key)}
-              aria-label="빼기"
-              className="shrink-0 rounded-full p-0.5 text-muted-soft hover:bg-surface-3 hover:text-ink"
+              onClick={() => setOnlyPicked(v)}
+              className={cn(
+                'rounded-xs px-2 py-1 text-[11.5px] font-semibold transition-colors',
+                onlyPicked === v ? 'bg-primary text-primary-fg' : 'text-muted hover:text-ink',
+              )}
             >
-              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden>
-                <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-              </svg>
+              {label}
             </button>
-          </div>
-        ))}
+          ))}
+        </div>
+        {onlyPicked ? (
+          cart.cart.length > 0 && (
+            <button type="button" onClick={clear} className="ml-auto shrink-0 text-[11px] font-semibold text-muted hover:text-ink">
+              비우기
+            </button>
+          )
+        ) : (
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="데이터셋 검색" className="h-7 min-w-0 flex-1 text-xs" />
+        )}
       </div>
 
-      <div className="flex shrink-0 flex-col gap-2 border-y border-line bg-surface-2 px-3 py-2.5">
+      {/* 담을 것 훑기 — 레일에서 가장 큰 자리를 쓴다. */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {onlyPicked ? <CartPicked cart={cart} /> : <CartTree datasets={datasets} cart={cart} q={q} />}
+      </div>
+
+      {/* 실행 — 담긴 것과 기록 사이. 위는 아직 안 돈 것, 아래는 끝난 것이다. */}
+      <div className="flex shrink-0 flex-col gap-2 border-y border-line bg-surface-2 px-2.5 py-2.5">
         {conditionText && (
           <span className="inline-flex items-baseline gap-2">
             <span className="text-[10.5px] font-bold uppercase tracking-[0.5px] text-muted-soft">조건</span>
@@ -448,16 +486,25 @@ export function CartRail({
         </Button>
       </div>
 
-      <div className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2">
+      {/* 기록 — 접을 수 있다. 담을 것을 길게 훑을 때는 자리를 내준다. */}
+      <button
+        type="button"
+        onClick={() => setHistOpen((v) => !v)}
+        aria-expanded={histOpen}
+        className="flex shrink-0 items-center gap-2 border-b border-line px-2.5 py-1.5 text-left"
+      >
+        <Caret open={histOpen} />
         <span className="eyebrow">기록</span>
         <span className="text-[11px] text-muted-soft">최근 {runs.length}건</span>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {runs.length === 0 && <p className="px-3.5 py-6 text-xs text-muted-soft">실행 기록이 없습니다</p>}
-        {runs.map((r) => (
-          <RunRow key={r.ragas_run_id} run={r} active={openRunId === r.ragas_run_id} onOpen={() => onOpenRun(r.ragas_run_id)} />
-        ))}
-      </div>
+      </button>
+      {histOpen && (
+        <div className="max-h-[38%] min-h-0 shrink-0 overflow-y-auto">
+          {runs.length === 0 && <p className="px-3 py-5 text-xs text-muted-soft">실행 기록이 없습니다</p>}
+          {runs.map((r) => (
+            <RunRow key={r.ragas_run_id} run={r} active={openRunId === r.ragas_run_id} onOpen={() => onOpenRun(r.ragas_run_id)} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
