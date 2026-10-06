@@ -11,6 +11,7 @@ import {
 import { buildFieldTree, flattenTree, worstStatus, type Pathed, type TreeRow } from '@/lib/fieldTree';
 import { byImportance, FAIL_WEIGHT, TIER_ORDER, tierOf, type Tier } from '@/lib/fieldOrder';
 import { diffWords, type DiffPair, type DiffSeg } from '@/lib/textDiff';
+import { copyText } from '@/lib/clipboard';
 import { cn } from '@/lib/cn';
 import type { RagasResultRow } from '@/lib/types';
 import { AnswerBox, Chevron, CopyButton, OxBadge, TraceTag } from './shared';
@@ -238,22 +239,24 @@ function Absent({ children }: { children: string }) {
 /** 값·키를 집어가는 자리. 줄에 손을 올리기 전에는 보이지 않는다 — 표의 모든 칸이
  * 아이콘을 하나씩 달고 있으면 정작 값이 눈에 안 들어온다. */
 function IconCopy({ text, className }: { text: string; className?: string }) {
-  const [done, setDone] = useState(false);
+  const [state, setState] = useState<'' | 'done' | 'fail'>('');
+  const done = state === 'done';
   return (
     <button
       type="button"
-      title="복사"
+      title={state === 'fail' ? '복사 실패 — 값을 직접 선택해 주세요' : '복사'}
       aria-label="복사"
       onClick={(e) => {
         e.stopPropagation();
-        navigator.clipboard?.writeText(text).then(
-          () => { setDone(true); setTimeout(() => setDone(false), 1000); },
-          () => {},
-        );
+        void copyText(text).then((ok) => {
+          setState(ok ? 'done' : 'fail');
+          setTimeout(() => setState(''), ok ? 1000 : 2000);
+        });
       }}
       className={cn(
         'rounded-xs border border-line bg-surface p-0.5 text-muted transition hover:bg-surface-2 hover:text-ink',
         done && 'text-ok',
+        state === 'fail' && 'border-bad text-bad',
         className,
       )}
     >

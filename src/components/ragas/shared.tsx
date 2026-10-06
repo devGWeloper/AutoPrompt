@@ -6,6 +6,7 @@ import {
 } from 'react';
 import { Select } from '@/components/ui/Field';
 import { api, ApiError } from '@/lib/api';
+import { copyText } from '@/lib/clipboard';
 import { cn } from '@/lib/cn';
 import { formatModelPair, formatModelSnapshot, parseModelSnapshot } from '@/lib/modelSnapshot';
 import {
@@ -1106,19 +1107,22 @@ export function AnswerPreview({ row, className }: { row: RagasResultRow; classNa
 }
 
 export function CopyButton({ text }: { text: string }) {
-  const [done, setDone] = useState(false);
+  const [state, setState] = useState<'' | 'done' | 'fail'>('');
   return (
     <button
       type="button"
       onClick={() => {
-        navigator.clipboard?.writeText(text).then(
-          () => { setDone(true); setTimeout(() => setDone(false), 1200); },
-          () => {},
-        );
+        void copyText(text).then((ok) => {
+          setState(ok ? 'done' : 'fail');
+          setTimeout(() => setState(''), ok ? 1200 : 2000);
+        });
       }}
-      className="rounded-sm border border-line px-1.5 py-0.5 text-[11px] text-muted transition-colors hover:bg-surface-2"
+      className={cn(
+        'rounded-sm border border-line px-1.5 py-0.5 text-[11px] text-muted transition-colors hover:bg-surface-2',
+        state === 'fail' && 'border-bad text-bad',
+      )}
     >
-      {done ? '복사됨' : '복사'}
+      {state === 'done' ? '복사됨' : state === 'fail' ? '복사 실패' : '복사'}
     </button>
   );
 }
