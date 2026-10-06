@@ -14,7 +14,7 @@ import { cn } from '@/lib/cn';
  * 임시 코드다. 실제 폼과 토글해서 보기 위한 것이고, 고르고 나면 한쪽을 지운다.
  */
 
-export type FormSkin = 'card' | 'toolbar';
+export type FormSkin = 'card' | 'toolbar' | 'cart';
 
 const SKIN_KEY = 'ptx.protoFormSkin';
 
@@ -25,7 +25,7 @@ export function useFormSkin(): [FormSkin, (v: FormSkin) => void] {
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(SKIN_KEY);
-      if (saved === 'toolbar' || saved === 'card') setSkin(saved);
+      if (saved === 'toolbar' || saved === 'card' || saved === 'cart') setSkin(saved);
     } catch {
       // 사생활 보호 모드 등 — 기본값으로 둔다.
     }
@@ -42,7 +42,7 @@ export function FormSkinToggle({ value, onChange }: { value: FormSkin; onChange:
     <div className="flex items-center gap-2">
       <span className="eyebrow">폼</span>
       <div className="inline-flex rounded-md border border-line bg-surface p-0.5">
-        {([['card', '현재'], ['toolbar', 'E · 툴바']] as const).map(([id, label]) => (
+        {([['card', '현재'], ['toolbar', 'E · 툴바'], ['cart', 'O · 바구니']] as const).map(([id, label]) => (
           <button
             key={id}
             type="button"

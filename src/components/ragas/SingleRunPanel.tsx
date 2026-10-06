@@ -27,6 +27,7 @@ import {
 } from '@/lib/types';
 import {
   CategorySelect,
+  Chevron,
   DatasetPurpose,
   DatasetPurposeLine,
   DatasetSelect,
@@ -78,6 +79,14 @@ import {
   ToolbarSep,
   useFormSkin,
 } from './RunSetupToolbar';
+// 임시 — O안(담아서 한 번에). 바구니·기록 레일과 담을 목록.
+import {
+  CartBrowse,
+  CartRail,
+  CartRailFolded,
+  useCart,
+  useRecentRuns,
+} from './RunCart';
 
 // ---- direct call (raw external-API smoke test, no scoring) ------------------
 
@@ -229,6 +238,30 @@ export default function SingleRunPanel() {
       : [metrics.includes(EXACT_MATCH) ? 'Action Test' : null, ragasCount ? `RAGAS ${ragasCount}` : null]
           .filter(Boolean).join(' + ');
 
+  // ---- 임시: O안(담아서 한 번에) ----------------------------------------
+  // 바구니는 데이터셋·폴더·케이스를 섞어 모으고, 데이터셋 하나로 떨어질 때만
+  // 실제로 돈다(한 실행이 데이터셋 하나만 받는다). 기록은 레일 아래에 상주하고,
+  // 누르면 그 실행이 이 패널의 결과 자리에 뜬다.
+  const cart = useCart();
+  const { runs: recentRuns, reload: reloadRuns } = useRecentRuns(14, skin === 'cart');
+  const [railOpen, setRailOpen] = useState(true);
+  const [openRunId, setOpenRunId] = useState<number | null>(null);
+  // 담을 목록은 결과가 없을 때 펼쳐져 있고, 결과가 뜨면 접힌다 — 결과를 보러 왔는데
+  // 목록이 그 위를 덮고 있으면 매번 접어야 한다. 한 번 누르면 그 뜻을 따른다.
+  const [browsePick, setBrowsePick] = useState<boolean | null>(null);
+  const hasOutput = status === 'running' || detail != null || live.length > 0;
+  const browseOpen = browsePick ?? !hasOutput;
+  // 방금 끝난 실행이 기록 맨 위에 서야 한다 — 레일이 들고 있는 목록은 패널이
+  // 열릴 때 한 번 읽은 것이다.
+  useEffect(() => {
+    if (status === 'done' || status === 'failed' || status === 'cancelled') reloadRuns();
+  }, [status, reloadRuns]);
+  // 바구니는 데이터셋으로만 담는다 — '직접 입력' 으로 둔 채 이 스킨으로 넘어오면
+  // 아래가 수동 호출 화면인 채 바구니로 돌릴 길이 없는 상태가 된다.
+  useEffect(() => {
+    if (skin === 'cart') setSource('dataset');
+  }, [skin]);
+
   useEffect(() => {
     if (!nodeNm) { setVersions([]); return; }
     api.get<PromptVersionSummary[]>(`/nodes/${encodeURIComponent(nodeNm)}/prompts`).then(setVersions).catch(() => setVersions([]));
@@ -342,9 +375,21 @@ export default function SingleRunPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function run() {
-    if (!canRun) return;
-    setError(null); setDetail(null); setStatus('running');
+  function run() {
+    if (!canRun || datasetId == null) return;
+    void startRun({ datasetId, caseType, caseIds: pickedCases ? Array.from(pickedCases) : null });
+  }
+
+  /**
+   * 실행을 띄운다. 폼이 고른 값으로 부를 때는 `run()` 이 감싸고, 바구니는 자기가
+   * 모은 것을 그대로 넘긴다 — 바구니를 폼 상태에 먼저 써 넣고 부르면, 데이터셋이
+   * 바뀔 때 고른 케이스를 비우는 effect 가 그 사이에 돌아 값이 날아간다.
+   */
+  async function startRun(
+    { datasetId: dsId, caseType: type, caseIds }: { datasetId: number; caseType: string | null; caseIds: number[] | null },
+  ) {
+    if (!(apiReady && targetReady && scoreReady && !modelErr)) return;
+    setError(null); setDetail(null); setStatus('running'); setOpenRunId(null);
     setLive([]); setTotal(0); setRunMetrics(null); setCancelling(false); setRerunning(null); runIdRef.current = null;
     const byPrompt = target === 'prompt';
     // Only the target under test is pinned; everything else runs as the agent's
@@ -354,14 +399,28 @@ export default function SingleRunPanel() {
     setRunMeta(meta);
     try {
       const r = await api.post<{ ragas_run_id: number }>('/flow/test/ragas', {
-        dataset_id: datasetId, case_type: caseType, metrics: scoreOn ? metrics : [], score: scoreOn,
-        case_ids: pickedCases ? Array.from(pickedCases) : null,
+        dataset_id: dsId, case_type: type, metrics: scoreOn ? metrics : [], score: scoreOn,
+        case_ids: caseIds,
         node_nm: byPrompt ? nodeNm : null, prompt_id: byPrompt ? ver : null,
         models: target === 'model' ? toSelection(models) : {},
       });
       saveActiveRun('single', { runId: r.ragas_run_id, endpointId, baseUrl: null, scoreOn, ...meta });
       attach(r.ragas_run_id, endpointId);
     } catch (e) { setError(errText(e)); setStatus('failed'); }
+  }
+
+  /** 레일의 기록에서 고른 실행을 이 패널의 결과 자리에 띄운다 — 끝난 실행이
+   * 남기는 모양과 같아서, 결과를 보려고 다른 화면으로 갈 일이 없다. */
+  async function openRecord(id: number) {
+    setOpenRunId(id);
+    setError(null); setLive([]); setTotal(0); setRunMetrics(null); setRunMeta(null); setRerunning(null);
+    try {
+      const d = await api.get<RagasRunDetail>(`/ragas-runs/${id}`);
+      setDetail(d);
+      setStatus(d.status === 'FAILED' ? 'failed' : d.status === 'CANCELLED' ? 'cancelled' : 'done');
+    } catch (e) {
+      setError(errText(e));
+    }
   }
 
   async function cancel() {
@@ -428,8 +487,10 @@ export default function SingleRunPanel() {
     return found ? `v${found.version_no}` : `ID ${id}`;
   };
 
-  return (
-    <div className="space-y-5">
+  // 본문. 스킨마다 바깥 틀만 다르고 안은 같다 — 'O · 바구니' 는 이 본문 왼쪽에
+  // 레일을 세운다.
+  const inner = (
+    <>
       {/* 임시 — 어느 폼으로 볼지. 고르고 나면 이 줄과 안 고른 쪽을 지운다. */}
       <div className="flex items-center justify-end">
         <FormSkinToggle value={skin} onChange={setSkin} />
@@ -608,6 +669,93 @@ export default function SingleRunPanel() {
 
         
       </Card>
+      )}
+
+      {/* 임시 — O안. 데이터는 왼쪽 레일의 바구니가 들고 있으므로 머리띠에서
+          '데이터'와 실행 단추를 뺀다. 두 곳에 실행 단추가 서면 어느 것이 바구니를
+          돌리는지 알 수 없다. */}
+      {skin === 'cart' && (
+        <>
+          <RunToolbar>
+            <ToolbarMenu label="Agent" value={agentLabel} muted={endpointId == null} width={236}>
+              <EndpointSelect endpoints={endpoints} value={endpointId} onChange={setEndpointId} className="h-9 w-full text-sm" />
+            </ToolbarMenu>
+
+            <ToolbarSep />
+
+            <ToolbarMenu label="대상" value={targetLabel} width={target === 'model' ? 540 : 320}>
+              <div className="space-y-2.5">
+                <SegToggle
+                  value={target}
+                  onChange={setTarget}
+                  options={[
+                    { id: 'endpoint', label: 'Default' },
+                    { id: 'model', label: 'Model' },
+                    { id: 'prompt', label: 'Prompt', disabled: !PROMPT_TARGET_ENABLED },
+                  ]}
+                />
+                {target === 'prompt' && (
+                  <div className="flex gap-2">
+                    <Select value={nodeNm} onChange={(e) => setNodeNm(e.target.value)} className="h-9 w-40">
+                      <option value="" disabled>노드</option>
+                      {nodes.map((n) => (<option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>))}
+                    </Select>
+                    <VersionSelect versions={versions} value={ver} onChange={setVer} className="h-9 w-28" placeholder="버전" />
+                  </div>
+                )}
+                {target === 'model' && (
+                  <div className="border-t border-line pt-2.5">
+                    <ModelPicker roles={roles} columns={[{ key: 'a', drafts: models, onChange: setModels }]} />
+                  </div>
+                )}
+              </div>
+            </ToolbarMenu>
+
+            <ToolbarSep />
+
+            <ToolbarMenu label="채점" value={scoreLabel} muted={scoreOn && metrics.length === 0} width={430}>
+              <div className="space-y-2.5">
+                <div className="flex items-center gap-2">
+                  <ScoreToggle on={scoreOn} onChange={setScoreOn} />
+                  <span className="text-caption text-muted">{scoreOn ? '채점함' : '채점 없이 응답만'}</span>
+                </div>
+                {scoreOn && (
+                  <div className="border-t border-line pt-2.5">
+                    <EvalOptions metrics={metrics} setMetrics={setMetrics} />
+                    {metrics.length === 0 && <span className="text-caption text-bad">하나 이상</span>}
+                  </div>
+                )}
+              </div>
+            </ToolbarMenu>
+
+            <span className="flex-grow" />
+
+            <div className="flex shrink-0 items-center gap-2.5 pl-2">
+              {modelErr && <span className="text-caption text-bad">{modelErr}</span>}
+              <StatusPill status={status} />
+            </div>
+          </RunToolbar>
+
+          <Card>
+            <button
+              type="button"
+              onClick={() => setBrowsePick(!browseOpen)}
+              aria-expanded={browseOpen}
+              className="flex w-full items-center gap-2 px-4 py-2.5 text-left"
+            >
+              <Chevron open={browseOpen} />
+              <span className="text-body-sm font-semibold text-ink">담을 데이터 고르기</span>
+              <span className="ml-auto text-caption text-muted-soft">
+                {cart.cases ? `담은 것 ${cart.cases}건` : '데이터셋 · 폴더 · 케이스'}
+              </span>
+            </button>
+            {browseOpen && (
+              <div className="border-t border-line">
+                <CartBrowse datasets={datasets} cart={cart} className="max-h-[420px]" />
+              </div>
+            )}
+          </Card>
+        </>
       )}
 
       {/* 임시 — E안. 조건을 48px 한 줄에 값으로만 적고, 컨트롤은 누를 때 아래로
@@ -947,6 +1095,42 @@ export default function SingleRunPanel() {
           )}
         </>
       )}
+    </>
+  );
+
+  if (skin !== 'cart') return <div className="space-y-5">{inner}</div>;
+
+  // 레일은 sticky 로 붙어 결과를 따라 내려가도 자리를 지킨다 — 담은 것과 기록이
+  // 늘 보이는 것이 이 배치의 이유이고, 스크롤에 흘러가 버리면 그게 없어진다.
+  return (
+    <div className="flex items-start gap-4">
+      {railOpen ? (
+        <div className="sticky top-0 h-[calc(100vh-6.5rem)] w-[340px] shrink-0 overflow-hidden rounded-md border border-line bg-surface shadow-card">
+          <CartRail
+            cart={cart}
+            runs={recentRuns}
+            openRunId={openRunId}
+            onOpenRun={(id) => void openRecord(id)}
+            onCollapse={() => setRailOpen(false)}
+            running={status === 'running'}
+            blockedReason={
+              !apiReady ? 'Agent 를 고르세요'
+              : !targetReady ? '노드와 버전을 고르세요'
+              : !scoreReady ? '채점 지표를 하나 이상 고르세요'
+              : modelErr
+            }
+            onRun={({ datasetId: dsId, caseIds }) => {
+              setBrowsePick(null);
+              void startRun({ datasetId: dsId, caseType: null, caseIds });
+            }}
+          />
+        </div>
+      ) : (
+        <div className="sticky top-0">
+          <CartRailFolded cases={cart.cases} onOpen={() => setRailOpen(true)} />
+        </div>
+      )}
+      <div className="min-w-0 flex-1 space-y-5">{inner}</div>
     </div>
   );
 }
