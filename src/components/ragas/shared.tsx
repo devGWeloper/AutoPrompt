@@ -327,13 +327,67 @@ export function upsertResult(cur: RagasResultRow[], row: RagasResultRow): RagasR
 
 // ---- hooks -----------------------------------------------------------------
 
+/**
+ * 데이터셋 목록 — 앱 전체가 한 벌을 본다.
+ *
+ * 훅마다 자기 복사본을 들고 있으면, 데이터셋 탭에서 이름을 고쳐도 실행 화면은 옛
+ * 이름을 계속 보여 준다. 실행 패널은 탭을 떠나도 마운트된 채로 숨겨지기만 하므로
+ * (스트리밍이 끊기면 서버가 취소로 읽는다) 다시 들어와도 새로 읽지 않는다 —
+ * 그래서 등록 API 와 같이 모듈 캐시 + 구독으로 두고, 누가 고치면 그 자리에서
+ * 모두에게 전해진다.
+ */
+let flowDatasetCache: Dataset[] | null = null;
+const flowDatasetSubs = new Set<(next: Dataset[]) => void>();
+
+function publishFlowDatasets(next: Dataset[]): void {
+  flowDatasetCache = next;
+  for (const fn of flowDatasetSubs) fn(next);
+  // 데이터셋이 움직였으면 그 안의 폴더 목록도 늙었다 — 이름·건수가 같이 바뀐다.
+  bumpDatasetEpoch();
+}
+
 export function useFlowDatasets() {
-  const [datasets, setDatasets] = useState<Dataset[]>([]);
+  const [datasets, setDatasets] = useState<Dataset[]>(flowDatasetCache ?? []);
   const reload = useCallback(() => {
-    api.get<Dataset[]>('/flow/datasets').then(setDatasets).catch(() => setDatasets([]));
+    api
+      .get<Dataset[]>('/flow/datasets')
+      .then(publishFlowDatasets)
+      .catch(() => publishFlowDatasets([]));
   }, []);
-  useEffect(reload, [reload]);
+  useEffect(() => {
+    flowDatasetSubs.add(setDatasets);
+    // 캐시가 있으면 그것으로 시작한다 — 목록이 빈 채 한 번 깜빡이지 않게.
+    if (flowDatasetCache === null) reload();
+    else setDatasets(flowDatasetCache);
+    return () => {
+      flowDatasetSubs.delete(setDatasets);
+    };
+  }, [reload]);
   return { datasets, reload };
+}
+
+/**
+ * '데이터셋 쪽이 바뀌었다' 는 신호. 폴더 목록처럼 데이터셋에 딸린 것들이 이 수를
+ * 보고 다시 읽는다 — 목록을 또 하나 캐시하는 대신, 다시 읽을 때를 알리기만 한다.
+ */
+let datasetEpoch = 0;
+const datasetEpochSubs = new Set<(n: number) => void>();
+
+export function bumpDatasetEpoch(): void {
+  datasetEpoch += 1;
+  for (const fn of datasetEpochSubs) fn(datasetEpoch);
+}
+
+function useDatasetEpoch(): number {
+  const [n, setN] = useState(datasetEpoch);
+  useEffect(() => {
+    datasetEpochSubs.add(setN);
+    setN(datasetEpoch);
+    return () => {
+      datasetEpochSubs.delete(setN);
+    };
+  }, []);
+  return n;
 }
 
 export function usePromptNodes() {
@@ -846,13 +900,16 @@ export function DatasetPurposeLine({ datasets, datasetId }: { datasets: Dataset[
 export function useDatasetCategories(datasetId: number | null) {
   const [cats, setCats] = useState<DatasetCategory[]>([]);
   const [seq, setSeq] = useState(0);
+  // 데이터셋 목록이 다시 읽힐 때 같이 읽는다 — 폴더 이름을 고치거나 케이스를 옮기면
+  // 이름과 건수가 함께 바뀌는데, 그때 실행 화면이 옛 폴더를 들고 있었다.
+  const epoch = useDatasetEpoch();
   useEffect(() => {
     if (datasetId == null) { setCats([]); return; }
     let alive = true;
     const done = (next: DatasetCategory[]) => { if (alive) setCats(next); };
     api.get<DatasetCategory[]>(`/datasets/${datasetId}/case-types`).then(done).catch(() => done([]));
     return () => { alive = false; };
-  }, [datasetId, seq]);
+  }, [datasetId, seq, epoch]);
   const reload = useCallback(() => setSeq((n) => n + 1), []);
   return { cats, setCats, reload };
 }

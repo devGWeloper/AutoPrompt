@@ -151,7 +151,7 @@ export default function CaseImportModal({
   onSaved: (res: CaseBulkResult, target: { id: number; name: string }) => void;
 }) {
   const fixed = datasetId != null;
-  const { datasets } = useFlowDatasets();
+  const { datasets, reload: reloadDatasets } = useFlowDatasets();
   const [target, setTarget] = useState<number | null>(datasetId ?? null);
   const { cats } = useDatasetCategories(target);
   const folders = cats.filter((c) => c.type_id !== null).map((c) => c.type_cd);
@@ -253,6 +253,10 @@ export default function CaseImportModal({
       const res = await api.post<CaseBulkResult>(`/datasets/${target}/cases/bulk`, {
         cases: filled.map((f) => toPayload(f)),
       });
+      // 케이스가 늘었으니 건수가 바뀌었고, 새 폴더가 생겼을 수도 있다. 이 창은
+      // 결과 화면('정답으로 추가')에서도 열리므로, 부르는 쪽에 맡기지 않고 여기서
+      // 공용 목록을 다시 읽는다 — 그 자리에선 아무도 갱신해 주지 않았다.
+      reloadDatasets();
       onSaved(res, { id: target, name: targetName });
       onClose();
     } catch (e) {

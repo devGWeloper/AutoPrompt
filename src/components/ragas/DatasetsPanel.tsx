@@ -12,7 +12,7 @@ import CaseImportModal, { casesWorkbook } from './CaseImportModal';
 import { EMPTY, parseCaseInput, toFields, toPayload, type Fields } from './caseFields';
 import {
   Chevron, EmptyState, ErrBox, errText, folderLabel, oneLine, PencilIcon, TrashIcon, UNFILED,
-  useArmed, useDatasetCategories, useFlowDatasets,
+  bumpDatasetEpoch, useArmed, useDatasetCategories, useFlowDatasets,
 } from './shared';
 
 // ---- small pieces ----------------------------------------------------------
@@ -364,6 +364,9 @@ export default function DatasetsPanel() {
     setNewFolder(null);
     if (selDataset == null || !nm) return;
     setCats(await api.post<DatasetCategory[]>(`/datasets/${selDataset}/case-types`, { type_cd: nm }));
+    // 폴더가 늘었다 — 이 목록은 여기서 갱신했지만, 실행 화면들이 들고 있는 폴더
+    // 목록은 자기 복사본이라 다시 읽게 알려야 한다.
+    bumpDatasetEpoch();
     loadCases();
   });
 
@@ -372,6 +375,7 @@ export default function DatasetsPanel() {
     setFolderEditId(null);
     if (selDataset == null || !nm) return;
     setCats(await api.put<DatasetCategory[]>(`/datasets/${selDataset}/case-types/${typeId}`, { type_cd: nm }));
+    bumpDatasetEpoch();
     // The cases moved with the folder, so their own labels are stale too.
     loadCases();
   });
@@ -379,6 +383,7 @@ export default function DatasetsPanel() {
   const delFolder = (typeId: number) => guard(async () => {
     if (selDataset == null) return;
     setCats(await api.del<DatasetCategory[]>(`/datasets/${selDataset}/case-types/${typeId}`));
+    bumpDatasetEpoch();
     loadCases();
   });
 
