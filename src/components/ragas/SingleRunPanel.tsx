@@ -76,7 +76,6 @@ import {
   PlayIcon,
   RunToolbar,
   ToolbarMenu,
-  ToolbarSep,
   useFormSkin,
 } from './RunSetupToolbar';
 // 임시 — O안(담아서 한 번에). 바구니·기록 레일과 담을 목록.
@@ -225,11 +224,17 @@ export default function SingleRunPanel() {
     ? '직접 입력'
     : !pickedDataset
       ? '데이터셋 선택'
-      : [
-          pickedDataset.dataset_nm,
-          folderHit ? folderLabel(folderHit.type_cd) : null,
-          pickedCases ? `선택 ${pickedCases.size}건` : runCount != null ? `${runCount}건` : null,
-        ].filter(Boolean).join(' · ');
+      : [pickedDataset.dataset_nm, folderHit ? folderLabel(folderHit.type_cd) : null]
+          .filter(Boolean).join(' · ');
+  // 건수는 값이 아니라 값에 딸린 수 — 이름과 한 덩어리로 이어 붙이면 어디까지가
+  // 데이터셋 이름인지 흐려진다.
+  const dataBadge = source === 'manual'
+    ? undefined
+    : pickedCases
+      ? `선택 ${pickedCases.size}건`
+      : runCount != null
+        ? `${runCount}건`
+        : undefined;
   const ragasCount = metrics.filter((m) => m !== EXACT_MATCH).length;
   const scoreLabel = !scoreOn
     ? '없음'
@@ -681,8 +686,6 @@ export default function SingleRunPanel() {
               <EndpointSelect endpoints={endpoints} value={endpointId} onChange={setEndpointId} className="h-9 w-full text-sm" />
             </ToolbarMenu>
 
-            <ToolbarSep />
-
             <ToolbarMenu label="대상" value={targetLabel} width={target === 'model' ? 540 : 320}>
               <div className="space-y-2.5">
                 <SegToggle
@@ -710,8 +713,6 @@ export default function SingleRunPanel() {
                 )}
               </div>
             </ToolbarMenu>
-
-            <ToolbarSep />
 
             <ToolbarMenu label="채점" value={scoreLabel} muted={scoreOn && metrics.length === 0} width={430}>
               <div className="space-y-2.5">
@@ -767,8 +768,6 @@ export default function SingleRunPanel() {
               <EndpointSelect endpoints={endpoints} value={endpointId} onChange={setEndpointId} className="h-9 w-full text-sm" />
             </ToolbarMenu>
 
-            <ToolbarSep />
-
             <ToolbarMenu label="대상" value={targetLabel} width={target === 'model' ? 540 : 320}>
               <div className="space-y-2.5">
                 <SegToggle
@@ -799,11 +798,11 @@ export default function SingleRunPanel() {
               </div>
             </ToolbarMenu>
 
-            <ToolbarSep />
-
             <ToolbarMenu
               label="데이터"
               value={dataLabel}
+              badge={dataBadge}
+              lead
               muted={source === 'dataset' && !pickedDataset}
               width={330}
             >
@@ -848,8 +847,6 @@ export default function SingleRunPanel() {
               </div>
             </ToolbarMenu>
 
-            <ToolbarSep />
-
             <ToolbarMenu label="채점" value={scoreLabel} muted={scoreOn && metrics.length === 0} width={430}>
               <div className="space-y-2.5">
                 <div className="flex items-center gap-2">
@@ -870,9 +867,11 @@ export default function SingleRunPanel() {
             <div className="flex shrink-0 items-center gap-2.5 pl-2">
               {modelErr && <span className="text-caption text-bad">{modelErr}</span>}
               <StatusPill status={source === 'dataset' ? status : callStatus} />
+              {/* 띠에서 유일한 주 동작이라 한 단 큰 치수를 쓴다 — 셀렉트와 같은
+                  h-9 로 두면 네 칸과 같은 무게가 되어 줄의 끝이 안 보인다. */}
               {source === 'dataset' ? (
                 <Button
-                  size="md"
+                  size="lg"
                   variant={status === 'running' ? 'secondary' : 'primary'}
                   className="whitespace-nowrap"
                   disabled={status === 'running' ? cancelling : !canRun}
@@ -888,7 +887,7 @@ export default function SingleRunPanel() {
                   )}
                 </Button>
               ) : (
-                <Button size="md" variant="primary" className="whitespace-nowrap" disabled={!canCall} onClick={call}>
+                <Button size="lg" variant="primary" className="whitespace-nowrap" disabled={!canCall} onClick={call}>
                   {callStatus === 'running' ? '호출 중…' : '호출'}
                 </Button>
               )}

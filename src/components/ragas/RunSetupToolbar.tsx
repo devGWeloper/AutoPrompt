@@ -60,13 +60,21 @@ export function FormSkinToggle({ value, onChange }: { value: FormSkin; onChange:
   );
 }
 
-/** 머리띠 한 줄. 카드가 아니라 chrome 이라 안쪽 여백이 거의 없다. */
+/**
+ * 머리띠 한 줄.
+ *
+ * 띠 자체는 눌러 둔 면(surface-3)이고 그 위의 칸들이 흰 컨트롤로 뜬다 —
+ * 흰 바탕에 흰 칸을 올리면 테두리 한 겹만 남아 띠가 글자 네 덩어리로 보였다.
+ * 테두리도 카드보다 한 단 진한 line-strong 을 쓴다: 이 줄은 내용이 아니라
+ * 조작하는 자리라서, 결과 카드와 같은 굵기로 두면 같은 종류로 읽힌다.
+ */
 export function RunToolbar({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <div
       className={cn(
-        // 한 줄에 다 들어가면 48px, 좁은 화면에서 접히면 그만큼만 자란다.
-        'flex min-h-[48px] flex-wrap items-center gap-y-1 rounded-md border border-line bg-surface px-2 py-1 shadow-card',
+        // 한 줄에 다 들어가면 56px, 좁은 화면에서 접히면 그만큼만 자란다.
+        'flex min-h-[56px] flex-wrap items-center gap-x-2 gap-y-1.5',
+        'rounded-md border border-line-strong bg-surface-3 px-2.5 py-2 shadow-card',
         className,
       )}
     >
@@ -86,7 +94,7 @@ export function ToolbarSep() {
  * 네 개를 훑어야 하는데, 조건은 바꾸는 일보다 확인하는 일이 훨씬 많다.
  */
 export function ToolbarMenu({
-  label, value, width = 260, muted, children,
+  label, value, width = 260, muted, lead, badge, children,
 }: {
   label: string;
   value: string;
@@ -94,6 +102,11 @@ export function ToolbarMenu({
   width?: number;
   /** 아직 고르지 않은 값 — 자리만 잡고 있다는 뜻으로 흐리게 적는다. */
   muted?: boolean;
+  /** 이 줄에서 가장 중요한 칸(= 무엇을 시험하는가). 네 칸이 같은 무게면 눈이 어디서
+   * 시작해야 할지 모른다. */
+  lead?: boolean;
+  /** 값 뒤에 붙는 작은 수 — 건수처럼 값의 일부가 아니면서 같이 읽혀야 하는 것. */
+  badge?: string;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -120,14 +133,29 @@ export function ToolbarMenu({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         className={cn(
-          'inline-flex h-9 max-w-[320px] items-baseline gap-2 rounded-sm px-2.5 transition-colors',
-          open ? 'bg-accent-soft' : 'hover:bg-surface-3',
+          // 앱의 Select 와 같은 치수·테두리·포커스 — 이 칸은 '열리는 셀렉트' 라서,
+          // 생긴 것도 셀렉트와 같아야 눌러 볼 수 있는 것으로 읽힌다.
+          'inline-flex h-9 max-w-[340px] items-center gap-2 rounded-sm border px-2.5 transition',
+          open
+            ? 'border-accent bg-accent-soft shadow-ring'
+            : 'border-line-strong bg-surface hover:border-muted-soft',
         )}
       >
-        <span className="shrink-0 text-[10.5px] font-bold uppercase tracking-[0.5px] text-muted-soft">{label}</span>
-        <span className={cn('truncate text-[13.5px] font-semibold', muted ? 'text-muted-soft' : 'text-ink')}>
+        <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.6px] text-muted">{label}</span>
+        <span
+          className={cn(
+            'truncate',
+            lead ? 'text-[14.5px] font-bold' : 'text-[13.5px] font-semibold',
+            muted ? 'text-muted-soft' : 'text-ink',
+          )}
+        >
           {value}
         </span>
+        {badge && (
+          <span className="inline-flex h-[18px] shrink-0 items-center rounded-full border border-accent-line bg-accent-soft px-1.5 text-[10.5px] font-bold text-accent-deep">
+            {badge}
+          </span>
+        )}
         <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden className="shrink-0 self-center text-muted-soft">
           <path d="M4 6.5 8 10.5l4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
