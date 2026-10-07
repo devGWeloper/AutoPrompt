@@ -1418,34 +1418,57 @@ export function OxBadge({ value, passed }: { value: number | null; passed?: bool
  * 다시 찾아 붙여 넣는 동안 방금 본 답은 손에 없다. 그래서 답을 보고 있는 이 자리에
  * 둔다.
  *
- * 되돌릴 수 없는 덮어쓰기라 한 번 더 누르게 한다(useArmed). 지난 실행 기록은
- * 건드리지 않는다 — 그 실행은 그때의 정답지로 채점된 사실이다.
+ * 한 번 누르면 바로 쓰고, 그 자리가 '되돌리기' 가 된다 — 바꾸기 전 정답을 들고
+ * 있으므로 무를 수 있다. 지난 실행 기록은 건드리지 않는다 — 그 실행은 그때의
+ * 정답지로 채점된 사실이다.
  */
 export function TruthFixButton({
-  datasetId, caseId, truth, side, onDone,
+  datasetId, caseId, truth, prev, side, mode = 'fix', onDone,
 }: {
   datasetId: number;
   caseId: number;
   /** 정답으로 삼을 값 — 채점 대상과 같은 것(중간 변수가 있으면 그것). */
   truth: string;
+  /** 지금 데이터셋에 들어 있는 정답. 덮어쓴 뒤 되돌릴 값이다 — 없으면(= 처음 넣는
+   * 경우) 되돌릴 곳이 없다. */
+  prev?: string | null;
   /** A·B 비교에서 어느 쪽 답인지. 정답은 두 사이드가 함께 쓰는 하나라, 어느 답으로
    * 바꾸는 것인지가 툴팁에 적혀 있어야 한다. */
   side?: 'A' | 'B';
+  /**
+   * 'fix' 는 있던 정답을 이 답으로 바꾸는 것, 'set' 은 아직 정답이 없는 케이스에
+   * 처음 넣는 것 — 쓰는 곳은 같은 자리지만 '수정' 과 '저장' 은 사람에게 다른 일이라
+   * 글자가 달라야 한다.
+   */
+  mode?: 'fix' | 'set';
   onDone?: () => void;
 }) {
-  const [armed, setArmed] = useArmed();
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const sideOf = side ? `${side} 의 ` : '';
+  // 되돌릴 값이 있는가. 서버는 빈 정답을 받지 않으므로, 없던 정답을 넣은 뒤에는
+  // 되돌릴 수 없다 — 그 경우에는 끝난 사실만 적는다.
+  const back = (prev ?? '').trim();
+  const canUndo = done && !!back;
+
+  /**
+   * 한 번 누르면 바로 쓴다 — 쓴 뒤에는 같은 자리가 '되돌리기' 가 된다.
+   *
+   * 누르기 전에 한 번 더 묻는 방식이었는데, 되묻는 것은 '아직 아무 일도 안 일어난'
+   * 상태에서 사람에게 확신을 요구하고, 정작 잘못 눌렀을 때 손쓸 길은 주지 않았다.
+   * 되돌리기는 그 반대다: 일은 바로 일어나고, 무르는 길이 그 자리에 남는다.
+   */
   async function click(e: ReactMouseEvent) {
     e.stopPropagation();
-    if (!armed) { setArmed(true); return; }
-    setArmed(false);
+    if (busy) return;
+    const next = canUndo ? back : truth;
     setBusy(true);
     setErr(null);
     try {
-      await api.put(`/datasets/${datasetId}/cases/${caseId}/truth`, { ground_truth: truth });
-      setDone(true);
+      await api.put(`/datasets/${datasetId}/cases/${caseId}/truth`, { ground_truth: next });
+      // 되돌렸으면 처음 상태로 — 다시 이 답으로 바꿀 수 있어야 한다.
+      setDone(!canUndo);
       onDone?.();
     } catch (x) {
       setErr(errText(x));
@@ -1453,28 +1476,37 @@ export function TruthFixButton({
       setBusy(false);
     }
   }
+
   return (
     <button
       type="button"
-      disabled={busy || done}
+      disabled={busy || (done && !canUndo)}
       onClick={click}
       onKeyDown={(e) => e.stopPropagation()}
       title={
         err ??
-        (done
-          ? `데이터셋의 정답을 ${side ? side + ' 의 ' : ''}이 답으로 바꿨습니다 — 이 기록은 그대로입니다`
-          : `데이터셋의 이 케이스 정답을 ${side ? side + ' 의 ' : ''}지금 답으로 바꿉니다. 지난 기록은 그대로 남습니다`)
+        (canUndo
+          ? '바꾸기 전 정답으로 되돌립니다'
+          : done
+            ? `데이터셋의 이 케이스 정답을 ${sideOf}이 답으로 바꿨습니다 — 이 기록은 그대로입니다`
+            : mode === 'set'
+              ? `정답이 없는 케이스입니다. ${sideOf}이 답을 데이터셋의 정답으로 저장합니다`
+              : `데이터셋의 이 케이스 정답을 ${sideOf}지금 답으로 바꿉니다. 지난 기록은 그대로 남습니다`)
       }
       className={cn(
         'whitespace-nowrap rounded-sm border px-1.5 py-px text-[10.5px] font-medium transition-colors disabled:opacity-60',
         err
           ? 'border-bad-line bg-bad-soft text-bad'
-          : armed
-            ? 'border-accent bg-accent-soft text-accent'
+          : canUndo
+            ? 'border-accent bg-accent-soft text-accent hover:bg-accent-soft2'
             : 'border-line text-muted hover:border-muted-soft hover:bg-surface-2 hover:text-ink',
       )}
     >
-      {busy ? '…' : err ? '실패' : done ? '정답 바뀜' : armed ? '한 번 더' : '정답 수정'}
+      {busy ? '…'
+        : err ? '실패'
+        : canUndo ? '되돌리기'
+        : done ? (mode === 'set' ? '정답 저장됨' : '정답 바뀜')
+        : mode === 'set' ? '정답으로 저장' : '정답 수정'}
     </button>
   );
 }
@@ -1730,8 +1762,19 @@ export function CaseTable({
         const scored = r.trace_value ?? r.answer;
         // 정답 없이 돌린 JSON 결과 — 판정표 자리에 키 · 값 표가 선다.
         const keyed = !isClosed && !r.ground_truth && !!valueFields(scored, !r.trace_value);
+        // 정답이 없는 줄에서 이 답을 정답으로 굳히는 자리.
+        //
+        // 데이터셋에서 온 실행이면 고칠 케이스가 이미 정해져 있다 — 그 케이스에 바로
+        // 쓴다. 데이터셋·폴더를 다시 고르고 표에 값을 옮겨 적는 창을 띄우는 건, 이미
+        // 아는 답을 사람에게 한 번 더 받는 일이다. 케이스가 없는 실행(직접 호출)에만
+        // 그 창이 뜻을 가진다: 어디에 넣을지를 그때 골라야 하니까.
+        const truthVal = r.trace_value ?? r.answer;
         const addExpected = !r.ground_truth && (
-          <AddExpectedButton question={r.question} contexts={r.contexts} answer={r.answer} traceValue={r.trace_value} />
+          detail.dataset_id != null && r.case_id != null && truthVal ? (
+            <TruthFixButton mode="set" datasetId={detail.dataset_id} caseId={r.case_id} truth={truthVal} />
+          ) : (
+            <AddExpectedButton question={r.question} contexts={r.contexts} answer={r.answer} traceValue={r.trace_value} />
+          )
         );
         return (
           <div key={r.ragas_result_id}>
@@ -1825,6 +1868,7 @@ export function CaseTable({
                           datasetId={detail.dataset_id}
                           caseId={r.case_id}
                           truth={(r.trace_value ?? r.answer)!}
+                          prev={r.ground_truth}
                         />
                       )}
                     </span>

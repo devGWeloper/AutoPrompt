@@ -64,17 +64,47 @@ export interface CartApi {
   single: { datasetId: number; caseIds: number[] | null } | null;
 }
 
+/**
+ * a 가 b 를 품는가 — 데이터셋은 그 안의 모든 폴더·케이스를, 폴더는 자기 케이스를
+ * 품는다.
+ *
+ * 품는 것과 품긴 것을 같이 담으면 같은 케이스를 두 번 세게 된다 — '주문 조회
+ * 24건' 과 '주문 조회 · 부분취소 12건' 을 같이 담으면 바구니가 36건이라고 말하지만
+ * 실제로 돌 것은 24건이다.
+ */
+function covers(a: CartItem, b: CartItem): boolean {
+  if (a.key === b.key || a.datasetId !== b.datasetId) return false;
+  if (a.kind === 'dataset') return true;
+  if (a.kind === 'folder' && b.kind === 'case') {
+    const mine = a.caseIds ?? [];
+    return (b.caseIds ?? []).every((id) => mine.includes(id));
+  }
+  return false;
+}
+
 export function useCart(): CartApi {
   const [cart, setCart] = useState<CartItem[]>([]);
 
   const add = useCallback((it: CartItem) => {
-    setCart((cur) => (cur.some((c) => c.key === it.key) ? cur : [...cur, it]));
+    setCart((cur) => {
+      if (cur.some((c) => c.key === it.key)) return cur;
+      // 이미 상위가 담겨 있으면 담을 것이 없다. 아래 UI 가 그 줄의 단추를 막아 두지만,
+      // 막는 쪽이 한 군데 더 있어도 손해가 없다.
+      if (cur.some((c) => covers(c, it))) return cur;
+      // 거꾸로, 새로 담는 것이 이미 담긴 것들을 품으면 그것들을 걷어낸다 — 폴더 둘을
+      // 담아 둔 뒤 데이터셋째로 담으면 폴더 둘은 뜻이 없어진다.
+      return [...cur.filter((c) => !covers(it, c)), it];
+    });
   }, []);
   const drop = useCallback((key: string) => {
     setCart((cur) => cur.filter((c) => c.key !== key));
   }, []);
   const toggle = useCallback((it: CartItem) => {
-    setCart((cur) => (cur.some((c) => c.key === it.key) ? cur.filter((c) => c.key !== it.key) : [...cur, it]));
+    setCart((cur) => {
+      if (cur.some((c) => c.key === it.key)) return cur.filter((c) => c.key !== it.key);
+      if (cur.some((c) => covers(c, it))) return cur;
+      return [...cur.filter((c) => !covers(it, c)), it];
+    });
   }, []);
   const clear = useCallback(() => setCart([]), []);
 
@@ -139,8 +169,26 @@ function KindChip({ kind }: { kind: CartKind }) {
   );
 }
 
-/** 담기·빼기를 한 단추가 겸한다. 담긴 줄은 체크로 서고, 다시 누르면 빠진다. */
-function PickButton({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+/**
+ * 담기·빼기를 한 단추가 겸한다. 담긴 줄은 체크로 서고, 다시 누르면 빠진다.
+ *
+ * `covered` 는 '위쪽에서 이미 담겼다' — 데이터셋째로 담았으면 그 안의 폴더·케이스는
+ * 따로 담을 것이 없다. 단추를 숨기지 않고 흐린 체크로 두는 건, 이미 돌 거리에
+ * 들어 있다는 사실을 그 줄에서 읽을 수 있어야 하기 때문이다.
+ */
+function PickButton({ on, covered, onToggle }: { on: boolean; covered?: boolean; onToggle: () => void }) {
+  if (covered) {
+    return (
+      <span
+        title="위 항목에 이미 담겨 있습니다"
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border border-accent-line bg-accent-soft text-accent"
+      >
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden className="opacity-55">
+          <path d="M3 8.5l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </span>
+    );
+  }
   return (
     <button
       type="button"
@@ -229,6 +277,8 @@ function CartTree({ datasets, cart, q }: { datasets: Dataset[]; cart: CartApi; q
     <>
       {shown.map((d) => {
         const open = openDs === d.dataset_id;
+        // 데이터셋째로 담았으면 그 안의 줄들은 이미 돌 거리에 들어 있다.
+        const dsPicked = cart.inCart(`d:${d.dataset_id}`);
         const dsKey = `d:${d.dataset_id}`;
         return (
           <div key={d.dataset_id} className="border-b border-line">
@@ -259,6 +309,7 @@ function CartTree({ datasets, cart, q }: { datasets: Dataset[]; cart: CartApi; q
             {open && !loading && folders.map(([type, rows]) => {
               const fKey = `f:${d.dataset_id}:${type}`;
               const fOpen = openFolder === fKey;
+              const fPicked = cart.inCart(fKey);
               return (
                 <div key={fKey}>
                   <div className="flex items-center gap-1.5 bg-surface-2 py-1 pl-5 pr-2">
@@ -272,7 +323,8 @@ function CartTree({ datasets, cart, q }: { datasets: Dataset[]; cart: CartApi; q
                       <span className="shrink-0 text-[11px] text-muted-soft">{rows.length}</span>
                     </button>
                     <PickButton
-                      on={cart.inCart(fKey)}
+                      on={fPicked}
+                      covered={dsPicked}
                       onToggle={() => cart.toggle({
                         key: fKey, kind: 'folder', datasetId: d.dataset_id, datasetNm: d.dataset_nm,
                         label: `${d.dataset_nm} · ${folderLabel(type)}`, n: rows.length,
@@ -289,6 +341,7 @@ function CartTree({ datasets, cart, q }: { datasets: Dataset[]; cart: CartApi; q
                         <span className="min-w-0 flex-1 truncate text-xs text-body" title={question}>{question}</span>
                         <PickButton
                           on={cart.inCart(cKey)}
+                          covered={dsPicked || fPicked}
                           onToggle={() => cart.toggle({
                             key: cKey, kind: 'case', datasetId: d.dataset_id, datasetNm: d.dataset_nm,
                             label: question, n: 1, caseIds: [c.case_id],

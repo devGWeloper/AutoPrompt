@@ -47,7 +47,7 @@ function GroundTruthBox({ text, trailing, flush }: { text: string; trailing?: Re
  * be read against the same yardstick instead of against each other by eye.
  */
 function SideBox({
-  side, label, tone, row, gt, settled, raw = true, flush,
+  side, label, tone, row, gt, settled, datasetId, raw = true, flush,
 }: {
   side: 'A' | 'B';
   label: string;
@@ -55,6 +55,9 @@ function SideBox({
   row?: RagasResultRow;
   gt: string | null;
   settled?: boolean;
+  /** 이 실행이 돌린 데이터셋. 있으면 정답이 없는 케이스에 바로 써 넣는다 —
+   * 어디에 넣을지가 이미 정해져 있어서 고르는 창이 필요 없다. */
+  datasetId?: number | null;
   /**
    * 원본 보기인가. 위에 키별 판정표가 선 화면(=키별 보기)에서는 채점된 JSON 을
    * 여기서 또 펼치지 않는다 — 단일 실행 상세와 같은 규칙이다: 표가 채점 대상을
@@ -86,13 +89,26 @@ function SideBox({
         {row?.exact_match != null && <OxBadge value={row.exact_match} />}
         <span className="ml-auto flex items-center gap-2">
           <ElapsedTag ms={row?.elapsed_ms} />
+          {/* 정답이 없는 케이스에 이 답을 정답으로. 데이터셋에서 온 실행이면 넣을
+              케이스가 이미 정해져 있어 바로 쓴다 — 고르는 창은 케이스가 없는
+              실행(직접 호출)에만 뜻이 있다. */}
           {gt === null && row && (
-            <AddExpectedButton
-              question={row.question}
-              contexts={row.contexts}
-              answer={row.answer}
-              traceValue={row.trace_value}
-            />
+            datasetId != null && row.case_id != null && (row.trace_value ?? row.answer) ? (
+              <TruthFixButton
+                mode="set"
+                side={side}
+                datasetId={datasetId}
+                caseId={row.case_id}
+                truth={(row.trace_value ?? row.answer)!}
+              />
+            ) : (
+              <AddExpectedButton
+                question={row.question}
+                contexts={row.contexts}
+                answer={row.answer}
+                traceValue={row.trace_value}
+              />
+            )
           )}
         </span>
       </div>
@@ -563,6 +579,7 @@ export function CaseCompareTable({
                                       datasetId={det.dataset_id}
                                       caseId={row.case_id}
                                       truth={answer}
+                                      prev={gt}
                                       side={side}
                                     />
                                   </span>
@@ -639,8 +656,8 @@ export function CaseCompareTable({
                       적을 것(중간 변수 · 오류)이 있을 때만 선다. */}
                   {sidesShown && (
                     <div className="grid grid-cols-1 divide-y divide-line sm:grid-cols-2 sm:divide-x sm:divide-y-0">
-                      <SideBox flush side="A" label={nameA} tone="neutral" row={a} gt={gt} settled={settled} raw={!keyed || raw} />
-                      <SideBox flush side="B" label={nameB} tone="accent" row={b} gt={gt} settled={settled} raw={!keyed || raw} />
+                      <SideBox flush side="A" label={nameA} tone="neutral" row={a} gt={gt} settled={settled} datasetId={detailA.dataset_id} raw={!keyed || raw} />
+                      <SideBox flush side="B" label={nameB} tone="accent" row={b} gt={gt} settled={settled} datasetId={detailB.dataset_id} raw={!keyed || raw} />
                     </div>
                   )}
                   {showScores && <CaseScoreBars flush a={a} b={b} cancelled={cancelled} settled={settled} />}
