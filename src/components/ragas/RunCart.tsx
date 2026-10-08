@@ -423,7 +423,8 @@ function RunRow({ run, active, onOpen }: { run: RagasRunSummary; active: boolean
 // ---- 레일 ------------------------------------------------------------------
 
 export function CartRail({
-  cart, datasets, runs, openRunId, onOpenRun, onCollapse, onRun, running, blockedReason, conditionText,
+  cart, datasets, runs, openRunId, onOpenRun, onCollapse, onRun, running, onCancel, cancelling,
+  blockedReason, conditionText,
 }: {
   cart: CartApi;
   datasets: Dataset[];
@@ -434,6 +435,10 @@ export function CartRail({
   /** 바구니가 데이터셋 하나로 떨어질 때만 받는다. */
   onRun?: (arg: { datasetId: number; caseIds: number[] | null }) => void;
   running?: boolean;
+  /** 도는 것을 멈춘다. 머리띠에서 실행 단추를 뺐으니 취소도 이 레일이 들어야 한다 —
+   * 멈출 자리가 없으면 잘못 담아 돌린 실행을 끝까지 기다리는 수밖에 없다. */
+  onCancel?: () => void;
+  cancelling?: boolean;
   /** 바구니는 멀쩡한데 조건이 덜 채워져 실행이 막힌 이유. 멈춘 단추만 두면 눌러
    * 보고도 왜 아무 일이 없는지 알 수 없다. */
   blockedReason?: string | null;
@@ -518,24 +523,34 @@ export function CartRail({
             <span className="truncate text-xs font-semibold text-ink">{conditionText}</span>
           </span>
         )}
-        {!split && blockedReason && (
+        {/* 도는 중에는 조건 경고를 접는다 — 지금 돌고 있는 실행과 상관이 없는데
+            취소 단추 위에 서면 그 경고 때문에 못 멈추는 것처럼 읽힌다. */}
+        {!running && !split && blockedReason && (
           <span className="rounded-sm border border-warn-line bg-warn-soft px-2 py-1.5 text-[11px] leading-snug text-warn">
             {blockedReason}
           </span>
         )}
-        {split && (
+        {!running && split && (
           <span className="rounded-sm border border-warn-line bg-warn-soft px-2 py-1.5 text-[11px] leading-snug text-warn">
             데이터셋 {perSet.length}개가 섞여 있어 한 번에 못 돕니다 — 실행을 묶는 일이 아직 없어서, 지금은 하나씩 담아 돌려야 합니다
           </span>
         )}
+        {/* 한 자리가 실행과 취소를 겸한다. 도는 중에 단추가 '도는 중…' 으로 멈춰
+            있으면 멈추는 길이 없고, 취소를 따로 세우면 안 도는 동안 빈 자리가 남는다.
+            바구니를 비워도 취소는 눌려야 하므로 막는 조건을 가른다. */}
         <Button
-          variant="primary"
+          variant={running ? 'secondary' : 'primary'}
           size="md"
-          disabled={!single || !onRun || running || !!blockedReason}
-          onClick={() => { if (single && onRun) onRun(single); }}
+          disabled={running ? cancelling || !onCancel : !single || !onRun || !!blockedReason}
+          onClick={() => {
+            if (running) { onCancel?.(); return; }
+            if (single && onRun) onRun(single);
+          }}
           className="w-full"
         >
-          {running ? '도는 중…' : cases ? `${cases}건 실행` : '실행'}
+          {running
+            ? cancelling ? '취소 중…' : '취소'
+            : cases ? `${cases}건 실행` : '실행'}
         </Button>
       </div>
 

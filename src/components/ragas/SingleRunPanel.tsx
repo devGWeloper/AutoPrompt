@@ -1157,6 +1157,8 @@ export default function SingleRunPanel() {
             onOpenRun={(id) => void openRecord(id)}
             onCollapse={() => setRailOpen(false)}
             running={status === 'running'}
+            cancelling={cancelling}
+            onCancel={() => void cancel()}
             blockedReason={
               !apiReady ? 'Agent 를 고르세요'
               : !targetReady ? '노드와 버전을 고르세요'
