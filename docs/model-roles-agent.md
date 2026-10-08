@@ -91,11 +91,20 @@ llmKeys:                           = "VLLM_A_KEY"  (이름만)    = "VLLM_A_KEY"
                          │ PTX 가 호출 직전에 config 에서 꺼내
                          ▼
 POST <agent chat endpoint>
-X-PTX-LLM-KEYS: {"LLM": "sk-..."}    ← role → 키 값. 이 요청에만 실린다
+X-PTX-LLM-KEYS: {"LLM": "sk-...",                  ← role → 키 값
+                 "key_nm": {"LLM": "hcp-pro-tier"}} ← role → 그 키의 이름
+                                                      이 요청에만 실린다
 ```
 
 - 헤더 값은 JSON 이고 **키는 role 이름**이다 — `MODEL_CTN` 과 같은 키라서 role 의
   override 와 그 role 의 키를 바로 짝지을 수 있다.
+- `key_nm` 은 role 이 아니라 **예약된 칸**이다: role → 키 이름(`llmKeys` 의 이름,
+  `api_key_ref` 와 같은 값). 키 값으로는 어느 키인지 알 수 없으니 — 알 수 있으면
+  안 되니 — 이름을 같이 싣는다. 로그·과금 티어 구분에 쓰고, **인증에는 쓰지 않는다**.
+  값이 실제로 나간 role 만 여기 들어온다.
+- `key_nm` 은 **안 읽어도 된다.** 문자열 값만 걸러 내는 기존 파서(아래)는 이 칸을
+  객체라서 버리고 그대로 돈다 — 이름을 role 키 문자열로 더 싣지 않고 한 칸에 묶어
+  둔 이유다.
 - **헤더가 없거나 그 role 이 없으면** 지금 쓰던 config 의 `api_key` 를 쓴다.
   운영 트래픽에는 이 헤더가 절대 실리지 않는다.
 - `MODEL_CTN.api_key_ref` 는 기록용 이름이다. 에이전트는 이걸로 키를 찾지 않는다.
@@ -212,21 +221,32 @@ def set_llm_call_context(node_nm=None, trace_id=None, user_id=None, query=None,
 # core/llm.py
 _request_llm_keys: ContextVar[dict] = ContextVar("_request_llm_keys", default={})
 
-def parse_llm_keys(raw: str | None) -> dict:
-    """X-PTX-LLM-KEYS → {role: key}. 깨진 값은 없는 것으로 (로그에 값 찍지 말 것)."""
+def parse_llm_keys(raw: str | None) -> tuple[dict, dict]:
+    """X-PTX-LLM-KEYS → ({role: key}, {role: key_nm}).
+
+    깨진 값은 없는 것으로 (로그에 값 찍지 말 것). key_nm 은 예약된 칸이라
+    role 에서 빼 둔다 — 안 쓸 거면 첫 값만 받으면 된다.
+    """
     if not raw:
-        return {}
+        return {}, {}
     try:
         v = json.loads(raw)
-        return {k: s for k, s in v.items() if isinstance(s, str) and s}
+        names = v.get("key_nm") or {}
+        if not isinstance(names, dict):
+            names = {}
+        keys = {k: s for k, s in v.items() if k != "key_nm" and isinstance(s, str) and s}
+        return keys, {k: n for k, n in names.items() if k in keys and isinstance(n, str)}
     except Exception:
         logger.warning("X-PTX-LLM-KEYS 파싱 실패 — config 키 사용")
-        return {}
+        return {}, {}
 ```
+
+> 키 이름은 **로그용**이다. 어느 티어·어느 서버의 키로 돈 호출인지 값 없이 적으려면
+> `key_nm` 을 찍는다 — 키 값은 어디에도 찍지 않는다.
 
 ```python
 # 채팅 요청 핸들러 — 그래프 실행 직전
-_request_llm_keys.set(parse_llm_keys(request.headers.get("X-PTX-LLM-KEYS")))
+_request_llm_keys.set(parse_llm_keys(request.headers.get("X-PTX-LLM-KEYS"))[0])
 ```
 
 > ContextVar 는 **set 이후에 만들어진** asyncio task 로만 전파된다. 그래프가

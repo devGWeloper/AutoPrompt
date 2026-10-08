@@ -96,9 +96,27 @@ function keyRef(v: string | null | undefined): string | null {
 export const LLM_KEYS_HEADER = "X-PTX-LLM-KEYS";
 
 /**
- * This call's LLM keys as a request header: `{"LLM": "<key>", ...}`, keyed by
- * role like MODEL_CTN itself, so the agent pairs each role's override with its
- * key without a second lookup.
+ * Reserved field inside that header: role → the key's *name* (its `llmKeys`
+ * entry, e.g. "hcp-pro-tier"), sent beside the values so the agent knows which
+ * key it was handed without the value having to be identifiable.
+ *
+ * It rides in the same JSON rather than a second header because the agent pulls
+ * this one header at its HTTP entry point and carries it down to the call — a
+ * sibling header would have to be threaded the same way for no gain. Reading it
+ * is optional: an agent that filters the object down to its string values (the
+ * shape documented before this field existed) drops it and keeps working, which
+ * is why the names are a nested object and not more role-keyed strings.
+ *
+ * Not a role name: roles are `LLMModel` enum members, so nothing in
+ * MODEL_CTN can land on it.
+ */
+export const LLM_KEY_NAME_FIELD = "key_nm";
+
+/**
+ * This call's LLM keys as a request header:
+ * `{"LLM": "<key>", …, "key_nm": {"LLM": "<name>", …}}` — values keyed by role
+ * like MODEL_CTN itself, so the agent pairs each role's override with its key
+ * without a second lookup, plus each key's name under `key_nm`.
  *
  * Built from the run's model snapshot, which carries each role's `api_key_ref`
  * (a name); the value is read from config.yml now, at call time. Empty when no
@@ -106,20 +124,39 @@ export const LLM_KEYS_HEADER = "X-PTX-LLM-KEYS";
  * exactly as before the registry existed. A name config no longer has is
  * logged rather than failing the run: the call still goes out, and the log
  * line is what tells "no key configured" apart from a 401 on the agent side.
+ *
+ * A name is sent only for a role whose key actually went out, so `key_nm` never
+ * names a key the agent did not receive.
  */
 export function llmKeyHeaders(models: string | null | undefined): Record<string, string> {
   const snap = parseModelSnapshot(models);
   if (!snap) return {};
   const keys = getLlmKeys();
   const out: Record<string, string> = {};
+  const names: Record<string, string> = {};
   for (const [role, e] of Object.entries(snap)) {
     const ref = e.api_key_ref;
     if (!ref) continue;
     const v = keys[ref];
-    if (v) out[role] = v;
-    else logger.warn("LLM key name not in config.yml llmKeys — agent's own key used", { role, ref });
+    if (v) {
+      out[role] = v;
+      names[role] = ref;
+    } else {
+      logger.warn("LLM key name not in config.yml llmKeys — agent's own key used", { role, ref });
+    }
   }
-  return Object.keys(out).length ? { [LLM_KEYS_HEADER]: JSON.stringify(out) } : {};
+  if (!Object.keys(out).length) return {};
+  const payload: Record<string, unknown> = { ...out };
+  // Guard, not a real case: a role actually called "key_nm" would have its key
+  // overwritten by the name map. Keep the key and drop the names instead.
+  if (LLM_KEY_NAME_FIELD in out) {
+    logger.warn("role name collides with the key-name field — key names not sent", {
+      field: LLM_KEY_NAME_FIELD,
+    });
+  } else {
+    payload[LLM_KEY_NAME_FIELD] = names;
+  }
+  return { [LLM_KEYS_HEADER]: JSON.stringify(payload) };
 }
 
 function memo(v: string | null | undefined): string | null {
