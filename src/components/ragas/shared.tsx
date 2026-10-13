@@ -567,7 +567,10 @@ export function runTargetLabel(r: { model_snapshot: string | null }): 'Model' | 
 /** 같은 이름에 무엇을 바꿨는지까지 붙인, 목록에 적히는 제목. 대상이 Model 인
  * 실행들은 이름만으로는 서로 구별되지 않는데, 그 실행에서 유일하게 다른 값이
  * 모델명이라 그것이 곧 제목의 나머지 절반이 된다. 역할이 여럿이면 첫 모델과
- * 나머지 개수까지만 — 전체 조합은 아래 서브라인이 이미 적고 있다. */
+ * 나머지 개수까지만 — 전체 조합은 아래 서브라인이 이미 적고 있다.
+ *
+ * 모델명이 같고 키(티어)만 다른 실행도 있으므로, 티어가 걸려 있으면 그것까지
+ * 적는다 — 그래야 미리보기 머리글에서 두 실행이 구별된다. */
 export function runTargetTitle(r: { model_snapshot: string | null }): string {
   const base = runTargetLabel(r);
   if (base !== 'Model') return base;
@@ -575,8 +578,11 @@ export function runTargetTitle(r: { model_snapshot: string | null }): string {
   const names = Array.from(
     new Set(Object.values(parsed ?? {}).map((e) => e.model).filter((m): m is string => !!m)),
   );
-  if (!names.length) return base;
-  return `Model · ${names[0]}${names.length > 1 ? ` 외 ${names.length - 1}` : ''}`;
+  const tier = tierText(r.model_snapshot);
+  if (!names.length) return tier ? `${base} · key ${tier}` : base;
+  return `Model · ${names[0]}${names.length > 1 ? ` 외 ${names.length - 1}` : ''}${
+    tier ? ` · key ${tier}` : ''
+  }`;
 }
 
 // ---- run title -------------------------------------------------------------
@@ -633,14 +639,38 @@ function modelText(snapshot: string | null): string | null {
   return `${names[0]}${names.length > 1 ? ` 외 ${names.length - 1}` : ''}`;
 }
 
-/** 서브라인에 적을 역할별 모델 조합. 역할이 하나뿐이고 temperature 도 안 걸었으면
- * 대상 줄의 모델 이름이 이미 그 전부라, 여기서는 아무것도 적지 않는다 — 안 그러면
- * `… · gpt-4o` 바로 아래에 `LLM=gpt-4o` 가 한 번 더 선다. */
+/** 이 실행이 쓴 키의 이름 — `hcp-pro-tier` 처럼 이름이 곧 티어다.
+ *
+ * 모델명 옆에 따로 적는다. 같은 모델을 티어만 바꿔 돌린 두 실행은 대상 줄이
+ * 글자 하나까지 같아져서, 점수가 갈려도 기록만 보고는 무엇이 달랐는지 알 수
+ * 없었다. 키 *값* 은 어디에도 안 남고 이름만 남는다 (MODEL_CTN.api_key_ref). */
+function tierText(snapshot: string | null): string | null {
+  const parsed = parseModelSnapshot(snapshot);
+  const names = Array.from(
+    new Set(
+      Object.values(parsed ?? {})
+        .map((e) => e.api_key_ref)
+        .filter((v): v is string => !!v),
+    ),
+  );
+  if (!names.length) return null;
+  return `${names[0]}${names.length > 1 ? ` 외 ${names.length - 1}` : ''}`;
+}
+
+/** 서브라인에 적을 역할별 모델 조합. 역할이 하나뿐이고 그 role 에 모델 이름 말고는
+ * 적을 것이 없으면 아무것도 적지 않는다 — 대상 줄의 모델 이름이 이미 그 전부라서,
+ * 안 그러면 `… · gpt-4o` 바로 아래에 `LLM=gpt-4o` 가 한 번 더 선다.
+ *
+ * 거꾸로 서버·키(티어)·temperature 중 하나라도 걸려 있으면 이 줄이 서야 한다:
+ * 대상 줄은 모델 이름만 적으므로, 그것들은 이 줄이 아니면 목록에 안 남는다. */
 export function runModelDetail(snapshot: string | null): string | null {
   const parsed = parseModelSnapshot(snapshot);
   if (!parsed) return null;
   const entries = Object.values(parsed);
-  if (entries.length === 1 && entries[0].temperature === undefined) return null;
+  const [one] = entries;
+  if (entries.length === 1 && one.temperature === undefined && !one.server && !one.api_key_ref) {
+    return null;
+  }
   return formatModelSnapshot(snapshot);
 }
 
@@ -735,6 +765,12 @@ export function runTitleParts(
   }
   if (modelPair) bits.push(modelPair);
   else if (!b && ma) bits.push(`model: ${ma}`);
+  // 키(티어)는 모델 뒤에 한 조각 더. 양쪽이 같은 티어인 A/B 는 한 번만 적는다 —
+  // 모델·버전과 같은 규칙이다.
+  const ta = tierText(r.model_snapshot);
+  const tb = b ? tierText(b.model_snapshot) : null;
+  if (b && ta !== tb) bits.push(`key ${ta ?? '기본값'} vs ${tb ?? '기본값'}`);
+  else if (ta) bits.push(`key ${ta}`);
   // 바꾼 게 하나도 없으면 빈 줄로 두지 않고 그렇다고 적는다 — 실행 폼의 대상
   // 토글에 있는 이름 그대로라, 무엇을 골라 돌린 실행인지가 기록에서도 같은 말로
   // 읽힌다.

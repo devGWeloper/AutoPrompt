@@ -104,7 +104,7 @@ function TargetCell({
   changeHint: string | null;
 }) {
   return (
-    <TD className="max-w-[20rem]">
+    <TD className="max-w-[24rem]">
       <div className="truncate text-sm font-medium text-ink" title={apiHint ?? api}>{api}</div>
       <div className="mt-0.5 truncate text-[11px] text-muted" title={changeHint ?? change}>
         {change}

@@ -41,12 +41,18 @@ function entryText(e: RunModelEntry | undefined): string | undefined {
   // A role pinned only by temperature still ran the config's model name.
   // 서버는 이름만 — 같은 모델을 다른 서버로 돌린 두 실행이 기록에서 구별되어야
   // 하고, 전체 주소는 한 줄 요약에 들어가기엔 길다.
+  //
+  // 키 이름도 같이 적는다. 이름이 곧 그 호출이 쓴 티어라서(`hcp-pro-tier`),
+  // 이것이 없으면 같은 모델·같은 서버를 다른 티어로 돌린 두 실행이 기록에서
+  // 완전히 같은 줄로 남는다 — 점수가 갈린 이유가 기록에 없는 셈이다. 값이
+  // 아니라 이름이므로 기록·내보내기에 남아도 된다(§1-1).
   return `${e.model ?? "기본값"}${e.server ? `@${e.server}` : ""}${
-    e.temperature !== undefined ? ` (t${e.temperature})` : ""
-  }`;
+    e.api_key_ref ? ` [key ${e.api_key_ref}]` : ""
+  }${e.temperature !== undefined ? ` (t${e.temperature})` : ""}`;
 }
 
-/** `LLM=qwen3 · VLM=x (t0.3)` — compact enough for a table subline. */
+/** `LLM=qwen3@vllm-a [key hcp-pro-tier] · VLM=x (t0.3)` — compact enough for a
+ * table subline. */
 export function formatModelSnapshot(raw: string | null | undefined): string | null {
   const parsed = parseModelSnapshot(raw);
   if (!parsed) return null;
