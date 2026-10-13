@@ -545,16 +545,21 @@ export function compareSideLabel(run: {
   version_no?: string | null;
   model_snapshot?: string | null;
 }): string {
+  // 키(티어)는 모델명 옆에 늘 따라붙는다 — 같은 모델을 키만 바꿔 견준 A/B 는
+  // 모델명만으로는 두 사이드가 글자 하나까지 같아, 이 라벨이 둘을 가르지 못한다.
+  const key = tierText(run.model_snapshot ?? null);
+  const withKey = (base: string) => (key ? `${base} · key ${key}` : base);
+
   const v = (run.version_no ?? '').trim();
-  if (v) return `v${v}`;
+  if (v) return withKey(`v${v}`);
   const models = parseModelSnapshot(run.model_snapshot);
   if (models) {
     // 여러 role 을 고정했어도 이름은 하나여야 한다 — 나머지는 아래 ModelStamp 가
     // 전부 적는다. 실제로 모델이 박힌 첫 role 이 그 사이드를 대표한다.
     const pinned = Object.values(models).find((e) => (e.model ?? '').trim() !== '');
-    if (pinned?.model) return pinned.model.trim();
+    if (pinned?.model) return withKey(pinned.model.trim());
   }
-  return 'Default';
+  return withKey('Default');
 }
 
 /** 이 실행이 무엇을 바꿔서 돌았는지 — 실행 폼의 대상 토글이 쓰는 이름 그대로.
