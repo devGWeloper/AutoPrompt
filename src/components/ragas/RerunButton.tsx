@@ -21,13 +21,17 @@ import { errText, useEndpoints, type Picking } from './shared';
  * 함께 다시 돌린다. 불일치가 없으면 아무것도 그리지 않는다.
  */
 export default function RerunButton({
-  detail, detailB, className, picking,
+  detail, detailB, className, picking, onStarted,
 }: {
   detail: RagasRunDetail;
   detailB?: RagasRunDetail | null;
   className?: string;
   /** 케이스 목록에서 고른 것 — 있으면 '선택 재테스트' 가 함께 선다. */
   picking?: Picking;
+  /** 재실행이 떠난 직후. 재실행은 같은 실행을 PENDING 으로 되돌리므로, 이걸 띄운
+   * 화면은 상태를 다시 읽어야 '실행 취소' 가 설 수 있다 — 안 그러면 상세는 옛
+   * 종료 상태 그대로라 멈출 길이 없다. */
+  onStarted?: () => void;
 }) {
   const endpoints = useEndpoints();
   const [busy, setBusy] = useState<'picked' | 'mismatch' | null>(null);
@@ -56,6 +60,7 @@ export default function RerunButton({
         window.dispatchEvent(new CustomEvent(SINGLE_ATTACH_EVENT, { detail: active }));
       }
       if (caseIds) picking?.clear();
+      onStarted?.();
     } catch (x) {
       setErr(errText(x));
     } finally {

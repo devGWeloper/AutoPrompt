@@ -886,7 +886,7 @@ function AbCompareView({ aId, bId, manual }: { aId: number; bId: number; manual?
               ]}
               onDone={loadPair}
             />
-            {!manual && <RerunButton detail={a} detailB={b} picking={picking} />}
+            {!manual && <RerunButton detail={a} detailB={b} picking={picking} onStarted={loadPair} />}
           </span>
         </div>
         <div className="p-4">
@@ -963,7 +963,7 @@ function RagasRunDetailView({ ragasId, manual }: { ragasId: number; manual?: boo
                 데이터셋에 추가
               </Button>
             )}
-            {!manual && <RerunButton detail={detail} picking={picking} />}
+            {!manual && <RerunButton detail={detail} picking={picking} onStarted={load} />}
           </span>
         </div>
         {added && (
