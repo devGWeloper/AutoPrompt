@@ -150,6 +150,51 @@ function ModelStamp({ text: s }: { text: string | null }) {
   );
 }
 
+const RUN_TERMINAL = ['DONE', 'FAILED', 'CANCELLED'];
+
+/** 아직 끝나지 않은 실행을 세운다 — PENDING·RUNNING·CANCELLING.
+ *
+ * 재실행한 실행이 스트림이 붙지 못해 PENDING 에 머무르면, 상세 화면에는 상태
+ * 배지만 있고 멈출 길이 없었다. 서버는 돌고 있지 않은 실행이면 이 요청으로
+ * 바로 CANCELLED 로 정리한다(requestCancel). 끝나면 onDone 으로 다시 읽어
+ * 화면의 상태를 맞춘다. 여러 개(A·B)면 끝나지 않은 것만 멈춘다. */
+function CancelRunButton({
+  runs, onDone,
+}: {
+  runs: { ragas_run_id: number; status: string }[];
+  onDone: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const live = runs.filter((r) => !RUN_TERMINAL.includes(r.status));
+  if (live.length === 0) return null;
+
+  async function cancel() {
+    setErr(null);
+    setBusy(true);
+    try {
+      // 한쪽이 이미 끝나 409 가 나도 다른 쪽 취소는 막지 않는다 — 각자 삼킨다.
+      await Promise.all(
+        live.map((r) => api.post(`/ragas-runs/${r.ragas_run_id}/cancel`, {}).catch(() => null)),
+      );
+      onDone();
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <span className="inline-flex items-center gap-2">
+      {err && <span className="max-w-[14rem] truncate text-[11px] text-bad" title={err}>{err}</span>}
+      <Button variant="secondary" size="sm" disabled={busy} onClick={() => void cancel()}>
+        {busy ? '취소 중…' : '실행 취소'}
+      </Button>
+    </span>
+  );
+}
+
 /** Per-row actions: quiet icon-only ghost buttons (secondary-button idiom at table
  * density). Row expansion lives on the row itself, so only export + delete
  * remain here; stopPropagation keeps clicks from toggling the row. */
@@ -834,6 +879,13 @@ function AbCompareView({ aId, bId, manual }: { aId: number; bId: number; manual?
             <RunDurationTag runs={[a, b]} />
             <span>·</span>
             <span>Engine {a.engine ?? '—'}</span>
+            <CancelRunButton
+              runs={[
+                { ragas_run_id: a.ragas_run_id, status: a.status },
+                { ragas_run_id: b.ragas_run_id, status: b.status },
+              ]}
+              onDone={loadPair}
+            />
             {!manual && <RerunButton detail={a} detailB={b} picking={picking} />}
           </span>
         </div>
@@ -902,6 +954,10 @@ function RagasRunDetailView({ ragasId, manual }: { ragasId: number; manual?: boo
             {/* 데이터셋에서 돌린 실행은 케이스가 이미 데이터셋에 있다 — 같은 질문을
                 한 벌 더 넣는 단추가 될 뿐이다. 직접 호출 기록에서만 선다. 정답이
                 틀렸을 때 고치는 길은 아래 줄마다의 '정답 수정' 이다. */}
+            <CancelRunButton
+              runs={[{ ragas_run_id: detail.ragas_run_id, status: detail.status }]}
+              onDone={load}
+            />
             {manual && (
               <Button variant="secondary" size="sm" className="ml-1" disabled={seed.length === 0} onClick={() => setAdding(true)}>
                 데이터셋에 추가

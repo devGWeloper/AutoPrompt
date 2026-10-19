@@ -680,13 +680,28 @@ export async function requestCancel(runId: number): Promise<{ status: string }> 
     if (["DONE", "FAILED", "CANCELLED"].includes(run.status)) {
       throw new (await import("@/lib/http")).ApiError(409, `run already ${run.status}`);
     }
+    // CANCELLING is a flag the run loop reads between cases and then writes
+    // CANCELLED. That only works while the run is actually executing here. A run
+    // that is not live in this process has no such loop — a PENDING rerun whose
+    // stream never opened, or a run orphaned by a restart — so flipping it to
+    // CANCELLING would strand it there forever. Settle those as CANCELLED now.
+    // (A stream that opens later finds a terminal status and just replays it,
+    // see streamRun; it does not re-run the cases.)
+    if (!registry.isLive(runId)) {
+      await conn.execute(
+        `UPDATE PTX_RUN_MAS SET STATUS_CD = 'CANCELLED', END_TM = SYSTIMESTAMP
+          WHERE RUN_ID = :id AND STATUS_CD NOT IN ('DONE','FAILED','CANCELLED')`,
+        { id: runId },
+      );
+      return { status: "cancelled" };
+    }
     await conn.execute(`UPDATE PTX_RUN_MAS SET STATUS_CD = 'CANCELLING' WHERE RUN_ID = :id`, { id: runId });
     return { status: "cancelling" };
   }, { commit: true });
   // The flag alone is read between cases only, so a cancel pressed during a
   // call used to wait out that call's whole timeout — minutes of "취소 중…" for
   // a button that had already done its job. Abort the run's in-flight requests
-  // so the stop happens where the user pressed it.
+  // so the stop happens where the user pressed it. (No-op when it was not live.)
   registry.abortRun(runId);
   return res;
 }
