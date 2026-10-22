@@ -27,9 +27,11 @@ import {
   DatasetPurposeLine,
   DatasetSelect,
   EndpointSelect,
+  CancelRunButton,
   InlineDivider,
   InlineField,
   ErrBox,
+  RUN_TERMINAL,
   RunDurationTag,
   usePickedCases,
   PROMPT_TARGET_ENABLED,
@@ -272,6 +274,21 @@ export default function ComparePanel() {
     clearActiveRun('compare');
     setRerunning(null);
     setStatus(ev.includes('FAILED') ? 'failed' : ev.includes('CANCELLED') ? 'cancelled' : 'done');
+  }
+
+  /** 실행 취소 뒤 두 사이드를 다시 읽어 상세·상태를 맞춘다 — 서버가 PENDING 실행을
+   * 바로 CANCELLED 로 정리하므로, 다시 읽으면 배지와 버튼이 그에 맞게 바뀐다. */
+  async function reloadPair() {
+    const ids = runIdsRef.current.length ? runIdsRef.current : [detailA, detailB].map((d) => d?.ragas_run_id);
+    const dets = await Promise.all(
+      ids.map((id) => (id == null ? null : api.get<RagasRunDetail>(`/ragas-runs/${id}`).catch(() => null))),
+    );
+    if (dets[0]) setDetailA(dets[0]);
+    if (dets[1]) setDetailB(dets[1]);
+    const sts = dets.map((d) => d?.status);
+    if (sts.some((s) => s)) {
+      setStatus(sts.includes('FAILED') ? 'failed' : sts.includes('CANCELLED') ? 'cancelled' : 'done');
+    }
   }
 
   // Resume the pair this tab was streaming before a refresh; both runs kept
@@ -673,7 +690,18 @@ export default function ComparePanel() {
                 <CompareVerdict detailA={detailA} detailB={detailB} />
                 <RunDurationTag runs={[detailA, detailB]} />
                 <span>Engine {detailA.engine ?? '—'}</span>
-                <RerunButton detail={detailA} detailB={detailB} picking={picking} />
+                {/* 둘 다 끝났을 때만 재실행 — 한쪽이라도 도는 중이면 취소만 선다. */}
+                {RUN_TERMINAL.includes(detailA.status) && RUN_TERMINAL.includes(detailB.status) ? (
+                  <RerunButton detail={detailA} detailB={detailB} picking={picking} />
+                ) : (
+                  <CancelRunButton
+                    runs={[
+                      { ragas_run_id: detailA.ragas_run_id, status: detailA.status },
+                      { ragas_run_id: detailB.ragas_run_id, status: detailB.status },
+                    ]}
+                    onDone={reloadPair}
+                  />
+                )}
               </span>
             </div>
             <div className="p-4">

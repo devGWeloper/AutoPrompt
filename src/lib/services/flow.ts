@@ -18,7 +18,7 @@ import { exactMatchScore } from "@/lib/exactMatch";
 import { getCaseDelayMs, resolveRagasEngine } from "@/lib/config";
 import { sleep } from "@/lib/sleep";
 import { requireDataset } from "./datasets";
-import { CONFIG_ENDPOINT_A, CONFIG_ENDPOINT_B, resolveEndpoint } from "./endpoints";
+import { CONFIG_ENDPOINT_A, CONFIG_ENDPOINT_B, resolveEndpoint, selectableEndpoints } from "./endpoints";
 import { currentModelSnapshot, explicitSnapshot, modelSnapshot, pinContext } from "./models";
 import { llmKeyHeaders } from "./llmServers";
 import { stageCallConfig, writeCallConfig } from "./callConfig";
@@ -300,7 +300,7 @@ async function resetForRerun(conn: OracleConnection, runId: number, ids: number[
  * 두 개인 것처럼 읽히고 둘 중 어느 쪽이 지금 상태인지가 흐려진다.
  */
 export async function createMismatchRerun(sourceRunId: number, caseIds?: number[] | null): Promise<RagasRunOut> {
-  return withConn(async (conn) => {
+  const run = await withConn(async (conn) => {
     const src = await fetchRun(conn, sourceRunId);
     if (!src) throw notFound("ragas run not found");
     if (src.ab_group_id != null) throw badRequest("Compare 실행은 A·B 를 함께 다시 돌립니다");
@@ -312,6 +312,10 @@ export async function createMismatchRerun(sourceRunId: number, caseIds?: number[
     await resetForRerun(conn, sourceRunId, ids);
     return (await fetchRun(conn, sourceRunId))!;
   }, { commit: true });
+  // 되돌려 둔 실행을 여기서 바로 띄운다 — 커밋이 끝난 뒤라야 executeRun 이 PENDING
+  // 행을 제대로 읽는다. 자세한 이유는 kickRerun 주석.
+  await kickRerun(run);
+  return run;
 }
 
 /** A·B 한 쌍을 그 자리에서 다시 돌린다 — 어느 한쪽이라도 불일치였던 케이스만.
@@ -320,7 +324,7 @@ export async function createAbMismatchRerun(
   groupId: number,
   caseIds?: number[] | null,
 ): Promise<{ ragas_run_a_id: number; ragas_run_b_id: number }> {
-  return withConn(async (conn) => {
+  const { a, b } = await withConn(async (conn) => {
     const res = await conn.execute(
       `SELECT RUN_ID FROM PTX_RUN_MAS WHERE AB_GROUP_ID = :g ORDER BY RUN_ID ASC`,
       { g: groupId },
@@ -336,8 +340,58 @@ export async function createAbMismatchRerun(
       : await mismatchCaseIds(conn, a.dataset_id, runIds);
     await resetForRerun(conn, a.ragas_run_id, ids);
     await resetForRerun(conn, b.ragas_run_id, ids);
-    return { ragas_run_a_id: a.ragas_run_id, ragas_run_b_id: b.ragas_run_id };
+    return { a, b };
   }, { commit: true });
+  // 커밋 뒤 두 사이드를 서버에서 바로 띄운다 — Compare 탭이 아직 안 떠 있어도
+  // PENDING 에 멈추지 않는다. 열리는 두 스트림은 그냥 붙어서 따라 본다.
+  await kickAbRerun(a, b);
+  return { ragas_run_a_id: a.ragas_run_id, ragas_run_b_id: b.ragas_run_id };
+}
+
+/**
+ * 재실행을 서버에서 곧바로 실행한다 — 브라우저가 스트림을 열어 주기를 기다리지
+ * 않는다.
+ *
+ * 왜 필요한가: 실행은 PENDING 으로 만들어지고, streamRun 이 열릴 때 비로소
+ * registry.startRun 으로 돈다. 보통 실행은 띄운 그 탭이 곧바로 스트림을 여니 문제가
+ * 없지만, 재실행은 결과 화면·기록에서 띄워 스트리밍 탭(Single/Compare)으로 넘기는
+ * 길이라, 그 탭이 아직 mount 돼 있지 않으면(특히 이번 세션에 Compare 를 한 번도 안
+ * 열었을 때) 넘기는 이벤트를 놓쳐 실행이 PENDING 에 그대로 머문다. 서버가 바로
+ * 시작해 두면 브라우저가 붙든 안 붙든 돈다 — 나중에 열리는 스트림은 registry 가
+ * 이미 살아 있는 실행에 붙여(startRun 이 false 를 돌려줌) 지나간 것을 replay 한다.
+ *
+ * 엔드포인트를 등록 목록에서 못 찾으면(지워진 드문 경우) 시작하지 않고 예전처럼
+ * 스트림이 끌고 가도록 둔다 — 여기서 섣불리 FAILED 로 떨구지 않는다.
+ */
+async function kickRerun(run: RagasRunOut): Promise<void> {
+  const endpointId = await rerunEndpointId(run);
+  if (endpointId == null) return;
+  registry.startRun(run.ragas_run_id, (emit, sig) =>
+    executeRun(run.ragas_run_id, emit, sig, { endpointId }));
+}
+
+/** A·B 재실행 — 두 사이드를 각자 제 엔드포인트로 띄운다. 서로 다른 API 면
+ * 엔드포인트 비교라 side 로 가른다(rerun.ts 의 `saved.side` 와 같은 규칙). 둘
+ * 모두 attachBoth 가 열던 두 스트림과 같은 방식으로 독립해서 돈다. */
+async function kickAbRerun(a: RagasRunOut, b: RagasRunOut): Promise<void> {
+  const [idA, idB] = await Promise.all([rerunEndpointId(a), rerunEndpointId(b)]);
+  if (idA == null || idB == null) return;
+  const side = idA !== idB;
+  registry.startRun(a.ragas_run_id, (emit, sig) =>
+    executeRun(a.ragas_run_id, emit, sig, { endpointId: idA, side: side ? "a" : null }));
+  registry.startRun(b.ragas_run_id, (emit, sig) =>
+    executeRun(b.ragas_run_id, emit, sig, { endpointId: idB, side: side ? "b" : null }));
+}
+
+/** 이 실행이 부른 API 를 등록 목록에서 다시 찾아 그 id 를 돌려준다 — 이름 먼저,
+ * 없으면 주소로. 클라이언트(rerun.ts 의 endpointOf)가 POST 전에 같은 목록으로 이미
+ * 확인하므로 보통은 반드시 찾힌다. 못 찾으면 null(호출부가 서버 시작을 건너뛴다). */
+async function rerunEndpointId(run: RagasRunOut): Promise<number | null> {
+  const list = await selectableEndpoints();
+  const ep =
+    (run.endpoint_nm ? list.find((e) => e.endpoint_nm === run.endpoint_nm) : undefined) ??
+    (run.endpoint_url ? list.find((e) => e.endpoint_url === run.endpoint_url) : undefined);
+  return ep?.endpoint_id ?? null;
 }
 
 export async function createFlowRagasAbRun(args: {

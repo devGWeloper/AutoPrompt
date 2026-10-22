@@ -44,10 +44,12 @@ import {
   StatusPill,
   TraceTag,
   VersionSelect,
+  CancelRunButton,
   CaseTable,
   ScoreBars,
   ElapsedTag,
   RerunSummary,
+  RUN_TERMINAL,
   RunDurationTag,
   usePickedCases,
   AnswerBox,
@@ -1125,7 +1127,17 @@ export default function SingleRunPanel() {
                     <span>Engine {detail.engine ?? '—'}</span>
                     <span>·</span>
                     <span>{detail.results.length} case{detail.results.length === 1 ? '' : 's'}</span>
-                    <RerunButton detail={detail} picking={rerunPick} className="ml-1" />
+                    {/* 지난 실행을 기록에서 열면 상태가 PENDING·RUNNING 일 수 있다 —
+                        그때는 취소만 서고, 재실행은 끝난 뒤에야 선다(아직 도는 실행에
+                        재실행을 보내면 서버가 "아직 끝나지 않은 실행입니다" 로 되돌린다). */}
+                    {RUN_TERMINAL.includes(detail.status) ? (
+                      <RerunButton detail={detail} picking={rerunPick} className="ml-1" />
+                    ) : (
+                      <CancelRunButton
+                        runs={[{ ragas_run_id: detail.ragas_run_id, status: detail.status }]}
+                        onDone={() => void openRecord(detail.ragas_run_id)}
+                      />
+                    )}
                   </span>
                 </div>
                 <div className="p-4">

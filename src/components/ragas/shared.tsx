@@ -4,6 +4,7 @@ import {
   useCallback, useEffect, useRef, useState,
   type MouseEvent as ReactMouseEvent, type ReactNode,
 } from 'react';
+import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Field';
 import { api, ApiError } from '@/lib/api';
 import { copyText } from '@/lib/clipboard';
@@ -1601,6 +1602,55 @@ export function PassButton({
     >
       {busy ? '…' : err ? '실패' : passed ? 'PASS 해제' : 'PASS 처리'}
     </button>
+  );
+}
+
+/** 끝난 실행의 상태들 — 이 안에 없으면 아직 도는 중(PENDING·RUNNING·CANCELLING). */
+export const RUN_TERMINAL = ['DONE', 'FAILED', 'CANCELLED'];
+
+/**
+ * 아직 끝나지 않은 실행을 세운다 — PENDING·RUNNING·CANCELLING.
+ *
+ * 실행 기록 서랍뿐 아니라 메인 화면(Single·Compare)에서 지난 실행을 열었을 때도
+ * 쓴다. 기록에서 띄운 실행이 PENDING 에 머물거나 아직 도는 중이면, 그 화면에
+ * 상태 배지만 있고 멈출 길이 없던 자리를 메운다. 서버는 돌고 있지 않은 실행이면
+ * 이 요청으로 바로 CANCELLED 로 정리하고(requestCancel), 돌고 있으면 진행 중인
+ * 호출을 끊는다. 끝나면 onDone 으로 다시 읽어 화면 상태를 맞춘다. 여러 개(A·B)면
+ * 끝나지 않은 것만 멈춘다. 전부 끝나 있으면 아무것도 그리지 않는다. */
+export function CancelRunButton({
+  runs, onDone,
+}: {
+  runs: { ragas_run_id: number; status: string }[];
+  onDone: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const live = runs.filter((r) => !RUN_TERMINAL.includes(r.status));
+  if (live.length === 0) return null;
+
+  async function cancel() {
+    setErr(null);
+    setBusy(true);
+    try {
+      // 한쪽이 이미 끝나 409 가 나도 다른 쪽 취소는 막지 않는다 — 각자 삼킨다.
+      await Promise.all(
+        live.map((r) => api.post(`/ragas-runs/${r.ragas_run_id}/cancel`, {}).catch(() => null)),
+      );
+      onDone();
+    } catch (x) {
+      setErr(errText(x));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <span className="inline-flex items-center gap-2">
+      {err && <span className="max-w-[14rem] truncate text-[11px] text-bad" title={err}>{err}</span>}
+      <Button variant="secondary" size="sm" disabled={busy} onClick={() => void cancel()}>
+        {busy ? '취소 중…' : '실행 취소'}
+      </Button>
+    </span>
   );
 }
 

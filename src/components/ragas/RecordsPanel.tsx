@@ -19,8 +19,8 @@ import { CaseCompareTable } from './CompareTable';
 import { CompareSummaryDashboard, SingleRunSummaryDashboard } from './RunSummaryDashboard';
 import { AbKeyBreakdown, KeyBreakdown } from './KeyBreakdown';
 import {
-  CaseTable, DatasetPurpose, DownloadIcon, ErrBox, errText, RerunSummary, fmt2, fmt3, fmtDt, RunDurationStack, RunDurationTag, usePickedCases, folderLabel, hasTextSelection, runMean, runTargetLabel,
-  compareSideLabel, runModelDetail, runTitle, runTitleParts, scoredMetrics, SegToggle, TrashIcon, UNSCORED_LABEL,
+  CancelRunButton, CaseTable, DatasetPurpose, DownloadIcon, ErrBox, errText, RerunSummary, fmt2, fmt3, fmtDt, RunDurationStack, RunDurationTag, usePickedCases, folderLabel, hasTextSelection, runMean, runTargetLabel,
+  compareSideLabel, runModelDetail, runTitle, runTitleParts, RUN_TERMINAL, scoredMetrics, SegToggle, TrashIcon, UNSCORED_LABEL,
 } from './shared';
 import RerunButton from './RerunButton';
 
@@ -147,51 +147,6 @@ function ModelStamp({ text: s }: { text: string | null }) {
       <span className="max-w-[22rem] truncate font-mono" title={s}>{s}</span>
       <span>·</span>
     </>
-  );
-}
-
-const RUN_TERMINAL = ['DONE', 'FAILED', 'CANCELLED'];
-
-/** 아직 끝나지 않은 실행을 세운다 — PENDING·RUNNING·CANCELLING.
- *
- * 재실행한 실행이 스트림이 붙지 못해 PENDING 에 머무르면, 상세 화면에는 상태
- * 배지만 있고 멈출 길이 없었다. 서버는 돌고 있지 않은 실행이면 이 요청으로
- * 바로 CANCELLED 로 정리한다(requestCancel). 끝나면 onDone 으로 다시 읽어
- * 화면의 상태를 맞춘다. 여러 개(A·B)면 끝나지 않은 것만 멈춘다. */
-function CancelRunButton({
-  runs, onDone,
-}: {
-  runs: { ragas_run_id: number; status: string }[];
-  onDone: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const live = runs.filter((r) => !RUN_TERMINAL.includes(r.status));
-  if (live.length === 0) return null;
-
-  async function cancel() {
-    setErr(null);
-    setBusy(true);
-    try {
-      // 한쪽이 이미 끝나 409 가 나도 다른 쪽 취소는 막지 않는다 — 각자 삼킨다.
-      await Promise.all(
-        live.map((r) => api.post(`/ragas-runs/${r.ragas_run_id}/cancel`, {}).catch(() => null)),
-      );
-      onDone();
-    } catch (e) {
-      setErr(errText(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <span className="inline-flex items-center gap-2">
-      {err && <span className="max-w-[14rem] truncate text-[11px] text-bad" title={err}>{err}</span>}
-      <Button variant="secondary" size="sm" disabled={busy} onClick={() => void cancel()}>
-        {busy ? '취소 중…' : '실행 취소'}
-      </Button>
-    </span>
   );
 }
 
@@ -886,7 +841,11 @@ function AbCompareView({ aId, bId, manual }: { aId: number; bId: number; manual?
               ]}
               onDone={loadPair}
             />
-            {!manual && <RerunButton detail={a} detailB={b} picking={picking} onStarted={loadPair} />}
+            {/* 재실행은 끝난 실행에만 — 아직 도는 중이면 서버가 "아직 끝나지 않은
+                실행입니다" 로 되돌려 보낸다. 그 사이엔 위 취소 버튼만 선다. */}
+            {!manual && RUN_TERMINAL.includes(a.status) && RUN_TERMINAL.includes(b.status) && (
+              <RerunButton detail={a} detailB={b} picking={picking} onStarted={loadPair} />
+            )}
           </span>
         </div>
         <div className="p-4">
@@ -963,7 +922,9 @@ function RagasRunDetailView({ ragasId, manual }: { ragasId: number; manual?: boo
                 데이터셋에 추가
               </Button>
             )}
-            {!manual && <RerunButton detail={detail} picking={picking} onStarted={load} />}
+            {!manual && RUN_TERMINAL.includes(detail.status) && (
+              <RerunButton detail={detail} picking={picking} onStarted={load} />
+            )}
           </span>
         </div>
         {added && (
