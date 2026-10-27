@@ -1,72 +1,34 @@
 'use client';
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
+import {
+  EXACT_MATCH,
+  METRIC_DESCRIPTIONS,
+  METRIC_LABELS,
+  RAGAS_METRICS,
+  type Dataset,
+  type DatasetCategory,
+  type Endpoint,
+} from '@/lib/types';
+import { EndpointSelect, ScoreToggle, folderLabel } from './shared';
 
 /**
- * 실행 조건을 '폼' 대신 '화면 머리띠'로 두는 프로토타입(E안)의 뼈대.
+ * 실행 조건 머리띠(E안).
  *
  * 조건 네 개가 각자 한 줄을 쓰면 카드가 화면의 절반을 먹고, 결과는 스크롤 아래로
- * 밀린다. 여기서는 48px 한 줄이 값만 이름표와 함께 보여 주고, 실제 컨트롤은
- * 누를 때만 그 아래로 열린다 — 컨트롤 자체는 지금 쓰던 것을 그대로 담으므로
- * 동작이 달라지는 곳은 없다.
- *
- * 임시 코드다. 실제 폼과 토글해서 보기 위한 것이고, 고르고 나면 한쪽을 지운다.
+ * 밀린다. 여기서는 한 줄이 값만 이름표와 함께 보여 주고, 실제 컨트롤은 누를 때만
+ * 그 아래로 열린다.
  */
-
-export type FormSkin = 'card' | 'toolbar' | 'cart';
-
-const SKIN_KEY = 'ptx.protoFormSkin';
-
-/** 고른 폼을 새로고침 뒤에도 유지한다 — 두 디자인을 번갈아 보려면 매번 다시
- * 누르게 만들면 안 된다. 첫 렌더는 서버와 같은 값이어야 하므로 effect 에서 읽는다. */
-export function useFormSkin(): [FormSkin, (v: FormSkin) => void] {
-  const [skin, setSkin] = useState<FormSkin>('card');
-  useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem(SKIN_KEY);
-      if (saved === 'toolbar' || saved === 'card' || saved === 'cart') setSkin(saved);
-    } catch {
-      // 사생활 보호 모드 등 — 기본값으로 둔다.
-    }
-  }, []);
-  const pick = (v: FormSkin) => {
-    setSkin(v);
-    try { window.localStorage.setItem(SKIN_KEY, v); } catch { /* 저장은 편의일 뿐 */ }
-  };
-  return [skin, pick];
-}
-
-export function FormSkinToggle({ value, onChange }: { value: FormSkin; onChange: (v: FormSkin) => void }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="eyebrow">폼</span>
-      <div className="inline-flex rounded-md border border-line bg-surface p-0.5">
-        {([['card', '현재'], ['toolbar', 'E · 툴바'], ['cart', 'O · 바구니']] as const).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => onChange(id)}
-            className={cn(
-              'rounded-sm px-3 py-1 text-[13px] font-medium transition-colors',
-              value === id ? 'bg-primary text-primary-fg' : 'text-muted hover:text-ink',
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 /**
  * 머리띠 한 줄.
  *
- * 띠 자체는 눌러 둔 면(surface-3)이고 그 위의 칸들이 흰 컨트롤로 뜬다 —
+ * 띠 자체는 액센트의 옅은 면(accent-soft)이고 그 위의 칸들이 흰 컨트롤로 뜬다 —
  * 흰 바탕에 흰 칸을 올리면 테두리 한 겹만 남아 띠가 글자 네 덩어리로 보였다.
- * 테두리도 카드보다 한 단 진한 line-strong 을 쓴다: 이 줄은 내용이 아니라
- * 조작하는 자리라서, 결과 카드와 같은 굵기로 두면 같은 종류로 읽힌다.
+ * 이 줄은 내용이 아니라 조작하는 자리라서, 결과 카드(흰 면 · 회색 선)와 다른
+ * 색을 써야 같은 종류로 읽히지 않는다.
  */
 export function RunToolbar({ children, className }: { children: ReactNode; className?: string }) {
   return (
@@ -74,7 +36,7 @@ export function RunToolbar({ children, className }: { children: ReactNode; class
       className={cn(
         // 한 줄에 다 들어가면 56px, 좁은 화면에서 접히면 그만큼만 자란다.
         'flex min-h-[56px] flex-wrap items-center gap-x-2 gap-y-1.5',
-        'rounded-md border border-line-strong bg-surface-3 px-2.5 py-2 shadow-card',
+        'rounded-md border border-accent-line bg-accent-soft px-2.5 py-2 shadow-card',
         className,
       )}
     >
@@ -84,7 +46,7 @@ export function RunToolbar({ children, className }: { children: ReactNode; class
 }
 
 export function ToolbarSep() {
-  return <span aria-hidden className="mx-1.5 h-5 w-px shrink-0 bg-line" />;
+  return <span aria-hidden className="mx-1.5 h-5 w-px shrink-0 bg-accent-line" />;
 }
 
 /**
@@ -139,8 +101,8 @@ export function ToolbarMenu({
           // 생긴 것도 셀렉트와 같아야 눌러 볼 수 있는 것으로 읽힌다.
           'inline-flex h-9 max-w-[340px] items-center gap-2 rounded-sm border px-2.5 transition',
           open
-            ? 'border-accent bg-accent-soft shadow-ring'
-            : 'border-line-strong bg-surface hover:border-muted-soft',
+            ? 'border-accent bg-surface shadow-ring'
+            : 'border-accent-line bg-surface hover:border-accent',
         )}
       >
         <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.6px] text-muted">{label}</span>
@@ -273,4 +235,199 @@ export function PlayIcon() {
       <path d="M4 2.8v10.4L13 8z" />
     </svg>
   );
+}
+
+// ---- Single · Compare 가 같이 쓰는 판 -----------------------------------------
+// 두 패널의 머리띠가 같은 칸을 같은 모양으로 열어야 같은 화면으로 읽힌다.
+
+/** Agent 칸. 등록된 API 가 없으면 고를 목록이 없다 — 설정으로 가는 길만 띄운다. */
+export function AgentMenu({
+  endpoints, value, onPick,
+}: { endpoints: Endpoint[]; value: number | null; onPick: (id: number | null) => void }) {
+  if (endpoints.length === 0) {
+    return <EndpointSelect endpoints={endpoints} value={value} onChange={onPick} className="h-9 w-full text-sm" />;
+  }
+  return (
+    <div className="flex flex-col gap-0.5">
+      {endpoints.map((e) => (
+        <MenuRow
+          key={e.endpoint_id}
+          label={e.endpoint_nm}
+          title={e.endpoint_url}
+          selected={e.endpoint_id === value}
+          onClick={() => onPick(e.endpoint_id)}
+        />
+      ))}
+    </div>
+  );
+}
+
+export const agentLabel = (endpoints: Endpoint[], id: number | null) =>
+  endpoints.find((e) => e.endpoint_id === id)?.endpoint_nm ?? 'API 선택';
+
+export type DataSource = 'dataset' | 'manual';
+
+/** 데이터 칸. `cases` 를 주면 판 아래에 케이스 고르기가 붙는다. */
+export function DataMenu({
+  close, source, setSource, datasets, datasetId, setDatasetId, folders, caseType, setCaseType, cases,
+}: {
+  close: () => void;
+  source: DataSource;
+  setSource: (v: DataSource) => void;
+  datasets: Dataset[];
+  datasetId: number | null;
+  setDatasetId: (v: number | null) => void;
+  folders: DatasetCategory[];
+  caseType: string | null;
+  setCaseType: (v: string | null) => void;
+  cases?: { picked: number | null; onPick: () => void; onClear: () => void };
+}) {
+  const picked = datasets.find((d) => d.dataset_id === datasetId);
+  return (
+    <div className="flex flex-col gap-0.5">
+      <MenuRow label="데이터셋" note="케이스 묶음" selected={source === 'dataset'} onClick={() => setSource('dataset')} />
+      <MenuRow label="직접 입력" note="메시지 하나" selected={source === 'manual'} onClick={() => { setSource('manual'); close(); }} />
+      {source === 'dataset' && (
+        <>
+          <MenuSection label="데이터셋 · 폴더" />
+          <MenuCols
+            left={
+              <div className="flex flex-col gap-0.5">
+                {datasets.length === 0 && <p className="px-2 py-1.5 text-[11px] text-muted-soft">데이터셋 없음</p>}
+                {datasets.map((d) => (
+                  <MenuRow
+                    key={d.dataset_id}
+                    label={d.dataset_nm}
+                    note={d.case_count != null ? String(d.case_count) : undefined}
+                    title={d.description ?? undefined}
+                    selected={d.dataset_id === datasetId}
+                    onClick={() => setDatasetId(d.dataset_id)}
+                  />
+                ))}
+              </div>
+            }
+            right={
+              datasetId == null ? (
+                <p className="px-2 py-1.5 text-[11px] text-muted-soft">데이터셋을 먼저 고르세요</p>
+              ) : folders.length < 2 ? (
+                // 폴더가 하나뿐이면 '전체' 와 그 폴더가 같은 실행이다.
+                <p className="px-2 py-1.5 text-[11px] text-muted-soft">폴더 없음 — 전체 실행</p>
+              ) : (
+                <div className="flex flex-col gap-0.5">
+                  <MenuRow
+                    label="전체"
+                    note={picked?.case_count != null ? String(picked.case_count) : undefined}
+                    selected={caseType == null}
+                    onClick={() => { setCaseType(null); close(); }}
+                  />
+                  {folders.map((c) => (
+                    <MenuRow
+                      key={c.type_cd}
+                      label={folderLabel(c.type_cd)}
+                      note={String(c.case_count)}
+                      disabled={c.case_count === 0}
+                      selected={c.type_cd === caseType}
+                      onClick={() => { setCaseType(c.type_cd); close(); }}
+                    />
+                  ))}
+                </div>
+              )
+            }
+          />
+          {cases && datasetId != null && (
+            <MenuFoot>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => { cases.onPick(); close(); }}
+                title="이 데이터셋(폴더)에서 돌릴 케이스만 고릅니다"
+              >
+                {cases.picked != null ? `케이스 ${cases.picked}건 고름` : '케이스 고르기'}
+              </Button>
+              {cases.picked != null && (
+                <Button variant="ghost" size="sm" onClick={cases.onClear} title="선택 해제 — 전체 실행">
+                  해제
+                </Button>
+              )}
+            </MenuFoot>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** 데이터 칸에 적는 값과 건수. 건수는 값이 아니라 값에 딸린 수 — 이름과 한 덩어리로
+ * 이어 붙이면 어디까지가 데이터셋 이름인지 흐려진다. */
+export function dataSummary(
+  source: DataSource,
+  datasets: Dataset[],
+  datasetId: number | null,
+  folders: DatasetCategory[],
+  caseType: string | null,
+  pickedCount: number | null = null,
+): { label: string; badge?: string; count: number | null; empty: boolean } {
+  const ds = datasets.find((d) => d.dataset_id === datasetId);
+  const folder = caseType != null ? folders.find((c) => c.type_cd === caseType) : null;
+  // 몇 건이 도는지 — 고른 케이스가 있으면 그 수, 폴더를 좁혔으면 폴더의 수,
+  // 아니면 데이터셋 전체. 실행 버튼에 그대로 적는 값이다.
+  const count = pickedCount ?? (folder ? folder.case_count : ds?.case_count ?? null);
+  if (source === 'manual') return { label: '직접 입력', count, empty: false };
+  if (!ds) return { label: '데이터셋 선택', count, empty: true };
+  return {
+    label: [ds.dataset_nm, folder ? folderLabel(folder.type_cd) : null].filter(Boolean).join(' · '),
+    badge: pickedCount != null ? `선택 ${pickedCount}건` : count != null ? `${count}건` : undefined,
+    count,
+    empty: false,
+  };
+}
+
+/** 채점 칸. 여럿을 켜고 끄는 판이라 누른 뒤에도 닫지 않는다. */
+export function ScoreMenu({
+  scoreOn, setScoreOn, metrics, setMetrics,
+}: {
+  scoreOn: boolean;
+  setScoreOn: (v: boolean) => void;
+  metrics: string[];
+  setMetrics: (fn: (cur: string[]) => string[]) => void;
+}) {
+  const toggle = (m: string) => setMetrics((cur) => (cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m]));
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div className="flex h-8 items-center gap-2 px-2">
+        <ScoreToggle on={scoreOn} onChange={setScoreOn} />
+        <span className="text-[13px] font-medium text-ink">{scoreOn ? '채점함' : '채점 없이 응답만'}</span>
+      </div>
+      <MenuRow
+        label={METRIC_LABELS[EXACT_MATCH]}
+        title={METRIC_DESCRIPTIONS[EXACT_MATCH]}
+        check={metrics.includes(EXACT_MATCH)}
+        disabled={!scoreOn}
+        onClick={() => toggle(EXACT_MATCH)}
+      />
+      <MenuSection label="RAGAS" />
+      {RAGAS_METRICS.map((m) => (
+        <MenuRow
+          key={m}
+          indent
+          label={METRIC_LABELS[m]}
+          title={METRIC_DESCRIPTIONS[m]}
+          check={metrics.includes(m)}
+          disabled={!scoreOn}
+          onClick={() => toggle(m)}
+        />
+      ))}
+      {scoreOn && metrics.length === 0 && (
+        <p className="px-2 pt-1 text-caption text-bad">하나 이상 고르세요</p>
+      )}
+    </div>
+  );
+}
+
+export function scoreLabel(scoreOn: boolean, metrics: string[]): string {
+  if (!scoreOn) return '없음';
+  if (metrics.length === 0) return '지표 선택';
+  const ragas = metrics.filter((m) => m !== EXACT_MATCH).length;
+  return [metrics.includes(EXACT_MATCH) ? 'Action Test' : null, ragas ? `RAGAS ${ragas}` : null]
+    .filter(Boolean).join(' + ');
 }

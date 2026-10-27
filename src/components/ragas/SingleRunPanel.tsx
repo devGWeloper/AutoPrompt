@@ -19,9 +19,6 @@ import { ValuePanel, valueFields } from './MatchDiff';
 import {
   ALL_METRICS,
   EXACT_MATCH,
-  METRIC_DESCRIPTIONS,
-  METRIC_LABELS,
-  RAGAS_METRICS,
   type RagasMetric,
   type PromptVersionSummary,
   type RagasResultRow,
@@ -29,18 +26,8 @@ import {
   type RunWsMessage,
 } from '@/lib/types';
 import {
-  CategorySelect,
-  DatasetPurposeLine,
-  DatasetSelect,
-  folderLabel,
-  EndpointSelect,
-  InlineDivider,
-  InlineField,
   ErrBox,
   PROMPT_TARGET_ENABLED,
-  EvalOptions,
-  ScoreToggle,
-  SegToggle,
   StatusPill,
   TraceTag,
   VersionSelect,
@@ -73,25 +60,19 @@ import {
   useModelRoles,
   type ModelDrafts,
 } from './ModelPicker';
-// 임시 — 실행 조건 폼의 E안(머리띠 한 줄)을 지금 폼과 토글해서 보기 위한 것.
 import {
-  FormSkinToggle,
-  MenuCols,
-  MenuFoot,
+  AgentMenu,
+  DataMenu,
   MenuRow,
   MenuSection,
   PlayIcon,
   RunToolbar,
+  ScoreMenu,
   ToolbarMenu,
-  useFormSkin,
+  agentLabel,
+  dataSummary,
+  scoreLabel,
 } from './RunSetupToolbar';
-// 임시 — O안(담아서 한 번에). 바구니·기록 레일과 담을 목록.
-import {
-  CartRail,
-  CartRailFolded,
-  useCart,
-  useRecentRuns,
-} from './RunCart';
 
 // ---- direct call (raw external-API smoke test, no scoring) ------------------
 
@@ -211,62 +192,9 @@ export default function SingleRunPanel() {
   // context_recall 도 이 값으로 채점하므로, 채점을 켠 실행이면 늘 받는다.
   const wantsExpected = scoreOn;
 
-  // ---- 임시: 실행 조건 폼 프로토타입(E안) --------------------------------
-  // 아래 카드와 완전히 같은 상태를 읽고 쓴다. 어느 쪽 폼으로 고르든 실행되는
-  // 내용은 같고, 머리띠는 값을 버튼에 적어 두는 것만 다르다.
-  const [skin, setSkin] = useFormSkin();
-  const pickedDataset = datasets.find((d) => d.dataset_id === datasetId);
-  const folderHit = caseType != null ? folders.find((c) => c.type_cd === caseType) : null;
-  // 몇 건이 도는지 — 고른 케이스가 있으면 그 수, 폴더를 좁혔으면 폴더의 수,
-  // 아니면 데이터셋 전체. 실행 버튼에 그대로 적는 값이다.
-  const runCount = pickedCases
-    ? pickedCases.size
-    : folderHit
-      ? folderHit.case_count
-      : pickedDataset?.case_count ?? null;
+  // ---- 머리띠에 적는 값 ------------------------------------------------
+  const data = dataSummary(source, datasets, datasetId, folders, caseType, pickedCases ? pickedCases.size : null);
   const targetLabel = target === 'endpoint' ? 'Default' : target === 'model' ? 'Model' : 'Prompt';
-  const agentLabel = endpoints.find((e) => e.endpoint_id === endpointId)?.endpoint_nm ?? 'API 선택';
-  const dataLabel = source === 'manual'
-    ? '직접 입력'
-    : !pickedDataset
-      ? '데이터셋 선택'
-      : [pickedDataset.dataset_nm, folderHit ? folderLabel(folderHit.type_cd) : null]
-          .filter(Boolean).join(' · ');
-  // 건수는 값이 아니라 값에 딸린 수 — 이름과 한 덩어리로 이어 붙이면 어디까지가
-  // 데이터셋 이름인지 흐려진다.
-  const dataBadge = source === 'manual'
-    ? undefined
-    : pickedCases
-      ? `선택 ${pickedCases.size}건`
-      : runCount != null
-        ? `${runCount}건`
-        : undefined;
-  const ragasCount = metrics.filter((m) => m !== EXACT_MATCH).length;
-  const scoreLabel = !scoreOn
-    ? '없음'
-    : metrics.length === 0
-      ? '지표 선택'
-      : [metrics.includes(EXACT_MATCH) ? 'Action Test' : null, ragasCount ? `RAGAS ${ragasCount}` : null]
-          .filter(Boolean).join(' + ');
-
-  // ---- 임시: O안(담아서 한 번에) ----------------------------------------
-  // 바구니는 데이터셋·폴더·케이스를 섞어 모으고, 데이터셋 하나로 떨어질 때만
-  // 실제로 돈다(한 실행이 데이터셋 하나만 받는다). 기록은 레일 아래에 상주하고,
-  // 누르면 그 실행이 이 패널의 결과 자리에 뜬다.
-  const cart = useCart();
-  const { runs: recentRuns, reload: reloadRuns } = useRecentRuns(14, skin === 'cart');
-  const [railOpen, setRailOpen] = useState(true);
-  const [openRunId, setOpenRunId] = useState<number | null>(null);
-  // 방금 끝난 실행이 기록 맨 위에 서야 한다 — 레일이 들고 있는 목록은 패널이
-  // 열릴 때 한 번 읽은 것이다.
-  useEffect(() => {
-    if (status === 'done' || status === 'failed' || status === 'cancelled') reloadRuns();
-  }, [status, reloadRuns]);
-  // 바구니는 데이터셋으로만 담는다 — '직접 입력' 으로 둔 채 이 스킨으로 넘어오면
-  // 아래가 수동 호출 화면인 채 바구니로 돌릴 길이 없는 상태가 된다.
-  useEffect(() => {
-    if (skin === 'cart') setSource('dataset');
-  }, [skin]);
 
   useEffect(() => {
     if (!nodeNm) { setVersions([]); return; }
@@ -395,7 +323,7 @@ export default function SingleRunPanel() {
     { datasetId: dsId, caseType: type, caseIds }: { datasetId: number; caseType: string | null; caseIds: number[] | null },
   ) {
     if (!(apiReady && targetReady && scoreReady && !modelErr)) return;
-    setError(null); setDetail(null); setStatus('running'); setOpenRunId(null);
+    setError(null); setDetail(null); setStatus('running');
     setLive([]); setTotal(0); setRunMetrics(null); setCancelling(false); setRerunning(null); runIdRef.current = null;
     const byPrompt = target === 'prompt';
     // Only the target under test is pinned; everything else runs as the agent's
@@ -415,10 +343,9 @@ export default function SingleRunPanel() {
     } catch (e) { setError(errText(e)); setStatus('failed'); }
   }
 
-  /** 레일의 기록에서 고른 실행을 이 패널의 결과 자리에 띄운다 — 끝난 실행이
-   * 남기는 모양과 같아서, 결과를 보려고 다른 화면으로 갈 일이 없다. */
+  /** 기록의 실행 하나를 이 패널의 결과 자리에 띄운다 — 끝난 실행이 남기는 모양과
+   * 같아서, 결과를 보려고 다른 화면으로 갈 일이 없다. */
   async function openRecord(id: number) {
-    setOpenRunId(id);
     setError(null); setLive([]); setTotal(0); setRunMetrics(null); setRunMeta(null); setRerunning(null);
     try {
       const d = await api.get<RagasRunDetail>(`/ragas-runs/${id}`);
@@ -493,27 +420,12 @@ export default function SingleRunPanel() {
     return found ? `v${found.version_no}` : `ID ${id}`;
   };
 
-  // ---- 임시: 머리띠 칸이 여는 판 ----------------------------------------
+  // ---- 머리띠 칸이 여는 판 ----------------------------------------------
   // 판은 '폼' 이 아니라 '고르는 목록' 이다. 셀렉트를 판 안에 다시 넣으면 칸을 누른
-  // 뒤 또 눌러야 하고, 그게 이 머리띠가 꾸져 보이던 가장 큰 이유였다. 모양이 네
-  // 칸 모두 같아야 하므로 한곳에서 만들어 E · O 두 스킨이 같이 쓴다.
-  const agentMenu = (close: () => void) =>
-    endpoints.length === 0 ? (
-      // 등록된 API 가 없으면 고를 목록이 없다 — 설정으로 가는 길만 띄운다.
-      <EndpointSelect endpoints={endpoints} value={endpointId} onChange={setEndpointId} className="h-9 w-full text-sm" />
-    ) : (
-      <div className="flex flex-col gap-0.5">
-        {endpoints.map((e) => (
-          <MenuRow
-            key={e.endpoint_id}
-            label={e.endpoint_nm}
-            title={e.endpoint_url}
-            selected={e.endpoint_id === endpointId}
-            onClick={() => { setEndpointId(e.endpoint_id); close(); }}
-          />
-        ))}
-      </div>
-    );
+  // 뒤 또 눌러야 한다.
+  const agentMenu = (close: () => void) => (
+    <AgentMenu endpoints={endpoints} value={endpointId} onPick={(id) => { setEndpointId(id); close(); }} />
+  );
 
   const targetMenu = (close: () => void) => (
     <div className="flex flex-col gap-0.5">
@@ -564,232 +476,59 @@ export default function SingleRunPanel() {
   );
 
   const dataMenu = (close: () => void) => (
-    <div className="flex flex-col gap-0.5">
-      <MenuRow label="데이터셋" note="케이스 묶음" selected={source === 'dataset'} onClick={() => setSource('dataset')} />
-      <MenuRow label="직접 입력" note="메시지 하나" selected={source === 'manual'} onClick={() => { setSource('manual'); close(); }} />
-      {source === 'dataset' && (
-        <>
-          <MenuSection label="데이터셋 · 폴더" />
-          <MenuCols
-            left={
-              <div className="flex flex-col gap-0.5">
-                {datasets.length === 0 && <p className="px-2 py-1.5 text-[11px] text-muted-soft">데이터셋 없음</p>}
-                {datasets.map((d) => (
-                  <MenuRow
-                    key={d.dataset_id}
-                    label={d.dataset_nm}
-                    note={d.case_count != null ? String(d.case_count) : undefined}
-                    title={d.description ?? undefined}
-                    selected={d.dataset_id === datasetId}
-                    onClick={() => setDatasetId(d.dataset_id)}
-                  />
-                ))}
-              </div>
-            }
-            right={
-              datasetId == null ? (
-                <p className="px-2 py-1.5 text-[11px] text-muted-soft">데이터셋을 먼저 고르세요</p>
-              ) : folders.length < 2 ? (
-                // 폴더가 하나뿐이면 '전체' 와 그 폴더가 같은 실행이다.
-                <p className="px-2 py-1.5 text-[11px] text-muted-soft">폴더 없음 — 전체 실행</p>
-              ) : (
-                <div className="flex flex-col gap-0.5">
-                  <MenuRow
-                    label="전체"
-                    note={pickedDataset?.case_count != null ? String(pickedDataset.case_count) : undefined}
-                    selected={caseType == null}
-                    onClick={() => { setCaseType(null); close(); }}
-                  />
-                  {folders.map((c) => (
-                    <MenuRow
-                      key={c.type_cd}
-                      label={folderLabel(c.type_cd)}
-                      note={String(c.case_count)}
-                      disabled={c.case_count === 0}
-                      selected={c.type_cd === caseType}
-                      onClick={() => { setCaseType(c.type_cd); close(); }}
-                    />
-                  ))}
-                </div>
-              )
-            }
-          />
-          {datasetId != null && (
-            <MenuFoot>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => { setPicking(true); close(); }}
-                title="이 데이터셋(폴더)에서 돌릴 케이스만 고릅니다"
-              >
-                {pickedCases ? `케이스 ${pickedCases.size}건 고름` : '케이스 고르기'}
-              </Button>
-              {pickedCases && (
-                <Button variant="ghost" size="sm" onClick={() => setPickedCases(null)} title="선택 해제 — 전체 실행">
-                  해제
-                </Button>
-              )}
-            </MenuFoot>
-          )}
-        </>
-      )}
-    </div>
+    <DataMenu
+      close={close}
+      source={source}
+      setSource={setSource}
+      datasets={datasets}
+      datasetId={datasetId}
+      setDatasetId={setDatasetId}
+      folders={folders}
+      caseType={caseType}
+      setCaseType={setCaseType}
+      cases={{
+        picked: pickedCases ? pickedCases.size : null,
+        onPick: () => setPicking(true),
+        onClear: () => setPickedCases(null),
+      }}
+    />
   );
 
-  const scoreMenu = () => (
-    <div className="flex flex-col gap-0.5">
-      <div className="flex h-8 items-center gap-2 px-2">
-        <ScoreToggle on={scoreOn} onChange={setScoreOn} />
-        <span className="text-[13px] font-medium text-ink">{scoreOn ? '채점함' : '채점 없이 응답만'}</span>
-      </div>
-      <MenuRow
-        label={METRIC_LABELS[EXACT_MATCH]}
-        title={METRIC_DESCRIPTIONS[EXACT_MATCH]}
-        check={metrics.includes(EXACT_MATCH)}
-        disabled={!scoreOn}
-        onClick={() => setMetrics((cur) => (cur.includes(EXACT_MATCH) ? cur.filter((x) => x !== EXACT_MATCH) : [...cur, EXACT_MATCH]))}
-      />
-      <MenuSection label="RAGAS" />
-      {RAGAS_METRICS.map((m) => (
-        <MenuRow
-          key={m}
-          indent
-          label={METRIC_LABELS[m]}
-          title={METRIC_DESCRIPTIONS[m]}
-          check={metrics.includes(m)}
-          disabled={!scoreOn}
-          onClick={() => setMetrics((cur) => (cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m]))}
-        />
-      ))}
-      {scoreOn && metrics.length === 0 && (
-        <p className="px-2 pt-1 text-caption text-bad">하나 이상 고르세요</p>
-      )}
-    </div>
-  );
-
-  // 본문. 스킨마다 바깥 틀만 다르고 안은 같다 — 'O · 바구니' 는 이 본문 왼쪽에
-  // 레일을 세운다.
+  // 실행 조건은 한 줄에 값으로만 적고, 칸을 누르면 고르는 목록이 아래로 열린다.
   const inner = (
     <>
-      {/* 임시 — 어느 폼으로 볼지. 고르고 나면 이 줄과 안 고른 쪽을 지운다. */}
-      <div className="flex items-center justify-end">
-        <FormSkinToggle value={skin} onChange={setSkin} />
-      </div>
+      <div className="space-y-2.5">
+        <RunToolbar>
+          <ToolbarMenu label="Agent" value={agentLabel(endpoints, endpointId)} muted={endpointId == null} width={240}>
+            {agentMenu}
+          </ToolbarMenu>
 
-      {/* 실행 조건은 두 줄이다: API·대상 한 줄, 입력·채점·실행 한 줄. 항목마다
-          한 행을 주면 화면의 절반이 아직 누르지도 않은 폼이 된다. */}
-      {skin === 'card' && (
-      <Card className="px-4 py-3">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
-          {/* 대상 = 무엇을 바꾸는가. 셋 중 하나만 변인이고 나머지는 손대지
-              않는다 — 그래서 고른 것의 컨트롤만 옆에 나온다. 대상이 API 앞에
-              서는 건 Compare 와 같은 순서라서이기도 하고, 무엇을 시험하는지가
-              정해져야 어느 API 로 부를지가 의미를 갖기 때문이다. */}
-          <InlineField label="대상">
-            <SegToggle
-              value={target}
-              onChange={setTarget}
-              options={[
-                {
-                  id: 'endpoint',
-                  // 'As-is' 였던 자리. 아무것도 바꾸지 않은 실행이자 이 폼의
-                  // 기본값이라, 이름은 그 사실만 말하고 맨 앞에 선다. 무슨
-                  // 실행이 되는지는 툴팁이 말한다.
-                  label: 'Default',
-                  title: '프롬프트도 모델도 건드리지 않고, 고른 Agent 를 지금 상태 그대로 호출합니다',
-                },
-                { id: 'model', label: 'Model', title: 'role 별 모델을 바꿔서 실행합니다' },
-                {
-                  id: 'prompt',
-                  label: 'Prompt',
-                  title: '고른 프롬프트 버전을 활성화한 뒤 실행합니다',
-                  disabled: !PROMPT_TARGET_ENABLED,
-                },
-              ]}
-            />
-            {target === 'prompt' && (
-              <>
-                <Select value={nodeNm} onChange={(e) => setNodeNm(e.target.value)} className="h-9 w-40">
-                  <option value="" disabled>노드</option>
-                  {nodes.map((n) => (
-                    <option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>
-                  ))}
-                </Select>
-                <VersionSelect versions={versions} value={ver} onChange={setVer} className="h-9 w-28" placeholder="버전" />
-              </>
-            )}
-          </InlineField>
+          <ToolbarMenu label="대상" value={targetLabel} width={target === 'model' ? 560 : 300}>
+            {targetMenu}
+          </ToolbarMenu>
 
-          <InlineDivider />
+          <ToolbarMenu
+            label="데이터"
+            value={data.label}
+            badge={data.badge}
+            lead
+            muted={data.empty}
+            width={440}
+          >
+            {dataMenu}
+          </ToolbarMenu>
 
-          <InlineField label="Agent">
-            <EndpointSelect endpoints={endpoints} value={endpointId} onChange={setEndpointId} />
-          </InlineField>
+          <ToolbarMenu label="채점" value={scoreLabel(scoreOn, metrics)} muted={scoreOn && metrics.length === 0} width={300}>
+            <ScoreMenu scoreOn={scoreOn} setScoreOn={setScoreOn} metrics={metrics} setMetrics={setMetrics} />
+          </ToolbarMenu>
 
-        </div>
+          <span className="flex-grow" />
 
-        {/* 모델 대상일 때만 role 표가 열린다 — 다른 대상에서는 실행에 쓰이지도 않는다. */}
-        {target === 'model' && (
-          <div className="mt-2.5 flex flex-wrap items-center gap-2 border-t border-line pt-2.5">
-            <ModelPicker roles={roles} columns={[{ key: 'a', drafts: models, onChange: setModels }]} />
-          </div>
-        )}
-
-        <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2.5 border-t border-line pt-2.5">
-          <InlineField label="입력">
-            <SegToggle
-              value={source}
-              onChange={setSource}
-              options={[{ id: 'dataset', label: '데이터셋' }, { id: 'manual', label: '직접 입력' }]}
-            />
-            {source === 'dataset' && (
-              <>
-                <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />
-                <CategorySelect cats={folders} value={caseType} onChange={setCaseType} />
-                {datasetId != null && (
-                  <span className="inline-flex items-center">
-                    <Button
-                      variant="secondary"
-                      size="md"
-                      onClick={() => setPicking(true)}
-                      title="이 데이터셋(폴더)에서 돌릴 케이스만 고릅니다"
-                    >
-                      {pickedCases ? `선택 ${pickedCases.size}건` : '케이스 선택'}
-                    </Button>
-                    {pickedCases && (
-                      <button
-                        type="button"
-                        aria-label="선택 해제"
-                        title="선택 해제 — 전체 실행"
-                        onClick={() => setPickedCases(null)}
-                        className="ml-1 rounded-full p-1 text-muted-soft transition-colors hover:bg-surface-3 hover:text-ink"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
-                          <path d="M18 6 6 18M6 6l12 12" />
-                        </svg>
-                      </button>
-                    )}
-                    {picking && (
-                      <CasePickerModal
-                        datasetId={datasetId}
-                        caseType={caseType}
-                        value={pickedCases}
-                        onClose={() => setPicking(false)}
-                        onApply={setPickedCases}
-                      />
-                    )}
-                  </span>
-                )}
-              </>
-            )}
-          </InlineField>
-
-          <InlineDivider />
-
-          {/* 실행 버튼은 방금 고른 입력 바로 옆에 선다. 카드 오른쪽 끝으로
-              밀어두면 폼과 버튼 사이가 비어, 조건을 다 채우고도 어디를 눌러야
-              하는지 한 번 더 찾게 된다. */}
-          <div className="flex shrink-0 items-center gap-2.5">
+          <div className="flex shrink-0 items-center gap-2.5 pl-2">
+            {modelErr && <span className="text-caption text-bad">{modelErr}</span>}
+            <StatusPill status={source === 'dataset' ? status : callStatus} />
+            {/* 띠에서 유일한 주 동작이라 한 단 큰 치수를 쓴다 — 셀렉트와 같은
+                h-9 로 두면 네 칸과 같은 무게가 되어 줄의 끝이 안 보인다. */}
             {source === 'dataset' ? (
               <Button
                 size="lg"
@@ -798,36 +537,25 @@ export default function SingleRunPanel() {
                 disabled={status === 'running' ? cancelling : !canRun}
                 onClick={status === 'running' ? cancel : run}
               >
-                {status === 'running' ? (cancelling ? '취소 중…' : '취소') : '실행'}
+                {status === 'running' ? (
+                  cancelling ? '취소 중…' : '취소'
+                ) : (
+                  <>
+                    <PlayIcon />
+                    {data.count != null ? `${data.count}건 실행` : '실행'}
+                  </>
+                )}
               </Button>
             ) : (
               <Button size="lg" variant="primary" className="whitespace-nowrap" disabled={!canCall} onClick={call}>
                 {callStatus === 'running' ? '호출 중…' : '호출'}
               </Button>
             )}
-            <StatusPill status={source === 'dataset' ? status : callStatus} />
-            {modelErr && <span className="text-caption text-bad">{modelErr}</span>}
           </div>
-
-          {source === 'dataset' && <DatasetPurposeLine datasets={datasets} datasetId={datasetId} />}
-        </div>
-
-        {/* 채점은 자기 줄을 쓴다 — 지표가 켜지고 꺼질 때마다 위 줄이 접혀서 실행
-            버튼까지 밀려 내려가던 자리다. */}
-        <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line pt-2.5">
-          <InlineField label="채점">
-            <ScoreToggle on={scoreOn} onChange={setScoreOn} />
-            {scoreOn && (
-              <>
-                <EvalOptions metrics={metrics} setMetrics={setMetrics} />
-                {metrics.length === 0 && <span className="text-caption text-bad">하나 이상</span>}
-              </>
-            )}
-          </InlineField>
-        </div>
+        </RunToolbar>
 
         {source === 'manual' && (
-          <div className="mt-2.5 grid gap-2.5 border-t border-line pt-2.5 sm:grid-cols-2">
+          <Card className="grid gap-2.5 px-4 py-3 sm:grid-cols-2">
             <Textarea
               value={message}
               onChange={(e) => setMessage(e.target.value)}
@@ -844,136 +572,21 @@ export default function SingleRunPanel() {
                 className="w-full text-sm"
               />
             )}
-          </div>
+          </Card>
         )}
 
-        
-      </Card>
-      )}
-
-      {/* 임시 — O안. 데이터는 왼쪽 레일의 바구니가 들고 있으므로 머리띠에서
-          '데이터'와 실행 단추를 뺀다. 두 곳에 실행 단추가 서면 어느 것이 바구니를
-          돌리는지 알 수 없다. */}
-      {skin === 'cart' && (
-        <>
-          <RunToolbar>
-            <ToolbarMenu label="Agent" value={agentLabel} muted={endpointId == null} width={240}>
-              {agentMenu}
-            </ToolbarMenu>
-
-            <ToolbarMenu label="대상" value={targetLabel} width={target === 'model' ? 560 : 300}>
-              {targetMenu}
-            </ToolbarMenu>
-
-            <ToolbarMenu label="채점" value={scoreLabel} muted={scoreOn && metrics.length === 0} width={300}>
-              {scoreMenu}
-            </ToolbarMenu>
-
-            <span className="flex-grow" />
-
-            <div className="flex shrink-0 items-center gap-2.5 pl-2">
-              {modelErr && <span className="text-caption text-bad">{modelErr}</span>}
-              <StatusPill status={status} />
-            </div>
-          </RunToolbar>
-        </>
-      )}
-
-      {/* 임시 — E안. 조건을 한 줄에 값으로만 적고, 칸을 누르면 고르는 목록이 아래로
-          열린다. 판 안이 폼이 아니라 목록인 게 중요하다 — 셀렉트를 넣으면 칸을 누른
-          뒤 또 눌러야 한다. */}
-      {skin === 'toolbar' && (
-        <div className="space-y-2.5">
-          <RunToolbar>
-            <ToolbarMenu label="Agent" value={agentLabel} muted={endpointId == null} width={240}>
-              {agentMenu}
-            </ToolbarMenu>
-
-            <ToolbarMenu label="대상" value={targetLabel} width={target === 'model' ? 560 : 300}>
-              {targetMenu}
-            </ToolbarMenu>
-
-            <ToolbarMenu
-              label="데이터"
-              value={dataLabel}
-              badge={dataBadge}
-              lead
-              muted={source === 'dataset' && !pickedDataset}
-              width={440}
-            >
-              {dataMenu}
-            </ToolbarMenu>
-
-            <ToolbarMenu label="채점" value={scoreLabel} muted={scoreOn && metrics.length === 0} width={300}>
-              {scoreMenu}
-            </ToolbarMenu>
-
-            <span className="flex-grow" />
-
-            <div className="flex shrink-0 items-center gap-2.5 pl-2">
-              {modelErr && <span className="text-caption text-bad">{modelErr}</span>}
-              <StatusPill status={source === 'dataset' ? status : callStatus} />
-              {/* 띠에서 유일한 주 동작이라 한 단 큰 치수를 쓴다 — 셀렉트와 같은
-                  h-9 로 두면 네 칸과 같은 무게가 되어 줄의 끝이 안 보인다. */}
-              {source === 'dataset' ? (
-                <Button
-                  size="lg"
-                  variant={status === 'running' ? 'secondary' : 'primary'}
-                  className="whitespace-nowrap"
-                  disabled={status === 'running' ? cancelling : !canRun}
-                  onClick={status === 'running' ? cancel : run}
-                >
-                  {status === 'running' ? (
-                    cancelling ? '취소 중…' : '취소'
-                  ) : (
-                    <>
-                      <PlayIcon />
-                      {runCount != null ? `${runCount}건 실행` : '실행'}
-                    </>
-                  )}
-                </Button>
-              ) : (
-                <Button size="lg" variant="primary" className="whitespace-nowrap" disabled={!canCall} onClick={call}>
-                  {callStatus === 'running' ? '호출 중…' : '호출'}
-                </Button>
-              )}
-            </div>
-          </RunToolbar>
-
-          {source === 'manual' && (
-            <Card className="grid gap-2.5 px-4 py-3 sm:grid-cols-2">
-              <Textarea
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                rows={3}
-                placeholder="메시지 *"
-                className="w-full text-sm"
-              />
-              {wantsExpected && (
-                <Textarea
-                  value={expected}
-                  onChange={(e) => setExpected(e.target.value)}
-                  rows={3}
-                  placeholder="기대 정답"
-                  className="w-full text-sm"
-                />
-              )}
-            </Card>
-          )}
-
-          {/* 케이스 고르기 판은 메뉴 밖에 둔다 — 메뉴 안에 두면 판을 누르는 순간
-              메뉴가 닫히면서 판까지 사라진다. */}
-          {picking && datasetId != null && (
-            <CasePickerModal
-              datasetId={datasetId}
-              caseType={caseType}
-              value={pickedCases}
-              onClose={() => setPicking(false)}
-              onApply={setPickedCases}
-            />
-          )}
-        </div>
-      )}
+        {/* 케이스 고르기 판은 메뉴 밖에 둔다 — 메뉴 안에 두면 판을 누르는 순간
+            메뉴가 닫히면서 판까지 사라진다. */}
+        {picking && datasetId != null && (
+          <CasePickerModal
+            datasetId={datasetId}
+            caseType={caseType}
+            value={pickedCases}
+            onClose={() => setPicking(false)}
+            onApply={setPickedCases}
+          />
+        )}
+      </div>
 
       {source === 'manual' ? (
         <>
@@ -1153,39 +766,5 @@ export default function SingleRunPanel() {
     </>
   );
 
-  if (skin !== 'cart') return <div className="space-y-5">{inner}</div>;
-
-  // 레일은 sticky 로 붙어 결과를 따라 내려가도 자리를 지킨다 — 담은 것과 기록이
-  // 늘 보이는 것이 이 배치의 이유이고, 스크롤에 흘러가 버리면 그게 없어진다.
-  return (
-    <div className="flex items-start gap-4">
-      {railOpen ? (
-        <div className="sticky top-0 h-[calc(100vh-6.5rem)] w-[380px] shrink-0 overflow-hidden rounded-md border border-line bg-surface shadow-card">
-          <CartRail
-            cart={cart}
-            datasets={datasets}
-            runs={recentRuns}
-            openRunId={openRunId}
-            onOpenRun={(id) => void openRecord(id)}
-            onCollapse={() => setRailOpen(false)}
-            running={status === 'running'}
-            cancelling={cancelling}
-            onCancel={() => void cancel()}
-            blockedReason={
-              !apiReady ? 'Agent 를 고르세요'
-              : !targetReady ? '노드와 버전을 고르세요'
-              : !scoreReady ? '채점 지표를 하나 이상 고르세요'
-              : modelErr
-            }
-            onRun={({ datasetId: dsId, caseIds }) => void startRun({ datasetId: dsId, caseType: null, caseIds })}
-          />
-        </div>
-      ) : (
-        <div className="sticky top-0">
-          <CartRailFolded cases={cart.cases} onOpen={() => setRailOpen(true)} />
-        </div>
-      )}
-      <div className="min-w-0 flex-1 space-y-5">{inner}</div>
-    </div>
-  );
+  return <div className="space-y-5">{inner}</div>;
 }
