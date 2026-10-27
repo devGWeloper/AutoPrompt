@@ -116,14 +116,14 @@ export function ToolbarMenu({
       </button>
 
       {open && (
-        // TraceX 필터의 ACTION_TYP(기본 <select>)가 펼치는 목록과 같은 판: 거의 각진
-        // 모서리, 진한 한 줄 테두리, 짧은 그림자. 칸 아래 테두리에 틈 없이 붙어 왼쪽 끝을 맞추고,
+        // TraceX 필터의 ACTION_TYP(기본 <select>)가 펼치는 목록과 같은 판: 완전히 각진
+        // 모서리, 검정 한 줄 테두리, 위아래 여백 없이 첫 줄부터, 짧은 그림자. 칸 아래 테두리에 틈 없이 붙어 왼쪽 끝을 맞추고,
         // 칸보다 좁아지지 않는다. 줄은 판 끝까지 찬다.
         <div
           style={width ? { width } : undefined}
           // group: 목록 위에 손이 올라오면 고른 줄의 파랑이 손이 있는 줄로 옮겨 간다.
           className={cn(
-            'group absolute left-0 top-full z-20 min-w-[max(100%,200px)] overflow-hidden rounded-xs border border-line-strong bg-surface py-1 shadow-[0_2px_8px_rgba(17,24,39,0.16)]',
+            'group absolute left-0 top-full z-20 min-w-[max(100%,200px)] overflow-hidden rounded-none border border-ink bg-surface shadow-[0_2px_8px_rgba(17,24,39,0.16)]',
             !width && 'w-max max-w-[460px]',
           )}
         >
@@ -203,11 +203,12 @@ export function MenuSection({ label, className }: { label: string; className?: s
 
 /** 판 맨 아래의 동작 — 고르는 줄이 아니라 '여기서 나가서 하는 일'(케이스 고르기처럼). */
 export function MenuFoot({ children }: { children: ReactNode }) {
-  return <div className="-mb-1 mt-1 flex items-center gap-1.5 border-t border-line bg-surface-2 px-2 py-1.5">{children}</div>;
+  return <div className="mt-1 flex items-center gap-1.5 border-t border-line bg-surface-2 px-2 py-1.5">{children}</div>;
 }
 
 /** 두 줄기를 나란히 — 데이터셋과 그 폴더처럼, 왼쪽을 고르면 오른쪽이 달라지는 짝. */
 export function MenuCols({ left, right }: { left: ReactNode; right: ReactNode }) {
+  if (!right) return <>{left}</>;
   return (
     <div className="flex items-stretch">
       <div className="min-w-0 flex-1">{left}</div>
@@ -275,8 +276,8 @@ export function DataMenu({
   const picked = datasets.find((d) => d.dataset_id === datasetId);
   return (
     <div className="flex flex-col">
-      <MenuRow label="데이터셋" note="케이스 묶음" selected={source === 'dataset'} onClick={() => setSource('dataset')} />
-      <MenuRow label="직접 입력" note="메시지 하나" selected={source === 'manual'} onClick={() => { setSource('manual'); close(); }} />
+      <MenuRow label="데이터셋" selected={source === 'dataset'} onClick={() => setSource('dataset')} />
+      <MenuRow label="직접 입력" selected={source === 'manual'} onClick={() => { setSource('manual'); close(); }} />
       {source === 'dataset' && (
         <>
           <MenuSection label="데이터셋 · 폴더" />
@@ -297,12 +298,8 @@ export function DataMenu({
               </div>
             }
             right={
-              datasetId == null ? (
-                <p className="py-[5px] pl-3 pr-6 text-[13.5px] leading-[1.3] text-muted-soft">데이터셋을 먼저 고르세요</p>
-              ) : folders.length < 2 ? (
-                // 폴더가 하나뿐이면 '전체' 와 그 폴더가 같은 실행이다.
-                <p className="py-[5px] pl-3 pr-6 text-[13.5px] leading-[1.3] text-muted-soft">폴더 없음 — 전체 실행</p>
-              ) : (
+              // 데이터셋을 안 골랐거나 폴더가 하나뿐이면('전체' 와 같은 실행) 오른쪽 줄기를 아예 두지 않는다.
+              datasetId == null || folders.length < 2 ? null : (
                 <div className="flex flex-col">
                   <MenuRow
                     label="전체"

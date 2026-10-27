@@ -432,7 +432,6 @@ export default function SingleRunPanel() {
     <div className="flex flex-col">
       <MenuRow
         label="Default"
-        note="그대로"
         title="프롬프트도 모델도 건드리지 않고, 고른 Agent 를 지금 상태 그대로 호출합니다"
         selected={target === 'endpoint'}
         onClick={() => { setTarget('endpoint'); close(); }}
@@ -440,14 +439,12 @@ export default function SingleRunPanel() {
       {/* 모델 · 프롬프트는 고른 뒤에 채울 것이 따라오므로 판을 닫지 않는다. */}
       <MenuRow
         label="Model"
-        note="role 별 모델"
         title="role 별 모델을 바꿔서 실행합니다"
         selected={target === 'model'}
         onClick={() => setTarget('model')}
       />
       <MenuRow
         label="Prompt"
-        note="버전 활성화"
         title="고른 프롬프트 버전을 활성화한 뒤 실행합니다"
         disabled={!PROMPT_TARGET_ENABLED}
         selected={target === 'prompt'}

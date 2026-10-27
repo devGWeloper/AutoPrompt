@@ -467,7 +467,6 @@ export default function ComparePanel() {
     <div className="flex flex-col">
       <MenuRow
         label="Default"
-        note="Agent 끼리"
         title="프롬프트도 모델도 건드리지 않고, 두 Agent 를 지금 상태 그대로 호출합니다"
         selected={mode === 'endpoint'}
         onClick={() => { setMode('endpoint'); close(); }}
@@ -475,14 +474,12 @@ export default function ComparePanel() {
       {/* 모델 · 프롬프트는 고른 뒤에 채울 것이 따라오므로 판을 닫지 않는다. */}
       <MenuRow
         label="Model"
-        note="role 별 모델"
         title="같은 Agent 에서 role 별 모델만 A · B 로 바꿉니다"
         selected={mode === 'model'}
         onClick={() => setMode('model')}
       />
       <MenuRow
         label="Prompt"
-        note="버전 A · B"
         title="같은 노드의 두 프롬프트 버전을 차례로 활성화해 비교합니다"
         disabled={!PROMPT_TARGET_ENABLED}
         selected={mode === 'version'}
