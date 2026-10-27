@@ -24,6 +24,9 @@ import {
 import { CaseCompareTable, CompareVerdict } from './CompareTable';
 import {
   CancelRunButton,
+  CategorySelect,
+  DatasetSelect,
+  EndpointSelect,
   ErrBox,
   RUN_TERMINAL,
   RunDurationTag,
@@ -50,19 +53,7 @@ import {
   useModelRoles,
   type ModelDrafts,
 } from './ModelPicker';
-import {
-  AgentMenu,
-  DataMenu,
-  MenuRow,
-  MenuSection,
-  PlayIcon,
-  RunToolbar,
-  ScoreMenu,
-  ToolbarMenu,
-  agentLabel,
-  dataSummary,
-  scoreLabel,
-} from './RunSetupToolbar';
+import { PlayIcon, RunToolbar, ScoreSeg, Seg, ToolbarGroup, ToolbarRow, runCount } from './RunSetupToolbar';
 
 /** One side's answer to a manual A/B call. */
 type ManualSide = {
@@ -455,67 +446,10 @@ export default function ComparePanel() {
     }
   }
 
-  // ---- 머리띠 ----------------------------------------------------------
-  const data = dataSummary(source, datasets, datasetId, folders, caseType);
-  const targetLabel = mode === 'endpoint' ? 'Default' : mode === 'model' ? 'Model' : 'Prompt';
+  const count = runCount(datasets, datasetId, folders, caseType);
   const sameSides = mode === 'endpoint'
     ? epA != null && epA === epB
     : mode === 'version' && verA != null && verA === verB;
-
-  const targetMenu = (close: () => void) => (
-    <div className="flex flex-col gap-0.5">
-      <MenuRow
-        label="Default"
-        note="Agent 끼리"
-        title="프롬프트도 모델도 건드리지 않고, 두 Agent 를 지금 상태 그대로 호출합니다"
-        selected={mode === 'endpoint'}
-        onClick={() => { setMode('endpoint'); close(); }}
-      />
-      {/* 모델 · 프롬프트는 고른 뒤에 채울 것이 따라오므로 판을 닫지 않는다. */}
-      <MenuRow
-        label="Model"
-        note="role 별 모델"
-        title="같은 Agent 에서 role 별 모델만 A · B 로 바꿉니다"
-        selected={mode === 'model'}
-        onClick={() => setMode('model')}
-      />
-      <MenuRow
-        label="Prompt"
-        note="버전 A · B"
-        title="같은 노드의 두 프롬프트 버전을 차례로 활성화해 비교합니다"
-        disabled={!PROMPT_TARGET_ENABLED}
-        selected={mode === 'version'}
-        onClick={() => setMode('version')}
-      />
-      {mode === 'version' && (
-        <>
-          <MenuSection label="노드 · 버전" />
-          <div className="flex gap-1.5 px-1 pb-1">
-            <Select value={nodeNm ?? ''} onChange={(e) => setNodeNm(e.target.value)} className="h-9 min-w-0 flex-1">
-              <option value="" disabled>노드</option>
-              {nodes.map((n) => (<option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>))}
-            </Select>
-            <VersionSelect versions={versions} value={verA} onChange={setVerA} className="h-9 w-20" placeholder="A" />
-            <VersionSelect versions={versions} value={verB} onChange={setVerB} className="h-9 w-20" placeholder="B" />
-          </div>
-        </>
-      )}
-      {mode === 'model' && (
-        <>
-          <MenuSection label="모델" />
-          <div className="px-1 pb-1">
-            <ModelPicker
-              roles={roles}
-              columns={[
-                { key: 'a', label: 'A', drafts: modelsA, onChange: setModelsA },
-                { key: 'b', label: 'B', drafts: modelsB, onChange: setModelsB },
-              ]}
-            />
-          </div>
-        </>
-      )}
-    </div>
-  );
 
   return (
     <div className="space-y-5">
@@ -523,75 +457,117 @@ export default function ComparePanel() {
           두는 복합 비교는 무엇 때문에 결과가 달라졌는지 알 수 없다. */}
       <div className="space-y-2.5">
         <RunToolbar>
-          <ToolbarMenu label="대상" value={targetLabel} width={mode === 'model' ? 640 : 300}>
-            {targetMenu}
-          </ToolbarMenu>
+          <ToolbarRow>
+            <ToolbarGroup label="대상">
+              <Seg
+                items={[
+                  {
+                    id: 'endpoint',
+                    label: 'Default',
+                    title: '프롬프트도 모델도 건드리지 않고, 두 Agent 를 지금 상태 그대로 호출합니다',
+                    on: mode === 'endpoint',
+                    onClick: () => setMode('endpoint'),
+                  },
+                  { id: 'model', label: 'Model', title: '같은 Agent 에서 role 별 모델만 A · B 로 바꿉니다', on: mode === 'model', onClick: () => setMode('model') },
+                  {
+                    id: 'version',
+                    label: 'Prompt',
+                    title: '같은 노드의 두 프롬프트 버전을 차례로 활성화해 비교합니다',
+                    disabled: !PROMPT_TARGET_ENABLED,
+                    on: mode === 'version',
+                    onClick: () => setMode('version'),
+                  },
+                ]}
+              />
+              {mode === 'version' && (
+                <>
+                  <Select value={nodeNm ?? ''} onChange={(e) => setNodeNm(e.target.value)} className="h-9 w-40">
+                    <option value="" disabled>노드</option>
+                    {nodes.map((n) => (<option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>))}
+                  </Select>
+                  <VersionSelect versions={versions} value={verA} onChange={setVerA} className="h-9 w-28" placeholder="A" />
+                  <VersionSelect versions={versions} value={verB} onChange={setVerB} className="h-9 w-28" placeholder="B" />
+                </>
+              )}
+            </ToolbarGroup>
 
-          {mode === 'endpoint' ? (
-            // 두 사이드가 각각 등록된 API 하나씩. 프롬프트·모델은 그대로 둔다.
-            <>
-              <ToolbarMenu label="A" value={agentLabel(endpoints, epA)} muted={epA == null} width={240}>
-                {(close) => <AgentMenu endpoints={endpoints} value={epA} onPick={(id) => { setEpA(id); close(); }} />}
-              </ToolbarMenu>
-              <ToolbarMenu label="B" value={agentLabel(endpoints, epB)} muted={epB == null} width={240}>
-                {(close) => <AgentMenu endpoints={endpoints} value={epB} onPick={(id) => { setEpB(id); close(); }} />}
-              </ToolbarMenu>
-            </>
-          ) : (
-            <ToolbarMenu label="Agent" value={agentLabel(endpoints, epA)} muted={epA == null} width={240}>
-              {(close) => <AgentMenu endpoints={endpoints} value={epA} onPick={(id) => { setEpA(id); close(); }} />}
-            </ToolbarMenu>
+            {mode === 'endpoint' ? (
+              // 두 사이드가 각각 등록된 API 하나씩. 프롬프트·모델은 그대로 둔다.
+              <>
+                <ToolbarGroup label="A">
+                  <EndpointSelect endpoints={endpoints} value={epA} onChange={setEpA} />
+                </ToolbarGroup>
+                <ToolbarGroup label="B">
+                  <EndpointSelect endpoints={endpoints} value={epB} onChange={setEpB} />
+                </ToolbarGroup>
+              </>
+            ) : (
+              <ToolbarGroup label="Agent">
+                <EndpointSelect endpoints={endpoints} value={epA} onChange={setEpA} />
+              </ToolbarGroup>
+            )}
+
+            <ToolbarGroup label="데이터">
+              <Seg
+                items={[
+                  { id: 'dataset', label: '데이터셋', on: source === 'dataset', onClick: () => setSource('dataset') },
+                  { id: 'manual', label: '직접 입력', on: source === 'manual', onClick: () => setSource('manual') },
+                ]}
+              />
+              {source === 'dataset' && (
+                <>
+                  <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />
+                  <CategorySelect cats={folders} value={caseType} onChange={setCaseType} />
+                </>
+              )}
+            </ToolbarGroup>
+          </ToolbarRow>
+
+          {mode === 'model' && (
+            <ToolbarRow>
+              <ModelPicker
+                roles={roles}
+                columns={[
+                  { key: 'a', label: 'A', drafts: modelsA, onChange: setModelsA },
+                  { key: 'b', label: 'B', drafts: modelsB, onChange: setModelsB },
+                ]}
+              />
+            </ToolbarRow>
           )}
 
-          <ToolbarMenu label="데이터" value={data.label} badge={data.badge} lead muted={data.empty} width={440}>
-            {(close) => (
-              <DataMenu
-                close={close}
-                source={source}
-                setSource={setSource}
-                datasets={datasets}
-                datasetId={datasetId}
-                setDatasetId={setDatasetId}
-                folders={folders}
-                caseType={caseType}
-                setCaseType={setCaseType}
-              />
-            )}
-          </ToolbarMenu>
+          <ToolbarRow>
+            <ToolbarGroup label="채점">
+              <ScoreSeg scoreOn={scoreOn} setScoreOn={setScoreOn} metrics={metrics} setMetrics={setMetrics} />
+            </ToolbarGroup>
 
-          <ToolbarMenu label="채점" value={scoreLabel(scoreOn, metrics)} muted={scoreOn && metrics.length === 0} width={300}>
-            <ScoreMenu scoreOn={scoreOn} setScoreOn={setScoreOn} metrics={metrics} setMetrics={setMetrics} />
-          </ToolbarMenu>
-
-          <span className="flex-grow" />
-
-          <div className="flex shrink-0 items-center gap-2.5 pl-2">
-            {sameSides && <span className="text-caption text-bad">A ≠ B</span>}
-            {modelErr && <span className="text-caption text-bad">{modelErr}</span>}
-            <StatusPill status={source === 'dataset' ? status : callStatus} />
-            {source === 'dataset' ? (
-              <Button
-                size="lg"
-                variant={status === 'running' ? 'secondary' : 'primary'}
-                className="whitespace-nowrap"
-                disabled={status === 'running' ? cancelling : !canRun}
-                onClick={status === 'running' ? cancel : run}
-              >
-                {status === 'running' ? (
-                  cancelling ? '취소 중…' : '취소'
-                ) : (
-                  <>
-                    <PlayIcon />
-                    {data.count != null ? `${data.count}건 비교 실행` : '비교 실행'}
-                  </>
-                )}
-              </Button>
-            ) : (
-              <Button size="lg" variant="primary" className="whitespace-nowrap" disabled={!canCall} onClick={callAb}>
-                {callStatus === 'running' ? '호출 중…' : 'A · B 호출'}
-              </Button>
-            )}
-          </div>
+            <div className="ml-auto flex shrink-0 items-center gap-2.5">
+              {sameSides && <span className="text-caption text-bad">A ≠ B</span>}
+              {modelErr && <span className="text-caption text-bad">{modelErr}</span>}
+              <StatusPill status={source === 'dataset' ? status : callStatus} />
+              {source === 'dataset' ? (
+                <Button
+                  size="lg"
+                  variant={status === 'running' ? 'secondary' : 'primary'}
+                  className="whitespace-nowrap"
+                  disabled={status === 'running' ? cancelling : !canRun}
+                  onClick={status === 'running' ? cancel : run}
+                >
+                  {status === 'running' ? (
+                    cancelling ? '취소 중…' : '취소'
+                  ) : (
+                    <>
+                      <PlayIcon />
+                      {count != null ? `${count}건 비교 실행` : '비교 실행'}
+                    </>
+                  )}
+                </Button>
+              ) : (
+                <Button size="lg" variant="primary" className="whitespace-nowrap" disabled={!canCall} onClick={callAb}>
+                  {callStatus === 'running' ? '호출 중…' : 'A · B 호출'}
+                </Button>
+              )}
+            </div>
+          </ToolbarRow>
         </RunToolbar>
 
         {source === 'manual' && (

@@ -26,6 +26,9 @@ import {
   type RunWsMessage,
 } from '@/lib/types';
 import {
+  CategorySelect,
+  DatasetSelect,
+  EndpointSelect,
   ErrBox,
   PROMPT_TARGET_ENABLED,
   StatusPill,
@@ -60,19 +63,7 @@ import {
   useModelRoles,
   type ModelDrafts,
 } from './ModelPicker';
-import {
-  AgentMenu,
-  DataMenu,
-  MenuRow,
-  MenuSection,
-  PlayIcon,
-  RunToolbar,
-  ScoreMenu,
-  ToolbarMenu,
-  agentLabel,
-  dataSummary,
-  scoreLabel,
-} from './RunSetupToolbar';
+import { PlayIcon, RunToolbar, ScoreSeg, Seg, ToolbarGroup, ToolbarRow, runCount } from './RunSetupToolbar';
 
 // ---- direct call (raw external-API smoke test, no scoring) ------------------
 
@@ -192,9 +183,7 @@ export default function SingleRunPanel() {
   // context_recall 도 이 값으로 채점하므로, 채점을 켠 실행이면 늘 받는다.
   const wantsExpected = scoreOn;
 
-  // ---- 머리띠에 적는 값 ------------------------------------------------
-  const data = dataSummary(source, datasets, datasetId, folders, caseType, pickedCases ? pickedCases.size : null);
-  const targetLabel = target === 'endpoint' ? 'Default' : target === 'model' ? 'Model' : 'Prompt';
+  const count = runCount(datasets, datasetId, folders, caseType, pickedCases ? pickedCases.size : null);
 
   useEffect(() => {
     if (!nodeNm) { setVersions([]); return; }
@@ -420,138 +409,128 @@ export default function SingleRunPanel() {
     return found ? `v${found.version_no}` : `ID ${id}`;
   };
 
-  // ---- 머리띠 칸이 여는 판 ----------------------------------------------
-  // 판은 '폼' 이 아니라 '고르는 목록' 이다. 셀렉트를 판 안에 다시 넣으면 칸을 누른
-  // 뒤 또 눌러야 한다.
-  const agentMenu = (close: () => void) => (
-    <AgentMenu endpoints={endpoints} value={endpointId} onPick={(id) => { setEndpointId(id); close(); }} />
-  );
-
-  const targetMenu = (close: () => void) => (
-    <div className="flex flex-col gap-0.5">
-      <MenuRow
-        label="Default"
-        note="그대로"
-        title="프롬프트도 모델도 건드리지 않고, 고른 Agent 를 지금 상태 그대로 호출합니다"
-        selected={target === 'endpoint'}
-        onClick={() => { setTarget('endpoint'); close(); }}
-      />
-      {/* 모델 · 프롬프트는 고른 뒤에 채울 것이 따라오므로 판을 닫지 않는다. */}
-      <MenuRow
-        label="Model"
-        note="role 별 모델"
-        title="role 별 모델을 바꿔서 실행합니다"
-        selected={target === 'model'}
-        onClick={() => setTarget('model')}
-      />
-      <MenuRow
-        label="Prompt"
-        note="버전 활성화"
-        title="고른 프롬프트 버전을 활성화한 뒤 실행합니다"
-        disabled={!PROMPT_TARGET_ENABLED}
-        selected={target === 'prompt'}
-        onClick={() => setTarget('prompt')}
-      />
-      {target === 'prompt' && (
-        <>
-          <MenuSection label="노드 · 버전" />
-          <div className="flex gap-1.5 px-1 pb-1">
-            <Select value={nodeNm} onChange={(e) => setNodeNm(e.target.value)} className="h-9 min-w-0 flex-1">
-              <option value="" disabled>노드</option>
-              {nodes.map((n) => (<option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>))}
-            </Select>
-            <VersionSelect versions={versions} value={ver} onChange={setVer} className="h-9 w-24" placeholder="버전" />
-          </div>
-        </>
-      )}
-      {target === 'model' && (
-        <>
-          <MenuSection label="모델" />
-          <div className="px-1 pb-1">
-            <ModelPicker roles={roles} columns={[{ key: 'a', drafts: models, onChange: setModels }]} />
-          </div>
-        </>
-      )}
-    </div>
-  );
-
-  const dataMenu = (close: () => void) => (
-    <DataMenu
-      close={close}
-      source={source}
-      setSource={setSource}
-      datasets={datasets}
-      datasetId={datasetId}
-      setDatasetId={setDatasetId}
-      folders={folders}
-      caseType={caseType}
-      setCaseType={setCaseType}
-      cases={{
-        picked: pickedCases ? pickedCases.size : null,
-        onPick: () => setPicking(true),
-        onClear: () => setPickedCases(null),
-      }}
-    />
-  );
-
-  // 실행 조건은 한 줄에 값으로만 적고, 칸을 누르면 고르는 목록이 아래로 열린다.
   const inner = (
     <>
       <div className="space-y-2.5">
         <RunToolbar>
-          <ToolbarMenu label="Agent" value={agentLabel(endpoints, endpointId)} muted={endpointId == null} width={240}>
-            {agentMenu}
-          </ToolbarMenu>
+          <ToolbarRow>
+            {/* 대상 = 무엇을 바꾸는가. 셋 중 하나만 변인이고 나머지는 손대지 않는다. */}
+            <ToolbarGroup label="대상">
+              <Seg
+                items={[
+                  {
+                    id: 'endpoint',
+                    label: 'Default',
+                    title: '프롬프트도 모델도 건드리지 않고, 고른 Agent 를 지금 상태 그대로 호출합니다',
+                    on: target === 'endpoint',
+                    onClick: () => setTarget('endpoint'),
+                  },
+                  { id: 'model', label: 'Model', title: 'role 별 모델을 바꿔서 실행합니다', on: target === 'model', onClick: () => setTarget('model') },
+                  {
+                    id: 'prompt',
+                    label: 'Prompt',
+                    title: '고른 프롬프트 버전을 활성화한 뒤 실행합니다',
+                    disabled: !PROMPT_TARGET_ENABLED,
+                    on: target === 'prompt',
+                    onClick: () => setTarget('prompt'),
+                  },
+                ]}
+              />
+              {target === 'prompt' && (
+                <>
+                  <Select value={nodeNm} onChange={(e) => setNodeNm(e.target.value)} className="h-9 w-40">
+                    <option value="" disabled>노드</option>
+                    {nodes.map((n) => (<option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>))}
+                  </Select>
+                  <VersionSelect versions={versions} value={ver} onChange={setVer} className="h-9 w-28" placeholder="버전" />
+                </>
+              )}
+            </ToolbarGroup>
 
-          <ToolbarMenu label="대상" value={targetLabel} width={target === 'model' ? 560 : 300}>
-            {targetMenu}
-          </ToolbarMenu>
+            <ToolbarGroup label="Agent">
+              <EndpointSelect endpoints={endpoints} value={endpointId} onChange={setEndpointId} />
+            </ToolbarGroup>
 
-          <ToolbarMenu
-            label="데이터"
-            value={data.label}
-            badge={data.badge}
-            lead
-            muted={data.empty}
-            width={440}
-          >
-            {dataMenu}
-          </ToolbarMenu>
+            <ToolbarGroup label="데이터">
+              <Seg
+                items={[
+                  { id: 'dataset', label: '데이터셋', on: source === 'dataset', onClick: () => setSource('dataset') },
+                  { id: 'manual', label: '직접 입력', on: source === 'manual', onClick: () => setSource('manual') },
+                ]}
+              />
+              {source === 'dataset' && (
+                <>
+                  <DatasetSelect datasets={datasets} value={datasetId} onChange={setDatasetId} />
+                  <CategorySelect cats={folders} value={caseType} onChange={setCaseType} />
+                  {datasetId != null && (
+                    <span className="inline-flex items-center">
+                      <Button
+                        variant="secondary"
+                        size="md"
+                        onClick={() => setPicking(true)}
+                        title="이 데이터셋(폴더)에서 돌릴 케이스만 고릅니다"
+                      >
+                        {pickedCases ? `선택 ${pickedCases.size}건` : '케이스 선택'}
+                      </Button>
+                      {pickedCases && (
+                        <button
+                          type="button"
+                          aria-label="선택 해제"
+                          title="선택 해제 — 전체 실행"
+                          onClick={() => setPickedCases(null)}
+                          className="ml-1 rounded-full p-1 text-muted-soft transition-colors hover:bg-surface-3 hover:text-ink"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
+                            <path d="M18 6 6 18M6 6l12 12" />
+                          </svg>
+                        </button>
+                      )}
+                    </span>
+                  )}
+                </>
+              )}
+            </ToolbarGroup>
+          </ToolbarRow>
 
-          <ToolbarMenu label="채점" value={scoreLabel(scoreOn, metrics)} muted={scoreOn && metrics.length === 0} width={300}>
-            <ScoreMenu scoreOn={scoreOn} setScoreOn={setScoreOn} metrics={metrics} setMetrics={setMetrics} />
-          </ToolbarMenu>
+          {/* 모델 대상일 때만 role 표가 열린다 — 다른 대상에서는 실행에 쓰이지도 않는다. */}
+          {target === 'model' && (
+            <ToolbarRow>
+              <ModelPicker roles={roles} columns={[{ key: 'a', drafts: models, onChange: setModels }]} />
+            </ToolbarRow>
+          )}
 
-          <span className="flex-grow" />
+          <ToolbarRow>
+            <ToolbarGroup label="채점">
+              <ScoreSeg scoreOn={scoreOn} setScoreOn={setScoreOn} metrics={metrics} setMetrics={setMetrics} />
+            </ToolbarGroup>
 
-          <div className="flex shrink-0 items-center gap-2.5 pl-2">
-            {modelErr && <span className="text-caption text-bad">{modelErr}</span>}
-            <StatusPill status={source === 'dataset' ? status : callStatus} />
-            {/* 띠에서 유일한 주 동작이라 한 단 큰 치수를 쓴다 — 셀렉트와 같은
-                h-9 로 두면 네 칸과 같은 무게가 되어 줄의 끝이 안 보인다. */}
-            {source === 'dataset' ? (
-              <Button
-                size="lg"
-                variant={status === 'running' ? 'secondary' : 'primary'}
-                className="whitespace-nowrap"
-                disabled={status === 'running' ? cancelling : !canRun}
-                onClick={status === 'running' ? cancel : run}
-              >
-                {status === 'running' ? (
-                  cancelling ? '취소 중…' : '취소'
-                ) : (
-                  <>
-                    <PlayIcon />
-                    {data.count != null ? `${data.count}건 실행` : '실행'}
-                  </>
-                )}
-              </Button>
-            ) : (
-              <Button size="lg" variant="primary" className="whitespace-nowrap" disabled={!canCall} onClick={call}>
-                {callStatus === 'running' ? '호출 중…' : '호출'}
-              </Button>
-            )}
-          </div>
+            <div className="ml-auto flex shrink-0 items-center gap-2.5">
+              {modelErr && <span className="text-caption text-bad">{modelErr}</span>}
+              <StatusPill status={source === 'dataset' ? status : callStatus} />
+              {source === 'dataset' ? (
+                <Button
+                  size="lg"
+                  variant={status === 'running' ? 'secondary' : 'primary'}
+                  className="whitespace-nowrap"
+                  disabled={status === 'running' ? cancelling : !canRun}
+                  onClick={status === 'running' ? cancel : run}
+                >
+                  {status === 'running' ? (
+                    cancelling ? '취소 중…' : '취소'
+                  ) : (
+                    <>
+                      <PlayIcon />
+                      {count != null ? `${count}건 실행` : '실행'}
+                    </>
+                  )}
+                </Button>
+              ) : (
+                <Button size="lg" variant="primary" className="whitespace-nowrap" disabled={!canCall} onClick={call}>
+                  {callStatus === 'running' ? '호출 중…' : '호출'}
+                </Button>
+              )}
+            </div>
+          </ToolbarRow>
         </RunToolbar>
 
         {source === 'manual' && (
@@ -575,8 +554,6 @@ export default function SingleRunPanel() {
           </Card>
         )}
 
-        {/* 케이스 고르기 판은 메뉴 밖에 둔다 — 메뉴 안에 두면 판을 누르는 순간
-            메뉴가 닫히면서 판까지 사라진다. */}
         {picking && datasetId != null && (
           <CasePickerModal
             datasetId={datasetId}
