@@ -59,6 +59,7 @@ import {
   RunToolbar,
   ScoreMenu,
   ToolbarMenu,
+  ToolbarSep,
   agentLabel,
   dataSummary,
   scoreLabel,
@@ -490,7 +491,7 @@ export default function ComparePanel() {
       {mode === 'version' && (
         <>
           <MenuSection label="노드 · 버전" />
-          <div className="flex gap-1.5 px-2.5 pb-1.5">
+          <div className="flex gap-1.5 px-3 pb-2">
             <Select value={nodeNm ?? ''} onChange={(e) => setNodeNm(e.target.value)} className="h-9 min-w-0 flex-1">
               <option value="" disabled>노드</option>
               {nodes.map((n) => (<option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>))}
@@ -503,7 +504,7 @@ export default function ComparePanel() {
       {mode === 'model' && (
         <>
           <MenuSection label="모델" />
-          <div className="px-2.5 pb-1.5">
+          <div className="px-3 pb-2">
             <ModelPicker
               roles={roles}
               columns={[
@@ -563,12 +564,10 @@ export default function ComparePanel() {
             <ScoreMenu scoreOn={scoreOn} setScoreOn={setScoreOn} metrics={metrics} setMetrics={setMetrics} />
           </ToolbarMenu>
 
-          <span className="flex-grow" />
-
-          <div className="flex shrink-0 items-center gap-2.5 pl-2">
-            {sameSides && <span className="text-caption text-bad">A ≠ B</span>}
-            {modelErr && <span className="text-caption text-bad">{modelErr}</span>}
-            <StatusPill status={source === 'dataset' ? status : callStatus} />
+          {/* 실행은 마지막 칸 바로 뒤에 둔다 — 띠 오른쪽 끝으로 밀면 칸들과 멀어져
+              조건을 고른 눈이 버튼까지 가지 않는다. */}
+          <ToolbarSep />
+          <div className="flex shrink-0 items-center gap-2.5">
             {source === 'dataset' ? (
               <Button
                 size="md"
@@ -591,6 +590,9 @@ export default function ComparePanel() {
                 {callStatus === 'running' ? '호출 중…' : 'A · B 호출'}
               </Button>
             )}
+            {sameSides && <span className="text-caption text-bad">A ≠ B</span>}
+            {modelErr && <span className="text-caption text-bad">{modelErr}</span>}
+            <StatusPill status={source === 'dataset' ? status : callStatus} />
           </div>
         </RunToolbar>
 

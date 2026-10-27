@@ -123,8 +123,8 @@ export function ToolbarMenu({
           style={width ? { width } : undefined}
           // group: 목록 위에 손이 올라오면 고른 줄의 파랑이 손이 있는 줄로 옮겨 간다.
           className={cn(
-            'group absolute left-0 top-full z-20 min-w-full overflow-hidden rounded-xs border border-line-strong bg-surface py-0.5 shadow-[0_2px_8px_rgba(17,24,39,0.16)]',
-            !width && 'w-max max-w-[420px]',
+            'group absolute left-0 top-full z-20 min-w-[max(100%,200px)] overflow-hidden rounded-xs border border-line-strong bg-surface py-1 shadow-[0_2px_8px_rgba(17,24,39,0.16)]',
+            !width && 'w-max max-w-[460px]',
           )}
         >
           {typeof children === 'function' ? children(() => setOpen(false)) : children}
@@ -164,7 +164,7 @@ export function MenuRow({
       title={title}
       onClick={onClick}
       className={cn(
-        'flex min-h-[20px] w-full cursor-default items-center gap-2 px-2.5 py-[2px] text-left leading-[1.2]',
+        'flex min-h-[30px] w-full cursor-default items-center gap-3 py-[5px] pl-3 pr-6 text-left leading-[1.3]',
         indent && 'pl-6',
         // 기본 select 목록처럼 파란 줄은 하나뿐이다: 처음엔 고른 줄, 손이 올라오면 그 줄.
         disabled
@@ -195,7 +195,7 @@ export function MenuRow({
 /** 판 안의 묶음 이름. 윗줄과 선으로 끊어 '여기부터 다른 것' 을 말한다. */
 export function MenuSection({ label, className }: { label: string; className?: string }) {
   return (
-    <div className={cn('mt-0.5 border-t border-line px-2.5 pb-[2px] pt-[3px] text-[13.5px] font-bold leading-[1.2] text-muted', className)}>
+    <div className={cn('mt-1 border-t border-line px-3 pb-1 pt-2 text-[13.5px] font-bold leading-[1.3] text-muted', className)}>
       {label}
     </div>
   );
@@ -283,7 +283,7 @@ export function DataMenu({
           <MenuCols
             left={
               <div className="flex flex-col">
-                {datasets.length === 0 && <p className="px-2.5 py-[2px] text-[13.5px] leading-[1.2] text-muted-soft">데이터셋 없음</p>}
+                {datasets.length === 0 && <p className="py-[5px] pl-3 pr-6 text-[13.5px] leading-[1.3] text-muted-soft">데이터셋 없음</p>}
                 {datasets.map((d) => (
                   <MenuRow
                     key={d.dataset_id}
@@ -298,10 +298,10 @@ export function DataMenu({
             }
             right={
               datasetId == null ? (
-                <p className="px-2.5 py-[2px] text-[13.5px] leading-[1.2] text-muted-soft">데이터셋을 먼저 고르세요</p>
+                <p className="py-[5px] pl-3 pr-6 text-[13.5px] leading-[1.3] text-muted-soft">데이터셋을 먼저 고르세요</p>
               ) : folders.length < 2 ? (
                 // 폴더가 하나뿐이면 '전체' 와 그 폴더가 같은 실행이다.
-                <p className="px-2.5 py-[2px] text-[13.5px] leading-[1.2] text-muted-soft">폴더 없음 — 전체 실행</p>
+                <p className="py-[5px] pl-3 pr-6 text-[13.5px] leading-[1.3] text-muted-soft">폴더 없음 — 전체 실행</p>
               ) : (
                 <div className="flex flex-col">
                   <MenuRow
@@ -384,7 +384,7 @@ export function ScoreMenu({
   const toggle = (m: string) => setMetrics((cur) => (cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m]));
   return (
     <div className="flex flex-col">
-      <div className="flex h-8 items-center gap-2 px-2.5">
+      <div className="flex h-[30px] items-center gap-2 px-3">
         <ScoreToggle on={scoreOn} onChange={setScoreOn} />
         <span className="text-[13.5px] text-muted">{scoreOn ? '채점함' : '채점 없이 응답만'}</span>
       </div>
@@ -408,7 +408,7 @@ export function ScoreMenu({
         />
       ))}
       {scoreOn && metrics.length === 0 && (
-        <p className="px-2.5 pt-1 text-caption text-bad">하나 이상 고르세요</p>
+        <p className="px-3 pt-1 text-caption text-bad">하나 이상 고르세요</p>
       )}
     </div>
   );
