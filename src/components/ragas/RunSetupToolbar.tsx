@@ -33,9 +33,9 @@ export function RunToolbar({ children, className }: { children: ReactNode; class
   return (
     <div
       className={cn(
-        // 한 줄에 다 들어가면 56px, 좁은 화면에서 접히면 그만큼만 자란다.
-        'flex min-h-[56px] flex-wrap items-center gap-x-1.5 gap-y-1.5',
-        'rounded-md border border-line bg-surface-2 px-2.5 py-2.5',
+        // TraceX .filter / .flt-controls: 안쪽 10px 14px, 칸 사이 8px. 34px 칸이면 54px 띠.
+        'flex flex-wrap items-center gap-2',
+        'rounded-md border border-line bg-surface-2 px-[14px] py-[10px]',
         className,
       )}
     >
@@ -96,7 +96,7 @@ export function ToolbarMenu({
         // TraceX 필터의 ACTION_TYP 셀렉트(.flt-field) 그대로: 흰 면 · 진한 한 줄 테두리 ·
         // 8px 모서리 · 34px. 열리면 칠하지 않고 테두리만 파래지며 옅은 고리가 선다.
         className={cn(
-          'inline-flex h-[34px] max-w-[340px] items-center gap-1 rounded-[8px] border bg-surface pl-[11px] pr-2.5 text-[13.5px] text-muted transition-[border-color,box-shadow] duration-100',
+          'inline-flex h-[34px] max-w-[340px] items-center gap-1 rounded-[8px] border bg-surface pl-[11px] pr-[10px] text-[13.5px] text-muted transition-[border-color,box-shadow] duration-100',
           open ? 'border-accent shadow-ring' : 'border-line-strong',
         )}
       >
@@ -108,7 +108,7 @@ export function ToolbarMenu({
             {badge}
           </span>
         )}
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden className="ml-1 shrink-0 text-[#8a929c]">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden className="ml-0.5 shrink-0 text-[#8a929c]">
           <polyline points="6 9 12 15 18 9" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </button>
