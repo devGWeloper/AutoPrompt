@@ -128,11 +128,11 @@ export function ToolbarMenu({
       </button>
 
       {open && (
-        // TraceX 드롭다운(.agent-switch-menu)과 같은 판: 12px 모서리, 옅은 선,
-        // 넓게 퍼지는 그림자, 칸 아래 6px 띄워 4px 내려앉으며 나타난다.
+        // TraceX 필터의 ACTION_TYP(기본 <select>)가 펼치는 목록과 같은 판: 거의 각진
+        // 모서리, 진한 한 줄 테두리, 짧은 그림자, 칸 바로 아래에 붙고 줄은 판 끝까지 찬다.
         <div
           style={{ width }}
-          className="absolute left-0 top-[calc(100%+6px)] z-20 animate-pop-in overflow-hidden rounded-2xl border border-line bg-surface p-1 shadow-pop"
+          className="absolute left-0 top-[calc(100%+2px)] z-20 overflow-hidden rounded-xs border border-line-strong bg-surface py-1 shadow-[0_2px_8px_rgba(17,24,39,0.16)]"
         >
           {typeof children === 'function' ? children(() => setOpen(false)) : children}
         </div>
@@ -171,7 +171,7 @@ export function MenuRow({
       title={title}
       onClick={onClick}
       className={cn(
-        'flex min-h-8 w-full items-center gap-2 rounded-[7px] px-2 py-[7px] text-left transition-colors',
+        'flex min-h-[30px] w-full items-center gap-2 px-2.5 py-[5px] text-left',
         indent && 'pl-6',
         disabled
           ? 'cursor-not-allowed text-muted-soft'
@@ -206,7 +206,7 @@ export function MenuRow({
 /** 판 안의 묶음 이름. 윗줄과 선으로 끊어 '여기부터 다른 것' 을 말한다. */
 export function MenuSection({ label, className }: { label: string; className?: string }) {
   return (
-    <div className={cn('-mx-1 mt-1 border-t border-line px-3 pb-0.5 pt-2 text-[10.5px] font-extrabold uppercase tracking-[0.5px] text-muted', className)}>
+    <div className={cn('mt-1 border-t border-line px-2.5 pb-0.5 pt-2 text-[10.5px] font-extrabold uppercase tracking-[0.5px] text-muted', className)}>
       {label}
     </div>
   );
@@ -214,13 +214,13 @@ export function MenuSection({ label, className }: { label: string; className?: s
 
 /** 판 맨 아래의 동작 — 고르는 줄이 아니라 '여기서 나가서 하는 일'(케이스 고르기처럼). */
 export function MenuFoot({ children }: { children: ReactNode }) {
-  return <div className="-mx-1 -mb-1 mt-1 flex items-center gap-1.5 border-t border-line bg-surface-2 px-2 py-1.5">{children}</div>;
+  return <div className="-mb-1 mt-1 flex items-center gap-1.5 border-t border-line bg-surface-2 px-2 py-1.5">{children}</div>;
 }
 
 /** 두 줄기를 나란히 — 데이터셋과 그 폴더처럼, 왼쪽을 고르면 오른쪽이 달라지는 짝. */
 export function MenuCols({ left, right }: { left: ReactNode; right: ReactNode }) {
   return (
-    <div className="flex items-stretch gap-1.5">
+    <div className="flex items-stretch">
       <div className="min-w-0 flex-1">{left}</div>
       <div aria-hidden className="w-px shrink-0 bg-line" />
       <div className="min-w-0 flex-1">{right}</div>
@@ -249,7 +249,7 @@ export function AgentMenu({
     return <EndpointSelect endpoints={endpoints} value={value} onChange={onPick} className="h-9 w-full text-sm" />;
   }
   return (
-    <div className="flex flex-col gap-0.5">
+    <div className="flex flex-col">
       {endpoints.map((e) => (
         <MenuRow
           key={e.endpoint_id}
@@ -285,7 +285,7 @@ export function DataMenu({
 }) {
   const picked = datasets.find((d) => d.dataset_id === datasetId);
   return (
-    <div className="flex flex-col gap-0.5">
+    <div className="flex flex-col">
       <MenuRow label="데이터셋" note="케이스 묶음" selected={source === 'dataset'} onClick={() => setSource('dataset')} />
       <MenuRow label="직접 입력" note="메시지 하나" selected={source === 'manual'} onClick={() => { setSource('manual'); close(); }} />
       {source === 'dataset' && (
@@ -293,8 +293,8 @@ export function DataMenu({
           <MenuSection label="데이터셋 · 폴더" />
           <MenuCols
             left={
-              <div className="flex flex-col gap-0.5">
-                {datasets.length === 0 && <p className="px-2 py-1.5 text-[11px] text-muted-soft">데이터셋 없음</p>}
+              <div className="flex flex-col">
+                {datasets.length === 0 && <p className="px-2.5 py-1.5 text-[11px] text-muted-soft">데이터셋 없음</p>}
                 {datasets.map((d) => (
                   <MenuRow
                     key={d.dataset_id}
@@ -309,12 +309,12 @@ export function DataMenu({
             }
             right={
               datasetId == null ? (
-                <p className="px-2 py-1.5 text-[11px] text-muted-soft">데이터셋을 먼저 고르세요</p>
+                <p className="px-2.5 py-1.5 text-[11px] text-muted-soft">데이터셋을 먼저 고르세요</p>
               ) : folders.length < 2 ? (
                 // 폴더가 하나뿐이면 '전체' 와 그 폴더가 같은 실행이다.
-                <p className="px-2 py-1.5 text-[11px] text-muted-soft">폴더 없음 — 전체 실행</p>
+                <p className="px-2.5 py-1.5 text-[11px] text-muted-soft">폴더 없음 — 전체 실행</p>
               ) : (
-                <div className="flex flex-col gap-0.5">
+                <div className="flex flex-col">
                   <MenuRow
                     label="전체"
                     note={picked?.case_count != null ? String(picked.case_count) : undefined}
@@ -394,8 +394,8 @@ export function ScoreMenu({
 }) {
   const toggle = (m: string) => setMetrics((cur) => (cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m]));
   return (
-    <div className="flex flex-col gap-0.5">
-      <div className="flex h-8 items-center gap-2 px-2">
+    <div className="flex flex-col">
+      <div className="flex h-8 items-center gap-2 px-2.5">
         <ScoreToggle on={scoreOn} onChange={setScoreOn} />
         <span className="text-[13px] font-medium text-ink">{scoreOn ? '채점함' : '채점 없이 응답만'}</span>
       </div>
@@ -419,7 +419,7 @@ export function ScoreMenu({
         />
       ))}
       {scoreOn && metrics.length === 0 && (
-        <p className="px-2 pt-1 text-caption text-bad">하나 이상 고르세요</p>
+        <p className="px-2.5 pt-1 text-caption text-bad">하나 이상 고르세요</p>
       )}
     </div>
   );

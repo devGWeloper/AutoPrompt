@@ -52,8 +52,8 @@ function groupRuns(runs: RagasRunSummary[]): RunGroup[] {
 type RunTypeFilter = 'all' | 'single' | 'compare';
 const RUN_TYPE_FILTERS: { id: RunTypeFilter; label: string }[] = [
   { id: 'all', label: '전체' },
-  { id: 'single', label: 'Single' },
-  { id: 'compare', label: 'Compare' },
+  { id: 'single', label: 'Single Run' },
+  { id: 'compare', label: 'Pair Run' },
 ];
 function groupType(g: RunGroup): Exclude<RunTypeFilter, 'all'> {
   return g.kind === 'ab' ? 'compare' : 'single';
@@ -78,7 +78,7 @@ function StatusText({ s }: { s: string }) {
 function TypeText({ t }: { t: Exclude<RunTypeFilter, 'all'> }) {
   return (
     <span className={cn('text-xs font-semibold', t === 'compare' ? 'text-chroma-purple' : 'text-accent')}>
-      {t === 'compare' ? 'Compare' : 'Single'}
+      {t === 'compare' ? 'Pair Run' : 'Single Run'}
     </span>
   );
 }

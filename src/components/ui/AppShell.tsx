@@ -80,24 +80,24 @@ const ICONS: Record<SectionId, ReactNode> = {
 
 const GROUPS: { label: string; items: Item[] }[] = [
   {
-    label: '실행',
+    label: 'Test',
     items: [
-      { id: 'single', label: '단일 실행', href: '/?section=single', icon: ICONS.single },
-      { id: 'compare', label: 'A · B 비교', href: '/?section=compare', icon: ICONS.compare },
+      { id: 'single', label: 'Single Run', href: '/?section=single', icon: ICONS.single },
+      { id: 'compare', label: 'Pair Run', href: '/?section=compare', icon: ICONS.compare },
     ],
   },
   {
-    label: '데이터',
+    label: 'Data',
     items: [
-      { id: 'datasets', label: '데이터셋', href: '/?section=datasets', icon: ICONS.datasets },
-      { id: 'records', label: '실행 기록', href: '/?section=records', icon: ICONS.records },
+      { id: 'datasets', label: 'Datasets', href: '/?section=datasets', icon: ICONS.datasets },
+      { id: 'records', label: 'Records', href: '/?section=records', icon: ICONS.records },
     ],
   },
   {
-    label: '관리',
+    label: 'Manage',
     items: [
-      { id: 'prompts', label: '프롬프트', href: '/nodes', icon: ICONS.prompts },
-      { id: 'settings', label: '설정', href: '/settings', icon: ICONS.settings },
+      { id: 'prompts', label: 'Prompt', href: '/nodes', icon: ICONS.prompts },
+      { id: 'settings', label: 'Settings', href: '/settings', icon: ICONS.settings },
     ],
   },
 ];

@@ -47,7 +47,7 @@ export default function RerunButton({
     e.stopPropagation();
     setErr(null);
     if (readActiveRun(compare ? 'compare' : 'single')) {
-      setErr(`${compare ? 'Compare' : 'Single'} 탭에서 진행 중인 테스트가 끝난 뒤 다시 시도해 주세요`);
+      setErr(`${compare ? 'Pair Run' : 'Single Run'} 화면에서 진행 중인 테스트가 끝난 뒤 다시 시도해 주세요`);
       return;
     }
     setBusy(caseIds ? 'picked' : 'mismatch');

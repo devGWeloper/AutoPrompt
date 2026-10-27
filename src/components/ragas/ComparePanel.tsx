@@ -463,7 +463,7 @@ export default function ComparePanel() {
     : mode === 'version' && verA != null && verA === verB;
 
   const targetMenu = (close: () => void) => (
-    <div className="flex flex-col gap-0.5">
+    <div className="flex flex-col">
       <MenuRow
         label="Default"
         note="Agent 끼리"
@@ -490,7 +490,7 @@ export default function ComparePanel() {
       {mode === 'version' && (
         <>
           <MenuSection label="노드 · 버전" />
-          <div className="flex gap-1.5 px-1 pb-1">
+          <div className="flex gap-1.5 px-2.5 pb-1.5">
             <Select value={nodeNm ?? ''} onChange={(e) => setNodeNm(e.target.value)} className="h-9 min-w-0 flex-1">
               <option value="" disabled>노드</option>
               {nodes.map((n) => (<option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>))}
@@ -503,7 +503,7 @@ export default function ComparePanel() {
       {mode === 'model' && (
         <>
           <MenuSection label="모델" />
-          <div className="px-1 pb-1">
+          <div className="px-2.5 pb-1.5">
             <ModelPicker
               roles={roles}
               columns={[
