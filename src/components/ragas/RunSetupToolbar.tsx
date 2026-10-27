@@ -95,35 +95,22 @@ export function ToolbarMenu({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
+        // TraceX 필터의 ACTION_TYP 셀렉트(.flt-field) 그대로: 흰 면 · 진한 한 줄 테두리 ·
+        // 8px 모서리 · 34px. 열리면 칠하지 않고 테두리만 파래지며 옅은 고리가 선다.
         className={cn(
-          'inline-flex h-9 max-w-[340px] items-center gap-2 rounded-[8px] px-3 transition-colors',
-          open
-            ? 'bg-accent text-white shadow-[0_1px_3px_rgba(37,99,235,0.35)]'
-            : 'bg-surface shadow-[0_1px_2px_rgba(16,24,40,0.06)] hover:bg-accent-soft',
+          'inline-flex h-[34px] max-w-[340px] items-center gap-2 rounded-[8px] border bg-surface pl-[11px] pr-2.5 text-[13.5px] transition-[border-color,box-shadow] duration-100',
+          open ? 'border-accent shadow-ring' : 'border-line-strong',
         )}
       >
-        <span className={cn('shrink-0 text-[10px] font-bold uppercase tracking-[0.6px]', open ? 'text-white/75' : 'text-muted')}>{label}</span>
-        <span
-          className={cn(
-            'truncate',
-            lead ? 'text-[14.5px] font-bold' : 'text-[13.5px] font-semibold',
-            open ? (muted ? 'text-white/70' : 'text-white') : muted ? 'text-muted-soft' : 'text-ink',
-          )}
-        >
-          {value}
-        </span>
+        <span className="shrink-0 text-muted-soft">{label}</span>
+        <span className={cn('truncate', lead && 'font-semibold', muted ? 'text-muted-soft' : 'text-ink')}>{value}</span>
         {badge && (
-          <span
-            className={cn(
-              'inline-flex h-[18px] shrink-0 items-center rounded-full px-1.5 text-[10.5px] font-bold',
-              open ? 'bg-white/20 text-white' : 'bg-accent-soft text-accent-deep',
-            )}
-          >
+          <span className="inline-flex h-[18px] shrink-0 items-center rounded-full bg-accent-soft px-1.5 text-[10.5px] font-bold text-accent-deep">
             {badge}
           </span>
         )}
-        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden className={cn('shrink-0 self-center', open ? 'text-white/75' : 'text-muted-soft')}>
-          <path d="M4 6.5 8 10.5l4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden className="ml-1 shrink-0 text-[#8a929c]">
+          <polyline points="6 9 12 15 18 9" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </button>
 
@@ -132,7 +119,8 @@ export function ToolbarMenu({
         // 모서리, 진한 한 줄 테두리, 짧은 그림자, 칸 바로 아래에 붙고 줄은 판 끝까지 찬다.
         <div
           style={{ width }}
-          className="absolute left-0 top-[calc(100%+2px)] z-20 overflow-hidden rounded-xs border border-line-strong bg-surface py-1 shadow-[0_2px_8px_rgba(17,24,39,0.16)]"
+          // group: 목록 위에 손이 올라오면 고른 줄의 파랑이 손이 있는 줄로 옮겨 간다.
+          className="group absolute left-0 top-[calc(100%+2px)] z-20 overflow-hidden rounded-xs border border-line-strong bg-surface py-1 shadow-[0_2px_8px_rgba(17,24,39,0.16)]"
         >
           {typeof children === 'function' ? children(() => setOpen(false)) : children}
         </div>
@@ -146,7 +134,7 @@ export function ToolbarMenu({
 /**
  * 고르는 줄. 판 안의 기본 단위다.
  *
- * 하나만 고르는 줄(`check` 없음)은 고른 것에 체크 표시가 서고, 여러 개를 켜고 끄는
+ * 하나만 고르는 줄(`check` 없음)은 고른 줄이 파랗게 칠해지고, 여러 개를 켜고 끄는
  * 줄(`check` 있음)은 왼쪽에 상자가 선다 — 같은 모양으로 두면 눌렀을 때 하나가
  * 바뀌는지 하나가 더해지는지 알 수 없다.
  */
@@ -173,11 +161,12 @@ export function MenuRow({
       className={cn(
         'flex min-h-[30px] w-full items-center gap-2 px-2.5 py-[5px] text-left',
         indent && 'pl-6',
+        // 기본 select 목록처럼 파란 줄은 하나뿐이다: 처음엔 고른 줄, 손이 올라오면 그 줄.
         disabled
           ? 'cursor-not-allowed text-muted-soft'
           : on && check === undefined
-            ? 'bg-accent text-white shadow-[0_1px_2px_rgba(0,0,0,0.12)]'
-            : 'text-ink hover:bg-surface-3',
+            ? 'bg-accent text-white group-hover:bg-transparent group-hover:text-ink hover:!bg-accent hover:!text-white'
+            : 'text-ink hover:bg-accent hover:text-white',
       )}
     >
       {check !== undefined && (
@@ -192,13 +181,8 @@ export function MenuRow({
           </svg>
         </span>
       )}
-      <span className={cn('min-w-0 flex-1 truncate text-[13px]', on ? 'font-semibold' : 'font-medium')}>{label}</span>
-      {note && <span className={cn('shrink-0 text-[11px]', on && check === undefined ? 'text-white/75' : 'text-muted-soft')}>{note}</span>}
-      {check === undefined && selected && (
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden className="shrink-0 text-white">
-          <path d="M3 8.5l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      )}
+      <span className="min-w-0 flex-1 truncate text-[13.5px]">{label}</span>
+      {note && <span className="shrink-0 text-[11px] opacity-70">{note}</span>}
     </button>
   );
 }
