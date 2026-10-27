@@ -109,7 +109,14 @@ const config: Config = {
         ring: '0 0 0 3px rgba(37,99,235,0.15)',
         // Active segment in a segmented control.
         seg: '0 1px 2px rgba(17,24,39,0.10), 0 0 0 1px rgba(37,99,235,0.08)',
+        // Dropdown panel — inview's .usermenu-pop / .agent-switch-menu.
+        pop: '0 12px 40px -12px rgba(17,24,39,0.35), 0 2px 8px rgba(17,24,39,0.06)',
       },
+      // inview's usermenu-in: the panel drops 4px into place as it fades in.
+      keyframes: {
+        'pop-in': { from: { opacity: '0', transform: 'translateY(-4px)' }, to: { opacity: '1', transform: 'none' } },
+      },
+      animation: { 'pop-in': 'pop-in .12s ease-out' },
     },
   },
   // Tailwind wraps every colour utility in `rgb(R G B / var(--tw-*-opacity))`,

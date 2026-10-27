@@ -128,12 +128,11 @@ export function ToolbarMenu({
       </button>
 
       {open && (
-        // 줄이 자기 여백을 들고 있으므로 판의 안쪽 여백은 6px 뿐이다. 그림자는
-        // lift — modal 급 그림자를 작은 판에 쓰면 네 칸 중 하나를 눌렀을 뿐인데
-        // 화면 전체가 뒤로 물러난 것처럼 보인다.
+        // TraceX 드롭다운(.agent-switch-menu)과 같은 판: 12px 모서리, 옅은 선,
+        // 넓게 퍼지는 그림자, 칸 아래 6px 띄워 4px 내려앉으며 나타난다.
         <div
           style={{ width }}
-          className="absolute left-0 top-[42px] z-20 rounded-md border border-line-strong bg-surface p-1.5 shadow-lift"
+          className="absolute left-0 top-[calc(100%+6px)] z-20 animate-pop-in overflow-hidden rounded-2xl border border-line bg-surface p-1 shadow-pop"
         >
           {typeof children === 'function' ? children(() => setOpen(false)) : children}
         </div>
@@ -172,7 +171,7 @@ export function MenuRow({
       title={title}
       onClick={onClick}
       className={cn(
-        'flex h-8 w-full items-center gap-2 rounded-sm px-2 text-left transition-colors',
+        'flex min-h-8 w-full items-center gap-2 rounded-[7px] px-2 py-[7px] text-left transition-colors',
         indent && 'pl-6',
         disabled
           ? 'cursor-not-allowed text-muted-soft'
@@ -207,7 +206,7 @@ export function MenuRow({
 /** 판 안의 묶음 이름. 윗줄과 선으로 끊어 '여기부터 다른 것' 을 말한다. */
 export function MenuSection({ label, className }: { label: string; className?: string }) {
   return (
-    <div className={cn('mt-1 border-t border-line px-2 pb-1 pt-2 text-[10px] font-bold uppercase tracking-[0.6px] text-muted-soft', className)}>
+    <div className={cn('-mx-1 mt-1 border-t border-line px-3 pb-0.5 pt-2 text-[10.5px] font-extrabold uppercase tracking-[0.5px] text-muted', className)}>
       {label}
     </div>
   );
@@ -215,7 +214,7 @@ export function MenuSection({ label, className }: { label: string; className?: s
 
 /** 판 맨 아래의 동작 — 고르는 줄이 아니라 '여기서 나가서 하는 일'(케이스 고르기처럼). */
 export function MenuFoot({ children }: { children: ReactNode }) {
-  return <div className="mt-1 flex items-center gap-1.5 border-t border-line px-1 pt-1.5">{children}</div>;
+  return <div className="-mx-1 -mb-1 mt-1 flex items-center gap-1.5 border-t border-line bg-surface-2 px-2 py-1.5">{children}</div>;
 }
 
 /** 두 줄기를 나란히 — 데이터셋과 그 폴더처럼, 왼쪽을 고르면 오른쪽이 달라지는 짝. */
