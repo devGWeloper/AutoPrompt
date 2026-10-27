@@ -55,17 +55,15 @@ export function ToolbarSep() {
  * 네 개를 훑어야 하는데, 조건은 바꾸는 일보다 확인하는 일이 훨씬 많다.
  */
 export function ToolbarMenu({
-  label, value, width = 260, muted, lead, badge, children,
+  label, value, width, muted, badge, children,
 }: {
   label: string;
   value: string;
-  /** 열리는 판의 너비(px). 모델 표처럼 넓은 것은 늘려 준다. */
+  /** 판 너비(px)를 못 박을 때만 — 모델 표처럼 안이 늘어나는 판. 주지 않으면 글자 길이에
+   * 맞춰 줄어들고, 칸보다 좁아지지는 않는다(기본 select 목록과 같다). */
   width?: number;
   /** 아직 고르지 않은 값 — 자리만 잡고 있다는 뜻으로 흐리게 적는다. */
   muted?: boolean;
-  /** 이 줄에서 가장 중요한 칸(= 무엇을 시험하는가). 네 칸이 같은 무게면 눈이 어디서
-   * 시작해야 할지 모른다. */
-  lead?: boolean;
   /** 값 뒤에 붙는 작은 수 — 건수처럼 값의 일부가 아니면서 같이 읽혀야 하는 것. */
   badge?: string;
   /** 함수로 주면 판을 닫는 손잡이를 받는다 — 하나를 고르는 줄은 누른 뒤 판이 닫혀야
@@ -98,12 +96,13 @@ export function ToolbarMenu({
         // TraceX 필터의 ACTION_TYP 셀렉트(.flt-field) 그대로: 흰 면 · 진한 한 줄 테두리 ·
         // 8px 모서리 · 34px. 열리면 칠하지 않고 테두리만 파래지며 옅은 고리가 선다.
         className={cn(
-          'inline-flex h-[34px] max-w-[340px] items-center gap-2 rounded-[8px] border bg-surface pl-[11px] pr-2.5 text-[13.5px] transition-[border-color,box-shadow] duration-100',
+          'inline-flex h-[34px] max-w-[340px] items-center gap-1 rounded-[8px] border bg-surface pl-[11px] pr-2.5 text-[13.5px] text-muted transition-[border-color,box-shadow] duration-100',
           open ? 'border-accent shadow-ring' : 'border-line-strong',
         )}
       >
-        <span className="shrink-0 text-muted-soft">{label}</span>
-        <span className={cn('truncate', lead && 'font-semibold', muted ? 'text-muted-soft' : 'text-ink')}>{value}</span>
+        {/* TraceX 셀렉트의 'ACTION_TYP · 전체' 처럼 이름표와 값을 한 줄로, 같은 회색으로. */}
+        <span className="shrink-0">{label} ·</span>
+        <span className={cn('truncate', muted && 'text-muted-soft')}>{value}</span>
         {badge && (
           <span className="inline-flex h-[18px] shrink-0 items-center rounded-full bg-accent-soft px-1.5 text-[10.5px] font-bold text-accent-deep">
             {badge}
@@ -118,9 +117,12 @@ export function ToolbarMenu({
         // TraceX 필터의 ACTION_TYP(기본 <select>)가 펼치는 목록과 같은 판: 거의 각진
         // 모서리, 진한 한 줄 테두리, 짧은 그림자, 칸 바로 아래에 붙고 줄은 판 끝까지 찬다.
         <div
-          style={{ width }}
+          style={width ? { width } : undefined}
           // group: 목록 위에 손이 올라오면 고른 줄의 파랑이 손이 있는 줄로 옮겨 간다.
-          className="group absolute left-0 top-[calc(100%+2px)] z-20 overflow-hidden rounded-xs border border-line-strong bg-surface py-1 shadow-[0_2px_8px_rgba(17,24,39,0.16)]"
+          className={cn(
+            'group absolute left-0 top-[calc(100%+2px)] z-20 min-w-full overflow-hidden rounded-xs border border-line-strong bg-surface py-0.5 shadow-[0_2px_8px_rgba(17,24,39,0.16)]',
+            !width && 'w-max max-w-[420px]',
+          )}
         >
           {typeof children === 'function' ? children(() => setOpen(false)) : children}
         </div>
@@ -159,14 +161,14 @@ export function MenuRow({
       title={title}
       onClick={onClick}
       className={cn(
-        'flex min-h-[30px] w-full items-center gap-2 px-2.5 py-[5px] text-left',
+        'flex min-h-[20px] w-full cursor-default items-center gap-2 px-2.5 py-[2px] text-left leading-[1.2]',
         indent && 'pl-6',
         // 기본 select 목록처럼 파란 줄은 하나뿐이다: 처음엔 고른 줄, 손이 올라오면 그 줄.
         disabled
           ? 'cursor-not-allowed text-muted-soft'
           : on && check === undefined
-            ? 'bg-accent text-white group-hover:bg-transparent group-hover:text-ink hover:!bg-accent hover:!text-white'
-            : 'text-ink hover:bg-accent hover:text-white',
+            ? 'bg-accent text-white group-hover:bg-transparent group-hover:text-muted hover:!bg-accent hover:!text-white'
+            : 'text-muted hover:bg-accent hover:text-white',
       )}
     >
       {check !== undefined && (
@@ -182,7 +184,7 @@ export function MenuRow({
         </span>
       )}
       <span className="min-w-0 flex-1 truncate text-[13.5px]">{label}</span>
-      {note && <span className="shrink-0 text-[11px] opacity-70">{note}</span>}
+      {note && <span className="shrink-0 opacity-70">{note}</span>}
     </button>
   );
 }
@@ -190,7 +192,7 @@ export function MenuRow({
 /** 판 안의 묶음 이름. 윗줄과 선으로 끊어 '여기부터 다른 것' 을 말한다. */
 export function MenuSection({ label, className }: { label: string; className?: string }) {
   return (
-    <div className={cn('mt-1 border-t border-line px-2.5 pb-0.5 pt-2 text-[10.5px] font-extrabold uppercase tracking-[0.5px] text-muted', className)}>
+    <div className={cn('mt-0.5 border-t border-line px-2.5 pb-[2px] pt-[3px] text-[13.5px] font-bold leading-[1.2] text-muted', className)}>
       {label}
     </div>
   );
@@ -278,7 +280,7 @@ export function DataMenu({
           <MenuCols
             left={
               <div className="flex flex-col">
-                {datasets.length === 0 && <p className="px-2.5 py-1.5 text-[11px] text-muted-soft">데이터셋 없음</p>}
+                {datasets.length === 0 && <p className="px-2.5 py-[2px] text-[13.5px] leading-[1.2] text-muted-soft">데이터셋 없음</p>}
                 {datasets.map((d) => (
                   <MenuRow
                     key={d.dataset_id}
@@ -293,10 +295,10 @@ export function DataMenu({
             }
             right={
               datasetId == null ? (
-                <p className="px-2.5 py-1.5 text-[11px] text-muted-soft">데이터셋을 먼저 고르세요</p>
+                <p className="px-2.5 py-[2px] text-[13.5px] leading-[1.2] text-muted-soft">데이터셋을 먼저 고르세요</p>
               ) : folders.length < 2 ? (
                 // 폴더가 하나뿐이면 '전체' 와 그 폴더가 같은 실행이다.
-                <p className="px-2.5 py-1.5 text-[11px] text-muted-soft">폴더 없음 — 전체 실행</p>
+                <p className="px-2.5 py-[2px] text-[13.5px] leading-[1.2] text-muted-soft">폴더 없음 — 전체 실행</p>
               ) : (
                 <div className="flex flex-col">
                   <MenuRow
@@ -381,7 +383,7 @@ export function ScoreMenu({
     <div className="flex flex-col">
       <div className="flex h-8 items-center gap-2 px-2.5">
         <ScoreToggle on={scoreOn} onChange={setScoreOn} />
-        <span className="text-[13px] font-medium text-ink">{scoreOn ? '채점함' : '채점 없이 응답만'}</span>
+        <span className="text-[13.5px] text-muted">{scoreOn ? '채점함' : '채점 없이 응답만'}</span>
       </div>
       <MenuRow
         label={METRIC_LABELS[EXACT_MATCH]}

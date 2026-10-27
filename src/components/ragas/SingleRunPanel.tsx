@@ -499,11 +499,11 @@ export default function SingleRunPanel() {
     <>
       <div className="space-y-2.5">
         <RunToolbar>
-          <ToolbarMenu label="Agent" value={agentLabel(endpoints, endpointId)} muted={endpointId == null} width={240}>
+          <ToolbarMenu label="Agent" value={agentLabel(endpoints, endpointId)} muted={endpointId == null}>
             {agentMenu}
           </ToolbarMenu>
 
-          <ToolbarMenu label="대상" value={targetLabel} width={target === 'model' ? 560 : 300}>
+          <ToolbarMenu label="대상" value={targetLabel} width={target === 'model' ? 560 : undefined}>
             {targetMenu}
           </ToolbarMenu>
 
@@ -511,14 +511,13 @@ export default function SingleRunPanel() {
             label="데이터"
             value={data.label}
             badge={data.badge}
-            lead
             muted={data.empty}
-            width={440}
+           
           >
             {dataMenu}
           </ToolbarMenu>
 
-          <ToolbarMenu label="채점" value={scoreLabel(scoreOn, metrics)} muted={scoreOn && metrics.length === 0} width={300}>
+          <ToolbarMenu label="채점" value={scoreLabel(scoreOn, metrics)} muted={scoreOn && metrics.length === 0}>
             <ScoreMenu scoreOn={scoreOn} setScoreOn={setScoreOn} metrics={metrics} setMetrics={setMetrics} />
           </ToolbarMenu>
 

@@ -523,27 +523,27 @@ export default function ComparePanel() {
           두는 복합 비교는 무엇 때문에 결과가 달라졌는지 알 수 없다. */}
       <div className="space-y-2.5">
         <RunToolbar>
-          <ToolbarMenu label="대상" value={targetLabel} width={mode === 'model' ? 640 : 300}>
+          <ToolbarMenu label="대상" value={targetLabel} width={mode === 'model' ? 640 : undefined}>
             {targetMenu}
           </ToolbarMenu>
 
           {mode === 'endpoint' ? (
             // 두 사이드가 각각 등록된 API 하나씩. 프롬프트·모델은 그대로 둔다.
             <>
-              <ToolbarMenu label="A" value={agentLabel(endpoints, epA)} muted={epA == null} width={240}>
+              <ToolbarMenu label="A" value={agentLabel(endpoints, epA)} muted={epA == null}>
                 {(close) => <AgentMenu endpoints={endpoints} value={epA} onPick={(id) => { setEpA(id); close(); }} />}
               </ToolbarMenu>
-              <ToolbarMenu label="B" value={agentLabel(endpoints, epB)} muted={epB == null} width={240}>
+              <ToolbarMenu label="B" value={agentLabel(endpoints, epB)} muted={epB == null}>
                 {(close) => <AgentMenu endpoints={endpoints} value={epB} onPick={(id) => { setEpB(id); close(); }} />}
               </ToolbarMenu>
             </>
           ) : (
-            <ToolbarMenu label="Agent" value={agentLabel(endpoints, epA)} muted={epA == null} width={240}>
+            <ToolbarMenu label="Agent" value={agentLabel(endpoints, epA)} muted={epA == null}>
               {(close) => <AgentMenu endpoints={endpoints} value={epA} onPick={(id) => { setEpA(id); close(); }} />}
             </ToolbarMenu>
           )}
 
-          <ToolbarMenu label="데이터" value={data.label} badge={data.badge} lead muted={data.empty} width={440}>
+          <ToolbarMenu label="데이터" value={data.label} badge={data.badge} muted={data.empty}>
             {(close) => (
               <DataMenu
                 close={close}
@@ -559,7 +559,7 @@ export default function ComparePanel() {
             )}
           </ToolbarMenu>
 
-          <ToolbarMenu label="채점" value={scoreLabel(scoreOn, metrics)} muted={scoreOn && metrics.length === 0} width={300}>
+          <ToolbarMenu label="채점" value={scoreLabel(scoreOn, metrics)} muted={scoreOn && metrics.length === 0}>
             <ScoreMenu scoreOn={scoreOn} setScoreOn={setScoreOn} metrics={metrics} setMetrics={setMetrics} />
           </ToolbarMenu>
 
