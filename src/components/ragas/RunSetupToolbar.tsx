@@ -25,10 +25,9 @@ import { EndpointSelect, ScoreToggle, folderLabel } from './shared';
 /**
  * 머리띠 한 줄.
  *
- * 띠 자체는 액센트의 옅은 면(accent-soft)이고 그 위의 칸들이 흰 컨트롤로 뜬다 —
- * 흰 바탕에 흰 칸을 올리면 테두리 한 겹만 남아 띠가 글자 네 덩어리로 보였다.
- * 이 줄은 내용이 아니라 조작하는 자리라서, 결과 카드(흰 면 · 회색 선)와 다른
- * 색을 써야 같은 종류로 읽히지 않는다.
+ * TraceX 의 지표 토글(.tbd-metric-btn)과 같은 말투: 칸은 테두리 없이 흰 띠 위에
+ * 글자로만 서 있고, 누른 칸만 액센트 면 + 흰 글자로 뜬다. 칸마다 테두리를 두르면
+ * 띠가 셀렉트 네 개를 늘어놓은 폼으로 읽힌다.
  */
 export function RunToolbar({ children, className }: { children: ReactNode; className?: string }) {
   return (
@@ -36,7 +35,7 @@ export function RunToolbar({ children, className }: { children: ReactNode; class
       className={cn(
         // 한 줄에 다 들어가면 56px, 좁은 화면에서 접히면 그만큼만 자란다.
         'flex min-h-[56px] flex-wrap items-center gap-x-2 gap-y-1.5',
-        'rounded-md border border-accent-line bg-accent-soft px-2.5 py-2 shadow-card',
+        'rounded-md border border-line bg-surface px-2 py-2 shadow-card',
         className,
       )}
     >
@@ -46,7 +45,7 @@ export function RunToolbar({ children, className }: { children: ReactNode; class
 }
 
 export function ToolbarSep() {
-  return <span aria-hidden className="mx-1.5 h-5 w-px shrink-0 bg-accent-line" />;
+  return <span aria-hidden className="mx-1.5 h-5 w-px shrink-0 bg-line" />;
 }
 
 /**
@@ -97,30 +96,33 @@ export function ToolbarMenu({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         className={cn(
-          // 앱의 Select 와 같은 치수·테두리·포커스 — 이 칸은 '열리는 셀렉트' 라서,
-          // 생긴 것도 셀렉트와 같아야 눌러 볼 수 있는 것으로 읽힌다.
-          'inline-flex h-9 max-w-[340px] items-center gap-2 rounded-sm border px-2.5 transition',
+          'inline-flex h-9 max-w-[340px] items-center gap-2 rounded-md px-3 transition-colors',
           open
-            ? 'border-accent bg-surface shadow-ring'
-            : 'border-accent-line bg-surface hover:border-accent',
+            ? 'bg-accent text-white shadow-[0_1px_3px_rgba(37,99,235,0.35)]'
+            : 'bg-transparent hover:bg-surface-3',
         )}
       >
-        <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.6px] text-muted">{label}</span>
+        <span className={cn('shrink-0 text-[10px] font-bold uppercase tracking-[0.6px]', open ? 'text-white/75' : 'text-muted')}>{label}</span>
         <span
           className={cn(
             'truncate',
             lead ? 'text-[14.5px] font-bold' : 'text-[13.5px] font-semibold',
-            muted ? 'text-muted-soft' : 'text-ink',
+            open ? (muted ? 'text-white/70' : 'text-white') : muted ? 'text-muted-soft' : 'text-ink',
           )}
         >
           {value}
         </span>
         {badge && (
-          <span className="inline-flex h-[18px] shrink-0 items-center rounded-full border border-accent-line bg-accent-soft px-1.5 text-[10.5px] font-bold text-accent-deep">
+          <span
+            className={cn(
+              'inline-flex h-[18px] shrink-0 items-center rounded-full px-1.5 text-[10.5px] font-bold',
+              open ? 'bg-white/20 text-white' : 'bg-accent-soft text-accent-deep',
+            )}
+          >
             {badge}
           </span>
         )}
-        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden className="shrink-0 self-center text-muted-soft">
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden className={cn('shrink-0 self-center', open ? 'text-white/75' : 'text-muted-soft')}>
           <path d="M4 6.5 8 10.5l4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </button>
