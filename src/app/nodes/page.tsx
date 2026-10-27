@@ -62,7 +62,7 @@ export default function NodesPage() {
             <div className="mb-4 rounded-sm border border-bad-line bg-bad-soft px-4 py-3 text-sm text-bad">{error}</div>
           )}
           <PageHeader
-            title={<>프롬프트 <span className="text-muted-soft">{nodes.length}</span></>}
+            title={<>Prompt <span className="text-muted-soft">{nodes.length}</span></>}
             right={<Button onClick={() => setShowNew(true)}>+ 노드</Button>}
           />
           <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

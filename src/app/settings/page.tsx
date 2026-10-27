@@ -810,7 +810,7 @@ export default function SettingsPage() {
   return (
     <AppShell section="settings">
       <div className={cn(SHELL, 'px-8 py-7')}>
-        <PageHeader title="설정" />
+        <PageHeader title="Settings" />
         <div className="flex flex-col gap-5">
           <EndpointsSection list={endpoints} setList={saveEndpoints} />
           <LlmSection servers={servers} setServers={saveServers} models={models} setModels={saveModels} />
