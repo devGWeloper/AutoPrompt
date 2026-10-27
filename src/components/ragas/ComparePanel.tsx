@@ -571,9 +571,9 @@ export default function ComparePanel() {
             <StatusPill status={source === 'dataset' ? status : callStatus} />
             {source === 'dataset' ? (
               <Button
-                size="lg"
+                size="md"
                 variant={status === 'running' ? 'secondary' : 'primary'}
-                className="whitespace-nowrap"
+                className="!h-[34px] whitespace-nowrap"
                 disabled={status === 'running' ? cancelling : !canRun}
                 onClick={status === 'running' ? cancel : run}
               >
@@ -587,7 +587,7 @@ export default function ComparePanel() {
                 )}
               </Button>
             ) : (
-              <Button size="lg" variant="primary" className="whitespace-nowrap" disabled={!canCall} onClick={callAb}>
+              <Button size="md" variant="primary" className="!h-[34px] whitespace-nowrap" disabled={!canCall} onClick={callAb}>
                 {callStatus === 'running' ? '호출 중…' : 'A · B 호출'}
               </Button>
             )}

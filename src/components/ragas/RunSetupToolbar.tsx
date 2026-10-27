@@ -96,7 +96,7 @@ export function ToolbarMenu({
         // TraceX 필터의 ACTION_TYP 셀렉트(.flt-field) 그대로: 흰 면 · 진한 한 줄 테두리 ·
         // 8px 모서리 · 34px. 열리면 칠하지 않고 테두리만 파래지며 옅은 고리가 선다.
         className={cn(
-          'inline-flex h-[34px] max-w-[340px] items-center gap-1 rounded-[8px] border bg-surface pl-[11px] pr-[10px] text-[13.5px] text-muted transition-[border-color,box-shadow] duration-100',
+          'inline-flex h-[34px] min-w-[150px] max-w-[360px] items-center gap-1 rounded-[8px] border bg-surface pl-[11px] pr-[10px] text-[13.5px] text-muted transition-[border-color,box-shadow] duration-100',
           open ? 'border-accent shadow-ring' : 'border-line-strong',
         )}
       >
@@ -108,19 +108,22 @@ export function ToolbarMenu({
             {badge}
           </span>
         )}
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden className="ml-0.5 shrink-0 text-[#8a929c]">
+        {/* 글자에 딱 붙지 않게 화살표 앞에 숨 쉴 자리를 두고, 칸이 넓으면 화살표는 오른쪽 끝으로 간다. */}
+        <span aria-hidden className="w-4 shrink-0" />
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden className="ml-auto shrink-0 text-[#8a929c]">
           <polyline points="6 9 12 15 18 9" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </button>
 
       {open && (
         // TraceX 필터의 ACTION_TYP(기본 <select>)가 펼치는 목록과 같은 판: 거의 각진
-        // 모서리, 진한 한 줄 테두리, 짧은 그림자, 칸 바로 아래에 붙고 줄은 판 끝까지 찬다.
+        // 모서리, 진한 한 줄 테두리, 짧은 그림자. 칸 아래 테두리에 틈 없이 붙어 왼쪽 끝을 맞추고,
+        // 칸보다 좁아지지 않는다. 줄은 판 끝까지 찬다.
         <div
           style={width ? { width } : undefined}
           // group: 목록 위에 손이 올라오면 고른 줄의 파랑이 손이 있는 줄로 옮겨 간다.
           className={cn(
-            'group absolute left-0 top-[calc(100%+2px)] z-20 min-w-full overflow-hidden rounded-xs border border-line-strong bg-surface py-0.5 shadow-[0_2px_8px_rgba(17,24,39,0.16)]',
+            'group absolute left-0 top-full z-20 min-w-full overflow-hidden rounded-xs border border-line-strong bg-surface py-0.5 shadow-[0_2px_8px_rgba(17,24,39,0.16)]',
             !width && 'w-max max-w-[420px]',
           )}
         >

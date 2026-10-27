@@ -530,9 +530,9 @@ export default function SingleRunPanel() {
                 h-9 로 두면 네 칸과 같은 무게가 되어 줄의 끝이 안 보인다. */}
             {source === 'dataset' ? (
               <Button
-                size="lg"
+                size="md"
                 variant={status === 'running' ? 'secondary' : 'primary'}
-                className="whitespace-nowrap"
+                className="!h-[34px] whitespace-nowrap"
                 disabled={status === 'running' ? cancelling : !canRun}
                 onClick={status === 'running' ? cancel : run}
               >
@@ -546,7 +546,7 @@ export default function SingleRunPanel() {
                 )}
               </Button>
             ) : (
-              <Button size="lg" variant="primary" className="whitespace-nowrap" disabled={!canCall} onClick={call}>
+              <Button size="md" variant="primary" className="!h-[34px] whitespace-nowrap" disabled={!canCall} onClick={call}>
                 {callStatus === 'running' ? '호출 중…' : '호출'}
               </Button>
             )}
