@@ -7,7 +7,7 @@ import {
   type RagasMetric,
   type RagasRunDetail,
 } from '@/lib/types';
-import { compareSideLabel, fmt3, PassRateBadge, rateTone, runMean, scoredMetrics } from './shared';
+import { compareSideLabel, fmt3, PassRateBadge, rateTone, runMean, scoredMetrics, SidePair } from './shared';
 
 // Card grid width follows the card count so a 정답 일치 only run doesn't leave
 // four empty columns.
@@ -257,17 +257,9 @@ export function CompareSummaryDashboard({
 
   return (
     <div className="mb-6 space-y-4">
-      {/* 어느 쪽이 A 이고 B 인지는 한 줄로 적는다 — 카드가 'A' · 'B' 로만 부르니
-          그 둘이 무엇인지는 격자 위에서 한 번 말해 두면 된다. 큰 상자는 필요 없다. */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
-        <span>
-          <span className="font-mono font-semibold text-ink">A</span> {nameA}
-        </span>
-        <span aria-hidden className="h-3 w-px bg-line-strong" />
-        <span>
-          <span className="font-mono font-semibold text-ink">B</span> {nameB}
-        </span>
-      </div>
+      {/* 어느 쪽이 A 이고 B 인지는 격자 위에서 한 번 말해 둔다 — 카드가 'A' · 'B' 로만
+          부르니, 그 둘이 무엇인지가 여기서 읽혀야 한다. */}
+      <SidePair a={nameA} b={nameB} />
 
       {/* RAGAS 평균 + 지표마다 한 장 */}
       <div className={cn('grid gap-3', pairCols(cards.length))}>

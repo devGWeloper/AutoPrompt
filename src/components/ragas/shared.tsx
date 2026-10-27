@@ -542,6 +542,37 @@ export const sideLabel = (label: string) => (label ? `v${label}` : 'Default');
  * 적어 놓았다 — 두 사이드를 가르라고 있는 라벨이 둘을 구별하지 못했다.
  * 모델은 실행이 스탬프한 MODEL_CTN 에 그대로 남아 있으므로 여기서 꺼내 쓴다.
  */
+/** 비교 머리줄의 A · B 이름표. 작은 배지 하나로는 두 사이드가 무엇인지가 묻혀서,
+ * 사이드 글자를 앞에 세운 칸으로 크게 적는다. B 만 파랑 — 표의 B 칸과 같은 색이다. */
+export function SidePair({ a, b }: { a: string; b: string }) {
+  const tag = (side: 'A' | 'B', label: string) => (
+    <span
+      title={label}
+      className={cn(
+        'inline-flex h-7 min-w-0 max-w-[420px] items-center gap-1.5 rounded-[6px] border pl-1 pr-2.5 text-[13px] font-semibold',
+        side === 'B' ? 'border-accent-line bg-accent-soft text-accent-deep' : 'border-line-strong bg-surface text-ink',
+      )}
+    >
+      <span
+        className={cn(
+          'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-[4px] font-mono text-[11px] font-bold',
+          side === 'B' ? 'bg-accent text-white' : 'bg-surface-3 text-body',
+        )}
+      >
+        {side}
+      </span>
+      <span className="truncate">{label}</span>
+    </span>
+  );
+  return (
+    <span className="flex min-w-0 flex-wrap items-center gap-2">
+      {tag('A', a)}
+      <span className="text-xs text-muted-soft">vs</span>
+      {tag('B', b)}
+    </span>
+  );
+}
+
 export function compareSideLabel(run: {
   version_no?: string | null;
   model_snapshot?: string | null;

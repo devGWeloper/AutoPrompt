@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -32,6 +32,7 @@ import {
   PendingHint,
   SAMPLE_MESSAGE,
   RunProgress,
+  SidePair,
   StatusPill,
   VersionSelect,
   errText,
@@ -102,12 +103,28 @@ function manualDetail(side: ManualSide, question: string, groundTruth: string | 
   return { status: 'DONE', results: [row] } as RagasRunDetail;
 }
 
-/** How one side of a model comparison is named in the result badges: the first
- * pinned model. An unpinned side runs the agent's own config — a real thing to
- * compare against, and the same word the 대상 rail uses for it. */
-function modelLabel(drafts: ModelDrafts): string {
-  const hit = Object.values(drafts).find((d) => d.model.trim() !== '');
-  return hit?.model.trim() || 'As-is';
+/** How one side of a model comparison is named — in the 띠 chip, the result
+ * header and the table columns. Only the roles where this side differs from the
+ * other are named: that difference is what the run tests, and repeating what both
+ * share would bury it. Server and temperature appear only when they are what
+ * differs. An unpinned role runs the agent's own config, read as 'As-is'. */
+function modelLabel(mine: ModelDrafts, other: ModelDrafts): string {
+  const a = toSelection(mine);
+  const b = toSelection(other);
+  const roles = Array.from(new Set([...Object.keys(a), ...Object.keys(b)]));
+  const same = (r: string) => JSON.stringify(a[r] ?? null) === JSON.stringify(b[r] ?? null);
+  const shown = roles.filter((r) => !same(r));
+  const list = shown.length ? shown : Object.keys(a);
+  if (!list.length) return 'As-is';
+  const text = (r: string) => {
+    const m = a[r];
+    const o = b[r];
+    if (!m) return 'As-is';
+    const svr = m.server && m.server !== o?.server ? `@${m.server}` : '';
+    const t = m.temperature != null && m.temperature !== o?.temperature ? ` t${m.temperature}` : '';
+    return `${m.model ?? 'As-is'}${svr}${t}`;
+  };
+  return list.length === 1 ? text(list[0]) : list.map((r) => `${r} ${text(r)}`).join(' · ');
 }
 
 export default function ComparePanel() {
@@ -222,7 +239,7 @@ export default function ComparePanel() {
   // name. Model mode's sides differ only by model, so the model name is the label.
   const curLabels = (): [string, string] =>
     mode === 'model'
-      ? [modelLabel(modelsA), modelLabel(modelsB)]
+      ? [modelLabel(modelsA, modelsB), modelLabel(modelsB, modelsA)]
       : [verLabel(verA), verLabel(verB)];
   const labA = runLabels?.[0] ?? curLabels()[0];
   const labB = runLabels?.[1] ?? curLabels()[1];
@@ -461,7 +478,9 @@ export default function ComparePanel() {
   const targetLabel = mode === 'endpoint' ? 'Default' : mode === 'model' ? 'Model' : 'Prompt';
   const sameSides = mode === 'endpoint'
     ? epA != null && epA === epB
-    : mode === 'version' && verA != null && verA === verB;
+    : mode === 'model'
+      ? JSON.stringify(toSelection(modelsA)) === JSON.stringify(toSelection(modelsB))
+      : verA != null && verA === verB;
 
   const targetMenu = (close: () => void) => (
     <div className="flex flex-col">
@@ -471,12 +490,13 @@ export default function ComparePanel() {
         selected={mode === 'endpoint'}
         onClick={() => { setMode('endpoint'); close(); }}
       />
-      {/* 모델 · 프롬프트는 고른 뒤에 채울 것이 따라오므로 판을 닫지 않는다. */}
+      {/* 모델은 띠의 A · B 칸에서 고르므로 판을 닫는다. 프롬프트는 고른 뒤에
+          채울 것이 이 판에 따라오므로 닫지 않는다. */}
       <MenuRow
         label="Model"
         title="같은 Agent 에서 role 별 모델만 A · B 로 바꿉니다"
         selected={mode === 'model'}
-        onClick={() => setMode('model')}
+        onClick={() => { setMode('model'); close(); }}
       />
       <MenuRow
         label="Prompt"
@@ -498,20 +518,6 @@ export default function ComparePanel() {
           </div>
         </>
       )}
-      {mode === 'model' && (
-        <>
-          <MenuSection label="모델" />
-          <div className="px-3 pb-2">
-            <ModelPicker
-              roles={roles}
-              columns={[
-                { key: 'a', label: 'A', drafts: modelsA, onChange: setModelsA },
-                { key: 'b', label: 'B', drafts: modelsB, onChange: setModelsB },
-              ]}
-            />
-          </div>
-        </>
-      )}
     </div>
   );
 
@@ -521,7 +527,7 @@ export default function ComparePanel() {
           두는 복합 비교는 무엇 때문에 결과가 달라졌는지 알 수 없다. */}
       <div className="space-y-2.5">
         <RunToolbar>
-          <ToolbarMenu label="대상" value={targetLabel} width={mode === 'model' ? 640 : undefined}>
+          <ToolbarMenu label="대상" value={targetLabel}>
             {targetMenu}
           </ToolbarMenu>
 
@@ -539,6 +545,33 @@ export default function ComparePanel() {
             <ToolbarMenu label="Agent" value={agentLabel(endpoints, epA)} muted={epA == null}>
               {(close) => <AgentMenu endpoints={endpoints} value={epA} onPick={(id) => { setEpA(id); close(); }} />}
             </ToolbarMenu>
+          )}
+
+          {/* 모델 비교는 두 사이드가 무엇을 들고 도는지가 곧 실행 조건이라, Default 의
+              A · B Agent 칸처럼 띠에 바로 적는다 — 판을 열어야만 보이면 안 된다.
+              비교되는 두 칸은 옅은 파랑 상자 하나에 묶어 나머지 조건 칸과 가른다.
+              상자는 -my-1 로 띠 높이를 늘리지 않는다 (34px 칸 + 안쪽 4px). */}
+          {mode === 'model' && (
+            <div className="-my-1 flex shrink-0 items-center gap-1.5 rounded-[10px] border border-accent-line bg-accent-soft py-[3px] pl-2.5 pr-[3px]">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.6px] text-accent-deep">Model</span>
+              {(['a', 'b'] as const).map((k, i) => {
+                const mine = k === 'a' ? modelsA : modelsB;
+                const other = k === 'a' ? modelsB : modelsA;
+                return (
+                  <Fragment key={k}>
+                    {i > 0 && <span className="text-xs text-accent-deep/70">vs</span>}
+                    <ToolbarMenu label={k.toUpperCase()} value={modelLabel(mine, other)} width={440}>
+                      <div className="px-3 py-2">
+                        <ModelPicker
+                          roles={roles}
+                          columns={[{ key: k, drafts: mine, onChange: k === 'a' ? setModelsA : setModelsB }]}
+                        />
+                      </div>
+                    </ToolbarMenu>
+                  </Fragment>
+                );
+              })}
+            </div>
           )}
 
           <ToolbarMenu label="데이터" value={data.label} badge={data.badge} muted={data.empty}>
@@ -628,9 +661,7 @@ export default function ComparePanel() {
             <Card>
               <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
                 <h3 className="mr-1 text-sm font-semibold text-ink">Manual Comparison</h3>
-                <Badge tone="neutral">A · {dispLabel(labA)}</Badge>
-                <span>vs</span>
-                <Badge tone="accent">B · {dispLabel(labB)}</Badge>
+                <SidePair a={dispLabel(labA)} b={dispLabel(labB)} />
               </div>
               <div className="p-4">
                 <div className="overflow-hidden rounded-sm border border-line bg-surface">
@@ -660,9 +691,7 @@ export default function ComparePanel() {
           <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
             <h3 className="mr-1 text-sm font-semibold text-ink">Comparison</h3>
             <Badge tone="neutral" dot>RUNNING</Badge>
-            <Badge tone="neutral">A · {dispLabel(labA)}</Badge>
-            <span>vs</span>
-            <Badge tone="accent">B · {dispLabel(labB)}</Badge>
+            <SidePair a={dispLabel(labA)} b={dispLabel(labB)} />
           </div>
           {/* One progress block per side — A and B run as two independent streams
               and routinely sit in different phases. */}
@@ -704,9 +733,7 @@ export default function ComparePanel() {
             <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 text-xs text-muted">
               <h3 className="mr-1 text-sm font-semibold text-ink">Comparison Detail</h3>
               {nodeNm && <span className="font-medium text-ink">{nodeNm}</span>}
-              <Badge tone="neutral">A · {dispLabel(labA)}</Badge>
-              <span>vs</span>
-              <Badge tone="accent">B · {dispLabel(labB)}</Badge>
+              <SidePair a={dispLabel(labA)} b={dispLabel(labB)} />
               <span className="ml-auto flex items-center gap-2.5">
                 <CompareVerdict detailA={detailA} detailB={detailB} />
                 <RunDurationTag runs={[detailA, detailB]} />
