@@ -322,7 +322,7 @@ export default function AppShell({
             Test
             <span className="bg-gradient-to-br from-accent to-chroma-purple bg-clip-text text-transparent">X</span>
           </span>
-          <span className="ml-[3px] hidden text-[13px] font-medium tracking-normal text-muted-soft md:inline">· RAGAS Test</span>
+          <span className="ml-[3px] hidden text-[13px] font-medium tracking-normal text-muted-soft md:inline">· AI Agent Test</span>
         </button>
         {/* 현재 위치 — 그룹 / 화면 (inview .crumb). */}
         {group && (
