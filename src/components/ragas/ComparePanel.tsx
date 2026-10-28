@@ -46,6 +46,7 @@ import {
 import {
   ModelPicker,
   modelDraftError,
+  modelChip,
   modelLabel,
   toSelection,
   useModelRoles,
@@ -527,11 +528,10 @@ export default function ComparePanel() {
             <ModelBox label="Model">
               {(['a', 'b'] as const).map((k, i) => {
                 const mine = k === 'a' ? modelsA : modelsB;
-                const other = k === 'a' ? modelsB : modelsA;
                 return (
                   <Fragment key={k}>
                     {i > 0 && <span className="text-xs text-accent-deep/70">vs</span>}
-                    <ToolbarMenu label={k.toUpperCase()} value={modelLabel(mine, other)} width={440}>
+                    <ToolbarMenu label={k.toUpperCase()} {...modelChip(mine)} width={440}>
                       <div className="px-3 py-2">
                         <ModelPicker
                           roles={roles}

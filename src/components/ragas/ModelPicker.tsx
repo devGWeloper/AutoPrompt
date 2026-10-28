@@ -16,8 +16,8 @@ import { SettingsLink, useLlmModels } from './shared';
  * side, and that is the only reason a model-vs-model comparison is possible at
  * all: a single global setting would hand both sides the same value.
  *
- * Collapsed by default. Most runs never touch it, and a run form that opens with
- * a grid of eight boxes reads as eight decisions to make.
+ * It lives inside a 띠 chip's dropdown, and the chip already names what is
+ * picked — so the table is all there is here, with no summary line repeating it.
  */
 
 /** Editable fields as text. '' means "not pinned", which is a different thing
@@ -121,6 +121,14 @@ export function modelLabel(mine: ModelDrafts, other: ModelDrafts = {}): string {
   return list.length === 1 ? text(list[0]) : list.map((r) => `${r} ${text(r)}`).join(' · ');
 }
 
+/** What a 띠 chip shows for a model set. Model names stay out of it — several
+ * roles' names make the chip long and still can't be read at a glance; opening
+ * the chip shows the table. Only whether anything is picked, and how many. */
+export function modelChip(drafts: ModelDrafts): { value: string; badge?: string } {
+  const n = Object.keys(toSelection(drafts)).length;
+  return n ? { value: '선택', badge: String(n) } : { value: 'As-is' };
+}
+
 /** Blocks the run rather than letting a typo through: an out-of-range
  * temperature would otherwise be dropped server-side and the run would quietly
  * use a different one than the screen shows. */
@@ -138,20 +146,6 @@ export function modelDraftError(...drafts: ModelDrafts[]): string | null {
   return null;
 }
 
-/** One column's pins as a single line. */
-function pinText(drafts: ModelDrafts): string {
-  const parts = Object.entries(drafts)
-    .filter(([, d]) => pinned(d))
-    .map(([role, d]) => {
-      const t = d.temperature.trim();
-      // 서버는 모델 뒤에 붙여 한 줄로 — 주소가 어디로 나가는지가 모델 선택의
-      // 절반이라, 요약에서 빠지면 A·B 가 왜 다른지 읽히지 않는다.
-      const svr = d.server.trim();
-      return `${role}=${d.model.trim() || 'As-is'}${svr ? `@${svr}` : ''}${t ? ` (t${t})` : ''}`;
-    });
-  return parts.length ? parts.join(' · ') : '—';
-}
-
 const sameDrafts = (a: ModelDrafts, b: ModelDrafts) =>
   JSON.stringify(toSelection(a)) === JSON.stringify(toSelection(b));
 
@@ -162,10 +156,6 @@ export function ModelPicker({
   roles: ModelRole[];
   columns: ModelColumn[];
 }) {
-  // Open from the start. This only renders when 대상 is 모델 — i.e. the models
-  // *are* what the run is testing — so hiding them behind a '변경' click would
-  // hide the one thing on screen that matters.
-  const [open, setOpen] = useState(true);
   // 고를 수 있는 모델 목록. 저장돼 있던 값이 목록에서 빠졌다면 조용히 사라지지
   // 않도록 그 값만 따로 남겨 둔다.
   const catalogAll = useLlmModels();
@@ -202,10 +192,6 @@ export function ModelPicker({
   const valueOf = (d: ModelDraft) => (!d.model ? '' : (optionOf(d)?.llm_id ?? MISSING).toString());
   // 되돌리기는 빈 칸으로 — 아무것도 고르지 않은 As-is 가 출발점이다.
   const dirty = columns.some((c) => !sameDrafts(c.drafts, {}));
-  // Two columns holding the same thing is the ordinary case (both pre-filled
-  // from the same defaults), and saying it once is shorter and clearer than saying it
-  // twice — the point of the line is whether the sides differ.
-  const identical = columns.length > 1 && columns.every((c) => sameDrafts(c.drafts, columns[0].drafts));
 
   const set = (col: ModelColumn, role: string, patch: Partial<ModelDraft>) =>
     // 폼이 빈 채로 시작하므로 처음 손대는 role 은 줄이 없다 — 빈 줄 위에 얹어야
@@ -223,32 +209,7 @@ export function ModelPicker({
 
   return (
     <>
-      <span className="min-w-0 flex-1 truncate text-xs text-muted">
-        {identical || columns.length === 1 ? (
-          <>
-            {identical && <span className="mr-1.5 text-muted-soft">A · B 동일</span>}
-            {pinText(columns[0].drafts)}
-          </>
-        ) : (
-          columns.map((c, i) => (
-            <Fragment key={c.key}>
-              {i > 0 && <span className="mx-1.5 text-muted-soft">·</span>}
-              <span className="font-semibold text-body">{c.label} </span>
-              {pinText(c.drafts)}
-            </Fragment>
-          ))
-        )}
-      </span>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="shrink-0 text-xs font-medium text-muted transition-colors hover:text-ink"
-      >
-        {open ? '접기' : '변경'}
-      </button>
-
-      {open && (
-        <div className="w-full pb-1 pt-1">
+        <div className="w-full">
           <div className="overflow-hidden rounded-sm border border-line bg-surface">
             <div
               className="gap-x-3 border-b border-line bg-surface-2 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.6px] text-muted"
@@ -348,8 +309,6 @@ export function ModelPicker({
             <SettingsLink label="설정" />
           </div>
         </div>
-      )}
-
     </>
   );
 }

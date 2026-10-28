@@ -54,7 +54,7 @@ import {
 } from './shared';
 import {
   ModelPicker,
-  modelLabel,
+  modelChip,
   modelDraftError,
   toSelection,
   useModelRoles,
@@ -502,7 +502,7 @@ export default function SingleRunPanel() {
           {/* Pair 와 같은 모델 상자 — 무엇을 들고 도는지가 곧 실행 조건이다. */}
           {target === 'model' && (
             <ModelBox>
-              <ToolbarMenu label="Model" value={modelLabel(models)} width={440}>
+              <ToolbarMenu label="Model" {...modelChip(models)} width={440}>
                 <div className="px-3 py-2">
                   <ModelPicker roles={roles} columns={[{ key: 'a', drafts: models, onChange: setModels }]} />
                 </div>
