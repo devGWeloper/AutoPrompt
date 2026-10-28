@@ -922,9 +922,11 @@ export function RunProgress({
   );
 }
 
-export function DatasetSelect({ datasets, value, onChange }: { datasets: Dataset[]; value: number | null; onChange: (id: number) => void }) {
+export function DatasetSelect({
+  datasets, value, onChange, variant,
+}: { datasets: Dataset[]; value: number | null; onChange: (id: number) => void; variant?: 'field' | 'chip' }) {
   return (
-    <Select value={value ?? ''} onChange={(e) => onChange(Number(e.target.value))} className="w-48">
+    <Select variant={variant} value={value ?? ''} onChange={(e) => onChange(Number(e.target.value))} className="w-52">
       <option value="" disabled>Dataset</option>
       {datasets.map((d) => (
         <option key={d.dataset_id} value={d.dataset_id}>
@@ -1002,6 +1004,7 @@ export function CategorySelect({
   const total = cats.reduce((n, c) => n + c.case_count, 0);
   return (
     <Select
+      variant="chip"
       value={value ?? ''}
       onChange={(e) => onChange(e.target.value || null)}
       className="w-40"
@@ -1021,7 +1024,7 @@ export function VersionSelect({
   versions, value, onChange, placeholder, className,
 }: { versions: PromptVersionSummary[]; value: number | null; onChange: (id: number) => void; placeholder: string; className?: string }) {
   return (
-    <Select value={value ?? ''} onChange={(e) => onChange(Number(e.target.value))} className={cn('w-36', className)}>
+    <Select variant="chip" value={value ?? ''} onChange={(e) => onChange(Number(e.target.value))} className={cn('w-36', className)}>
       <option value="" disabled>{placeholder}</option>
       {versions.map((v) => (
         <option key={v.prompt_id} value={v.prompt_id}>v{v.version_no}</option>
@@ -2170,10 +2173,11 @@ export function EndpointSelect({
   const picked = endpoints.find((e) => e.endpoint_id === value);
   return (
     <Select
+      variant="chip"
       value={value ?? ""}
       onChange={(e) => onChange(Number(e.target.value))}
       title={picked?.endpoint_url}
-      className={cn("h-9 w-48 text-xs", className)}
+      className={cn("w-48", className)}
     >
       <option value="" disabled>
         API 선택

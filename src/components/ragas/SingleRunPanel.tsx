@@ -26,6 +26,15 @@ import {
   type RunWsMessage,
 } from '@/lib/types';
 import {
+  CategorySelect,
+  DatasetPurposeLine,
+  DatasetSelect,
+  EndpointSelect,
+  EvalOptions,
+  InlineDivider,
+  InlineField,
+  ScoreToggle,
+  SegToggle,
   ErrBox,
   PROMPT_TARGET_ENABLED,
   StatusPill,
@@ -54,27 +63,12 @@ import {
 } from './shared';
 import {
   ModelPicker,
-  modelChip,
   modelDraftError,
   toSelection,
   useModelRoles,
   type ModelDrafts,
 } from './ModelPicker';
-import {
-  AgentMenu,
-  DataMenu,
-  MenuRow,
-  MenuSection,
-  ModelBox,
-  PlayIcon,
-  RunToolbar,
-  ScoreMenu,
-  ToolbarMenu,
-  ToolbarSep,
-  agentLabel,
-  dataSummary,
-  scoreLabel,
-} from './RunSetupToolbar';
+import { PlayIcon, dataSummary } from './RunSetupToolbar';
 
 // ---- direct call (raw external-API smoke test, no scoring) ------------------
 
@@ -194,9 +188,8 @@ export default function SingleRunPanel() {
   // context_recall 도 이 값으로 채점하므로, 채점을 켠 실행이면 늘 받는다.
   const wantsExpected = scoreOn;
 
-  // ---- 머리띠에 적는 값 ------------------------------------------------
+  // 실행 버튼에 적는 건수.
   const data = dataSummary(source, datasets, datasetId, folders, caseType, pickedCases ? pickedCases.size : null);
-  const targetLabel = target === 'endpoint' ? 'Default' : target === 'model' ? 'Model' : 'Prompt';
 
   useEffect(() => {
     if (!nodeNm) { setVersions([]); return; }
@@ -422,162 +415,162 @@ export default function SingleRunPanel() {
     return found ? `v${found.version_no}` : `ID ${id}`;
   };
 
-  // ---- 머리띠 칸이 여는 판 ----------------------------------------------
-  // 판은 '폼' 이 아니라 '고르는 목록' 이다. 셀렉트를 판 안에 다시 넣으면 칸을 누른
-  // 뒤 또 눌러야 한다.
-  const agentMenu = (close: () => void) => (
-    <AgentMenu endpoints={endpoints} value={endpointId} onPick={(id) => { setEndpointId(id); close(); }} />
-  );
-
-  const targetMenu = (close: () => void) => (
-    <div className="flex flex-col">
-      <MenuRow
-        label="Default"
-        title="프롬프트도 모델도 건드리지 않고, 고른 Agent 를 지금 상태 그대로 호출합니다"
-        selected={target === 'endpoint'}
-        onClick={() => { setTarget('endpoint'); close(); }}
-      />
-      {/* 모델은 띠의 모델 상자에서 고르므로 판을 닫는다. 프롬프트는 고른 뒤에
-          채울 것이 이 판에 따라오므로 닫지 않는다. */}
-      <MenuRow
-        label="Model"
-        title="role 별 모델을 바꿔서 실행합니다"
-        selected={target === 'model'}
-        onClick={() => { setTarget('model'); close(); }}
-      />
-      <MenuRow
-        label="Prompt"
-        title="고른 프롬프트 버전을 활성화한 뒤 실행합니다"
-        disabled={!PROMPT_TARGET_ENABLED}
-        selected={target === 'prompt'}
-        onClick={() => setTarget('prompt')}
-      />
-      {target === 'prompt' && (
-        <>
-          <MenuSection label="노드 · 버전" />
-          <div className="flex gap-1.5 px-3 pb-2">
-            <Select value={nodeNm} onChange={(e) => setNodeNm(e.target.value)} className="h-9 min-w-0 flex-1">
-              <option value="" disabled>노드</option>
-              {nodes.map((n) => (<option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>))}
-            </Select>
-            <VersionSelect versions={versions} value={ver} onChange={setVer} className="h-9 w-24" placeholder="버전" />
-          </div>
-        </>
-      )}
-    </div>
-  );
-
-  const dataMenu = (close: () => void) => (
-    <DataMenu
-      close={close}
-      source={source}
-      setSource={setSource}
-      datasets={datasets}
-      datasetId={datasetId}
-      setDatasetId={setDatasetId}
-      folders={folders}
-      caseType={caseType}
-      setCaseType={setCaseType}
-      cases={{
-        picked: pickedCases ? pickedCases.size : null,
-        onPick: () => setPicking(true),
-        onClear: () => setPickedCases(null),
-      }}
-    />
-  );
-
-  // 실행 조건은 한 줄에 값으로만 적고, 칸을 누르면 고르는 목록이 아래로 열린다.
+  // 실행 조건 카드: 대상·Agent 한 줄, (모델 대상이면) role 표, 입력·실행 한 줄, 채점
+  // 한 줄. 항목마다 한 행을 주면 화면의 절반이 아직 누르지도 않은 폼이 된다.
   const inner = (
     <>
       <div className="space-y-2.5">
-        <RunToolbar>
-          <ToolbarMenu label="Agent" value={agentLabel(endpoints, endpointId)} muted={endpointId == null}>
-            {agentMenu}
-          </ToolbarMenu>
+        <Card className="px-4 py-3">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
+            {/* 대상 = 무엇을 바꾸는가. 셋 중 하나만 변인이고 나머지는 손대지
+                않는다 — 그래서 고른 것의 컨트롤만 옆에 나온다. */}
+            <InlineField label="대상">
+              <SegToggle
+                value={target}
+                onChange={setTarget}
+                options={[
+                  { id: 'endpoint', label: 'Default', title: '프롬프트도 모델도 건드리지 않고, 고른 Agent 를 지금 상태 그대로 호출합니다' },
+                  { id: 'model', label: 'Model', title: 'role 별 모델을 바꿔서 실행합니다' },
+                  { id: 'prompt', label: 'Prompt', title: '고른 프롬프트 버전을 활성화한 뒤 실행합니다', disabled: !PROMPT_TARGET_ENABLED },
+                ]}
+              />
+              {target === 'prompt' && (
+                <>
+                  <Select variant="chip" value={nodeNm} onChange={(e) => setNodeNm(e.target.value)} className="w-40">
+                    <option value="" disabled>노드</option>
+                    {nodes.map((n) => (<option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>))}
+                  </Select>
+                  <VersionSelect versions={versions} value={ver} onChange={setVer} className="w-28" placeholder="버전" />
+                </>
+              )}
+            </InlineField>
 
-          <ToolbarMenu label="대상" value={targetLabel}>
-            {targetMenu}
-          </ToolbarMenu>
+            <InlineDivider />
 
-          {/* Pair 와 같은 모델 상자 — 무엇을 들고 도는지가 곧 실행 조건이다. */}
+            <InlineField label="Agent">
+              <EndpointSelect endpoints={endpoints} value={endpointId} onChange={setEndpointId} />
+            </InlineField>
+          </div>
+
+          {/* 모델 대상일 때만 role 표가 열린다 — 다른 대상에서는 실행에 쓰이지도 않는다. */}
           {target === 'model' && (
-            <ModelBox>
-              <ToolbarMenu label="Model" {...modelChip(models)} width={440}>
-                <div className="px-3 py-2">
-                  <ModelPicker roles={roles} columns={[{ key: 'a', drafts: models, onChange: setModels }]} />
-                </div>
-              </ToolbarMenu>
-            </ModelBox>
+            <div className="mt-2.5 border-t border-line pt-2.5">
+              <ModelPicker roles={roles} columns={[{ key: 'a', drafts: models, onChange: setModels }]} />
+            </div>
           )}
 
-          <ToolbarMenu
-            label="데이터"
-            value={data.label}
-            badge={data.badge}
-            muted={data.empty}
-           
-          >
-            {dataMenu}
-          </ToolbarMenu>
+          <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2.5 border-t border-line pt-2.5">
+            <InlineField label="입력">
+              <SegToggle
+                value={source}
+                onChange={setSource}
+                options={[{ id: 'dataset', label: '데이터셋' }, { id: 'manual', label: '직접 입력' }]}
+              />
+              {source === 'dataset' && (
+                <>
+                  <DatasetSelect variant="chip" datasets={datasets} value={datasetId} onChange={setDatasetId} />
+                  <CategorySelect cats={folders} value={caseType} onChange={setCaseType} />
+                  {datasetId != null && (
+                    <span className="inline-flex items-center">
+                      <Button
+                        variant="secondary"
+                        size="md"
+                        className="!h-[34px]"
+                        onClick={() => setPicking(true)}
+                        title="이 데이터셋(폴더)에서 돌릴 케이스만 고릅니다"
+                      >
+                        {pickedCases ? `선택 ${pickedCases.size}건` : '케이스 선택'}
+                      </Button>
+                      {pickedCases && (
+                        <button
+                          type="button"
+                          aria-label="선택 해제"
+                          title="선택 해제 — 전체 실행"
+                          onClick={() => setPickedCases(null)}
+                          className="ml-1 rounded-full p-1 text-muted-soft transition-colors hover:bg-surface-3 hover:text-ink"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
+                            <path d="M18 6 6 18M6 6l12 12" />
+                          </svg>
+                        </button>
+                      )}
+                    </span>
+                  )}
+                </>
+              )}
+            </InlineField>
 
-          <ToolbarMenu label="채점" value={scoreLabel(scoreOn, metrics)} muted={scoreOn && metrics.length === 0}>
-            <ScoreMenu scoreOn={scoreOn} setScoreOn={setScoreOn} metrics={metrics} setMetrics={setMetrics} />
-          </ToolbarMenu>
+            <InlineDivider />
 
-          {/* 실행은 마지막 칸 바로 뒤에 둔다 — 띠 오른쪽 끝으로 밀면 칸들과 멀어져
-              조건을 고른 눈이 버튼까지 가지 않는다. */}
-          <ToolbarSep />
-          <div className="flex shrink-0 items-center gap-2.5">
-            {source === 'dataset' ? (
-              <Button
-                size="md"
-                variant={status === 'running' ? 'secondary' : 'primary'}
-                className="!h-[34px] whitespace-nowrap"
-                disabled={status === 'running' ? cancelling : !canRun}
-                onClick={status === 'running' ? cancel : run}
-              >
-                {status === 'running' ? (
-                  cancelling ? '취소 중…' : '취소'
-                ) : (
-                  <>
-                    <PlayIcon />
-                    {data.count != null ? `${data.count}건 실행` : '실행'}
-                  </>
-                )}
-              </Button>
-            ) : (
-              <Button size="md" variant="primary" className="!h-[34px] whitespace-nowrap" disabled={!canCall} onClick={call}>
-                {callStatus === 'running' ? '호출 중…' : '호출'}
-              </Button>
-            )}
-            {modelErr && <span className="text-caption text-bad">{modelErr}</span>}
-            <StatusPill status={source === 'dataset' ? status : callStatus} />
+            {/* 실행 버튼은 방금 고른 입력 바로 옆에 선다. 카드 오른쪽 끝으로
+                밀어두면 폼과 버튼 사이가 비어, 조건을 다 채우고도 어디를 눌러야
+                하는지 한 번 더 찾게 된다. */}
+            <div className="flex shrink-0 items-center gap-2.5">
+              {source === 'dataset' ? (
+                <Button
+                  size="md"
+                  variant={status === 'running' ? 'secondary' : 'primary'}
+                  className="!h-[34px] whitespace-nowrap"
+                  disabled={status === 'running' ? cancelling : !canRun}
+                  onClick={status === 'running' ? cancel : run}
+                >
+                  {status === 'running' ? (
+                    cancelling ? '취소 중…' : '취소'
+                  ) : (
+                    <>
+                      <PlayIcon />
+                      {data.count != null ? `${data.count}건 실행` : '실행'}
+                    </>
+                  )}
+                </Button>
+              ) : (
+                <Button size="md" variant="primary" className="!h-[34px] whitespace-nowrap" disabled={!canCall} onClick={call}>
+                  {callStatus === 'running' ? '호출 중…' : '호출'}
+                </Button>
+              )}
+              {modelErr && <span className="text-caption text-bad">{modelErr}</span>}
+              <StatusPill status={source === 'dataset' ? status : callStatus} />
+            </div>
+
+            {source === 'dataset' && <DatasetPurposeLine datasets={datasets} datasetId={datasetId} />}
           </div>
-        </RunToolbar>
 
-        {source === 'manual' && (
-          <Card className="grid gap-2.5 px-4 py-3 sm:grid-cols-2">
-            <Textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              rows={3}
-              placeholder="메시지 *"
-              className="w-full text-sm"
-            />
-            {wantsExpected && (
+          {/* 채점은 자기 줄을 쓴다 — 지표가 켜지고 꺼질 때마다 위 줄이 접혀서 실행
+              버튼까지 밀려 내려가던 자리다. */}
+          <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line pt-2.5">
+            <InlineField label="채점">
+              <ScoreToggle on={scoreOn} onChange={setScoreOn} />
+              {scoreOn && (
+                <>
+                  <EvalOptions metrics={metrics} setMetrics={setMetrics} />
+                  {metrics.length === 0 && <span className="text-caption text-bad">하나 이상</span>}
+                </>
+              )}
+            </InlineField>
+          </div>
+
+          {source === 'manual' && (
+            <div className="mt-2.5 grid gap-2.5 border-t border-line pt-2.5 sm:grid-cols-2">
               <Textarea
-                value={expected}
-                onChange={(e) => setExpected(e.target.value)}
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
                 rows={3}
-                placeholder="기대 정답"
+                placeholder="메시지 *"
                 className="w-full text-sm"
               />
-            )}
-          </Card>
-        )}
+              {wantsExpected && (
+                <Textarea
+                  value={expected}
+                  onChange={(e) => setExpected(e.target.value)}
+                  rows={3}
+                  placeholder="기대 정답"
+                  className="w-full text-sm"
+                />
+              )}
+            </div>
+          )}
+        </Card>
 
-        {/* 케이스 고르기 판은 메뉴 밖에 둔다 — 메뉴 안에 두면 판을 누르는 순간
-            메뉴가 닫히면서 판까지 사라진다. */}
         {picking && datasetId != null && (
           <CasePickerModal
             datasetId={datasetId}

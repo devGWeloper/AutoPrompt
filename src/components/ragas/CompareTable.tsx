@@ -538,28 +538,23 @@ export function CaseCompareTable({
                   <ElapsedPair a={a} b={b} />
                   {showScores && (
                     <>
+                      {/* 사이드마다 한 칸: 판정 배지 아래에 그 사이드를 손으로 정리하는
+                          두 갈래(답이 맞다고 보면 PASS 처리, 정답지가 낡았다고 보면 그 답을
+                          정답으로)를 세로로 쌓는다. 한 줄로 몰면 B 의 단추가 A 밑에 서서
+                          어느 쪽 단추인지 읽히지 않는다.
+                          스트리밍 중인 표에는 실행 id 가 없다 — 단추는 기록으로 남은 뒤에만 선다. */}
                       {(a?.exact_match != null || b?.exact_match != null || passedOf(a) || passedOf(b)) && (
-                        <div className="flex items-center gap-1.5 whitespace-nowrap text-[10px] font-semibold text-muted">
-                          A <OxBadge value={a?.exact_match ?? null} passed={passedOf(a)} />
-                          B <OxBadge value={b?.exact_match ?? null} passed={passedOf(b)} />
-                        </div>
-                      )}
-                      {/* 불일치를 손으로 정리하는 두 갈래 — 답이 맞다고 보면 PASS 처리,
-                          정답지가 낡았다고 보면 그 답을 정답으로.
-                          단추는 한 줄에 하나씩 세로로 쌓는다. 좁은 칸에서 나란히 두면
-                          글자가 감기고, 무엇보다 이 둘은 '고르는 선택지' 라 위아래로
-                          놓였을 때 한눈에 세어진다. 사이드는 각 줄 앞에 적는다. */}
-                      {/* 스트리밍 중인 표에는 실행 id 가 없다 — 기록으로 남은 뒤에만 선다. */}
-                      {settled && detailA.ragas_run_id != null && detailB.ragas_run_id != null && (
-                        <div className="flex flex-col items-start gap-0.5 whitespace-nowrap">
+                        <div className="grid grid-cols-2 gap-x-3">
                           {([['A', a, detailA], ['B', b, detailB]] as const).map(([side, row, det]) => {
-                            if (!row || !(row.exact_match === 0 || passedOf(row))) return null;
-                            const answer = row.trace_value ?? row.answer;
-                            const lead = <span className="w-3 shrink-0 text-[10px] font-semibold text-muted">{side}</span>;
+                            const answer = row ? row.trace_value ?? row.answer : null;
+                            const fixable = settled && det.ragas_run_id != null && detailA.ragas_run_id != null && detailB.ragas_run_id != null
+                              && !!row && (row.exact_match === 0 || passedOf(row));
                             return (
-                              <Fragment key={side}>
-                                <span className="flex items-center gap-1">
-                                  {lead}
+                              <div key={side} className="flex flex-col items-start gap-0.5 whitespace-nowrap">
+                                <span className="flex items-center gap-1.5 text-[10px] font-semibold text-muted">
+                                  {side} <OxBadge value={row?.exact_match ?? null} passed={passedOf(row)} />
+                                </span>
+                                {fixable && row && (
                                   <PassButton
                                     runId={det.ragas_run_id}
                                     resultId={row.ragas_result_id}
@@ -569,22 +564,19 @@ export function CaseCompareTable({
                                       onPassChanged?.();
                                     }}
                                   />
-                                </span>
+                                )}
                                 {/* 정답은 두 사이드가 함께 쓰는 하나다 — 어느 쪽 답으로
                                     바꿀지가 곧 이 단추를 누가 누르느냐다. */}
-                                {det.dataset_id != null && row.case_id != null && !passedOf(row) && answer && (
-                                  <span className="flex items-center gap-1">
-                                    {lead}
-                                    <TruthFixButton
-                                      datasetId={det.dataset_id}
-                                      caseId={row.case_id}
-                                      truth={answer}
-                                      prev={gt}
-                                      side={side}
-                                    />
-                                  </span>
+                                {fixable && row && det.dataset_id != null && row.case_id != null && !passedOf(row) && answer && (
+                                  <TruthFixButton
+                                    datasetId={det.dataset_id}
+                                    caseId={row.case_id}
+                                    truth={answer}
+                                    prev={gt}
+                                    side={side}
+                                  />
                                 )}
-                              </Fragment>
+                              </div>
                             );
                           })}
                         </div>

@@ -16,8 +16,8 @@ import { SettingsLink, useLlmModels } from './shared';
  * side, and that is the only reason a model-vs-model comparison is possible at
  * all: a single global setting would hand both sides the same value.
  *
- * It lives inside a 띠 chip's dropdown, and the chip already names what is
- * picked — so the table is all there is here, with no summary line repeating it.
+ * One row per role, one column (model + temperature) per side. A row where the
+ * sides differ is tinted: that row is what a comparison tests.
  */
 
 /** Editable fields as text. '' means "not pinned", which is a different thing
@@ -121,14 +121,6 @@ export function modelLabel(mine: ModelDrafts, other: ModelDrafts = {}): string {
   return list.length === 1 ? text(list[0]) : list.map((r) => `${r} ${text(r)}`).join(' · ');
 }
 
-/** What a 띠 chip shows for a model set. Model names stay out of it — several
- * roles' names make the chip long and still can't be read at a glance; opening
- * the chip shows the table. Only whether anything is picked, and how many. */
-export function modelChip(drafts: ModelDrafts): { value: string; badge?: string } {
-  const n = Object.keys(toSelection(drafts)).length;
-  return n ? { value: '선택', badge: String(n) } : { value: 'As-is' };
-}
-
 /** Blocks the run rather than letting a typo through: an out-of-range
  * temperature would otherwise be dropped server-side and the run would quietly
  * use a different one than the screen shows. */
@@ -198,7 +190,20 @@ export function ModelPicker({
     // 고르지 않은 칸(temperature 등)이 undefined 로 남지 않는다.
     col.onChange({ ...col.drafts, [role]: { ...EMPTY_DRAFT, ...col.drafts[role], ...patch } });
 
-  const template = `minmax(84px,116px) ${columns.map(() => 'minmax(130px,1fr) 62px').join(' ')}`;
+  const template = `minmax(84px,128px) ${columns.map(() => 'minmax(150px,1fr) 64px').join(' ')}`;
+  const compare = columns.length > 1;
+  const differsAt = (role: string) => {
+    const cells = columns.map((c) => c.drafts[role] ?? EMPTY_DRAFT);
+    // 같은 모델이라도 서버가 다르면 다른 실행이다.
+    return cells.some(
+      (d) =>
+        d.model.trim() !== cells[0].model.trim() ||
+        d.server.trim() !== cells[0].server.trim() ||
+        d.temperature.trim() !== cells[0].temperature.trim(),
+    );
+  };
+  const diffCount = compare ? roles.filter((r) => differsAt(r.role_cd)).length : 0;
+  const pickedCount = compare ? 0 : Object.keys(toSelection(columns[0].drafts)).length;
 
   // No roles registered yet. This only renders under 대상 = 모델, where the
   // whole point is to change a model — so the empty state is the link to where
@@ -208,108 +213,126 @@ export function ModelPicker({
   }
 
   return (
-    <>
-        <div className="w-full">
-          <div className="overflow-hidden rounded-sm border border-line bg-surface">
+    <div className={cn('w-full', compare ? 'max-w-[880px]' : 'max-w-[560px]')}>
+      <div className="overflow-hidden rounded-md border border-line bg-surface">
+        <div
+          className="items-center gap-x-3 border-b border-line bg-surface-2 px-3 py-2 text-[10.5px] font-semibold uppercase tracking-[0.6px] text-muted"
+          style={{ display: 'grid', gridTemplateColumns: template }}
+        >
+          <span>Role</span>
+          {columns.map((c) => (
+            <Fragment key={c.key}>
+              {/* 사이드 글자는 결과 머리줄의 A · B 이름표와 같은 모양 — 여기서 고른 것이
+                  거기에 그 글자로 적힌다. */}
+              <span className="flex items-center gap-1.5">
+                {c.label && (
+                  <span
+                    className={cn(
+                      'inline-flex h-[18px] w-[18px] items-center justify-center rounded-[4px] font-mono text-[10.5px] font-bold normal-case tracking-normal',
+                      c.label === 'B' ? 'bg-accent text-white' : 'bg-surface-3 text-body',
+                    )}
+                  >
+                    {c.label}
+                  </span>
+                )}
+                모델
+              </span>
+              <span className="text-center">Temp</span>
+            </Fragment>
+          ))}
+        </div>
+        {roles.map((r) => {
+          const cells = columns.map((c) => c.drafts[r.role_cd] ?? EMPTY_DRAFT);
+          // The one thing worth marking in a comparison: this role is not the
+          // same on both sides, so it is part of what is being tested.
+          const differs = compare && differsAt(r.role_cd);
+          return (
             <div
-              className="gap-x-3 border-b border-line bg-surface-2 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.6px] text-muted"
+              key={r.role_cd}
+              className={cn(
+                'items-center gap-x-3 border-b border-line px-3 py-1.5 last:border-b-0',
+                differs && 'bg-accent-soft/50 shadow-[inset_2px_0_0_#2563eb]',
+              )}
               style={{ display: 'grid', gridTemplateColumns: template }}
             >
-              <span>Role</span>
-              {columns.map((c) => (
-                <Fragment key={c.key}>
-                  <span>{c.label ? `${c.label} 모델명` : '모델명'}</span>
-                  <span className="text-center">Temp</span>
-                </Fragment>
-              ))}
+              <span className={cn('truncate font-mono text-xs', differs ? 'font-semibold text-ink' : 'text-body')}>
+                {r.role_cd}
+              </span>
+              {columns.map((c, i) => {
+                const v = valueOf(cells[i]);
+                return (
+                  <Fragment key={c.key}>
+                    {/* 설정에 등록된 모델만 고를 수 있다 — 오타로 존재하지 않는
+                        모델을 고정해 버리는 일이 여기서 사라진다. 고른 줄이
+                        곧 서버이기도 해서, 주소는 따로 고를 것이 없다.
+                        비어 있으면 As-is — 그 role 은 Agent 자기 설정으로 돈다. */}
+                    <select
+                      value={v}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        if (next === MISSING) return;
+                        const o = catalog.find((x) => String(x.llm_id) === next);
+                        set(c, r.role_cd, o
+                          ? { model: o.llm_nm, server: o.server_nm ?? '' }
+                          : { model: '', server: '' });
+                      }}
+                      className={cn(
+                        'h-8 w-full rounded-[6px] border bg-surface px-2 font-mono text-xs transition',
+                        'hover:border-muted-soft focus:border-accent focus:shadow-ring focus:outline-none',
+                        v === MISSING ? 'border-warn' : 'border-line-strong',
+                        v === '' ? 'text-muted-soft' : 'font-semibold text-ink',
+                      )}
+                      title={optionOf(cells[i])?.base_url ?? cells[i].model ?? undefined}
+                    >
+                      <option value="">As-is</option>
+                      {v === MISSING && <option value={MISSING}>{cells[i].model}</option>}
+                      {grouped
+                        ? groups.map(([svr, items]) => (
+                            <optgroup key={svr || '—'} label={svr || '서버 미지정'}>
+                              {items.map((o) => (
+                                <option key={o.llm_id} value={o.llm_id}>{o.llm_nm}</option>
+                              ))}
+                            </optgroup>
+                          ))
+                        : catalog.map((o) => (
+                            <option key={o.llm_id} value={o.llm_id}>{o.llm_nm}</option>
+                          ))}
+                    </select>
+                    <Input
+                      value={cells[i].temperature}
+                      onChange={(e) => set(c, r.role_cd, { temperature: e.target.value })}
+                      inputMode="decimal"
+                      placeholder="—"
+                      className="!h-8 w-full text-center font-mono text-xs"
+                    />
+                  </Fragment>
+                );
+              })}
             </div>
-            {roles.map((r) => {
-              const cells = columns.map((c) => c.drafts[r.role_cd] ?? EMPTY_DRAFT);
-              // The one thing worth marking in a comparison: this role is not
-              // the same on both sides, so it is part of what is being tested.
-              // 같은 모델이라도 서버가 다르면 다른 실행이다.
-              const differs = cells.some(
-                (d) =>
-                  d.model.trim() !== cells[0].model.trim() ||
-                  d.server.trim() !== cells[0].server.trim() ||
-                  d.temperature.trim() !== cells[0].temperature.trim(),
-              );
-              return (
-                <div
-                  key={r.role_cd}
-                  className="items-center gap-x-3 border-b border-line px-3 py-2 last:border-b-0"
-                  style={{ display: 'grid', gridTemplateColumns: template }}
-                >
-                  <span
-                    className={cn('truncate font-mono text-xs', differs ? 'font-semibold text-ink' : 'text-muted')}
-                  >
-                    {r.role_cd}
-                  </span>
-                  {columns.map((c, i) => (
-                    <Fragment key={c.key}>
-                      {/* 설정에 등록된 모델만 고를 수 있다 — 오타로 존재하지 않는
-                          모델을 고정해 버리는 일이 여기서 사라진다. 고른 줄이
-                          곧 서버이기도 해서, 주소는 따로 고를 것이 없다. */}
-                      <select
-                        value={valueOf(cells[i])}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          if (v === MISSING) return;
-                          const o = catalog.find((x) => String(x.llm_id) === v);
-                          set(c, r.role_cd, o
-                            ? { model: o.llm_nm, server: o.server_nm ?? '' }
-                            : { model: '', server: '' });
-                        }}
-                        className={cn(
-                          'h-9 w-full rounded-sm border bg-surface px-2 font-mono text-xs text-ink transition',
-                          'hover:border-line-strong focus:border-accent focus:shadow-ring focus:outline-none',
-                          valueOf(cells[i]) === MISSING ? 'border-warn' : 'border-line',
-                        )}
-                        title={optionOf(cells[i])?.base_url ?? cells[i].model ?? undefined}
-                      >
-                        <option value="">—</option>
-                        {valueOf(cells[i]) === MISSING && (
-                          <option value={MISSING}>{cells[i].model}</option>
-                        )}
-                        {grouped
-                          ? groups.map(([svr, items]) => (
-                              <optgroup key={svr || '—'} label={svr || '서버 미지정'}>
-                                {items.map((o) => (
-                                  <option key={o.llm_id} value={o.llm_id}>{o.llm_nm}</option>
-                                ))}
-                              </optgroup>
-                            ))
-                          : catalog.map((o) => (
-                              <option key={o.llm_id} value={o.llm_id}>{o.llm_nm}</option>
-                            ))}
-                      </select>
-                      <Input
-                        value={cells[i].temperature}
-                        onChange={(e) => set(c, r.role_cd, { temperature: e.target.value })}
-                        inputMode="decimal"
-                        placeholder="—"
-                        className="w-full text-center font-mono text-xs"
-                      />
-                    </Fragment>
-                  ))}
-                </div>
-              );
-            })}
-          </div>
-          <div className="mt-1.5 flex items-center justify-end gap-3">
-            {dirty && (
-              <button
-                type="button"
-                onClick={() => columns.forEach((c) => c.onChange({}))}
-                className="shrink-0 text-caption text-muted transition-colors hover:text-ink"
-              >
-                ↺ 되돌리기
-              </button>
-            )}
-            <SettingsLink label="설정" />
-          </div>
-        </div>
-    </>
+          );
+        })}
+      </div>
+      <div className="mt-1.5 flex items-center gap-3 text-caption text-muted">
+        {/* 무엇이 갈리는지를 센다 — 비교에서 0 이면 두 사이드가 같은 실행이다. */}
+        <span className={cn(compare && diffCount === 0 && 'text-bad')}>
+          {compare
+            ? diffCount ? `다른 role ${diffCount}` : 'A · B 같음'
+            : pickedCount ? `고른 role ${pickedCount}` : '모두 As-is'}
+        </span>
+        <span className="ml-auto flex items-center gap-3">
+          {dirty && (
+            <button
+              type="button"
+              onClick={() => columns.forEach((c) => c.onChange({}))}
+              className="shrink-0 transition-colors hover:text-ink"
+            >
+              ↺ 모두 As-is
+            </button>
+          )}
+          <SettingsLink label="설정" />
+        </span>
+      </div>
+    </div>
   );
 }
 

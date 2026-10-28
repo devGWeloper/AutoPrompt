@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -23,6 +23,15 @@ import {
 } from '@/lib/types';
 import { CaseCompareTable, CompareVerdict } from './CompareTable';
 import {
+  CategorySelect,
+  DatasetPurposeLine,
+  DatasetSelect,
+  EndpointSelect,
+  EvalOptions,
+  InlineDivider,
+  InlineField,
+  ScoreToggle,
+  SegToggle,
   CancelRunButton,
   ErrBox,
   RUN_TERMINAL,
@@ -46,27 +55,12 @@ import {
 import {
   ModelPicker,
   modelDraftError,
-  modelChip,
   modelLabel,
   toSelection,
   useModelRoles,
   type ModelDrafts,
 } from './ModelPicker';
-import {
-  AgentMenu,
-  DataMenu,
-  MenuRow,
-  MenuSection,
-  ModelBox,
-  PlayIcon,
-  RunToolbar,
-  ScoreMenu,
-  ToolbarMenu,
-  ToolbarSep,
-  agentLabel,
-  dataSummary,
-  scoreLabel,
-} from './RunSetupToolbar';
+import { PlayIcon, dataSummary } from './RunSetupToolbar';
 
 /** One side's answer to a manual A/B call. */
 type ManualSide = {
@@ -446,128 +440,94 @@ export default function ComparePanel() {
     }
   }
 
-  // ---- 머리띠 ----------------------------------------------------------
+  // 실행 버튼에 적는 건수.
   const data = dataSummary(source, datasets, datasetId, folders, caseType);
-  const targetLabel = mode === 'endpoint' ? 'Default' : mode === 'model' ? 'Model' : 'Prompt';
   const sameSides = mode === 'endpoint'
     ? epA != null && epA === epB
     : mode === 'model'
       ? JSON.stringify(toSelection(modelsA)) === JSON.stringify(toSelection(modelsB))
       : verA != null && verA === verB;
 
-  const targetMenu = (close: () => void) => (
-    <div className="flex flex-col">
-      <MenuRow
-        label="Default"
-        title="프롬프트도 모델도 건드리지 않고, 두 Agent 를 지금 상태 그대로 호출합니다"
-        selected={mode === 'endpoint'}
-        onClick={() => { setMode('endpoint'); close(); }}
-      />
-      {/* 모델은 띠의 A · B 칸에서 고르므로 판을 닫는다. 프롬프트는 고른 뒤에
-          채울 것이 이 판에 따라오므로 닫지 않는다. */}
-      <MenuRow
-        label="Model"
-        title="같은 Agent 에서 role 별 모델만 A · B 로 바꿉니다"
-        selected={mode === 'model'}
-        onClick={() => { setMode('model'); close(); }}
-      />
-      <MenuRow
-        label="Prompt"
-        title="같은 노드의 두 프롬프트 버전을 차례로 활성화해 비교합니다"
-        disabled={!PROMPT_TARGET_ENABLED}
-        selected={mode === 'version'}
-        onClick={() => setMode('version')}
-      />
-      {mode === 'version' && (
-        <>
-          <MenuSection label="노드 · 버전" />
-          <div className="flex gap-1.5 px-3 pb-2">
-            <Select value={nodeNm ?? ''} onChange={(e) => setNodeNm(e.target.value)} className="h-9 min-w-0 flex-1">
-              <option value="" disabled>노드</option>
-              {nodes.map((n) => (<option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>))}
-            </Select>
-            <VersionSelect versions={versions} value={verA} onChange={setVerA} className="h-9 w-20" placeholder="A" />
-            <VersionSelect versions={versions} value={verB} onChange={setVerB} className="h-9 w-20" placeholder="B" />
-          </div>
-        </>
-      )}
-    </div>
-  );
-
   return (
     <div className="space-y-5">
-      {/* Single 과 같은 머리띠: 정확히 한 축만 A/B 로 갈린다 — 두 축을 동시에 다르게
+      {/* Single 과 같은 카드: 대상(무엇을 A/B 로 가를지)과 그 컨트롤이 한 줄, 입력·실행이
+          다음 줄, 채점이 그다음 줄. 정확히 한 축만 갈린다 — 두 축을 동시에 다르게
           두는 복합 비교는 무엇 때문에 결과가 달라졌는지 알 수 없다. */}
-      <div className="space-y-2.5">
-        <RunToolbar>
-          <ToolbarMenu label="대상" value={targetLabel}>
-            {targetMenu}
-          </ToolbarMenu>
+      <Card className="px-4 py-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
+          <InlineField label="대상">
+            <SegToggle
+              value={mode}
+              onChange={setMode}
+              options={[
+                { id: 'endpoint', label: 'Default', title: '프롬프트도 모델도 건드리지 않고, 두 Agent 를 지금 상태 그대로 호출합니다' },
+                { id: 'model', label: 'Model', title: '같은 Agent 에서 role 별 모델만 A · B 로 바꿉니다' },
+                { id: 'version', label: 'Prompt', title: '같은 노드의 두 프롬프트 버전을 차례로 활성화해 비교합니다', disabled: !PROMPT_TARGET_ENABLED },
+              ]}
+            />
+          </InlineField>
+
+          <InlineDivider />
 
           {mode === 'endpoint' ? (
             // 두 사이드가 각각 등록된 API 하나씩. 프롬프트·모델은 그대로 둔다.
             <>
-              <ToolbarMenu label="A" value={agentLabel(endpoints, epA)} muted={epA == null}>
-                {(close) => <AgentMenu endpoints={endpoints} value={epA} onPick={(id) => { setEpA(id); close(); }} />}
-              </ToolbarMenu>
-              <ToolbarMenu label="B" value={agentLabel(endpoints, epB)} muted={epB == null}>
-                {(close) => <AgentMenu endpoints={endpoints} value={epB} onPick={(id) => { setEpB(id); close(); }} />}
-              </ToolbarMenu>
+              <InlineField label="A">
+                <EndpointSelect endpoints={endpoints} value={epA} onChange={setEpA} />
+              </InlineField>
+              <InlineField label="B">
+                <EndpointSelect endpoints={endpoints} value={epB} onChange={setEpB} />
+              </InlineField>
             </>
           ) : (
-            <ToolbarMenu label="Agent" value={agentLabel(endpoints, epA)} muted={epA == null}>
-              {(close) => <AgentMenu endpoints={endpoints} value={epA} onPick={(id) => { setEpA(id); close(); }} />}
-            </ToolbarMenu>
+            <InlineField label="Agent">
+              <EndpointSelect endpoints={endpoints} value={epA} onChange={setEpA} />
+              {mode === 'version' && (
+                <>
+                  <Select variant="chip" value={nodeNm ?? ''} onChange={(e) => setNodeNm(e.target.value)} className="w-40">
+                    <option value="" disabled>노드</option>
+                    {nodes.map((n) => (<option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>))}
+                  </Select>
+                  <VersionSelect versions={versions} value={verA} onChange={setVerA} className="w-28" placeholder="A" />
+                  <VersionSelect versions={versions} value={verB} onChange={setVerB} className="w-28" placeholder="B" />
+                </>
+              )}
+            </InlineField>
           )}
+          {sameSides && mode !== 'model' && <span className="text-caption text-bad">A ≠ B</span>}
+        </div>
 
-          {/* 모델 비교는 두 사이드가 무엇을 들고 도는지가 곧 실행 조건이라, Default 의
-              A · B Agent 칸처럼 띠에 바로 적는다 — 판을 열어야만 보이면 안 된다.
-              비교되는 두 칸은 옅은 파랑 상자 하나에 묶어 나머지 조건 칸과 가른다.
-              */}
-          {mode === 'model' && (
-            <ModelBox label="Model">
-              {(['a', 'b'] as const).map((k, i) => {
-                const mine = k === 'a' ? modelsA : modelsB;
-                return (
-                  <Fragment key={k}>
-                    {i > 0 && <span className="text-xs text-accent-deep/70">vs</span>}
-                    <ToolbarMenu label={k.toUpperCase()} {...modelChip(mine)} width={440}>
-                      <div className="px-3 py-2">
-                        <ModelPicker
-                          roles={roles}
-                          columns={[{ key: k, drafts: mine, onChange: k === 'a' ? setModelsA : setModelsB }]}
-                        />
-                      </div>
-                    </ToolbarMenu>
-                  </Fragment>
-                );
-              })}
-            </ModelBox>
-          )}
+        {/* 모델 대상일 때만 A · B role 표가 열린다. 같음 / 다른 role 수는 표 아래가 말한다. */}
+        {mode === 'model' && (
+          <div className="mt-2.5 border-t border-line pt-2.5">
+            <ModelPicker
+              roles={roles}
+              columns={[
+                { key: 'a', label: 'A', drafts: modelsA, onChange: setModelsA },
+                { key: 'b', label: 'B', drafts: modelsB, onChange: setModelsB },
+              ]}
+            />
+          </div>
+        )}
 
-          <ToolbarMenu label="데이터" value={data.label} badge={data.badge} muted={data.empty}>
-            {(close) => (
-              <DataMenu
-                close={close}
-                source={source}
-                setSource={setSource}
-                datasets={datasets}
-                datasetId={datasetId}
-                setDatasetId={setDatasetId}
-                folders={folders}
-                caseType={caseType}
-                setCaseType={setCaseType}
-              />
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2.5 border-t border-line pt-2.5">
+          <InlineField label="입력">
+            <SegToggle
+              value={source}
+              onChange={setSource}
+              options={[{ id: 'dataset', label: '데이터셋' }, { id: 'manual', label: '직접 입력' }]}
+            />
+            {source === 'dataset' && (
+              <>
+                <DatasetSelect variant="chip" datasets={datasets} value={datasetId} onChange={setDatasetId} />
+                <CategorySelect cats={folders} value={caseType} onChange={setCaseType} />
+              </>
             )}
-          </ToolbarMenu>
+          </InlineField>
 
-          <ToolbarMenu label="채점" value={scoreLabel(scoreOn, metrics)} muted={scoreOn && metrics.length === 0}>
-            <ScoreMenu scoreOn={scoreOn} setScoreOn={setScoreOn} metrics={metrics} setMetrics={setMetrics} />
-          </ToolbarMenu>
+          <InlineDivider />
 
-          {/* 실행은 마지막 칸 바로 뒤에 둔다 — 띠 오른쪽 끝으로 밀면 칸들과 멀어져
-              조건을 고른 눈이 버튼까지 가지 않는다. */}
-          <ToolbarSep />
+          {/* 실행 버튼은 방금 고른 입력 바로 옆에 선다. */}
           <div className="flex shrink-0 items-center gap-2.5">
             {source === 'dataset' ? (
               <Button
@@ -591,14 +551,29 @@ export default function ComparePanel() {
                 {callStatus === 'running' ? '호출 중…' : 'A · B 호출'}
               </Button>
             )}
-            {sameSides && <span className="text-caption text-bad">A ≠ B</span>}
             {modelErr && <span className="text-caption text-bad">{modelErr}</span>}
             <StatusPill status={source === 'dataset' ? status : callStatus} />
           </div>
-        </RunToolbar>
+
+          {source === 'dataset' && <DatasetPurposeLine datasets={datasets} datasetId={datasetId} />}
+        </div>
+
+        {/* 채점은 자기 줄을 쓴다 — 지표가 켜지고 꺼질 때마다 위 줄이 접혀서 실행
+            버튼까지 밀려 내려가던 자리다. */}
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line pt-2.5">
+          <InlineField label="채점">
+            <ScoreToggle on={scoreOn} onChange={setScoreOn} />
+            {scoreOn && (
+              <>
+                <EvalOptions metrics={metrics} setMetrics={setMetrics} />
+                {metrics.length === 0 && <span className="text-caption text-bad">하나 이상</span>}
+              </>
+            )}
+          </InlineField>
+        </div>
 
         {source === 'manual' && (
-          <Card className="grid gap-2.5 px-4 py-3 sm:grid-cols-2">
+          <div className="mt-2.5 grid gap-2.5 border-t border-line pt-2.5 sm:grid-cols-2">
             <Textarea
               value={message}
               onChange={(e) => setMessage(e.target.value)}
@@ -615,9 +590,9 @@ export default function ComparePanel() {
                 className="w-full text-sm"
               />
             )}
-          </Card>
+          </div>
         )}
-      </div>
+      </Card>
 
       {source === 'manual' ? (
         <>
