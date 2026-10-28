@@ -415,8 +415,8 @@ export default function SingleRunPanel() {
     return found ? `v${found.version_no}` : `ID ${id}`;
   };
 
-  // 실행 조건 카드: 대상·Agent 한 줄, (모델 대상이면) role 표, 입력·실행 한 줄, 채점
-  // 한 줄. 항목마다 한 행을 주면 화면의 절반이 아직 누르지도 않은 폼이 된다.
+  // 실행 조건 카드: 대상·Agent·입력·실행 한 줄, (모델 대상이면) role 표, 채점 한 줄.
+  // 항목마다 한 행을 주면 화면의 절반이 아직 누르지도 않은 폼이 된다.
   const inner = (
     <>
       <div className="space-y-2.5">
@@ -450,16 +450,9 @@ export default function SingleRunPanel() {
             <InlineField label="Agent">
               <EndpointSelect endpoints={endpoints} value={endpointId} onChange={setEndpointId} />
             </InlineField>
-          </div>
 
-          {/* 모델 대상일 때만 role 표가 열린다 — 다른 대상에서는 실행에 쓰이지도 않는다. */}
-          {target === 'model' && (
-            <div className="mt-2.5 border-t border-line pt-2.5">
-              <ModelPicker roles={roles} columns={[{ key: 'a', drafts: models, onChange: setModels }]} />
-            </div>
-          )}
+            <InlineDivider />
 
-          <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2.5 border-t border-line pt-2.5">
             <InlineField label="입력">
               <SegToggle
                 value={source}
@@ -534,6 +527,13 @@ export default function SingleRunPanel() {
 
             {source === 'dataset' && <DatasetPurposeLine datasets={datasets} datasetId={datasetId} />}
           </div>
+
+          {/* 모델 대상일 때만 role 표가 열린다 — 다른 대상에서는 실행에 쓰이지도 않는다. */}
+          {target === 'model' && (
+            <div className="mt-2.5 border-t border-line pt-2.5">
+              <ModelPicker roles={roles} columns={[{ key: 'a', drafts: models, onChange: setModels }]} />
+            </div>
+          )}
 
           {/* 채점은 자기 줄을 쓴다 — 지표가 켜지고 꺼질 때마다 위 줄이 접혀서 실행
               버튼까지 밀려 내려가던 자리다. */}

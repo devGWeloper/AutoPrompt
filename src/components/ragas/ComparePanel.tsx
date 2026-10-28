@@ -450,8 +450,8 @@ export default function ComparePanel() {
 
   return (
     <div className="space-y-5">
-      {/* Single 과 같은 카드: 대상(무엇을 A/B 로 가를지)과 그 컨트롤이 한 줄, 입력·실행이
-          다음 줄, 채점이 그다음 줄. 정확히 한 축만 갈린다 — 두 축을 동시에 다르게
+      {/* Single 과 같은 카드: 대상(무엇을 A/B 로 가를지)·Agent·입력·실행이 한 줄, 채점이
+          다음 줄. 정확히 한 축만 갈린다 — 두 축을 동시에 다르게
           두는 복합 비교는 무엇 때문에 결과가 달라졌는지 알 수 없다. */}
       <Card className="px-4 py-3">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
@@ -495,22 +495,9 @@ export default function ComparePanel() {
             </InlineField>
           )}
           {sameSides && mode !== 'model' && <span className="text-caption text-bad">A ≠ B</span>}
-        </div>
 
-        {/* 모델 대상일 때만 A · B role 표가 열린다. 같음 / 다른 role 수는 표 아래가 말한다. */}
-        {mode === 'model' && (
-          <div className="mt-2.5 border-t border-line pt-2.5">
-            <ModelPicker
-              roles={roles}
-              columns={[
-                { key: 'a', label: 'A', drafts: modelsA, onChange: setModelsA },
-                { key: 'b', label: 'B', drafts: modelsB, onChange: setModelsB },
-              ]}
-            />
-          </div>
-        )}
+          <InlineDivider />
 
-        <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2.5 border-t border-line pt-2.5">
           <InlineField label="입력">
             <SegToggle
               value={source}
@@ -557,6 +544,19 @@ export default function ComparePanel() {
 
           {source === 'dataset' && <DatasetPurposeLine datasets={datasets} datasetId={datasetId} />}
         </div>
+
+        {/* 모델 대상일 때만 A · B role 표가 열린다. 같음 / 다른 role 수는 표 아래가 말한다. */}
+        {mode === 'model' && (
+          <div className="mt-2.5 border-t border-line pt-2.5">
+            <ModelPicker
+              roles={roles}
+              columns={[
+                { key: 'a', label: 'A', drafts: modelsA, onChange: setModelsA },
+                { key: 'b', label: 'B', drafts: modelsB, onChange: setModelsB },
+              ]}
+            />
+          </div>
+        )}
 
         {/* 채점은 자기 줄을 쓴다 — 지표가 켜지고 꺼질 때마다 위 줄이 접혀서 실행
             버튼까지 밀려 내려가던 자리다. */}
