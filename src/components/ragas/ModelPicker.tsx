@@ -11,9 +11,8 @@ import { SettingsLink, useLlmModels } from './shared';
  * Per-run model selection, shared by the Single and Compare tabs.
  *
  * What is in the boxes is what the run pins — there is no hidden layer
- * underneath. The boxes start out holding the saved defaults, so leaving them
- * alone runs those; clearing one hands that role back to the agent's own config,
- * which is exactly what the empty box reads as. Compare gets one column per
+ * underneath. The boxes start out empty: a role nobody picked is As-is and runs
+ * the agent's own config, which is exactly what the empty box reads as. Compare gets one column per
  * side, and that is the only reason a model-vs-model comparison is possible at
  * all: a single global setting would hand both sides the same value.
  *
@@ -74,25 +73,6 @@ export function useModelRoles(): { roles: ModelRole[]; setRoles: (next: ModelRol
     };
   }, []);
   return { roles, setRoles: publishRoles };
-}
-
-/** Every registered role, holding the default saved for it in PTX_MODEL_MAS.
- * The form opens on the values a run would actually use, so the boxes answer
- * "which model" instead of asking it; emptying one hands that role back to the
- * agent's own config. */
-export function draftsFromRoles(roles: ModelRole[]): ModelDrafts {
-  return Object.fromEntries(
-    roles.map((r) => [
-      r.role_cd,
-      {
-        model: r.model_nm ?? '',
-        // 저장된 기본값은 모델명만 들고 있다 — 그 이름이 목록에서 하나로
-        // 좁혀지면 select 가 알아서 그 줄을 짚고, 아니면 서버 지정 없음이다.
-        server: '',
-        temperature: r.temperature === null ? '' : String(r.temperature),
-      },
-    ]),
-  );
 }
 
 const pinned = (d: ModelDraft) => d.model.trim() !== '' || d.temperature.trim() !== '';
@@ -193,8 +173,8 @@ export function ModelPicker({
   };
   const MISSING = '__missing__';
   const valueOf = (d: ModelDraft) => (!d.model ? '' : (optionOf(d)?.llm_id ?? MISSING).toString());
-  const saved = useMemo(() => draftsFromRoles(roles), [roles]);
-  const dirty = columns.some((c) => !sameDrafts(c.drafts, saved));
+  // 되돌리기는 빈 칸으로 — 아무것도 고르지 않은 As-is 가 출발점이다.
+  const dirty = columns.some((c) => !sameDrafts(c.drafts, {}));
   // Two columns holding the same thing is the ordinary case (both pre-filled
   // from the same defaults), and saying it once is shorter and clearer than saying it
   // twice — the point of the line is whether the sides differ.
@@ -330,7 +310,7 @@ export function ModelPicker({
             {dirty && (
               <button
                 type="button"
-                onClick={() => columns.forEach((c) => c.onChange(draftsFromRoles(roles)))}
+                onClick={() => columns.forEach((c) => c.onChange({}))}
                 className="shrink-0 text-caption text-muted transition-colors hover:text-ink"
               >
                 ↺ 되돌리기

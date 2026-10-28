@@ -54,7 +54,6 @@ import {
 } from './shared';
 import {
   ModelPicker,
-  draftsFromRoles,
   modelDraftError,
   toSelection,
   useModelRoles,
@@ -147,11 +146,11 @@ export default function SingleRunPanel() {
   const [pickedCases, setPickedCases] = useState<Set<number> | null>(null);
   const [picking, setPicking] = useState(false);
   useEffect(() => { setPickedCases(null); }, [datasetId, caseType]);
-  // Models for this run, pre-filled with the saved role defaults — the boxes are
-  // the pin, so what the form shows is what the run stores and the agent reads.
+  // Models for this run, empty to start — a role nobody picked is As-is (the
+  // agent's own config). The boxes are the pin, so what the form shows is what
+  // the run stores and the agent reads.
   const { roles } = useModelRoles();
   const [models, setModels] = useState<ModelDrafts>({});
-  useEffect(() => { setModels(draftsFromRoles(roles)); }, [roles]);
   // Only blocks the run when the models are what's being tested — in the other
   // targets the drafts are not sent at all, so a stale typo in them is harmless.
   const modelErr = target === 'model' ? modelDraftError(models) : null;

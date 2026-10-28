@@ -45,7 +45,6 @@ import {
 } from './shared';
 import {
   ModelPicker,
-  draftsFromRoles,
   modelDraftError,
   toSelection,
   useModelRoles,
@@ -141,16 +140,11 @@ export default function ComparePanel() {
   const { cats: folders } = useDatasetCategories(datasetId);
   useEffect(() => { setCaseType(null); }, [datasetId]);
   // One model set per side, used only when 모델 is the axis under test. Both
-  // start from the same saved defaults, so a fresh model comparison begins from
-  // a known baseline and you change just the side you want to move.
+  // start empty: a role nobody picked is As-is (the agent's own config), so what
+  // a side shows is only ever what was chosen for it.
   const { roles } = useModelRoles();
   const [modelsA, setModelsA] = useState<ModelDrafts>({});
   const [modelsB, setModelsB] = useState<ModelDrafts>({});
-  useEffect(() => {
-    const d = draftsFromRoles(roles);
-    setModelsA(d);
-    setModelsB(d);
-  }, [roles]);
   // 정답 일치 is the default evaluation option (no judge LLM required).
   const [metrics, setMetrics] = useState<string[]>([EXACT_MATCH]);
   const [scoreOn, setScoreOn] = useState(true);
