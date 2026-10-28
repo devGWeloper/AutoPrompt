@@ -46,6 +46,7 @@ import {
 import {
   ModelPicker,
   modelDraftError,
+  modelLabel,
   toSelection,
   useModelRoles,
   type ModelDrafts,
@@ -55,6 +56,7 @@ import {
   DataMenu,
   MenuRow,
   MenuSection,
+  ModelBox,
   PlayIcon,
   RunToolbar,
   ScoreMenu,
@@ -100,30 +102,6 @@ function manualDetail(side: ManualSide, question: string, groundTruth: string | 
     ...metricVals,
   } as RagasResultRow;
   return { status: 'DONE', results: [row] } as RagasRunDetail;
-}
-
-/** How one side of a model comparison is named — in the 띠 chip, the result
- * header and the table columns. Only the roles where this side differs from the
- * other are named: that difference is what the run tests, and repeating what both
- * share would bury it. Server and temperature appear only when they are what
- * differs. An unpinned role runs the agent's own config, read as 'As-is'. */
-function modelLabel(mine: ModelDrafts, other: ModelDrafts): string {
-  const a = toSelection(mine);
-  const b = toSelection(other);
-  const roles = Array.from(new Set([...Object.keys(a), ...Object.keys(b)]));
-  const same = (r: string) => JSON.stringify(a[r] ?? null) === JSON.stringify(b[r] ?? null);
-  const shown = roles.filter((r) => !same(r));
-  const list = shown.length ? shown : Object.keys(a);
-  if (!list.length) return 'As-is';
-  const text = (r: string) => {
-    const m = a[r];
-    const o = b[r];
-    if (!m) return 'As-is';
-    const svr = m.server && m.server !== o?.server ? `@${m.server}` : '';
-    const t = m.temperature != null && m.temperature !== o?.temperature ? ` t${m.temperature}` : '';
-    return `${m.model ?? 'As-is'}${svr}${t}`;
-  };
-  return list.length === 1 ? text(list[0]) : list.map((r) => `${r} ${text(r)}`).join(' · ');
 }
 
 export default function ComparePanel() {
@@ -544,10 +522,9 @@ export default function ComparePanel() {
           {/* 모델 비교는 두 사이드가 무엇을 들고 도는지가 곧 실행 조건이라, Default 의
               A · B Agent 칸처럼 띠에 바로 적는다 — 판을 열어야만 보이면 안 된다.
               비교되는 두 칸은 옅은 파랑 상자 하나에 묶어 나머지 조건 칸과 가른다.
-              상자는 -my-1 로 띠 높이를 늘리지 않는다 (34px 칸 + 안쪽 4px). */}
+              */}
           {mode === 'model' && (
-            <div className="-my-1 flex shrink-0 items-center gap-1.5 rounded-[10px] border border-accent-line bg-accent-soft py-[3px] pl-2.5 pr-[3px]">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.6px] text-accent-deep">Model</span>
+            <ModelBox label="Model">
               {(['a', 'b'] as const).map((k, i) => {
                 const mine = k === 'a' ? modelsA : modelsB;
                 const other = k === 'a' ? modelsB : modelsA;
@@ -565,7 +542,7 @@ export default function ComparePanel() {
                   </Fragment>
                 );
               })}
-            </div>
+            </ModelBox>
           )}
 
           <ToolbarMenu label="데이터" value={data.label} badge={data.badge} muted={data.empty}>

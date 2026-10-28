@@ -54,6 +54,7 @@ import {
 } from './shared';
 import {
   ModelPicker,
+  modelLabel,
   modelDraftError,
   toSelection,
   useModelRoles,
@@ -64,6 +65,7 @@ import {
   DataMenu,
   MenuRow,
   MenuSection,
+  ModelBox,
   PlayIcon,
   RunToolbar,
   ScoreMenu,
@@ -435,12 +437,13 @@ export default function SingleRunPanel() {
         selected={target === 'endpoint'}
         onClick={() => { setTarget('endpoint'); close(); }}
       />
-      {/* 모델 · 프롬프트는 고른 뒤에 채울 것이 따라오므로 판을 닫지 않는다. */}
+      {/* 모델은 띠의 모델 상자에서 고르므로 판을 닫는다. 프롬프트는 고른 뒤에
+          채울 것이 이 판에 따라오므로 닫지 않는다. */}
       <MenuRow
         label="Model"
         title="role 별 모델을 바꿔서 실행합니다"
         selected={target === 'model'}
-        onClick={() => setTarget('model')}
+        onClick={() => { setTarget('model'); close(); }}
       />
       <MenuRow
         label="Prompt"
@@ -458,14 +461,6 @@ export default function SingleRunPanel() {
               {nodes.map((n) => (<option key={n.node_nm} value={n.node_nm}>{n.node_nm}</option>))}
             </Select>
             <VersionSelect versions={versions} value={ver} onChange={setVer} className="h-9 w-24" placeholder="버전" />
-          </div>
-        </>
-      )}
-      {target === 'model' && (
-        <>
-          <MenuSection label="모델" />
-          <div className="px-3 pb-2">
-            <ModelPicker roles={roles} columns={[{ key: 'a', drafts: models, onChange: setModels }]} />
           </div>
         </>
       )}
@@ -500,9 +495,20 @@ export default function SingleRunPanel() {
             {agentMenu}
           </ToolbarMenu>
 
-          <ToolbarMenu label="대상" value={targetLabel} width={target === 'model' ? 560 : undefined}>
+          <ToolbarMenu label="대상" value={targetLabel}>
             {targetMenu}
           </ToolbarMenu>
+
+          {/* Pair 와 같은 모델 상자 — 무엇을 들고 도는지가 곧 실행 조건이다. */}
+          {target === 'model' && (
+            <ModelBox>
+              <ToolbarMenu label="Model" value={modelLabel(models)} width={440}>
+                <div className="px-3 py-2">
+                  <ModelPicker roles={roles} columns={[{ key: 'a', drafts: models, onChange: setModels }]} />
+                </div>
+              </ToolbarMenu>
+            </ModelBox>
+          )}
 
           <ToolbarMenu
             label="데이터"

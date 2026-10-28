@@ -75,6 +75,8 @@ export function useModelRoles(): { roles: ModelRole[]; setRoles: (next: ModelRol
   return { roles, setRoles: publishRoles };
 }
 
+const EMPTY_DRAFT: ModelDraft = { model: '', server: '', temperature: '' };
+
 const pinned = (d: ModelDraft) => d.model.trim() !== '' || d.temperature.trim() !== '';
 
 /** Draft rows → what the API takes. Blank rows are dropped rather than sent as
@@ -92,6 +94,31 @@ export function toSelection(drafts: ModelDrafts): ModelSelection {
     };
   }
   return out;
+}
+
+/** How one side of a model run is named — in the 띠 chip, the result header and
+ * the table columns. Only the roles where this side differs from `other` are
+ * named: in a comparison that difference is what the run tests, and repeating
+ * what both share would bury it. With no `other` (Single), every picked role is
+ * named. Server and temperature appear only when they differ. A role nobody
+ * picked runs the agent's own config, read as 'As-is'. */
+export function modelLabel(mine: ModelDrafts, other: ModelDrafts = {}): string {
+  const a = toSelection(mine);
+  const b = toSelection(other);
+  const roles = Array.from(new Set([...Object.keys(a), ...Object.keys(b)]));
+  const same = (r: string) => JSON.stringify(a[r] ?? null) === JSON.stringify(b[r] ?? null);
+  const shown = roles.filter((r) => !same(r));
+  const list = shown.length ? shown : Object.keys(a);
+  if (!list.length) return 'As-is';
+  const text = (r: string) => {
+    const m = a[r];
+    const o = b[r];
+    if (!m) return 'As-is';
+    const svr = m.server && m.server !== o?.server ? `@${m.server}` : '';
+    const t = m.temperature != null && m.temperature !== o?.temperature ? ` t${m.temperature}` : '';
+    return `${m.model ?? 'As-is'}${svr}${t}`;
+  };
+  return list.length === 1 ? text(list[0]) : list.map((r) => `${r} ${text(r)}`).join(' · ');
 }
 
 /** Blocks the run rather than letting a typo through: an out-of-range
@@ -181,7 +208,9 @@ export function ModelPicker({
   const identical = columns.length > 1 && columns.every((c) => sameDrafts(c.drafts, columns[0].drafts));
 
   const set = (col: ModelColumn, role: string, patch: Partial<ModelDraft>) =>
-    col.onChange({ ...col.drafts, [role]: { ...col.drafts[role], ...patch } });
+    // 폼이 빈 채로 시작하므로 처음 손대는 role 은 줄이 없다 — 빈 줄 위에 얹어야
+    // 고르지 않은 칸(temperature 등)이 undefined 로 남지 않는다.
+    col.onChange({ ...col.drafts, [role]: { ...EMPTY_DRAFT, ...col.drafts[role], ...patch } });
 
   const template = `minmax(84px,116px) ${columns.map(() => 'minmax(130px,1fr) 62px').join(' ')}`;
 
@@ -234,7 +263,7 @@ export function ModelPicker({
               ))}
             </div>
             {roles.map((r) => {
-              const cells = columns.map((c) => c.drafts[r.role_cd] ?? { model: '', server: '', temperature: '' });
+              const cells = columns.map((c) => c.drafts[r.role_cd] ?? EMPTY_DRAFT);
               // The one thing worth marking in a comparison: this role is not
               // the same on both sides, so it is part of what is being tested.
               // 같은 모델이라도 서버가 다르면 다른 실행이다.

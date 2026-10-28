@@ -44,6 +44,23 @@ export function RunToolbar({ children, className }: { children: ReactNode; class
   );
 }
 
+/** 모델을 고르는 칸(들)을 묶는 옅은 파랑 상자 — 모델이 실행의 대상일 때, 그 칸이
+ * 나머지 조건 칸과 섞여 읽히지 않게 가른다. -my-1 로 띠 높이를 늘리지 않는다
+ * (34px 칸 + 안쪽 4px). */
+export function ModelBox({ label, children }: { label?: string; children: ReactNode }) {
+  return (
+    <div
+      className={cn(
+        '-my-1 flex shrink-0 items-center gap-1.5 rounded-[10px] border border-accent-line bg-accent-soft py-[3px] pr-[3px]',
+        label ? 'pl-2.5' : 'pl-[3px]',
+      )}
+    >
+      {label && <span className="text-[11px] font-semibold uppercase tracking-[0.6px] text-accent-deep">{label}</span>}
+      {children}
+    </div>
+  );
+}
+
 export function ToolbarSep() {
   return <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-line-strong" />;
 }
