@@ -130,7 +130,62 @@ table.kv td.k{color:var(--body)}
 table.kv td.bad{background:var(--bad-soft);color:var(--bad)}
 .dacts{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
 
+/* 실행 외 페이지 */
+input{font:inherit;color:inherit}
+.stack{display:grid;gap:22px}
+.ptitle{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ptitle h1{margin:0 auto 0 0;font-size:26px;font-weight:800;color:var(--ink);letter-spacing:-.6px}
+.search{border:1px solid var(--line-2);border-radius:7px;padding:6px 10px;background:var(--paper);width:240px;min-width:0}
+.btn.dark{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.btn.danger{color:var(--bad)}
+.two-col{display:grid;grid-template-columns:320px minmax(0,1fr);gap:16px;align-items:start}
+.two-col.even{grid-template-columns:1fr 1fr}
+.dsl{list-style:none;margin:0;padding:0}
+.dsl li{padding:12px 18px;border-bottom:1px solid var(--line);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;cursor:pointer}
+.dsl li:last-child{border-bottom:0}
+.dsl li[aria-current="true"]{background:var(--b-soft)}
+.dsl b{color:var(--ink)} .dsl em{font-style:normal;font-size:12.5px;color:var(--muted)}
+.dsl span{grid-column:1/-1;font-size:12.5px;color:var(--muted)}
+.fchips{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.fchips button{border:1px solid var(--line-2);background:var(--paper);border-radius:99px;padding:1px 10px;font-size:12px;cursor:pointer}
+.fchips button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.fchips .add{border-style:dashed;color:var(--muted)}
+.bulkbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 18px;background:var(--b-soft);border-bottom:1px solid var(--line);font-size:13px}
+.bulkbar b{color:var(--b);margin-right:6px}
+.crows{list-style:none;margin:0;padding:0}
+.crows li{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:2px 12px;padding:10px 18px;border-bottom:1px solid var(--line)}
+.crows li:last-child{border-bottom:0}
+.crows .q{color:var(--ink)} .crows .f2{font-size:12px;color:var(--muted)}
+.crows code{grid-column:2/-1;font-family:var(--mono);font-size:12px;color:var(--body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crows .p{grid-column:2/-1;font-size:12.5px;color:var(--muted)}
+.prow{display:grid;grid-template-columns:60px minmax(0,1fr) minmax(0,1.2fr) minmax(0,1fr) 60px;gap:12px;align-items:center;padding:11px 18px;border-bottom:1px solid var(--line)}
+.prow:last-child{border-bottom:0}
+.prow .sc{font-size:20px;font-weight:800;letter-spacing:-.4px;color:var(--a)}
+.prow .sc.r{color:var(--b);text-align:right}
+.prow .sd{font-size:12.5px;color:var(--body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prow .sd.r{text-align:right}
+.prow .c{text-align:center;display:grid}
+.prow .c b{color:var(--ink);font-weight:600;font-size:13.5px} .prow .c span{font-size:12px;color:var(--muted)}
+.pdiff{display:grid;grid-template-columns:1fr 1fr}
+.pdiff pre{margin:0;padding:14px 18px;font-family:var(--mono);font-size:12.5px;white-space:pre-wrap;color:var(--ink);min-width:0;line-height:1.7}
+.pdiff pre + pre{border-left:1px solid var(--line)}
+.pdiff .del{background:var(--bad-soft);color:var(--bad);display:block}
+.pdiff .add{background:var(--b-soft);color:var(--b);display:block}
+.vlist,.srows{list-style:none;margin:0;padding:0}
+.vlist li,.srows li{display:grid;grid-template-columns:110px minmax(0,1fr) auto auto;gap:12px;align-items:center;padding:10px 18px;border-bottom:1px solid var(--line)}
+.vlist li:last-child,.srows li:last-child{border-bottom:0}
+.vlist b,.srows b{color:var(--ink)} .vlist em{font-style:normal;font-size:12.5px;color:var(--muted)}
+.srows li{grid-template-columns:150px minmax(0,1fr) auto auto}
+.srows code{font-family:var(--mono);font-size:12.5px;color:var(--body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.srows span{font-size:12.5px;color:var(--muted)}
+.rchips{display:flex;gap:6px;padding:14px 18px;flex-wrap:wrap}
+.rchips span{font-family:var(--mono);font-size:12.5px;border:1px solid var(--line-2);border-radius:99px;padding:3px 12px}
+
 @media (max-width:860px){
+  .two-col,.two-col.even,.pdiff{grid-template-columns:1fr}
+  .pdiff pre + pre{border-left:0;border-top:1px solid var(--line)}
+  .prow{grid-template-columns:48px minmax(0,1fr) 48px} .prow .sd{display:none}
+  .srows li,.vlist li{grid-template-columns:1fr auto} .srows code,.srows span,.vlist span{grid-column:1/-1}
   .setup{grid-template-columns:1fr!important}
   .setup .mid{border:0!important;border-top:1px solid var(--line)!important}
   .fr{grid-template-columns:40px minmax(0,1fr) 110px minmax(0,1fr) 40px;gap:6px}
@@ -144,11 +199,12 @@ table.kv td.bad{background:var(--bad-soft);color:var(--bad)}
 
 <header><div class="wrap">
   <span class="brand">TestX</span>
-  <nav aria-label="주 메뉴" id="nav"><button data-mode="single">Single Run</button><button data-mode="pair" aria-current="page">Pair Run</button><button>Datasets</button><button>Records</button><button>Prompt</button><button>Settings</button></nav>
+  <nav aria-label="주 메뉴" id="nav"><button data-mode="single">Single Run</button><button data-mode="pair" aria-current="page">Pair Run</button><button data-page="datasets">Datasets</button><button data-page="records">Records</button><button data-page="prompt">Prompt</button><button data-page="settings">Settings</button></nav>
   <span class="env">dev · DB 연결됨</span>
 </div></header>
 
 <main class="wrap">
+ <div class="stack" id="view-run">
   <section class="setup" aria-label="실행 조건" id="setup">
     <div class="left" id="sideA"></div>
     <div class="mid">
@@ -186,6 +242,67 @@ table.kv td.bad{background:var(--bad-soft);color:var(--bad)}
     <div class="ch"><h2>케이스</h2><div class="r"><button class="btn">고른 케이스 다시 실행</button><button class="btn">CSV</button></div></div>
     <ul class="rows" id="rows"></ul>
   </section>
+ </div>
+
+ <!-- Datasets -->
+ <div class="stack" id="view-datasets" hidden>
+  <div class="ptitle"><h1>Datasets</h1><button class="btn">CSV 가져오기</button><button class="btn dark">새 데이터셋</button></div>
+  <div class="two-col">
+    <section class="panel"><h2>데이터셋 <small>3</small></h2>
+      <ul class="dsl">
+        <li aria-current="true"><b>예약 슬롯 파싱</b><span>예약 · 변경 · 취소 요청에서 슬롯을 뽑는다</span><em>42건</em>
+          <div class="fchips"><button aria-pressed="true">전체 42</button><button>예약 14</button><button>변경 10</button><button>취소 8</button><button>검색 10</button><button class="add">폴더 추가</button></div></li>
+        <li><b>FAQ 답변</b><span>자주 묻는 질문에 근거 문서로 답한다</span><em>30건</em></li>
+        <li><b>상품 검색</b><span>검색어에서 조건을 뽑아 상품을 찾는다</span><em>18건</em></li>
+      </ul>
+    </section>
+    <section class="panel">
+      <div class="ch"><h2>예약 슬롯 파싱 · 전체</h2><input class="search" placeholder="질문 · 정답 · 목적 검색" aria-label="검색"><div class="r"><button class="btn">케이스 추가</button></div></div>
+      <div class="bulkbar"><b>3건 선택</b><select aria-label="폴더 이동" style="width:auto"><option>폴더 이동</option><option>예약</option></select><button class="btn">목적 다시 짓기</button><button class="btn">목적 지우기</button><button class="btn danger">삭제</button></div>
+      <ul class="crows" id="dsRows"></ul>
+    </section>
+  </div>
+ </div>
+
+ <!-- Records -->
+ <div class="stack" id="view-records" hidden>
+  <div class="ptitle"><h1>Records</h1><div class="seg" style="width:220px"><button aria-pressed="false">Single</button><button aria-pressed="true">Compare</button></div><input class="search" placeholder="노드 · 데이터셋 · 질문 검색" aria-label="검색"></div>
+  <section class="panel"><h2>Compare 기록 <small>최근 순</small></h2><div id="recPair"></div></section>
+  <section class="panel"><h2>Single 기록 <small>최근 순</small></h2><div class="fly" id="recSingle"></div></section>
+ </div>
+
+ <!-- Prompt -->
+ <div class="stack" id="view-prompt" hidden>
+  <div class="ptitle"><h1>Prompt</h1><select aria-label="노드" style="width:200px"><option>slot_parser</option><option>router</option><option>answer</option></select><button class="btn dark">새 버전</button></div>
+  <section class="setup" style="--setup-cols:minmax(0,1fr) auto minmax(0,1fr)">
+    <div class="left"><div class="sidehead"><span class="mark">v</span><select aria-label="왼쪽 버전"><option>v11 · 인원 정수 강제 · 10/24</option></select></div></div>
+    <div class="mid" style="place-content:center;color:var(--muted);font-size:13px">비교</div>
+    <div class="right"><div class="sidehead"><span class="mark b">v</span><select aria-label="오른쪽 버전" class="diff"><option>v12 · 시간 표기 규칙 추가 · 10/28</option></select></div></div>
+  </section>
+  <section class="panel"><h2>System prompt</h2><div class="pdiff" id="pdiff"></div></section>
+  <section class="panel"><h2>User prompt <small>바뀐 줄 없음</small></h2><div class="pdiff"><pre>{{message}}</pre><pre>{{message}}</pre></div></section>
+  <section class="panel"><h2>버전 <small>slot_parser</small></h2>
+    <ul class="vlist"><li><b>v12</b><span>시간 표기 규칙 추가</span><em>10/28 · sya0202</em><button class="btn danger">삭제</button></li><li><b>v11</b><span>인원 정수 강제</span><em>10/24 · sya0202</em><button class="btn danger">삭제</button></li><li><b>v10</b><span>예시 3개로 축소</span><em>10/17 · sya0202</em><button class="btn danger">삭제</button></li><li><b>v9</b><span>—</span><em>10/09 · sya0202</em><button class="btn danger">삭제</button></li></ul>
+  </section>
+ </div>
+
+ <!-- Settings -->
+ <div class="stack" id="view-settings" hidden>
+  <div class="ptitle"><h1>Settings</h1></div>
+  <section class="panel"><div class="ch"><h2>Agent <small>2</small></h2><div class="r"><button class="btn">Agent 추가</button></div></div>
+    <ul class="srows">
+      <li><b>운영 챗 API</b><code>https://chat.internal:8443/v1/chat</code><span>헤더 auth-key, x-user-id</span><button class="btn">수정</button></li>
+      <li><b>스테이징 챗 API</b><code>https://stg-chat.internal/v1/chat</code><span>헤더 auth-key</span><button class="btn">수정</button></li>
+    </ul></section>
+  <div class="two-col even">
+    <section class="panel"><div class="ch"><h2>LLM 서버 <small>2</small></h2><div class="r"><button class="btn">서버 추가</button></div></div>
+      <ul class="srows"><li><b>vllm-a</b><code>http://10.0.3.21:8000/v1</code><span>키 VLLM_A_KEY</span><button class="btn">수정</button></li><li><b>openai-proxy</b><code>http://10.0.3.40:4000/v1</code><span>키 PROXY_KEY</span><button class="btn">수정</button></li></ul></section>
+    <section class="panel"><div class="ch"><h2>모델 <small>4</small></h2><div class="r"><button class="btn">모델 추가</button></div></div>
+      <ul class="srows"><li><b>gpt-4.1-mini</b><span>openai-proxy</span></li><li><b>gpt-4.1</b><span>openai-proxy</span></li><li><b>qwen2.5-72b</b><span>vllm-a</span></li><li><b>llama-3.3-70b</b><span>vllm-a</span></li></ul></section>
+  </div>
+  <section class="panel"><div class="ch"><h2>Role <small>3</small></h2><input class="search" placeholder="role 이름" aria-label="role 이름"><div class="r"><button class="btn">추가</button></div></div>
+    <div class="rchips"><span>router</span><span>parser</span><span>answer</span></div></section>
+ </div>
 </main>
 
 <script>
@@ -276,12 +393,30 @@ table.kv td.bad{background:var(--bad-soft);color:var(--bad)}
     const b = e.target.closest('.rb'); if (!b) return;
     S.open = S.open === +b.dataset.i ? -1 : +b.dataset.i; rows();
   });
+  const PAGES = ['run','datasets','records','prompt','settings'];
   document.getElementById('nav').addEventListener('click', e => {
-    const b = e.target.closest('[data-mode]'); if (!b) return;
-    S.mode = b.dataset.mode;
-    document.querySelectorAll('#nav [data-mode]').forEach(x => x.toggleAttribute('aria-current', x === b));
-    setup(); results();
+    const b = e.target.closest('button'); if (!b) return;
+    document.querySelectorAll('#nav button').forEach(x => x.toggleAttribute('aria-current', x === b));
+    const page = b.dataset.mode ? 'run' : b.dataset.page;
+    PAGES.forEach(p => document.getElementById('view-' + p).hidden = p !== page);
+    if (b.dataset.mode){ S.mode = b.dataset.mode; setup(); results(); }
   });
+
+  // 샘플: 데이터셋 케이스
+  const GT = ['{"action":"reserve","slots":{"date":"2026-09-20","time":"15:00","people":4,"seat":"창가"}}','{"action":"reserve","slots":{"time":"19:00","people":2}}','{"action":"reserve","slots":{"date":"2026-11-01","time":"12:00","people":6}}','{"action":"reserve","slots":{"time":"12:30","people":3}}','{"action":"change","slots":{"booking_id":"R-7781","time":"18:00"}}','{"action":"change","slots":{"people":5}}','{"action":"change","slots":{"date":"+1d"}}','{"action":"cancel","slots":{"booking_id":"R-7781"}}'];
+  const PU = ['날짜 · 시간 · 인원 · 좌석을 모두 뽑는지','"7시"를 저녁 19:00 으로 읽는지','단체 인원을 정수로 뽑는지','"12시 반"을 12:30 으로','바꿀 슬롯만 뽑는지','늘린 뒤 인원만','상대 날짜를 그대로 두는지','예약 번호를 정확히 옮기는지'];
+  document.getElementById('dsRows').innerHTML = Q.slice(0,8).map(([f,q],i) => `<li><input type="checkbox" ${[0,2,4].includes(i)?'checked':''} aria-label="선택"><span class="q">${q}</span><span class="f2">${f}</span>${i===3?'<code style="color:var(--muted)">정답 없음</code>':`<code>${GT[i]}</code>`}<span class="p">${PU[i]}</span></li>`).join('');
+
+  // 샘플: 기록 — Compare 는 A 점수 | 무엇을 갈랐나 | B 점수
+  const RP = [[31,36,'예약 슬롯 파싱','Model · parser','qwen2.5-72b','llama-3.3-70b','10/30 13:20'],[33,29,'예약 슬롯 파싱','Default','운영 챗 API','스테이징 챗 API','10/28 16:02'],['0.81','0.79','FAQ 답변','Default','운영 챗 API','스테이징 챗 API','10/27 11:40'],[12,14,'상품 검색','Model · answer','gpt-4.1','qwen2.5-72b','10/24 09:15']];
+  document.getElementById('recPair').innerHTML = RP.map(([a,b,ds,ax,la,lb,d]) => `<div class="prow"><span class="sc">${a}</span><span class="sd">${la}</span><span class="c"><b>${ds}</b><span>${ax} · ${d}</span></span><span class="sd r">${lb}</span><span class="sc r">${b}</span></div>`).join('');
+  const RS = [['예약 슬롯 파싱 · Default',.79,'33/42'],['예약 슬롯 파싱 · Model',.74,'31/42'],['FAQ 답변 · Default',.81,'0.81'],['상품 검색 · Model',.67,'12/18'],['직접 입력 · Default',0,'—']];
+  document.getElementById('recSingle').innerHTML = RS.map(([n,v,s]) => `<div class="fr one"><span class="name">${n}</span><span class="trk"><i style="width:${v*100}%"></i></span><span class="v">${s}</span></div>`).join('');
+
+  // 샘플: 프롬프트 두 버전 나란히
+  const L = ['너는 식당 예약 요청에서 슬롯을 뽑는 파서다.','반드시 JSON 한 개만 출력한다.','','규칙','- 인원은 숫자만, 정수로.','- 모르는 슬롯은 넣지 않는다.'];
+  const Rr = ['너는 식당 예약 요청에서 슬롯을 뽑는 파서다.','반드시 JSON 한 개만 출력한다.','','규칙','<span class="add">- 시간은 24시간제 HH:MM 으로 쓴다.</span>','- 인원은 숫자만, 정수로.','- 모르는 슬롯은 넣지 않는다.'];
+  document.getElementById('pdiff').innerHTML = `<pre>${L.join('\n')}</pre><pre>${Rr.join('\n')}</pre>`;
 
   setup(); results();
 })();

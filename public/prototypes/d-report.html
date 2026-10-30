@@ -140,6 +140,36 @@ table.kv td.bad{background:var(--bad-soft);color:var(--bad)}
 .dacts{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
 .scroll{overflow-x:auto}
 
+/* 실행 외 페이지 */
+input{font:inherit;color:inherit}
+.ltitle{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--line)}
+.ltitle b{color:var(--ink)}
+.lrow{border:0;background:none;width:100%;display:grid;gap:1px;padding:11px 16px;border-bottom:1px solid var(--line);text-align:left;cursor:pointer}
+.lrow:hover{background:var(--bg)}
+.lrow[aria-current="true"]{background:var(--accent-soft)}
+.lrow[aria-current="true"] b{color:var(--accent)}
+.lrow b{color:var(--ink);font-weight:600} .lrow span{font-size:12.5px;color:var(--muted)}
+.lrow .s{font-weight:600;color:var(--ink)}
+.lsub{display:grid;padding:4px 0 8px;border-bottom:1px solid var(--line)}
+.lsub button{border:0;background:none;display:flex;justify-content:space-between;gap:8px;padding:5px 16px 5px 30px;text-align:left;cursor:pointer;color:var(--body);font-size:13px}
+.lsub button:hover{background:var(--bg)}
+.lsub button[aria-current="true"]{color:var(--accent);font-weight:600}
+.lsub em{font-style:normal;color:var(--muted);font-weight:400;font-size:12px;white-space:nowrap}
+.lsub .add{color:var(--accent)}
+.ltools{display:grid;gap:6px;padding:10px 16px;border-bottom:1px solid var(--line)}
+.ltools select{border:1px solid var(--line-2);border-radius:7px;padding:6px 8px;background:var(--paper)}
+.search{border:1px solid var(--line-2);border-radius:7px;padding:5px 9px;background:var(--paper);min-width:0;width:220px;font-size:13px}
+.ltools .search{width:100%}
+.btn.danger{color:var(--bad)}
+.bulk{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 20px;background:var(--accent-soft);border-bottom:1px solid var(--line);font-size:13px}
+.bulk b{color:var(--accent);margin-right:6px}
+.bulk select{border:1px solid var(--line-2);border-radius:6px;padding:4px 6px;background:var(--paper)}
+.mono{font-family:var(--mono);font-size:12px;color:var(--ink);word-break:break-all}
+.ptext{margin:0;padding:18px 22px;font-family:var(--mono);font-size:13px;line-height:1.75;white-space:pre-wrap;color:var(--ink)}
+.rch{display:flex;gap:6px;flex-wrap:wrap;padding:14px 20px}
+.rch span{font-family:var(--mono);font-size:12.5px;border:1px solid var(--line-2);border-radius:99px;padding:2px 12px}
+.grade.word{font-size:48px}
+
 @media (max-width:900px){
   .layout{grid-template-columns:1fr}
   .steps{position:static}
@@ -152,11 +182,11 @@ table.kv td.bad{background:var(--bad-soft);color:var(--bad)}
 
 <header><div class="in">
   <span class="brand">TestX</span>
-  <nav aria-label="주 메뉴" id="nav"><button data-nav="single" aria-current="page">Single Run</button><button data-nav="pair">Pair Run</button><button>Datasets</button><button>Records</button><button>Prompt</button><button>Settings</button></nav>
+  <nav aria-label="주 메뉴" id="nav"><button data-nav="single" aria-current="page">Single Run</button><button data-nav="pair">Pair Run</button><button data-page="datasets">Datasets</button><button data-page="records">Records</button><button data-page="prompt">Prompt</button><button data-page="settings">Settings</button></nav>
   <span class="env">dev · DB 연결됨</span>
 </div></header>
 
-<div class="layout">
+<div class="layout" id="view-run">
   <aside class="steps" aria-label="실행 조건">
     <div class="mode" role="group" aria-label="실행 종류">
       <button aria-pressed="true" data-m="single">Single</button><button aria-pressed="false" data-m="pair">Pair</button>
@@ -166,6 +196,98 @@ table.kv td.bad{background:var(--bad-soft);color:var(--bad)}
   </aside>
 
   <section class="report" id="report" aria-live="polite"></section>
+</div>
+
+<!-- Datasets -->
+<div class="layout" id="view-datasets" hidden>
+  <aside class="steps" aria-label="데이터셋">
+    <div class="ltitle"><b>데이터셋</b><button class="btn">새 데이터셋</button></div>
+    <button class="lrow" aria-current="true"><b>예약 슬롯 파싱</b><span>42건 · 폴더 4개</span></button>
+    <div class="lsub"><button aria-current="true">전체 <em>42</em></button><button>예약 <em>14</em></button><button>변경 <em>10</em></button><button>취소 <em>8</em></button><button>검색 <em>10</em></button><button class="add">폴더 추가</button></div>
+    <button class="lrow"><b>FAQ 답변</b><span>30건 · 폴더 3개</span></button>
+    <button class="lrow"><b>상품 검색</b><span>18건</span></button>
+  </aside>
+  <section class="report">
+    <div class="head"><div class="grade">42<small>건</small></div>
+      <div class="facts"><span class="cond">예약 슬롯 파싱</span><span>목적: 예약 · 변경 · 취소 요청에서 슬롯을 뽑는다</span><span>예약 14 · 변경 10 · 취소 8 · 검색 10 · 정답 없음 1</span>
+        <div class="acts"><button class="btn">이름 · 목적 수정</button><button class="btn">CSV 가져오기</button><button class="btn">케이스 추가</button><button class="btn danger">데이터셋 삭제</button></div></div></div>
+    <div class="sec"><h2>케이스 <small>전체 42건</small><span class="tools"><input class="search" placeholder="질문 · 정답 · 목적 검색" aria-label="검색"></span></h2>
+      <div class="bulk"><b>3건 선택</b><select aria-label="폴더 이동"><option>폴더 이동</option><option>예약</option></select><button class="btn">목적 다시 짓기</button><button class="btn">목적 지우기</button><button class="btn danger">삭제</button></div>
+      <div class="scroll"><table class="cases" id="dsT"></table></div></div>
+  </section>
+</div>
+
+<!-- Records -->
+<div class="layout" id="view-records" hidden>
+  <aside class="steps" aria-label="기록">
+    <div class="mode" role="group" aria-label="기록 종류"><button aria-pressed="true">Single</button><button aria-pressed="false">Compare</button></div>
+    <div class="ltools"><input class="search" placeholder="노드 · 데이터셋 · 질문 검색" aria-label="검색"><select aria-label="정렬"><option>생성일시 순</option><option>점수 순</option></select></div>
+    <div id="recL"></div>
+  </aside>
+  <section class="report">
+    <div class="head"><div class="grade">33<small>/ 42 일치</small></div>
+      <div class="facts"><span class="cond">Default · 예약 슬롯 파싱 · 운영 챗 API</span><span>10월 30일 14:12 · 2분 41초 · Engine FALLBACK · sya0202</span>
+        <div class="acts"><button class="btn">이전</button><button class="btn">다음</button><button class="btn">고른 케이스 다시 실행</button><button class="btn">CSV</button><button class="btn danger">삭제</button></div></div></div>
+    <div class="sec"><h2>지표</h2><div class="mrow"><div class="m"><div class="n">정답 일치</div><div class="v">0.79</div><div class="lv mid">Mid</div></div><div class="m"><div class="n">faithfulness</div><div class="v">0.82</div><div class="lv ok">High</div></div></div></div>
+    <div class="sec"><h2>키별 집계 <small>틀린 케이스 수</small></h2><div class="kb">
+      <div class="kr"><span class="k">slots.time</span><span class="bars"><span class="bar"><i style="width:100%"></i></span></span><span class="n">8</span></div>
+      <div class="kr"><span class="k">slots.people</span><span class="bars"><span class="bar"><i style="width:50%"></i></span></span><span class="n">4</span></div>
+      <div class="kr"><span class="k">code</span><span class="bars"><span class="bar"><i style="width:25%"></i></span></span><span class="n">2</span></div></div></div>
+  </section>
+</div>
+
+<!-- Prompt -->
+<div class="layout" id="view-prompt" hidden>
+  <aside class="steps" aria-label="노드와 버전">
+    <div class="ltitle"><b>노드</b><button class="btn">새 노드</button></div>
+    <button class="lrow"><b>router</b><span>버전 3개</span></button>
+    <button class="lrow" aria-current="true"><b>slot_parser</b><span>버전 12개</span></button>
+    <div class="lsub"><button aria-current="true">v12 · 시간 표기 규칙 추가 <em>10/28</em></button><button>v11 · 인원 정수 강제 <em>10/24</em></button><button>v10 · 예시 3개로 축소 <em>10/17</em></button><button>v9 <em>10/09</em></button></div>
+    <button class="lrow"><b>answer</b><span>버전 7개</span></button>
+  </aside>
+  <section class="report">
+    <div class="head"><div class="grade">v12</div>
+      <div class="facts"><span class="cond">slot_parser · 시간 표기 규칙 추가</span><span>10월 28일 17:31 · sya0202</span>
+        <div class="acts"><button class="btn">v11 과 비교</button><button class="btn">새 버전</button><button class="btn danger">이 버전 삭제</button></div></div></div>
+    <div class="sec"><h2>System prompt</h2><pre class="ptext">너는 식당 예약 요청에서 슬롯을 뽑는 파서다.
+반드시 아래 JSON 한 개만 출력한다.
+
+{"action": "reserve|change|cancel|search",
+ "slots": {"date": "YYYY-MM-DD", "time": "HH:MM", "people": 정수, "seat": 문자열},
+ "code": 200}
+
+규칙
+- 시간은 24시간제 HH:MM 으로 쓴다. "3시"는 문맥상 오후면 15:00.
+- 인원은 숫자만, 정수로.
+- 모르는 슬롯은 넣지 않는다.</pre></div>
+    <div class="sec"><h2>User prompt</h2><pre class="ptext">{{message}}</pre></div>
+  </section>
+</div>
+
+<!-- Settings -->
+<div class="layout" id="view-settings" hidden>
+  <aside class="steps" aria-label="설정 항목">
+    <div class="ltitle"><b>설정</b></div>
+    <button class="lrow" aria-current="true"><b>Agent</b><span>호출할 API 2개</span></button>
+    <button class="lrow"><b>LLM 서버</b><span>2개</span></button>
+    <button class="lrow"><b>모델</b><span>4개</span></button>
+    <button class="lrow"><b>Role</b><span>3개</span></button>
+  </aside>
+  <section class="report">
+    <div class="sec"><h2>Agent <small>2</small><span class="tools"><button class="btn">Agent 추가</button></span></h2>
+      <div class="scroll"><table class="cases"><thead><tr><th>이름</th><th>URL</th><th>헤더</th><th></th></tr></thead><tbody>
+        <tr><td class="cq">운영 챗 API</td><td class="mono">https://chat.internal:8443/v1/chat</td><td class="mono">auth-key, x-user-id</td><td><button class="btn">수정</button></td></tr>
+        <tr><td class="cq">스테이징 챗 API</td><td class="mono">https://stg-chat.internal/v1/chat</td><td class="mono">auth-key</td><td><button class="btn">수정</button></td></tr></tbody></table></div></div>
+    <div class="sec"><h2>LLM 서버 <small>2</small><span class="tools"><button class="btn">서버 추가</button></span></h2>
+      <div class="scroll"><table class="cases"><thead><tr><th>이름</th><th>Base URL</th><th>API 키</th><th></th></tr></thead><tbody>
+        <tr><td class="mono">vllm-a</td><td class="mono">http://10.0.3.21:8000/v1</td><td class="mono">VLLM_A_KEY</td><td><button class="btn">수정</button></td></tr>
+        <tr><td class="mono">openai-proxy</td><td class="mono">http://10.0.3.40:4000/v1</td><td class="mono">PROXY_KEY</td><td><button class="btn">수정</button></td></tr></tbody></table></div></div>
+    <div class="sec"><h2>모델 <small>4</small><span class="tools"><button class="btn">모델 추가</button></span></h2>
+      <div class="scroll"><table class="cases"><thead><tr><th>모델명</th><th>서버</th></tr></thead><tbody>
+        <tr><td class="mono">gpt-4.1-mini</td><td class="mono">openai-proxy</td></tr><tr><td class="mono">gpt-4.1</td><td class="mono">openai-proxy</td></tr><tr><td class="mono">qwen2.5-72b</td><td class="mono">vllm-a</td></tr><tr><td class="mono">llama-3.3-70b</td><td class="mono">vllm-a</td></tr></tbody></table></div></div>
+    <div class="sec"><h2>Role <small>3</small><span class="tools"><input class="search" placeholder="role 이름" aria-label="role 이름"><button class="btn">추가</button></span></h2>
+      <div class="rch"><span>router</span><span>parser</span><span>answer</span></div></div>
+  </section>
 </div>
 
 <script>
@@ -222,9 +344,22 @@ table.kv td.bad{background:var(--bad-soft);color:var(--bad)}
     document.querySelectorAll('.mode button').forEach(b => b.setAttribute('aria-pressed', b.dataset.m === S.mode));
     document.querySelectorAll('#nav [data-nav]').forEach(b => b.toggleAttribute('aria-current', b.dataset.nav === S.mode));
   }
+  const PAGES = ['run','datasets','records','prompt','settings'];
   document.getElementById('nav').addEventListener('click', e => {
-    const b = e.target.closest('[data-nav]'); if (!b) return; S.mode = b.dataset.nav; renderSteps(); renderReport();
+    const b = e.target.closest('button'); if (!b) return;
+    const page = b.dataset.nav ? 'run' : b.dataset.page;
+    PAGES.forEach(p => document.getElementById('view-' + p).hidden = p !== page);
+    document.querySelectorAll('#nav button').forEach(x => x.toggleAttribute('aria-current', x === b));
+    if (b.dataset.nav){ S.mode = b.dataset.nav; renderSteps(); renderReport(); }
   });
+
+  // 샘플: 데이터셋 케이스 · 기록 목록
+  const GT = {'예약':'{"action":"reserve","slots":{"time":"15:00","people":4}}','변경':'{"action":"change","slots":{"booking_id":"R-7781","time":"18:00"}}','취소':'{"action":"cancel","slots":{"booking_id":"R-7781"}}','검색':'{"action":"search","slots":{"keyword":"파스타"}}'};
+  const PU = {'예약':'날짜 · 시간 · 인원을 모두 뽑는지','변경':'바꿀 슬롯만 뽑는지','취소':'예약 번호를 정확히 옮기는지','검색':'지역과 키워드를 나누는지'};
+  document.getElementById('dsT').innerHTML = '<thead><tr><th><input type="checkbox" aria-label="전체 선택"></th><th>질문</th><th>정답</th><th>목적</th><th>폴더</th></tr></thead><tbody>' +
+    CASES.map(([id,f,q],i) => `<tr><td><input type="checkbox" ${i<3?'checked':''} aria-label="선택"></td><td class="cq">${q}</td><td class="mono">${id===26?'<span style="color:var(--muted);font-family:var(--sans)">정답 없음</span>':GT[f]}</td><td style="font-size:13px">${PU[f]}</td><td class="cf">${f}</td></tr>`).join('') + '</tbody>';
+  const RL = [['예약 슬롯 파싱 · Default','10/30 14:12','33/42'],['예약 슬롯 파싱 · Model','10/30 11:05','31/42'],['FAQ 답변 · Default','10/29 17:02','0.81'],['직접 입력 · Default','10/29 16:40','—'],['상품 검색 · Model','10/28 10:18','12/18'],['예약 슬롯 파싱 · Default','10/27 09:31','28/42']];
+  document.getElementById('recL').innerHTML = RL.map(([w,d,s],i) => `<button class="lrow" ${i===0?'aria-current="true"':''} style="grid-template-columns:minmax(0,1fr) auto"><b>${w}</b><span class="s">${s}</span><span>${d}</span></button>`).join('');
   const steps = document.getElementById('steps');
   steps.addEventListener('click', e => {
     const h = e.target.closest('[data-step]'); if (h){ const i = +h.dataset.step; S.open = S.open === i ? -1 : i; renderSteps(); return; }
