@@ -9,24 +9,25 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 <style>
-/* Layout: 테스트 러너식 3분할. 왼쪽 결과(요약·키별 집계·케이스), 가운데 한 케이스의 정답 대 답변, 오른쪽 실행 조건. 기능은 현재 Single Run 그대로. */
+/* Layout: 테스트 러너식 3분할. 왼쪽 결과(요약·키별 집계·케이스), 가운데 한 케이스의 정답 대 답변, 오른쪽 실행 조건. Single/Pair 를 위 메뉴로 오간다. 기능은 현재 그대로, 보기 전용. */
 :root{
   --bg:#eceef1; --pane:#f8f9fa; --sheet:#ffffff; --ink:#1a1d21; --body:#41464e; --muted:#80868f; --line:#dde0e5; --line-2:#c8ccd3;
-  --accent:#1f6f78; --accent-soft:#e1efef;
-  --ok:#2e8a56; --bad:#c43d36; --bad-soft:#fae6e4; --warn:#b3741b; --warn-soft:#faefdc; --run:#5b6472;
+  --accent:#1f6f78; --accent-soft:#e1efef; --b:#1f6f78;
+  --ok:#2e8a56; --bad:#c43d36; --bad-soft:#fae6e4; --warn:#b3741b; --warn-soft:#faefdc;
   --sans:"Noto Sans KR",system-ui,"Malgun Gothic",sans-serif; --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#101215; --pane:#171a1e; --sheet:#1d2025; --ink:#eceff3; --body:#c0c5cd; --muted:#868d98; --line:#2a2e35; --line-2:#3a3f48;
-  --accent:#6cc2c9; --accent-soft:#1d3335; --ok:#5cc28a; --bad:#f07a72; --bad-soft:#3a2321; --warn:#e3a94f; --warn-soft:#382d1b; --run:#9aa3b1; color-scheme:dark}}
+  --accent:#6cc2c9; --accent-soft:#1d3335; --b:#6cc2c9; --ok:#5cc28a; --bad:#f07a72; --bad-soft:#3a2321; --warn:#e3a94f; --warn-soft:#382d1b; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#101215; --pane:#171a1e; --sheet:#1d2025; --ink:#eceff3; --body:#c0c5cd; --muted:#868d98; --line:#2a2e35; --line-2:#3a3f48;
-  --accent:#6cc2c9; --accent-soft:#1d3335; --ok:#5cc28a; --bad:#f07a72; --bad-soft:#3a2321; --warn:#e3a94f; --warn-soft:#382d1b; --run:#9aa3b1; color-scheme:dark}
+  --accent:#6cc2c9; --accent-soft:#1d3335; --b:#6cc2c9; --ok:#5cc28a; --bad:#f07a72; --bad-soft:#3a2321; --warn:#e3a94f; --warn-soft:#382d1b; color-scheme:dark}
 *{box-sizing:border-box}
 html,body{height:100%}
 body{background:var(--bg);color:var(--body);font-family:var(--sans);font-size:13.5px;line-height:1.5;font-variant-numeric:tabular-nums}
 button,select,textarea{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-radius:3px}
+body[data-mode="single"] .pair-only, body[data-mode="pair"] .single-only{display:none!important}
 
 .app{height:100%;display:grid;grid-template-rows:44px 1fr 28px;padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
 .bar{display:flex;align-items:center;gap:16px;padding:0 14px;border-bottom:1px solid var(--line);background:var(--pane)}
@@ -43,37 +44,40 @@ button,select,textarea{font:inherit;color:inherit}
 .side{border-left:1px solid var(--line)}
 .center{background:var(--sheet);min-width:0}
 
-/* 왼쪽: 요약 → 키별 집계 → 케이스 */
 .sum{padding:14px 14px 12px;border-bottom:1px solid var(--line);display:grid;gap:4px}
 .sum .big{font-size:26px;font-weight:700;color:var(--ink);line-height:1.1;letter-spacing:-.5px}
+.sum .big .bv{color:var(--b)}
 .sum .big small{font-size:13px;color:var(--muted);font-weight:500;letter-spacing:0}
 .sum .sub{font-size:12px;color:var(--muted)}
+.sum .sub b{color:var(--b);font-weight:600}
 .keys{padding:10px 8px;border-bottom:1px solid var(--line);display:grid;gap:1px}
-.keys h2{margin:0 6px 4px;font-size:12px;color:var(--muted);font-weight:600}
-.kb{border:0;background:none;display:grid;grid-template-columns:minmax(0,1fr) 54px 22px;gap:8px;align-items:center;padding:4px 6px;border-radius:4px;cursor:pointer;text-align:left}
+.keys h2{margin:0 6px 4px;font-size:12px;color:var(--muted);font-weight:600;display:flex;justify-content:space-between}
+.kb{border:0;background:none;display:grid;grid-template-columns:minmax(0,1fr) 54px 40px;gap:8px;align-items:center;padding:4px 6px;border-radius:4px;cursor:pointer;text-align:left}
 .kb:hover{background:var(--bg)}
 .kb[aria-pressed="true"]{background:var(--accent-soft)}
 .kb .k{font-family:var(--mono);font-size:12px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kb .bars{display:grid;gap:2px}
 .kb .bar2{height:4px;background:var(--line);border-radius:2px;overflow:hidden}
 .kb .bar2 i{display:block;height:100%;background:var(--bad)}
-.kb .n{font-size:12px;color:var(--bad);text-align:right;font-weight:600}
+.kb .bar2.b i{background:var(--b)}
+.kb .n{font-size:12px;color:var(--bad);text-align:right;font-weight:600;white-space:nowrap}
+.kb .n .bv{color:var(--b)}
 .kb.all .k{font-family:var(--sans)} .kb.all .n{color:var(--muted);font-weight:400}
 .folder{border:0;background:none;width:100%;display:flex;align-items:center;gap:8px;padding:9px 12px 5px;font-weight:600;color:var(--ink);cursor:pointer;text-align:left}
 .folder .tri{width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:5px solid var(--muted)}
 .folder[aria-expanded="false"] .tri{transform:rotate(-90deg)}
 .folder .cnt{margin-left:auto;font-weight:400;color:var(--muted);font-size:12px}
 .folder .cnt b{color:var(--bad);font-weight:600}
-.item{border:0;background:none;width:100%;display:grid;grid-template-columns:10px 26px minmax(0,1fr) auto;align-items:center;gap:8px;padding:5px 12px 5px 24px;cursor:pointer;text-align:left;color:var(--body)}
+.item{border:0;background:none;width:100%;display:grid;grid-template-columns:auto 26px minmax(0,1fr) auto;align-items:center;gap:8px;padding:5px 12px 5px 24px;cursor:pointer;text-align:left;color:var(--body)}
 .item:hover{background:var(--bg)}
 .item[aria-current="true"]{background:var(--accent-soft);color:var(--ink)}
 .item .id{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
 .item .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .item .pass{font-size:11px;color:var(--ok)}
+.dots{display:flex;gap:3px}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--ok)}
-.dot.bad{background:var(--bad)} .dot.run{background:transparent;border:1.5px solid var(--run);animation:pulse 1s infinite alternate} .dot.wait{background:var(--line-2)}
-@keyframes pulse{to{opacity:.3}}
+.dot.bad{background:var(--bad)}
 
-/* 가운데 */
 .case-head{padding:20px 28px 16px;border-bottom:1px solid var(--line)}
 .where{font-size:12px;color:var(--muted);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .badge{font-size:11.5px;padding:1px 8px;border-radius:99px;background:var(--bad-soft);color:var(--bad);font-weight:600}
@@ -83,9 +87,10 @@ button,select,textarea{font:inherit;color:inherit}
 .tabs{display:flex;gap:18px;padding:0 28px;border-bottom:1px solid var(--line)}
 .tabs button{border:0;background:none;padding:10px 0;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;font-weight:500}
 .tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--ink)}
-.diff{padding:18px 28px 20px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);font-family:var(--mono);font-size:12.5px}
+.diff{padding:18px 28px 20px;display:grid;grid-template-columns:repeat(var(--cols),minmax(0,1fr));font-family:var(--mono);font-size:12.5px}
 .colh{font-family:var(--sans);font-size:12px;color:var(--muted);padding:0 0 8px;border-bottom:1px solid var(--line)}
-.colh + .colh{padding-left:16px;border-left:1px solid var(--line)}
+.colh:not(:first-child){padding-left:16px;border-left:1px solid var(--line)}
+.colh.bh{color:var(--b);font-weight:600}
 .ln{padding:4px 0;white-space:pre-wrap;word-break:break-all;color:var(--ink);border-bottom:1px solid var(--line);min-width:0}
 .ln.r{padding-left:16px;border-left:1px solid var(--line)}
 .ln .k{color:var(--muted)}
@@ -100,20 +105,24 @@ button,select,textarea{font:inherit;color:inherit}
 .btn:hover{border-color:var(--muted);color:var(--ink)}
 .btn[aria-pressed="true"]{border-color:var(--ok);color:var(--ok)}
 
-/* 오른쪽 */
 .blk{padding:14px 16px;border-bottom:1px solid var(--line);display:grid;gap:12px}
 .blk h2{margin:0;font-size:12px;font-weight:600;color:var(--muted)}
 .f{display:grid;gap:5px}
 .f > label,.f > span{font-size:12px;color:var(--muted)}
 .f select,.f textarea{width:100%;border:1px solid var(--line-2);background:var(--sheet);border-radius:5px;padding:6px 8px}
 .f textarea{resize:vertical;min-height:64px}
+.ab{display:grid;grid-template-columns:18px 1fr;gap:6px 8px;align-items:center}
+.ab i{font-style:normal;font-weight:700;font-size:12px;color:var(--ink)} .ab i.bh{color:var(--b)}
+select.diff{border-color:var(--b);color:var(--b)}
 .seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;border:1px solid var(--line-2);border-radius:5px;overflow:hidden;background:var(--sheet)}
 .seg button{border:0;background:none;padding:5px 0;cursor:pointer;color:var(--muted);font-size:12.5px}
 .seg button + button{border-left:1px solid var(--line-2)}
 .seg button[aria-pressed="true"]{background:var(--ink);color:var(--sheet)}
 .seg button:disabled{color:var(--line-2);cursor:not-allowed}
 .roles{display:grid;grid-template-columns:64px 1fr;gap:6px 8px;align-items:center;font-size:12px;color:var(--muted)}
-.roles select{border:1px solid var(--line-2);background:var(--sheet);border-radius:5px;padding:4px 6px;font-size:12.5px}
+body[data-mode="pair"] .roles{grid-template-columns:50px 1fr 1fr}
+.roles .h{text-align:center;font-weight:700;color:var(--ink)} .roles .h.bh{color:var(--b)}
+.roles select{border:1px solid var(--line-2);background:var(--sheet);border-radius:5px;padding:4px 6px;font-size:12.5px;min-width:0}
 .row2{display:grid;grid-template-columns:1fr auto;gap:6px}
 .checks{display:grid;gap:4px}
 .checks label{display:flex;gap:8px;align-items:center;font-size:13px}
@@ -122,12 +131,9 @@ button,select,textarea{font:inherit;color:inherit}
 .go{border:0;background:var(--accent);color:#fff;border-radius:5px;padding:9px;font-weight:600;cursor:pointer}
 :root[data-theme="dark"] .go{color:#0d1a1b}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .go{color:#0d1a1b}}
-.go.stop{background:none;border:1px solid var(--line-2);color:var(--ink)}
 .purpose{font-size:12px;color:var(--muted);margin:0}
 
 .status{display:flex;align-items:center;gap:14px;padding:0 14px;border-top:1px solid var(--line);background:var(--pane);font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden}
-.prog{flex:0 1 220px;height:4px;background:var(--line);border-radius:2px;overflow:hidden}
-.prog i{display:block;height:100%;background:var(--accent)}
 .status .r{margin-left:auto}
 
 @media (max-width:1000px){ .work{grid-template-columns:250px minmax(0,1fr)} .side{grid-column:1/-1;border-left:0;border-top:1px solid var(--line)} .app{height:auto;grid-template-rows:44px auto 28px} html,body{height:auto} }
@@ -135,16 +141,15 @@ button,select,textarea{font:inherit;color:inherit}
   .work{grid-template-columns:1fr}
   .tree{border-right:0;border-bottom:1px solid var(--line);max-height:320px}
   .bar .env{display:none}
-  .diff{grid-template-columns:1fr} .ln.r{padding-left:0;border-left:0} .colh + .colh{display:none}
+  .diff{--cols:1!important} .ln.r{padding-left:0;border-left:0} .colh:not(:first-child){display:none}
   .case-head,.tabs,.diff,.case-acts{padding-left:16px;padding-right:16px}
 }
-@media (prefers-reduced-motion:reduce){ .dot.run{animation:none} }
 </style>
 
 <div class="app">
   <header class="bar">
     <b>TestX</b>
-    <nav aria-label="주 메뉴"><button aria-current="page">Single Run</button><button>Pair Run</button><button>Datasets</button><button>Records</button><button>Prompt</button><button>Settings</button></nav>
+    <nav aria-label="주 메뉴" id="nav"><button data-mode="single" aria-current="page">Single Run</button><button data-mode="pair">Pair Run</button><button>Datasets</button><button>Records</button><button>Prompt</button><button>Settings</button></nav>
     <span class="env">dev · DB 연결됨</span>
   </header>
 
@@ -160,19 +165,23 @@ button,select,textarea{font:inherit;color:inherit}
     <aside class="pane side" aria-label="실행 조건">
       <div class="blk">
         <h2>실행 조건</h2>
-        <div class="f"><span>대상</span>
+        <div class="f"><span><span class="single-only">대상</span><span class="pair-only">A · B 로 가를 것</span></span>
           <div class="seg" role="group" aria-label="대상" id="target">
-            <button aria-pressed="true" data-t="default" title="프롬프트도 모델도 건드리지 않고 지금 상태 그대로 호출">Default</button>
-            <button aria-pressed="false" data-t="model" title="role 별 모델을 바꿔서 실행">Model</button>
+            <button aria-pressed="false" data-t="default" title="프롬프트도 모델도 건드리지 않고 지금 상태 그대로 호출">Default</button>
+            <button aria-pressed="true" data-t="model" title="role 별 모델을 바꿔서 실행">Model</button>
             <button aria-pressed="false" data-t="prompt" disabled title="준비 중">Prompt</button>
           </div>
         </div>
-        <div class="roles" id="roles" hidden>
-          <span>router</span><select><option>gpt-4.1-mini</option><option>qwen2.5-72b</option></select>
-          <span>parser</span><select><option>qwen2.5-72b</option><option>gpt-4.1-mini</option><option>llama-3.3-70b</option></select>
-          <span>answer</span><select><option>gpt-4.1</option><option>qwen2.5-72b</option></select>
+        <div class="roles" id="roles">
+          <span class="pair-only"></span><span class="h pair-only">A</span><span class="h bh pair-only">B</span>
+          <span>router</span><select><option>gpt-4.1-mini</option><option>qwen2.5-72b</option></select><select class="pair-only"><option>gpt-4.1-mini</option><option>qwen2.5-72b</option></select>
+          <span>parser</span><select><option>qwen2.5-72b</option><option>gpt-4.1-mini</option><option>llama-3.3-70b</option></select><select class="pair-only diff"><option>llama-3.3-70b</option><option>qwen2.5-72b</option><option>gpt-4.1-mini</option></select>
+          <span>answer</span><select><option>gpt-4.1</option><option>qwen2.5-72b</option></select><select class="pair-only"><option>gpt-4.1</option><option>qwen2.5-72b</option></select>
         </div>
-        <div class="f"><label for="ag">Agent</label><select id="ag"><option>운영 챗 API</option><option>스테이징 챗 API</option></select></div>
+        <div class="f" id="agOne"><label for="ag">Agent</label><select id="ag"><option>운영 챗 API</option><option>스테이징 챗 API</option></select></div>
+        <div class="f" id="agTwo" hidden><span>Agent</span>
+          <div class="ab"><i>A</i><select aria-label="A Agent"><option>운영 챗 API</option><option>스테이징 챗 API</option></select><i class="bh">B</i><select aria-label="B Agent" class="diff"><option>스테이징 챗 API</option><option>운영 챗 API</option></select></div>
+        </div>
         <div class="f"><span>입력</span>
           <div class="seg" role="group" aria-label="입력" id="input">
             <button aria-pressed="true" data-i="dataset">데이터셋</button><button aria-pressed="false" data-i="manual">직접 입력</button>
@@ -198,15 +207,14 @@ button,select,textarea{font:inherit;color:inherit}
             <label><input type="checkbox"> answer_correctness</label>
           </div>
         </div>
-        <button class="go" id="go">42건 실행</button>
+        <button class="go" id="go" type="button"></button>
       </div>
     </aside>
   </div>
 
   <footer class="status">
-    <span id="stTxt">10월 30일 14:12 실행 · 완료</span>
-    <span class="prog" aria-hidden="true"><i id="prog" style="width:100%"></i></span>
-    <span class="r">Engine FALLBACK · 2분 41초</span>
+    <span id="stTxt"></span>
+    <span class="r">Engine FALLBACK</span>
   </footer>
 </div>
 
@@ -226,36 +234,44 @@ button,select,textarea{font:inherit;color:inherit}
     const ok = rnd() > .22;
     const broken = ok ? [] : KEYPOOL.filter(() => rnd() < .45);
     if (!ok && !broken.length) broken.push('slots.time');
-    cases.push({id:n, folder:f, q:SRC[f][i % SRC[f].length], ok, broken, passed:false, trace: f === '변경'});
+    // B: A 에서 깨진 키는 절반쯤 고쳐지고, 맞던 키가 가끔 깨진다.
+    const brokenB = broken.filter(() => rnd() < .45);
+    if (ok && rnd() < .06) brokenB.push('slots.people');
+    cases.push({id:n, folder:f, q:SRC[f][i % SRC[f].length], broken, brokenB, passed:false, trace: f === '변경'});
   }});
-  const state = { key:null, open:{'예약':true,'변경':true,'취소':true,'검색':true}, cur:null, tab:'diff', running:false };
-  const isOk = c => c.ok || c.passed;
-  const visible = () => cases.filter(c => !state.key || c.broken.includes(state.key));
-  state.cur = cases.find(c => !c.ok).id;
+  const S = { mode:'single', key:null, open:{'예약':true,'변경':true,'취소':true,'검색':true}, cur:null, tab:'diff', target:'model', input:'dataset' };
+  const P = () => S.mode === 'pair';
+  const okA = c => !c.broken.length || c.passed, okB = c => !c.brokenB.length;
+  const visible = () => cases.filter(c => !S.key || c.broken.includes(S.key) || (P() && c.brokenB.includes(S.key)));
+  S.cur = cases.find(c => c.broken.length).id;
 
   function renderSum(){
-    const ok = cases.filter(isOk).length, man = cases.filter(c => c.passed).length;
-    document.getElementById('sum').innerHTML = `<div class="big">${ok}<small> / 42 정답 일치 · ${Math.round(ok/42*100)}%</small></div><div class="sub">${man ? `수동 통과 ${man}건 포함` : '수동 통과 없음'}</div>`;
+    const a = cases.filter(okA).length, b = cases.filter(okB).length, man = cases.filter(c => c.passed).length;
+    document.getElementById('sum').innerHTML = P()
+      ? `<div class="big">${a} <small>→</small> <span class="bv">${b}</span><small> / 42 정답 일치</small></div><div class="sub"><b>B</b> 가 낫습니다</div>`
+      : `<div class="big">${a}<small> / 42 정답 일치 · ${Math.round(a/42*100)}%</small></div><div class="sub">${man ? `수동 통과 ${man}건 포함` : '수동 통과 없음'}</div>`;
   }
-  // 키별 집계 — 실패한 키만, 실패 수 순. 누르면 그 키가 깨진 케이스만 아래에 남는다.
   function renderKeys(){
-    const counts = KEYPOOL.map(k => [k, cases.filter(c => !c.passed && c.broken.includes(k)).length]).filter(([,v]) => v).sort((a,b) => b[1]-a[1]);
-    const max = counts[0]?.[1] || 1;
-    document.getElementById('keys').innerHTML = `<h2>키별 집계</h2>
-      <button class="kb all" aria-pressed="${!state.key}" data-k=""><span class="k">모든 케이스</span><span></span><span class="n">42</span></button>` +
-      counts.map(([k,v]) => `<button class="kb" aria-pressed="${state.key===k}" data-k="${k}"><span class="k">${k}</span><span class="bar2"><i style="width:${v/max*100}%"></i></span><span class="n">${v}</span></button>`).join('');
+    const cnt = (k, side) => cases.filter(c => side === 'b' ? c.brokenB.includes(k) : (!c.passed && c.broken.includes(k))).length;
+    const rows = KEYPOOL.map(k => [k, cnt(k,'a'), cnt(k,'b')]).filter(([,a,b]) => a || (P() && b)).sort((x,y) => y[1]-x[1]);
+    const max = Math.max(1, ...rows.flatMap(([,a,b]) => [a,b]));
+    document.getElementById('keys').innerHTML = `<h2><span>키별 집계</span>${P()?'<span>A · <span style="color:var(--b)">B</span></span>':''}</h2>
+      <button class="kb all" aria-pressed="${!S.key}" data-k=""><span class="k">모든 케이스</span><span></span><span class="n">42</span></button>` +
+      rows.map(([k,a,b]) => `<button class="kb" aria-pressed="${S.key===k}" data-k="${k}"><span class="k">${k}</span><span class="bars"><span class="bar2"><i style="width:${a/max*100}%"></i></span>${P()?`<span class="bar2 b"><i style="width:${b/max*100}%"></i></span>`:''}</span><span class="n">${a}${P()?` · <span class="bv">${b}</span>`:''}</span></button>`).join('');
   }
   function renderTree(){
     const vis = new Set(visible().map(c => c.id));
     let h = '';
     Object.keys(SIZES).forEach(f => {
-      const all = cases.filter(c => c.folder === f), bad = all.filter(c => !isOk(c)).length;
+      const all = cases.filter(c => c.folder === f);
+      const bad = all.filter(c => !okA(c)).length, badB = all.filter(c => !okB(c)).length;
       const shown = all.filter(c => vis.has(c.id));
       if (!shown.length) return;
-      h += `<button class="folder" data-folder="${f}" aria-expanded="${state.open[f]}"><span class="tri"></span>${f}<span class="cnt">${bad?`<b>${bad}</b> / `:''}${all.length}</span></button>`;
-      if (state.open[f]) shown.forEach(c => {
-        const d = state.running ? (c.done ? (isOk(c)?'':'bad') : (c.id === state.runningId ? 'run' : 'wait')) : (isOk(c)?'':'bad');
-        h += `<button class="item" data-id="${c.id}" aria-current="${c.id===state.cur}"><span class="dot ${d}"></span><span class="id">#${String(c.id).padStart(2,'0')}</span><span class="t">${c.q}</span>${c.passed?'<span class="pass">통과</span>':''}</button>`;
+      const cnt = P() ? `${bad} · ${badB} / ${all.length}` : `${bad?`<b>${bad}</b> / `:''}${all.length}`;
+      h += `<button class="folder" data-folder="${f}" aria-expanded="${S.open[f]}"><span class="tri"></span>${f}<span class="cnt">${cnt}</span></button>`;
+      if (S.open[f]) shown.forEach(c => {
+        const dots = `<span class="dots"><span class="dot ${okA(c)?'':'bad'}" title="A"></span>${P()?`<span class="dot ${okB(c)?'':'bad'}" title="B"></span>`:''}</span>`;
+        h += `<button class="item" data-id="${c.id}" aria-current="${c.id===S.cur}">${dots}<span class="id">#${String(c.id).padStart(2,'0')}</span><span class="t">${c.q}</span>${c.passed && !P()?'<span class="pass">통과</span>':''}</button>`;
       });
     });
     document.getElementById('tree').innerHTML = h;
@@ -264,86 +280,73 @@ button,select,textarea{font:inherit;color:inherit}
   const EXP = [['action','"reserve"'],['slots.date','"2026-09-20"'],['slots.time','"15:00"'],['slots.people','4'],['slots.seat','"창가"'],['code','200'],['items[0].name','"김민수"'],['items[1].name','"이서연"'],['memo','""']];
   const ACT = {'slots.time':['"14:00"','bad'],'slots.people':['"4"','bad'],'code':['500','bad'],'items[1].name':['없음','gone'],'slots.seat':['"홀"','bad']};
   function renderCenter(){
-    const c = cases.find(x => x.id === state.cur);
-    let diff = `<div class="colh">정답</div><div class="colh">${c.trace?'중간 변수 parsed':'답변'}</div>`;
+    const c = cases.find(x => x.id === S.cur);
+    const sides = P() ? [['A',c.broken],['B',c.brokenB]] : [[c.trace?'중간 변수 parsed':'답변',c.broken]];
+    let diff = `<div class="colh">정답</div>` + sides.map(([l],i) => `<div class="colh ${i===1?'bh':''}">${l}</div>`).join('');
     EXP.forEach(([k,v]) => {
-      const a = c.broken.includes(k) && ACT[k];
       diff += `<div class="ln"><span class="k">${k}: </span><span class="v">${v}</span></div>`;
-      diff += `<div class="ln r ${a?a[1]:''}"><span class="k">${k}: </span><span class="v">${a?a[0]:v}</span></div>`;
+      sides.forEach(([,br]) => { const a = br.includes(k) && ACT[k]; diff += `<div class="ln r ${a?a[1]:''}"><span class="k">${k}: </span><span class="v">${a?a[0]:v}</span></div>`; });
     });
-    if (!c.ok) diff += `<div class="ln"></div><div class="ln r extra"><span class="k">debug: </span><span class="v">"retry=1"</span></div>`;
     diff += `<p class="note">${c.trace ? '답변이 아니라 노드가 남긴 <code>parsed</code> 로 비교' : '<code>body</code> 기준 비교 · 키 순서 무시'}</p>`;
     const raw = JSON.stringify({body:{action:'reserve',slots:{date:'2026-09-20',time:c.broken.includes('slots.time')?'14:00':'15:00',people:c.broken.includes('slots.people')?'4':4,seat:'창가'},code:c.broken.includes('code')?500:200,memo:''}},null,2);
+    const badge = (br, man) => man ? '<span class="badge ok">수동 통과</span>' : !br.length ? '<span class="badge ok">일치</span>' : `<span class="badge">${br.length}개 키 다름</span>`;
+    const where = P() ? `<span>A</span>${badge(c.broken)}<span>B</span>${badge(c.brokenB)}` : badge(c.broken, c.passed);
     document.getElementById('center').innerHTML = `
       <div class="case-head">
-        <div class="where"><span>${c.folder} · #${String(c.id).padStart(2,'0')}</span>${c.passed?'<span class="badge ok">수동 통과</span>':c.ok?'<span class="badge ok">일치</span>':`<span class="badge">${c.broken.length}개 키 다름</span>`}<span class="time">2.4초 · 첫 토큰 0.6초</span></div>
+        <div class="where"><span>${c.folder} · #${String(c.id).padStart(2,'0')}</span>${where}<span class="time">${P()?'A 2.4초 · B 2.1초':'2.4초 · 첫 토큰 0.6초'}</span></div>
         <h1>${c.q}</h1>
       </div>
       <div class="tabs" role="tablist">
-        <button role="tab" aria-selected="${state.tab==='diff'}" data-tab="diff">정답 대 답변</button>
-        <button role="tab" aria-selected="${state.tab==='raw'}" data-tab="raw">답변 원문</button>
-        <button role="tab" aria-selected="${state.tab==='ctx'}" data-tab="ctx">Contexts 3</button>
+        <button role="tab" aria-selected="${S.tab==='diff'}" data-tab="diff">정답 대 답변</button>
+        <button role="tab" aria-selected="${S.tab==='raw'}" data-tab="raw">답변 원문</button>
+        <button role="tab" aria-selected="${S.tab==='ctx'}" data-tab="ctx">Contexts 3</button>
       </div>
-      ${state.tab==='diff' ? `<div class="diff">${diff}</div>` : state.tab==='raw' ? `<pre class="raw">${raw}</pre>` :
+      ${S.tab==='diff' ? `<div class="diff" style="--cols:${sides.length+1}">${diff}</div>` : S.tab==='raw' ? `<pre class="raw">${raw}</pre>` :
         `<pre class="raw">1. 매장 영업시간 11:30–22:00, 브레이크 15:00–17:00\n2. 창가 좌석은 4인 테이블 3개\n3. 예약 변경은 방문 2시간 전까지</pre>`}
-      <div class="case-acts">${c.ok ? '' : `<button class="btn" data-pass aria-pressed="${c.passed}">${c.passed?'통과 취소':'통과로 표시'}</button>`}<button class="btn">이 케이스 다시 실행</button></div>`;
+      <div class="case-acts">${!P() && c.broken.length ? `<button class="btn" data-pass aria-pressed="${c.passed}">${c.passed?'통과 취소':'통과로 표시'}</button>` : ''}<button class="btn">이 케이스 다시 실행</button></div>`;
+  }
+  function renderSide(){
+    document.getElementById('roles').hidden = S.target !== 'model';
+    document.getElementById('agTwo').hidden = !(P() && S.target === 'default');
+    document.getElementById('agOne').hidden = P() && S.target === 'default';
+    document.getElementById('dsFields').hidden = S.input !== 'dataset';
+    document.getElementById('manFields').hidden = S.input !== 'manual';
+    document.getElementById('go').textContent = S.input === 'manual' ? (P() ? 'A · B 호출' : '호출') : (P() ? '42건 × A · B 실행' : '42건 실행');
+    document.getElementById('stTxt').textContent = `10월 30일 14:12 실행 · 완료 · ${P() ? '5분 08초' : '2분 41초'}`;
+  }
+  function renderAll(){
+    document.body.dataset.mode = S.mode;
+    document.querySelectorAll('#nav [data-mode]').forEach(b => b.toggleAttribute('aria-current', b.dataset.mode === S.mode));
+    renderSum(); renderKeys(); renderTree(); renderCenter(); renderSide();
   }
 
-  // 이벤트
+  document.getElementById('nav').addEventListener('click', e => {
+    const b = e.target.closest('[data-mode]'); if (!b) return;
+    S.mode = b.dataset.mode; S.key = null; renderAll();
+  });
   document.getElementById('keys').addEventListener('click', e => {
     const b = e.target.closest('.kb'); if (!b) return;
-    state.key = b.dataset.k || null;
-    if (!visible().some(c => c.id === state.cur)) state.cur = visible()[0].id;
+    S.key = b.dataset.k || null;
+    if (!visible().some(c => c.id === S.cur)) S.cur = visible()[0].id;
     renderKeys(); renderTree(); renderCenter();
   });
   document.getElementById('tree').addEventListener('click', e => {
-    const f = e.target.closest('.folder'); if (f){ state.open[f.dataset.folder] = !state.open[f.dataset.folder]; renderTree(); return; }
-    const it = e.target.closest('.item'); if (it){ state.cur = +it.dataset.id; renderTree(); renderCenter(); }
+    const f = e.target.closest('.folder'); if (f){ S.open[f.dataset.folder] = !S.open[f.dataset.folder]; renderTree(); return; }
+    const it = e.target.closest('.item'); if (it){ S.cur = +it.dataset.id; renderTree(); renderCenter(); }
   });
   document.getElementById('center').addEventListener('click', e => {
-    const t = e.target.closest('[data-tab]'); if (t){ state.tab = t.dataset.tab; renderCenter(); return; }
-    if (e.target.closest('[data-pass]')){ const c = cases.find(x => x.id === state.cur); c.passed = !c.passed; renderSum(); renderKeys(); renderTree(); renderCenter(); }
+    const t = e.target.closest('[data-tab]'); if (t){ S.tab = t.dataset.tab; renderCenter(); return; }
+    if (e.target.closest('[data-pass]')){ const c = cases.find(x => x.id === S.cur); c.passed = !c.passed; renderSum(); renderKeys(); renderTree(); renderCenter(); }
   });
   const segPick = (id, attr, fn) => document.getElementById(id).addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b || b.disabled) return;
     document.querySelectorAll(`#${id} button`).forEach(x => x.setAttribute('aria-pressed', x === b));
-    fn(b.dataset[attr]);
+    fn(b.dataset[attr]); renderSide();
   });
-  segPick('target','t', t => { document.getElementById('roles').hidden = t !== 'model'; });
-  segPick('input','i', v => {
-    document.getElementById('dsFields').hidden = v !== 'dataset';
-    document.getElementById('manFields').hidden = v !== 'manual';
-    go.textContent = v === 'manual' ? '호출' : '42건 실행';
-  });
+  segPick('target','t', t => { S.target = t; });
+  segPick('input','i', v => { S.input = v; });
 
-  // 실행: 결과가 들어오는 대로 왼쪽 점이 채워진다
-  const go = document.getElementById('go');
-  go.addEventListener('click', () => {
-    if (go.textContent === '호출') return;
-    if (state.running){ stop(); return; }
-    state.running = true; state.key = null;
-    cases.forEach(c => c.done = false);
-    go.textContent = '취소'; go.classList.add('stop');
-    let k = 0;
-    state.timer = setInterval(() => {
-      if (k > 0) cases[k-1].done = true;
-      if (k >= cases.length){ stop(); return; }
-      state.runningId = cases[k].id; k++;
-      document.getElementById('prog').style.width = (k/cases.length*100)+'%';
-      document.getElementById('stTxt').textContent = `실행 중 · ${k}/42`;
-      renderTree();
-    }, 120);
-    renderKeys();
-  });
-  function stop(){
-    clearInterval(state.timer); state.running = false;
-    go.textContent = '42건 실행'; go.classList.remove('stop');
-    document.getElementById('prog').style.width = '100%';
-    document.getElementById('stTxt').textContent = '방금 실행 · 완료';
-    renderTree();
-  }
-
-  renderSum(); renderKeys(); renderTree(); renderCenter();
+  renderAll();
 })();
 </script>
 

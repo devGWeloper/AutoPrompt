@@ -152,7 +152,7 @@ table.kv td.bad{background:var(--bad-soft);color:var(--bad)}
 
 <header><div class="in">
   <span class="brand">TestX</span>
-  <nav aria-label="주 메뉴"><button aria-current="page" id="navRun">Single Run</button><button>Pair Run</button><button>Datasets</button><button>Records</button><button>Prompt</button><button>Settings</button></nav>
+  <nav aria-label="주 메뉴" id="nav"><button data-nav="single" aria-current="page">Single Run</button><button data-nav="pair">Pair Run</button><button>Datasets</button><button>Records</button><button>Prompt</button><button>Settings</button></nav>
   <span class="env">dev · DB 연결됨</span>
 </div></header>
 
@@ -220,8 +220,11 @@ table.kv td.bad{background:var(--bad-soft);color:var(--bad)}
     document.getElementById('go').textContent = n == null ? (pair() ? 'A · B 호출' : '호출') : (pair() ? `${n}건 × A · B 실행` : `${n}건 실행`);
     document.getElementById('goNote').textContent = S.metrics.size ? '' : '채점 없이 답변만 받습니다';
     document.querySelectorAll('.mode button').forEach(b => b.setAttribute('aria-pressed', b.dataset.m === S.mode));
-    document.getElementById('navRun').textContent = pair() ? 'Pair Run' : 'Single Run';
+    document.querySelectorAll('#nav [data-nav]').forEach(b => b.toggleAttribute('aria-current', b.dataset.nav === S.mode));
   }
+  document.getElementById('nav').addEventListener('click', e => {
+    const b = e.target.closest('[data-nav]'); if (!b) return; S.mode = b.dataset.nav; renderSteps(); renderReport();
+  });
   const steps = document.getElementById('steps');
   steps.addEventListener('click', e => {
     const h = e.target.closest('[data-step]'); if (h){ const i = +h.dataset.step; S.open = S.open === i ? -1 : i; renderSteps(); return; }
