@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>TestX 워크벤치</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: 테스트 러너식 3분할. 왼쪽 결과(요약·키별 집계·케이스), 가운데 한 케이스의 정답 대 답변, 오른쪽 실행 조건. 기능은 현재 Single Run 그대로. */
+:root{
+  --bg:#eceef1; --pane:#f8f9fa; --sheet:#ffffff; --ink:#1a1d21; --body:#41464e; --muted:#80868f; --line:#dde0e5; --line-2:#c8ccd3;
+  --accent:#1f6f78; --accent-soft:#e1efef;
+  --ok:#2e8a56; --bad:#c43d36; --bad-soft:#fae6e4; --warn:#b3741b; --warn-soft:#faefdc; --run:#5b6472;
+  --sans:"Noto Sans KR",system-ui,"Malgun Gothic",sans-serif; --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#101215; --pane:#171a1e; --sheet:#1d2025; --ink:#eceff3; --body:#c0c5cd; --muted:#868d98; --line:#2a2e35; --line-2:#3a3f48;
+  --accent:#6cc2c9; --accent-soft:#1d3335; --ok:#5cc28a; --bad:#f07a72; --bad-soft:#3a2321; --warn:#e3a94f; --warn-soft:#382d1b; --run:#9aa3b1; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#101215; --pane:#171a1e; --sheet:#1d2025; --ink:#eceff3; --body:#c0c5cd; --muted:#868d98; --line:#2a2e35; --line-2:#3a3f48;
+  --accent:#6cc2c9; --accent-soft:#1d3335; --ok:#5cc28a; --bad:#f07a72; --bad-soft:#3a2321; --warn:#e3a94f; --warn-soft:#382d1b; --run:#9aa3b1; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--bg);color:var(--body);font-family:var(--sans);font-size:13.5px;line-height:1.5;font-variant-numeric:tabular-nums}
+button,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-radius:3px}
+
+.app{height:100%;display:grid;grid-template-rows:44px 1fr 28px;padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
+.bar{display:flex;align-items:center;gap:16px;padding:0 14px;border-bottom:1px solid var(--line);background:var(--pane)}
+.bar b{color:var(--ink);font-size:15px}
+.bar nav{display:flex;gap:2px;overflow-x:auto}
+.bar nav button{border:0;background:none;padding:5px 10px;border-radius:5px;color:var(--muted);cursor:pointer;white-space:nowrap}
+.bar nav button[aria-current]{color:var(--ink);font-weight:600;background:var(--bg)}
+.bar nav button:hover{color:var(--ink)}
+.bar .env{margin-left:auto;font-size:12px;color:var(--muted);white-space:nowrap}
+
+.work{display:grid;grid-template-columns:290px minmax(0,1fr) 300px;min-height:0}
+.pane{min-height:0;overflow:auto;background:var(--pane)}
+.tree{border-right:1px solid var(--line)}
+.side{border-left:1px solid var(--line)}
+.center{background:var(--sheet);min-width:0}
+
+/* 왼쪽: 요약 → 키별 집계 → 케이스 */
+.sum{padding:14px 14px 12px;border-bottom:1px solid var(--line);display:grid;gap:4px}
+.sum .big{font-size:26px;font-weight:700;color:var(--ink);line-height:1.1;letter-spacing:-.5px}
+.sum .big small{font-size:13px;color:var(--muted);font-weight:500;letter-spacing:0}
+.sum .sub{font-size:12px;color:var(--muted)}
+.keys{padding:10px 8px;border-bottom:1px solid var(--line);display:grid;gap:1px}
+.keys h2{margin:0 6px 4px;font-size:12px;color:var(--muted);font-weight:600}
+.kb{border:0;background:none;display:grid;grid-template-columns:minmax(0,1fr) 54px 22px;gap:8px;align-items:center;padding:4px 6px;border-radius:4px;cursor:pointer;text-align:left}
+.kb:hover{background:var(--bg)}
+.kb[aria-pressed="true"]{background:var(--accent-soft)}
+.kb .k{font-family:var(--mono);font-size:12px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kb .bar2{height:4px;background:var(--line);border-radius:2px;overflow:hidden}
+.kb .bar2 i{display:block;height:100%;background:var(--bad)}
+.kb .n{font-size:12px;color:var(--bad);text-align:right;font-weight:600}
+.kb.all .k{font-family:var(--sans)} .kb.all .n{color:var(--muted);font-weight:400}
+.folder{border:0;background:none;width:100%;display:flex;align-items:center;gap:8px;padding:9px 12px 5px;font-weight:600;color:var(--ink);cursor:pointer;text-align:left}
+.folder .tri{width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:5px solid var(--muted)}
+.folder[aria-expanded="false"] .tri{transform:rotate(-90deg)}
+.folder .cnt{margin-left:auto;font-weight:400;color:var(--muted);font-size:12px}
+.folder .cnt b{color:var(--bad);font-weight:600}
+.item{border:0;background:none;width:100%;display:grid;grid-template-columns:10px 26px minmax(0,1fr) auto;align-items:center;gap:8px;padding:5px 12px 5px 24px;cursor:pointer;text-align:left;color:var(--body)}
+.item:hover{background:var(--bg)}
+.item[aria-current="true"]{background:var(--accent-soft);color:var(--ink)}
+.item .id{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.item .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .pass{font-size:11px;color:var(--ok)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--ok)}
+.dot.bad{background:var(--bad)} .dot.run{background:transparent;border:1.5px solid var(--run);animation:pulse 1s infinite alternate} .dot.wait{background:var(--line-2)}
+@keyframes pulse{to{opacity:.3}}
+
+/* 가운데 */
+.case-head{padding:20px 28px 16px;border-bottom:1px solid var(--line)}
+.where{font-size:12px;color:var(--muted);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.badge{font-size:11.5px;padding:1px 8px;border-radius:99px;background:var(--bad-soft);color:var(--bad);font-weight:600}
+.badge.ok{background:var(--accent-soft);color:var(--ok)}
+.where .time{margin-left:auto}
+.case-head h1{font-size:19px;font-weight:600;color:var(--ink);margin:6px 0 0;line-height:1.5;max-width:46ch;text-wrap:balance}
+.tabs{display:flex;gap:18px;padding:0 28px;border-bottom:1px solid var(--line)}
+.tabs button{border:0;background:none;padding:10px 0;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;font-weight:500}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--ink)}
+.diff{padding:18px 28px 20px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);font-family:var(--mono);font-size:12.5px}
+.colh{font-family:var(--sans);font-size:12px;color:var(--muted);padding:0 0 8px;border-bottom:1px solid var(--line)}
+.colh + .colh{padding-left:16px;border-left:1px solid var(--line)}
+.ln{padding:4px 0;white-space:pre-wrap;word-break:break-all;color:var(--ink);border-bottom:1px solid var(--line);min-width:0}
+.ln.r{padding-left:16px;border-left:1px solid var(--line)}
+.ln .k{color:var(--muted)}
+.ln.bad{background:var(--bad-soft)} .ln.bad .v{color:var(--bad);font-weight:500}
+.ln.extra{background:var(--warn-soft)} .ln.extra .v{color:var(--warn)}
+.ln.gone .v{color:var(--bad);font-family:var(--sans)}
+.note{font-family:var(--sans);grid-column:1/-1;font-size:12px;color:var(--muted);padding-top:12px;margin:0}
+.note code{font-family:var(--mono);background:var(--bg);padding:0 5px;border-radius:3px}
+.raw{padding:18px 28px;font-family:var(--mono);font-size:12.5px;white-space:pre-wrap;color:var(--ink);margin:0}
+.case-acts{display:flex;gap:8px;padding:0 28px 28px;flex-wrap:wrap}
+.btn{border:1px solid var(--line-2);background:var(--sheet);border-radius:5px;padding:5px 12px;cursor:pointer;font-size:12.5px}
+.btn:hover{border-color:var(--muted);color:var(--ink)}
+.btn[aria-pressed="true"]{border-color:var(--ok);color:var(--ok)}
+
+/* 오른쪽 */
+.blk{padding:14px 16px;border-bottom:1px solid var(--line);display:grid;gap:12px}
+.blk h2{margin:0;font-size:12px;font-weight:600;color:var(--muted)}
+.f{display:grid;gap:5px}
+.f > label,.f > span{font-size:12px;color:var(--muted)}
+.f select,.f textarea{width:100%;border:1px solid var(--line-2);background:var(--sheet);border-radius:5px;padding:6px 8px}
+.f textarea{resize:vertical;min-height:64px}
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;border:1px solid var(--line-2);border-radius:5px;overflow:hidden;background:var(--sheet)}
+.seg button{border:0;background:none;padding:5px 0;cursor:pointer;color:var(--muted);font-size:12.5px}
+.seg button + button{border-left:1px solid var(--line-2)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--sheet)}
+.seg button:disabled{color:var(--line-2);cursor:not-allowed}
+.roles{display:grid;grid-template-columns:64px 1fr;gap:6px 8px;align-items:center;font-size:12px;color:var(--muted)}
+.roles select{border:1px solid var(--line-2);background:var(--sheet);border-radius:5px;padding:4px 6px;font-size:12.5px}
+.row2{display:grid;grid-template-columns:1fr auto;gap:6px}
+.checks{display:grid;gap:4px}
+.checks label{display:flex;gap:8px;align-items:center;font-size:13px}
+.checks label.lead{font-weight:600;color:var(--ink)}
+.checks hr{border:0;border-top:1px solid var(--line);margin:2px 0}
+.go{border:0;background:var(--accent);color:#fff;border-radius:5px;padding:9px;font-weight:600;cursor:pointer}
+:root[data-theme="dark"] .go{color:#0d1a1b}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .go{color:#0d1a1b}}
+.go.stop{background:none;border:1px solid var(--line-2);color:var(--ink)}
+.purpose{font-size:12px;color:var(--muted);margin:0}
+
+.status{display:flex;align-items:center;gap:14px;padding:0 14px;border-top:1px solid var(--line);background:var(--pane);font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden}
+.prog{flex:0 1 220px;height:4px;background:var(--line);border-radius:2px;overflow:hidden}
+.prog i{display:block;height:100%;background:var(--accent)}
+.status .r{margin-left:auto}
+
+@media (max-width:1000px){ .work{grid-template-columns:250px minmax(0,1fr)} .side{grid-column:1/-1;border-left:0;border-top:1px solid var(--line)} .app{height:auto;grid-template-rows:44px auto 28px} html,body{height:auto} }
+@media (max-width:680px){
+  .work{grid-template-columns:1fr}
+  .tree{border-right:0;border-bottom:1px solid var(--line);max-height:320px}
+  .bar .env{display:none}
+  .diff{grid-template-columns:1fr} .ln.r{padding-left:0;border-left:0} .colh + .colh{display:none}
+  .case-head,.tabs,.diff,.case-acts{padding-left:16px;padding-right:16px}
+}
+@media (prefers-reduced-motion:reduce){ .dot.run{animation:none} }
+</style>
+
+<div class="app">
+  <header class="bar">
+    <b>TestX</b>
+    <nav aria-label="주 메뉴"><button aria-current="page">Single Run</button><button>Pair Run</button><button>Datasets</button><button>Records</button><button>Prompt</button><button>Settings</button></nav>
+    <span class="env">dev · DB 연결됨</span>
+  </header>
+
+  <div class="work">
+    <aside class="pane tree" aria-label="결과">
+      <div class="sum" id="sum"></div>
+      <div class="keys" id="keys"></div>
+      <div id="tree"></div>
+    </aside>
+
+    <section class="pane center" id="center" aria-live="polite"></section>
+
+    <aside class="pane side" aria-label="실행 조건">
+      <div class="blk">
+        <h2>실행 조건</h2>
+        <div class="f"><span>대상</span>
+          <div class="seg" role="group" aria-label="대상" id="target">
+            <button aria-pressed="true" data-t="default" title="프롬프트도 모델도 건드리지 않고 지금 상태 그대로 호출">Default</button>
+            <button aria-pressed="false" data-t="model" title="role 별 모델을 바꿔서 실행">Model</button>
+            <button aria-pressed="false" data-t="prompt" disabled title="준비 중">Prompt</button>
+          </div>
+        </div>
+        <div class="roles" id="roles" hidden>
+          <span>router</span><select><option>gpt-4.1-mini</option><option>qwen2.5-72b</option></select>
+          <span>parser</span><select><option>qwen2.5-72b</option><option>gpt-4.1-mini</option><option>llama-3.3-70b</option></select>
+          <span>answer</span><select><option>gpt-4.1</option><option>qwen2.5-72b</option></select>
+        </div>
+        <div class="f"><label for="ag">Agent</label><select id="ag"><option>운영 챗 API</option><option>스테이징 챗 API</option></select></div>
+        <div class="f"><span>입력</span>
+          <div class="seg" role="group" aria-label="입력" id="input">
+            <button aria-pressed="true" data-i="dataset">데이터셋</button><button aria-pressed="false" data-i="manual">직접 입력</button>
+          </div>
+        </div>
+        <div id="dsFields">
+          <div class="f"><select id="ds" aria-label="데이터셋"><option>예약 슬롯 파싱</option><option>FAQ 답변</option><option>상품 검색</option></select></div>
+          <div class="f" style="margin-top:6px"><div class="row2"><select id="fd" aria-label="폴더"><option>전체 폴더</option><option>예약</option><option>변경</option><option>취소</option><option>검색</option></select><button class="btn" type="button">케이스 선택</button></div></div>
+          <p class="purpose" style="margin-top:6px">목적: 예약 · 변경 · 취소 요청에서 슬롯을 뽑는다</p>
+        </div>
+        <div id="manFields" hidden>
+          <div class="f"><textarea id="msg" aria-label="메시지">9월 20일 오후 3시에 4명 창가로 예약해 줘</textarea></div>
+          <div class="f" style="margin-top:6px"><textarea id="exp" aria-label="기대 정답" placeholder="기대 정답"></textarea></div>
+        </div>
+        <div class="f"><span>채점</span>
+          <div class="checks">
+            <label class="lead"><input type="checkbox" checked> 정답 일치</label>
+            <hr>
+            <label><input type="checkbox"> faithfulness</label>
+            <label><input type="checkbox"> answer_relevancy</label>
+            <label><input type="checkbox"> context_precision</label>
+            <label><input type="checkbox"> context_recall</label>
+            <label><input type="checkbox"> answer_correctness</label>
+          </div>
+        </div>
+        <button class="go" id="go">42건 실행</button>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="status">
+    <span id="stTxt">10월 30일 14:12 실행 · 완료</span>
+    <span class="prog" aria-hidden="true"><i id="prog" style="width:100%"></i></span>
+    <span class="r">Engine FALLBACK · 2분 41초</span>
+  </footer>
+</div>
+
+<script>
+(function(){
+  let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const SRC = {
+    '예약':['9월 20일 오후 3시에 4명 창가로 예약해 줘','내일 저녁 7시 두 명 자리 있어?','토요일 점심 6명 단체 예약 부탁해','다음 주 화요일 12시 반 3명','오늘 밤 8시 바 좌석 2명'],
+    '변경':['R-7781 예약 시간을 6시로 바꿔 줘','인원을 4명에서 5명으로 늘려 줘','예약 날짜 하루 미뤄 줄래'],
+    '취소':['R-7781 예약 취소해 줘','오늘 예약 전부 취소','방금 한 예약 없던 걸로'],
+    '검색':['성수 근처 파스타 맛집','주차 되는 한식당 찾아 줘','연남동 브런치 4인석'],
+  };
+  const SIZES = {'예약':14,'변경':10,'취소':8,'검색':10};
+  const KEYPOOL = ['slots.time','slots.people','items[1].name','code','slots.seat'];
+  const cases = []; let n = 0;
+  Object.entries(SIZES).forEach(([f,c]) => { for (let i=0;i<c;i++){ n++;
+    const ok = rnd() > .22;
+    const broken = ok ? [] : KEYPOOL.filter(() => rnd() < .45);
+    if (!ok && !broken.length) broken.push('slots.time');
+    cases.push({id:n, folder:f, q:SRC[f][i % SRC[f].length], ok, broken, passed:false, trace: f === '변경'});
+  }});
+  const state = { key:null, open:{'예약':true,'변경':true,'취소':true,'검색':true}, cur:null, tab:'diff', running:false };
+  const isOk = c => c.ok || c.passed;
+  const visible = () => cases.filter(c => !state.key || c.broken.includes(state.key));
+  state.cur = cases.find(c => !c.ok).id;
+
+  function renderSum(){
+    const ok = cases.filter(isOk).length, man = cases.filter(c => c.passed).length;
+    document.getElementById('sum').innerHTML = `<div class="big">${ok}<small> / 42 정답 일치 · ${Math.round(ok/42*100)}%</small></div><div class="sub">${man ? `수동 통과 ${man}건 포함` : '수동 통과 없음'}</div>`;
+  }
+  // 키별 집계 — 실패한 키만, 실패 수 순. 누르면 그 키가 깨진 케이스만 아래에 남는다.
+  function renderKeys(){
+    const counts = KEYPOOL.map(k => [k, cases.filter(c => !c.passed && c.broken.includes(k)).length]).filter(([,v]) => v).sort((a,b) => b[1]-a[1]);
+    const max = counts[0]?.[1] || 1;
+    document.getElementById('keys').innerHTML = `<h2>키별 집계</h2>
+      <button class="kb all" aria-pressed="${!state.key}" data-k=""><span class="k">모든 케이스</span><span></span><span class="n">42</span></button>` +
+      counts.map(([k,v]) => `<button class="kb" aria-pressed="${state.key===k}" data-k="${k}"><span class="k">${k}</span><span class="bar2"><i style="width:${v/max*100}%"></i></span><span class="n">${v}</span></button>`).join('');
+  }
+  function renderTree(){
+    const vis = new Set(visible().map(c => c.id));
+    let h = '';
+    Object.keys(SIZES).forEach(f => {
+      const all = cases.filter(c => c.folder === f), bad = all.filter(c => !isOk(c)).length;
+      const shown = all.filter(c => vis.has(c.id));
+      if (!shown.length) return;
+      h += `<button class="folder" data-folder="${f}" aria-expanded="${state.open[f]}"><span class="tri"></span>${f}<span class="cnt">${bad?`<b>${bad}</b> / `:''}${all.length}</span></button>`;
+      if (state.open[f]) shown.forEach(c => {
+        const d = state.running ? (c.done ? (isOk(c)?'':'bad') : (c.id === state.runningId ? 'run' : 'wait')) : (isOk(c)?'':'bad');
+        h += `<button class="item" data-id="${c.id}" aria-current="${c.id===state.cur}"><span class="dot ${d}"></span><span class="id">#${String(c.id).padStart(2,'0')}</span><span class="t">${c.q}</span>${c.passed?'<span class="pass">통과</span>':''}</button>`;
+      });
+    });
+    document.getElementById('tree').innerHTML = h;
+  }
+
+  const EXP = [['action','"reserve"'],['slots.date','"2026-09-20"'],['slots.time','"15:00"'],['slots.people','4'],['slots.seat','"창가"'],['code','200'],['items[0].name','"김민수"'],['items[1].name','"이서연"'],['memo','""']];
+  const ACT = {'slots.time':['"14:00"','bad'],'slots.people':['"4"','bad'],'code':['500','bad'],'items[1].name':['없음','gone'],'slots.seat':['"홀"','bad']};
+  function renderCenter(){
+    const c = cases.find(x => x.id === state.cur);
+    let diff = `<div class="colh">정답</div><div class="colh">${c.trace?'중간 변수 parsed':'답변'}</div>`;
+    EXP.forEach(([k,v]) => {
+      const a = c.broken.includes(k) && ACT[k];
+      diff += `<div class="ln"><span class="k">${k}: </span><span class="v">${v}</span></div>`;
+      diff += `<div class="ln r ${a?a[1]:''}"><span class="k">${k}: </span><span class="v">${a?a[0]:v}</span></div>`;
+    });
+    if (!c.ok) diff += `<div class="ln"></div><div class="ln r extra"><span class="k">debug: </span><span class="v">"retry=1"</span></div>`;
+    diff += `<p class="note">${c.trace ? '답변이 아니라 노드가 남긴 <code>parsed</code> 로 비교' : '<code>body</code> 기준 비교 · 키 순서 무시'}</p>`;
+    const raw = JSON.stringify({body:{action:'reserve',slots:{date:'2026-09-20',time:c.broken.includes('slots.time')?'14:00':'15:00',people:c.broken.includes('slots.people')?'4':4,seat:'창가'},code:c.broken.includes('code')?500:200,memo:''}},null,2);
+    document.getElementById('center').innerHTML = `
+      <div class="case-head">
+        <div class="where"><span>${c.folder} · #${String(c.id).padStart(2,'0')}</span>${c.passed?'<span class="badge ok">수동 통과</span>':c.ok?'<span class="badge ok">일치</span>':`<span class="badge">${c.broken.length}개 키 다름</span>`}<span class="time">2.4초 · 첫 토큰 0.6초</span></div>
+        <h1>${c.q}</h1>
+      </div>
+      <div class="tabs" role="tablist">
+        <button role="tab" aria-selected="${state.tab==='diff'}" data-tab="diff">정답 대 답변</button>
+        <button role="tab" aria-selected="${state.tab==='raw'}" data-tab="raw">답변 원문</button>
+        <button role="tab" aria-selected="${state.tab==='ctx'}" data-tab="ctx">Contexts 3</button>
+      </div>
+      ${state.tab==='diff' ? `<div class="diff">${diff}</div>` : state.tab==='raw' ? `<pre class="raw">${raw}</pre>` :
+        `<pre class="raw">1. 매장 영업시간 11:30–22:00, 브레이크 15:00–17:00\n2. 창가 좌석은 4인 테이블 3개\n3. 예약 변경은 방문 2시간 전까지</pre>`}
+      <div class="case-acts">${c.ok ? '' : `<button class="btn" data-pass aria-pressed="${c.passed}">${c.passed?'통과 취소':'통과로 표시'}</button>`}<button class="btn">이 케이스 다시 실행</button></div>`;
+  }
+
+  // 이벤트
+  document.getElementById('keys').addEventListener('click', e => {
+    const b = e.target.closest('.kb'); if (!b) return;
+    state.key = b.dataset.k || null;
+    if (!visible().some(c => c.id === state.cur)) state.cur = visible()[0].id;
+    renderKeys(); renderTree(); renderCenter();
+  });
+  document.getElementById('tree').addEventListener('click', e => {
+    const f = e.target.closest('.folder'); if (f){ state.open[f.dataset.folder] = !state.open[f.dataset.folder]; renderTree(); return; }
+    const it = e.target.closest('.item'); if (it){ state.cur = +it.dataset.id; renderTree(); renderCenter(); }
+  });
+  document.getElementById('center').addEventListener('click', e => {
+    const t = e.target.closest('[data-tab]'); if (t){ state.tab = t.dataset.tab; renderCenter(); return; }
+    if (e.target.closest('[data-pass]')){ const c = cases.find(x => x.id === state.cur); c.passed = !c.passed; renderSum(); renderKeys(); renderTree(); renderCenter(); }
+  });
+  const segPick = (id, attr, fn) => document.getElementById(id).addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b || b.disabled) return;
+    document.querySelectorAll(`#${id} button`).forEach(x => x.setAttribute('aria-pressed', x === b));
+    fn(b.dataset[attr]);
+  });
+  segPick('target','t', t => { document.getElementById('roles').hidden = t !== 'model'; });
+  segPick('input','i', v => {
+    document.getElementById('dsFields').hidden = v !== 'dataset';
+    document.getElementById('manFields').hidden = v !== 'manual';
+    go.textContent = v === 'manual' ? '호출' : '42건 실행';
+  });
+
+  // 실행: 결과가 들어오는 대로 왼쪽 점이 채워진다
+  const go = document.getElementById('go');
+  go.addEventListener('click', () => {
+    if (go.textContent === '호출') return;
+    if (state.running){ stop(); return; }
+    state.running = true; state.key = null;
+    cases.forEach(c => c.done = false);
+    go.textContent = '취소'; go.classList.add('stop');
+    let k = 0;
+    state.timer = setInterval(() => {
+      if (k > 0) cases[k-1].done = true;
+      if (k >= cases.length){ stop(); return; }
+      state.runningId = cases[k].id; k++;
+      document.getElementById('prog').style.width = (k/cases.length*100)+'%';
+      document.getElementById('stTxt').textContent = `실행 중 · ${k}/42`;
+      renderTree();
+    }, 120);
+    renderKeys();
+  });
+  function stop(){
+    clearInterval(state.timer); state.running = false;
+    go.textContent = '42건 실행'; go.classList.remove('stop');
+    document.getElementById('prog').style.width = '100%';
+    document.getElementById('stTxt').textContent = '방금 실행 · 완료';
+    renderTree();
+  }
+
+  renderSum(); renderKeys(); renderTree(); renderCenter();
+})();
+</script>
+
+</html>

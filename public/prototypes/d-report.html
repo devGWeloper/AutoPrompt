@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>TestX 리포트형</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=Nanum+Myeongjo:wght@700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: 왼쪽은 실행 조건 네 단계(고르면 한 줄 요약으로 접힘), 오른쪽은 결과를 시험 성적표처럼 위→아래로: 판정 → 지표 → 키별 집계 → 케이스. 기능은 현재 Single/Pair Run 그대로. */
+:root{
+  --bg:#f2f3f5; --paper:#ffffff; --ink:#161a22; --body:#3f4652; --muted:#7d8492; --line:#e1e4e9; --line-2:#cbd0d8;
+  --accent:#24427a; --accent-soft:#e8edf6;
+  --ok:#2d8656; --ok-soft:#e3f1e8; --bad:#c03e37; --bad-soft:#fbe7e5; --warn:#b2761d;
+  --sans:"IBM Plex Sans KR",system-ui,"Malgun Gothic",sans-serif; --serif:"Nanum Myeongjo","Batang",serif; --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#121419; --paper:#1a1d24; --ink:#eef0f4; --body:#c2c7d0; --muted:#8a919d; --line:#2a2e37; --line-2:#3b404b;
+  --accent:#93aee6; --accent-soft:#222b3d; --ok:#5cc28a; --ok-soft:#1d3328; --bad:#f07a72; --bad-soft:#3a2321; --warn:#e3a94f; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121419; --paper:#1a1d24; --ink:#eef0f4; --body:#c2c7d0; --muted:#8a919d; --line:#2a2e37; --line-2:#3b404b;
+  --accent:#93aee6; --accent-soft:#222b3d; --ok:#5cc28a; --ok-soft:#1d3328; --bad:#f07a72; --bad-soft:#3a2321; --warn:#e3a94f; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--body);font-family:var(--sans);font-size:14px;line-height:1.55;font-variant-numeric:tabular-nums}
+button,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+
+header{background:var(--paper);border-bottom:1px solid var(--line)}
+header .in{max-width:1280px;margin:0 auto;height:54px;display:flex;align-items:center;gap:22px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.brand{font-weight:700;color:var(--ink)}
+header nav{display:flex;gap:2px;overflow-x:auto}
+header nav button{border:0;background:none;padding:6px 10px;border-radius:6px;color:var(--muted);cursor:pointer;white-space:nowrap}
+header nav button[aria-current]{color:var(--ink);font-weight:600;background:var(--bg)}
+header .env{margin-left:auto;font-size:12px;color:var(--muted);white-space:nowrap}
+
+.layout{max-width:1280px;margin:0 auto;display:grid;grid-template-columns:340px minmax(0,1fr);gap:24px;align-items:start;padding-block:24px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+/* 왼쪽: 단계 */
+.steps{position:sticky;top:16px;background:var(--paper);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.mode{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--line)}
+.mode button{border:0;background:none;padding:11px 0;cursor:pointer;color:var(--muted);font-weight:500;border-bottom:2px solid transparent}
+.mode button[aria-pressed="true"]{color:var(--ink);border-bottom-color:var(--ink)}
+.step{border-bottom:1px solid var(--line)}
+.sh{border:0;background:none;width:100%;display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;align-items:center;padding:12px 16px;cursor:pointer;text-align:left}
+.sh .no{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:11.5px;font-weight:600;border:1.5px solid var(--line-2);color:var(--muted)}
+.step.done .sh .no{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.sh .t{display:grid;min-width:0}
+.sh .t b{font-size:12px;color:var(--muted);font-weight:500}
+.sh .t span{color:var(--ink);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sh .edit{font-size:12px;color:var(--accent)}
+.step[aria-expanded="true"] .sh .edit{visibility:hidden}
+.sb{padding:0 16px 14px 48px;display:grid;gap:8px}
+.opt{border:1px solid var(--line-2);background:var(--paper);border-radius:7px;padding:8px 10px;text-align:left;cursor:pointer;display:grid;gap:1px}
+.opt small{color:var(--muted);font-size:12px}
+.opt[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.opt[aria-pressed="true"] b{color:var(--accent)}
+.opt:disabled{opacity:.45;cursor:not-allowed}
+.opt b{font-weight:600;color:var(--ink)}
+.sb select,.sb textarea{width:100%;border:1px solid var(--line-2);border-radius:7px;padding:7px 9px;background:var(--paper)}
+.sb .two{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.sb .lbl{font-size:12px;color:var(--muted)}
+.roles{display:grid;grid-template-columns:60px 1fr;gap:6px;align-items:center;font-size:12.5px;color:var(--muted)}
+.roles.pair{grid-template-columns:52px 1fr 1fr}
+.roles select{padding:5px 6px;font-size:12.5px}
+.roles .h{font-size:11.5px;text-align:center}
+.chk{display:flex;gap:8px;align-items:center;font-size:13.5px}
+.chk.lead{font-weight:600;color:var(--ink)}
+.sep{border:0;border-top:1px solid var(--line);margin:2px 0}
+.foot{padding:14px 16px;display:grid;gap:8px}
+.go{border:0;background:var(--accent);color:#fff;border-radius:8px;padding:11px;font-weight:600;cursor:pointer}
+:root[data-theme="dark"] .go{color:#0f1726}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .go{color:#0f1726}}
+.foot p{margin:0;font-size:12px;color:var(--muted);text-align:center}
+
+/* 오른쪽: 성적표 */
+.report{display:grid;gap:18px;min-width:0}
+.head{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:22px 26px;display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 32px;align-items:center}
+.grade{font-family:var(--serif);font-weight:800;color:var(--ink);font-size:64px;line-height:.9;letter-spacing:-2px}
+.grade small{font-family:var(--sans);font-size:16px;color:var(--muted);font-weight:500;letter-spacing:0;margin-left:6px}
+.grade.pair{font-size:48px}
+.grade .arr{font-family:var(--sans);font-size:22px;color:var(--muted);margin:0 10px;letter-spacing:0}
+.grade .bside{color:var(--accent)}
+.facts{display:grid;gap:4px;font-size:13px;color:var(--muted)}
+.facts .cond{color:var(--ink);font-weight:500}
+.facts .verd{color:var(--accent);font-weight:600}
+.facts .acts{display:flex;gap:8px;margin-top:6px;flex-wrap:wrap}
+.btn{border:1px solid var(--line-2);background:var(--paper);border-radius:6px;padding:5px 12px;font-size:12.5px;cursor:pointer}
+.btn:hover{border-color:var(--muted);color:var(--ink)}
+.btn[aria-pressed="true"]{border-color:var(--ok);color:var(--ok)}
+
+.sec{background:var(--paper);border:1px solid var(--line);border-radius:10px}
+.sec > h2{margin:0;padding:13px 20px;border-bottom:1px solid var(--line);font-size:14px;color:var(--ink);font-weight:600;display:flex;gap:10px;align-items:baseline}
+.sec > h2 small{font-weight:400;color:var(--muted);font-size:12.5px}
+.mrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.m{padding:14px 20px;border-right:1px solid var(--line)}
+.m:last-child{border-right:0}
+.m .n{font-size:12px;color:var(--muted)}
+.m .v{font-size:22px;font-weight:700;color:var(--ink);letter-spacing:-.4px}
+.m .v .b{color:var(--accent)}
+.m .v small{font-size:13px;color:var(--muted);font-weight:500;margin:0 4px}
+.m .lv{font-size:12px}
+.lv.ok{color:var(--ok)} .lv.mid{color:var(--warn)} .lv.low{color:var(--bad)}
+
+.kb{padding:8px 20px 14px;display:grid;gap:2px}
+.kr{display:grid;grid-template-columns:150px minmax(0,1fr) 64px;gap:12px;align-items:center;padding:5px 0}
+.kr .k{font-family:var(--mono);font-size:12.5px;color:var(--ink)}
+.kr .bars{display:grid;gap:3px}
+.kr .bar{height:7px;border-radius:4px;background:var(--line);overflow:hidden}
+.kr .bar i{display:block;height:100%;background:var(--bad);border-radius:4px}
+.kr .bar.b i{background:var(--accent)}
+.kr .n{text-align:right;font-size:12.5px;color:var(--bad);font-weight:600}
+.kr .n .b{color:var(--accent)}
+
+.tools{display:flex;gap:6px;margin-left:auto}
+.tools button{border:1px solid var(--line-2);background:var(--paper);border-radius:99px;padding:2px 10px;font-size:12px;cursor:pointer;color:var(--muted)}
+.tools button[aria-pressed="true"]{border-color:var(--ink);color:var(--ink)}
+table.cases{width:100%;border-collapse:collapse}
+table.cases th{font-size:12px;color:var(--muted);font-weight:500;text-align:left;padding:8px 12px;border-bottom:1px solid var(--line)}
+table.cases td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+table.cases tr.r{cursor:pointer}
+table.cases tr.r:hover td{background:var(--bg)}
+table.cases tr.r[aria-expanded="true"] td{background:var(--accent-soft)}
+.cid{font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap}
+.cq{color:var(--ink)}
+.cf{font-size:12px;color:var(--muted);white-space:nowrap}
+.res{display:inline-flex;gap:4px;align-items:center;font-size:12.5px;font-weight:600;white-space:nowrap}
+.res.ok{color:var(--ok)} .res.bad{color:var(--bad)}
+.res.man{color:var(--ok);font-weight:500}
+.kt{display:flex;gap:4px;flex-wrap:wrap}
+.kt span{font-family:var(--mono);font-size:11.5px;background:var(--bad-soft);color:var(--bad);padding:0 6px;border-radius:4px}
+.tm{font-size:12px;color:var(--muted);white-space:nowrap;text-align:right}
+td.det{padding:0 12px 16px 52px;background:var(--accent-soft)}
+table.kv{width:100%;border-collapse:collapse;font-size:12.5px;background:var(--paper);border:1px solid var(--line);border-radius:6px}
+table.kv th{font-size:12px;color:var(--muted);font-weight:500;padding:6px 10px;text-align:left;border-bottom:1px solid var(--line)}
+table.kv td{padding:6px 10px;border-bottom:1px solid var(--line);font-family:var(--mono);color:var(--ink);word-break:break-all}
+table.kv td.k{color:var(--body)}
+table.kv td.bad{background:var(--bad-soft);color:var(--bad)}
+.dacts{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.scroll{overflow-x:auto}
+
+@media (max-width:900px){
+  .layout{grid-template-columns:1fr}
+  .steps{position:static}
+  header .env{display:none}
+  .head{grid-template-columns:1fr}
+  .kr{grid-template-columns:110px minmax(0,1fr) 54px}
+  .cf,.tm{display:none}
+}
+</style>
+
+<header><div class="in">
+  <span class="brand">TestX</span>
+  <nav aria-label="주 메뉴"><button aria-current="page" id="navRun">Single Run</button><button>Pair Run</button><button>Datasets</button><button>Records</button><button>Prompt</button><button>Settings</button></nav>
+  <span class="env">dev · DB 연결됨</span>
+</div></header>
+
+<div class="layout">
+  <aside class="steps" aria-label="실행 조건">
+    <div class="mode" role="group" aria-label="실행 종류">
+      <button aria-pressed="true" data-m="single">Single</button><button aria-pressed="false" data-m="pair">Pair</button>
+    </div>
+    <div id="steps"></div>
+    <div class="foot"><button class="go" id="go"></button><p id="goNote"></p></div>
+  </aside>
+
+  <section class="report" id="report" aria-live="polite"></section>
+</div>
+
+<script>
+(function(){
+  const S = { mode:'single', open:2, target:'default', agent:0, agentB:1, input:'dataset', ds:0, folder:0, metrics:new Set(['exact','faithfulness']), filter:'bad', exp:3, passed:new Set() };
+  const AGENTS = ['운영 챗 API','스테이징 챗 API'];
+  const DS = ['예약 슬롯 파싱 · 42건','FAQ 답변 · 30건','상품 검색 · 18건'];
+  const FOLD = ['전체 폴더','예약 14','변경 10','취소 8','검색 10'];
+  const MET = [['exact','정답 일치'],['faithfulness','faithfulness'],['answer_relevancy','answer_relevancy'],['context_precision','context_precision'],['context_recall','context_recall'],['answer_correctness','answer_correctness']];
+  const MODELS = ['gpt-4.1-mini','gpt-4.1','qwen2.5-72b','llama-3.3-70b'];
+  const ROLES = [['router',0,0],['parser',2,3],['answer',1,1]];
+  const pair = () => S.mode === 'pair';
+
+  // ---- 단계 요약 문구 ----
+  const sum = {
+    target: () => ({default:'Default · 지금 상태 그대로', model:'Model · role 별 모델', prompt:'Prompt'})[S.target],
+    agent: () => pair() && S.target === 'default' ? `A ${AGENTS[S.agent]} · B ${AGENTS[S.agentB]}` : AGENTS[S.agent],
+    input: () => S.input === 'manual' ? '직접 입력 · 메시지 1건' : `${DS[S.ds]}${S.folder ? ' › ' + FOLD[S.folder].split(' ')[0] : ''}`,
+    judge: () => S.metrics.size ? MET.filter(([k]) => S.metrics.has(k)).map(([,n]) => n).join(', ') : '채점 안 함',
+  };
+  const body = {
+    target: () => `
+      <button class="opt" data-set="target" data-v="default" aria-pressed="${S.target==='default'}"><b>Default</b><small>프롬프트·모델을 건드리지 않음</small></button>
+      <button class="opt" data-set="target" data-v="model" aria-pressed="${S.target==='model'}"><b>Model</b><small>role 별 모델을 바꿔서</small></button>
+      <button class="opt" disabled aria-pressed="false"><b>Prompt</b><small>준비 중</small></button>
+      ${S.target === 'model' ? `<div class="roles ${pair()?'pair':''}">${pair()?'<span></span><span class="h">A</span><span class="h">B</span>':''}${ROLES.map(([r,a,b]) => {
+        const sel = v => `<select aria-label="${r}">${MODELS.map((m,i)=>`<option${i===v?' selected':''}>${m}</option>`).join('')}</select>`;
+        return `<span>${r}</span>${sel(a)}${pair()?sel(b):''}`; }).join('')}</div>` : ''}`,
+    agent: () => pair() && S.target === 'default'
+      ? `<span class="lbl">A</span><select data-sel="agent">${AGENTS.map((a,i)=>`<option value="${i}"${i===S.agent?' selected':''}>${a}</option>`).join('')}</select>
+         <span class="lbl">B</span><select data-sel="agentB">${AGENTS.map((a,i)=>`<option value="${i}"${i===S.agentB?' selected':''}>${a}</option>`).join('')}</select>`
+      : `<select data-sel="agent">${AGENTS.map((a,i)=>`<option value="${i}"${i===S.agent?' selected':''}>${a}</option>`).join('')}</select>`,
+    input: () => `
+      <div class="two"><button class="opt" data-set="input" data-v="dataset" aria-pressed="${S.input==='dataset'}"><b>데이터셋</b></button><button class="opt" data-set="input" data-v="manual" aria-pressed="${S.input==='manual'}"><b>직접 입력</b></button></div>
+      ${S.input === 'dataset'
+        ? `<select data-sel="ds">${DS.map((d,i)=>`<option value="${i}"${i===S.ds?' selected':''}>${d}</option>`).join('')}</select>
+           <div class="two"><select data-sel="folder">${FOLD.map((d,i)=>`<option value="${i}"${i===S.folder?' selected':''}>${d}</option>`).join('')}</select><button class="btn" type="button">케이스 선택</button></div>
+           <span class="lbl">목적: 예약 · 변경 · 취소 요청에서 슬롯을 뽑는다</span>`
+        : `<textarea rows="3" aria-label="메시지">9월 20일 오후 3시에 4명 창가로 예약해 줘</textarea>${S.metrics.size?'<textarea rows="2" aria-label="기대 정답" placeholder="기대 정답"></textarea>':''}`}`,
+    judge: () => MET.map(([k,n],i) => `${i===1?'<hr class="sep">':''}<label class="chk ${i===0?'lead':''}"><input type="checkbox" data-met="${k}" ${S.metrics.has(k)?'checked':''}> ${n}</label>`).join(''),
+  };
+  const ORDER = [['target','대상'],['agent','Agent'],['input','입력'],['judge','채점']];
+
+  function renderSteps(){
+    document.getElementById('steps').innerHTML = ORDER.map(([k,l],i) => {
+      const open = S.open === i;
+      return `<div class="step done" aria-expanded="${open}">
+        <button class="sh" data-step="${i}"><span class="no">${i+1}</span><span class="t"><b>${l}</b><span>${sum[k]()}</span></span><span class="edit">바꾸기</span></button>
+        ${open ? `<div class="sb">${body[k]()}</div>` : ''}</div>`;
+    }).join('');
+    const n = S.input === 'manual' ? null : [42,14,10,8,10][S.folder];
+    document.getElementById('go').textContent = n == null ? (pair() ? 'A · B 호출' : '호출') : (pair() ? `${n}건 × A · B 실행` : `${n}건 실행`);
+    document.getElementById('goNote').textContent = S.metrics.size ? '' : '채점 없이 답변만 받습니다';
+    document.querySelectorAll('.mode button').forEach(b => b.setAttribute('aria-pressed', b.dataset.m === S.mode));
+    document.getElementById('navRun').textContent = pair() ? 'Pair Run' : 'Single Run';
+  }
+  const steps = document.getElementById('steps');
+  steps.addEventListener('click', e => {
+    const h = e.target.closest('[data-step]'); if (h){ const i = +h.dataset.step; S.open = S.open === i ? -1 : i; renderSteps(); return; }
+    const o = e.target.closest('[data-set]'); if (o && !o.disabled){ S[o.dataset.set] = o.dataset.v; renderSteps(); renderReport(); }
+  });
+  steps.addEventListener('change', e => {
+    const s = e.target.dataset.sel; if (s){ S[s] = +e.target.value; renderSteps(); return; }
+    const m = e.target.dataset.met; if (m){ e.target.checked ? S.metrics.add(m) : S.metrics.delete(m); renderSteps(); renderReport(); }
+  });
+  document.querySelector('.mode').addEventListener('click', e => {
+    const b = e.target.closest('[data-m]'); if (!b) return; S.mode = b.dataset.m; renderSteps(); renderReport();
+  });
+
+  // ---- 성적표 ----
+  const CASES = [
+    [1,'예약','9월 20일 오후 3시에 4명 창가로 예약해 줘',['slots.time','code'],[],'2.4초'],
+    [2,'예약','내일 저녁 7시 두 명 자리 있어?',[],[],'1.9초'],
+    [3,'예약','토요일 점심 6명 단체 예약 부탁해',['slots.people'],[],'2.2초'],
+    [5,'예약','다음 주 화요일 12시 반 3명',['slots.time'],['slots.time'],'2.0초'],
+    [8,'예약','오늘 밤 8시 바 좌석 2명',['slots.seat'],[],'2.6초'],
+    [15,'변경','R-7781 예약 시간을 6시로 바꿔 줘',['slots.time'],[],'1.7초'],
+    [17,'변경','인원을 4명에서 5명으로 늘려 줘',[],['slots.people'],'1.8초'],
+    [21,'변경','예약 날짜 하루 미뤄 줄래',['slots.time'],['slots.time'],'2.1초'],
+    [26,'취소','R-7781 예약 취소해 줘',[],[],'1.2초'],
+    [29,'취소','오늘 예약 전부 취소',['code'],[],'1.5초'],
+    [33,'검색','성수 근처 파스타 맛집',['items[1].name'],['items[1].name'],'3.1초'],
+    [36,'검색','주차 되는 한식당 찾아 줘',[],[],'2.8초'],
+  ];
+  const lv = v => v >= .8 ? ['ok','High'] : v >= .6 ? ['mid','Mid'] : ['low','Low'];
+  function renderReport(){
+    const P = pair();
+    const mets = [['정답 일치',.79,.86,'exact'],['faithfulness',.82,.84,'faithfulness'],['answer_relevancy',.74,.71,'answer_relevancy'],['context_precision',.68,.70,'context_precision'],['context_recall',.71,.73,'context_recall'],['answer_correctness',.66,.72,'answer_correctness']].filter(m => S.metrics.has(m[3]));
+    const keys = [['slots.time',8,4],['slots.people',4,2],['items[1].name',3,3],['code',2,1],['slots.seat',1,0]];
+    const km = 8;
+    const rows = CASES.filter(c => S.filter === 'all' || c[3].length || (P && c[4].length));
+    const cond = `${sum.target()} · ${S.input==='manual'?'직접 입력':DS[S.ds].split(' · ')[0]} · ${AGENTS[S.agent]}`;
+
+    let h = `<div class="head">
+      ${P ? `<div class="grade pair">33<span class="arr">→</span><span class="bside">36</span><small>/ 42 일치</small></div>`
+          : `<div class="grade">33<small>/ 42 일치</small></div>`}
+      <div class="facts"><span class="cond">${cond}</span>${P ? '<span class="verd">B 가 낫습니다</span>' : ''}<span>10월 30일 14:12 · ${P?'5분 08초':'2분 41초'} · Engine FALLBACK</span>
+        <div class="acts"><button class="btn">고른 케이스 다시 실행</button><button class="btn">CSV</button></div></div>
+    </div>`;
+    if (mets.length) h += `<div class="sec"><h2>지표</h2><div class="mrow">${mets.map(([n,a,b]) => {
+      const [c,t] = lv(P ? b : a);
+      return `<div class="m"><div class="n">${n}</div><div class="v">${P ? `${a.toFixed(2)}<small>→</small><span class="b">${b.toFixed(2)}</span>` : a.toFixed(2)}</div><div class="lv ${c}">${t}</div></div>`; }).join('')}</div></div>`;
+    h += `<div class="sec"><h2>키별 집계 <small>틀린 케이스 수${P?' · 위 A, 아래 B':''}</small></h2><div class="kb">${keys.map(([k,a,b]) => `
+      <div class="kr"><span class="k">${k}</span><span class="bars"><span class="bar"><i style="width:${a/km*100}%"></i></span>${P?`<span class="bar b"><i style="width:${b/km*100}%"></i></span>`:''}</span><span class="n">${a}${P?` · <span class="b">${b}</span>`:''}</span></div>`).join('')}</div></div>`;
+    h += `<div class="sec"><h2>케이스 <small>${rows.length}건</small><span class="tools" role="group" aria-label="보기"><button aria-pressed="${S.filter==='bad'}" data-f="bad">틀린 것</button><button aria-pressed="${S.filter==='all'}" data-f="all">전체</button></span></h2>
+      <div class="scroll"><table class="cases"><thead><tr><th></th><th>질문</th><th>폴더</th>${P?'<th>A</th><th>B</th>':'<th>판정</th><th>다른 키</th>'}<th style="text-align:right">시간</th></tr></thead><tbody>
+      ${rows.map(([id,f,q,ka,kb,t]) => {
+        const open = S.exp === id, man = S.passed.has(id);
+        const res = ks => !ks.length ? '<span class="res ok">일치</span>' : man ? '<span class="res man">수동 통과</span>' : `<span class="res bad">${ks.length}개 다름</span>`;
+        const cells = P ? `<td>${res(ka)}</td><td>${res(kb)}</td>` : `<td>${res(ka)}</td><td><span class="kt">${ka.map(k=>`<span>${k}</span>`).join('')}</span></td>`;
+        let tr = `<tr class="r" data-c="${id}" aria-expanded="${open}"><td class="cid">#${String(id).padStart(2,'0')}</td><td class="cq">${q}</td><td class="cf">${f}</td>${cells}<td class="tm">${t}</td></tr>`;
+        if (open) tr += `<tr><td colspan="${P?6:6}" class="det"><table class="kv"><thead><tr><th>키</th><th>정답</th><th>${P?'A':'답변'}</th>${P?'<th>B</th>':''}</tr></thead><tbody>
+          <tr><td class="k">action</td><td>"reserve"</td><td>"reserve"</td>${P?'<td>"reserve"</td>':''}</tr>
+          <tr><td class="k">slots.time</td><td>"15:00"</td><td class="${ka.includes('slots.time')?'bad':''}">${ka.includes('slots.time')?'"14:00"':'"15:00"'}</td>${P?`<td class="${kb.includes('slots.time')?'bad':''}">${kb.includes('slots.time')?'"14:00"':'"15:00"'}</td>`:''}</tr>
+          <tr><td class="k">slots.people</td><td>4</td><td class="${ka.includes('slots.people')?'bad':''}">${ka.includes('slots.people')?'"4"':'4'}</td>${P?`<td class="${kb.includes('slots.people')?'bad':''}">${kb.includes('slots.people')?'"4"':'4'}</td>`:''}</tr>
+          <tr><td class="k">code</td><td>200</td><td class="${ka.includes('code')?'bad':''}">${ka.includes('code')?'500':'200'}</td>${P?'<td>200</td>':''}</tr></tbody></table>
+          <div class="dacts">${ka.length?`<button class="btn" data-pass="${id}" aria-pressed="${man}">${man?'통과 취소':'통과로 표시'}</button>`:''}<button class="btn">답변 원문</button><button class="btn">Contexts 3</button></div></td></tr>`;
+        return tr; }).join('')}
+      </tbody></table></div></div>`;
+    document.getElementById('report').innerHTML = h;
+  }
+  document.getElementById('report').addEventListener('click', e => {
+    const f = e.target.closest('[data-f]'); if (f){ S.filter = f.dataset.f; renderReport(); return; }
+    const p = e.target.closest('[data-pass]'); if (p){ const id = +p.dataset.pass; S.passed.has(id) ? S.passed.delete(id) : S.passed.add(id); renderReport(); return; }
+    const r = e.target.closest('tr.r'); if (r){ const id = +r.dataset.c; S.exp = S.exp === id ? null : id; renderReport(); }
+  });
+
+  renderSteps(); renderReport();
+})();
+</script>
+
+</html>

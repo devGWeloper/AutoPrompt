@@ -104,6 +104,13 @@ const GROUPS: { label: string; items: Item[] }[] = [
 
 const ALL_ITEMS = GROUPS.flatMap((g) => g.items);
 
+/** UI 개편 시안 — public/prototypes 의 정적 HTML. 앱이 직접 서빙하므로 계정·외부망 없이 열린다. 새 탭으로 연다. */
+const PROTOTYPES = [
+  { label: 'B 워크벤치', href: '/prototypes/b-workbench.html' },
+  { label: 'C A·B 대칭', href: '/prototypes/c-pair.html' },
+  { label: 'D 리포트형', href: '/prototypes/d-report.html' },
+];
+
 export const SECTION_META = Object.fromEntries(
   ALL_ITEMS.map((i) => [i.id, { label: i.label, icon: i.icon }]),
 ) as Record<SectionId, { label: string; icon: ReactNode }>;
@@ -377,6 +384,28 @@ export default function AppShell({
               </div>
             ))}
           </nav>
+          {/* 시안 바로가기 — 메뉴와 섞이지 않게 버전 줄 바로 위에 작게. 접힌 레일에서는 글자 하나만. */}
+          <div className="flex flex-col gap-0.5 border-t border-line pt-2">
+            {!folded && (
+              <p className="hidden px-2.5 pb-1 text-[11px] font-bold tracking-[0.6px] text-muted md:block">시안</p>
+            )}
+            {PROTOTYPES.map((p) => (
+              <a
+                key={p.href}
+                href={p.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={`${p.label} 시안 (새 탭)`}
+                className={cn(
+                  'flex h-[30px] items-center justify-center rounded-lg text-[12.5px] font-medium text-muted transition-colors hover:bg-surface-3 hover:text-ink',
+                  !folded && 'md:justify-start md:px-2.5',
+                )}
+              >
+                <span className={cn(!folded && 'md:hidden')}>{p.label[0]}</span>
+                {!folded && <span className="hidden truncate md:inline">{p.label}</span>}
+              </a>
+            ))}
+          </div>
           <div
             title={`TestX v${pkg.version}`}
             className={cn(
