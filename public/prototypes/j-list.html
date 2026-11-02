@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>TestX 목록형</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* 참고: Linear 이슈 목록 / Langfuse 트레이스 목록. 촘촘한 한 줄 행 + 폴더별 그룹 + 오른쪽 상세(피크). 실행 조건은 "새 실행" 모달의 속성 알약. */
+:root{
+  --bg:#f7f7f8; --side:#efeff1; --paper:#fff; --ink:#1a1b1f; --body:#45474f; --muted:#82848d; --line:#e6e6e9; --line-2:#d3d4d9; --hover:#f2f2f4;
+  --accent:#5b62d6; --accent-soft:#eeeffc;
+  --ok:#2b8a5c; --bad:#cf3d33; --bad-soft:#fce9e7; --warn:#b07215; --na:#a3a5ad;
+  --sans:system-ui,-apple-system,"Segoe UI","Noto Sans KR","Malgun Gothic",sans-serif; --mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141518;--side:#101114;--paper:#191a1e;--ink:#ececef;--body:#c3c4cb;--muted:#8a8c95;--line:#26272c;--line-2:#36373e;--hover:#202126;--accent:#9da2f2;--accent-soft:#25274a;--ok:#5fc490;--bad:#f0857c;--bad-soft:#3b201e;--warn:#e2a74e;--na:#5d5f68;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#141518;--side:#101114;--paper:#191a1e;--ink:#ececef;--body:#c3c4cb;--muted:#8a8c95;--line:#26272c;--line-2:#36373e;--hover:#202126;--accent:#9da2f2;--accent-soft:#25274a;--ok:#5fc490;--bad:#f0857c;--bad-soft:#3b201e;--warn:#e2a74e;--na:#5d5f68;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--bg);color:var(--body);font:13px/1.5 var(--sans);font-variant-numeric:tabular-nums}
+button,select,input,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.mono{font-family:var(--mono);font-size:12px}
+.app{display:grid;grid-template-columns:208px minmax(0,1fr);height:100vh}
+.sb{background:var(--side);padding:12px 8px;display:flex;flex-direction:column;gap:2px;overflow:auto;padding-left:max(8px,env(safe-area-inset-left,0px))}
+.sb .ws{font-weight:700;color:var(--ink);padding:4px 10px 12px;font-size:14px}
+.sb .gl{font-size:11.5px;color:var(--muted);padding:12px 10px 4px;font-weight:600}
+.sb button{border:0;background:none;text-align:left;padding:5px 10px;border-radius:6px;cursor:pointer;color:var(--body);display:flex;gap:8px;align-items:center}
+.sb button:hover{background:var(--hover)}
+.sb button[aria-current]{background:var(--paper);color:var(--ink);font-weight:600;box-shadow:0 0 0 1px var(--line)}
+.sb .ic{width:14px;height:14px;border-radius:4px;border:1.5px solid currentColor;opacity:.6;flex:none}
+.sb .new{margin-bottom:8px;border:1px solid var(--line-2);background:var(--paper);justify-content:center;font-weight:600;color:var(--ink)}
+.main{display:flex;flex-direction:column;min-width:0;background:var(--paper);border-left:1px solid var(--line)}
+.page{display:flex;flex-direction:column;min-height:0;flex:1}
+.page[hidden]{display:none}
+.top{display:flex;align-items:center;gap:10px;height:44px;padding:0 16px;border-bottom:1px solid var(--line);flex:none;flex-wrap:nowrap;overflow-x:auto;padding-right:max(16px,env(safe-area-inset-right,0px))}
+.top h1{margin:0;font-size:13.5px;color:var(--ink);font-weight:600;white-space:nowrap}
+.top .vt{display:flex;gap:2px}
+.top .vt button{border:1px solid transparent;background:none;border-radius:6px;padding:2px 9px;cursor:pointer;color:var(--muted);white-space:nowrap}
+.top .vt button[aria-pressed="true"]{border-color:var(--line-2);color:var(--ink);background:var(--paper)}
+.top .r{margin-left:auto;display:flex;gap:6px}
+.btn{border:1px solid var(--line-2);background:var(--paper);border-radius:6px;padding:3px 10px;font-size:12.5px;cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--hover)}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+:root[data-theme="dark"] .btn.pri{color:#14152e}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .btn.pri{color:#14152e}}
+.btn.danger{color:var(--bad)}
+.fbar{display:flex;align-items:center;gap:6px;padding:6px 16px;border-bottom:1px solid var(--line);flex:none;flex-wrap:wrap}
+.fchip{display:inline-flex;align-items:center;border:1px solid var(--line-2);border-radius:6px;overflow:hidden;font-size:12px;background:var(--paper)}
+.fchip span{padding:1px 7px;color:var(--muted)} .fchip b{padding:1px 7px;font-weight:500;color:var(--ink);border-left:1px solid var(--line)}
+.fchip button{border:0;border-left:1px solid var(--line);background:none;padding:1px 6px;cursor:pointer;color:var(--muted)}
+.fbar .add{border:0;background:none;color:var(--muted);cursor:pointer;font-size:12px}
+.fbar .r{margin-left:auto;display:flex;gap:10px;color:var(--muted);font-size:12px;align-items:center;flex-wrap:wrap}
+.fbar .r b{color:var(--ink);font-weight:600}
+.fbar .r .acc{color:var(--accent)}
+.split{display:grid;grid-template-columns:minmax(0,1fr) 400px;flex:1;min-height:0}
+.list{overflow:auto;min-width:0}
+.peek{border-left:1px solid var(--line);overflow:auto;background:var(--paper);min-width:0}
+
+/* 행 */
+.gh{display:flex;align-items:center;gap:8px;padding:6px 16px;background:var(--bg);border-bottom:1px solid var(--line);font-size:12.5px;position:sticky;top:0;z-index:1}
+.gh b{color:var(--ink);font-weight:600}
+.gh span{color:var(--muted)}
+.gh .r{margin-left:auto;font-size:12px}
+.row{display:grid;grid-template-columns:var(--icw,18px) 40px minmax(0,1fr) auto 52px;gap:10px;align-items:center;height:36px;padding:0 16px;border-bottom:1px solid var(--line);cursor:pointer;width:100%;border-left:0;border-right:0;border-top:0;background:none;text-align:left}
+.row:hover{background:var(--hover)}
+.row[aria-selected="true"]{background:var(--accent-soft)}
+.row .id{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.row .q{color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .tags{display:flex;gap:4px;overflow:hidden}
+.row .tags span{font-family:var(--mono);font-size:11px;border:1px solid var(--line-2);border-radius:99px;padding:0 7px;color:var(--body);white-space:nowrap;display:inline-flex;gap:4px;align-items:center}
+.row .tags span::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--bad)}
+.row .tm{font-size:12px;color:var(--muted);text-align:right}
+.ics{display:flex;gap:3px}
+.si{width:15px;height:15px;border-radius:50%;display:grid;place-items:center;flex:none;font-size:9px;font-weight:700;color:#fff;line-height:1}
+.si.ok{background:var(--ok)} .si.bad{background:var(--bad)} .si.man{background:transparent;border:1.5px solid var(--ok);color:var(--ok)} .si.na{background:transparent;border:1.5px dashed var(--na)}
+.si.ok::after{content:"✓"} .si.bad::after{content:"✕"} .si.man::after{content:"✓"}
+
+/* 피크 */
+.pk{padding:16px 18px;display:grid;gap:16px}
+.pk .pid{font-family:var(--mono);font-size:12px;color:var(--muted);display:flex;gap:8px;align-items:center}
+.pk .pid .r{margin-left:auto;display:flex;gap:4px}
+.pk h2{margin:0;font-size:17px;line-height:1.4;color:var(--ink);font-weight:600}
+.props{display:grid;grid-template-columns:96px minmax(0,1fr);gap:6px 10px;font-size:12.5px;align-items:center}
+.props dt{color:var(--muted)} .props dd{margin:0;color:var(--ink);display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.props .ab{font-size:11px;font-weight:700;color:var(--accent)}
+.pk h3{margin:0 0 6px;font-size:12px;color:var(--muted);font-weight:600}
+table.kv{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:6px}
+.kv th{font-family:var(--sans);font-weight:500;color:var(--muted);text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);background:var(--bg)}
+.kv td{padding:5px 8px;border-bottom:1px solid var(--line);color:var(--ink);word-break:break-all}
+.kv td.k{color:var(--muted)} .kv td.bad{background:var(--bad-soft);color:var(--bad)}
+.mt{display:grid;grid-template-columns:1fr auto auto;gap:3px 12px;font-size:12.5px}
+.mt span:not(:first-child):not(:nth-child(3n+1)){font-family:var(--mono);text-align:right;color:var(--ink)}
+.mt .lo{color:var(--bad)!important}
+.pk .acts{display:flex;gap:6px;flex-wrap:wrap}
+.kbd{font-family:var(--mono);font-size:10.5px;border:1px solid var(--line-2);border-radius:4px;padding:0 4px;color:var(--muted)}
+.empty{padding:40px 18px;color:var(--muted);text-align:center}
+
+/* 키별 집계 보기 */
+.kbv{padding:8px 0}
+.kbr{display:grid;grid-template-columns:160px minmax(0,1fr) 80px;gap:12px;align-items:center;padding:8px 16px;border-bottom:1px solid var(--line)}
+.kbr code{font-family:var(--mono);color:var(--ink);font-size:12.5px}
+.kbr .bars{display:grid;gap:3px}
+.kbr .b{height:7px;border-radius:4px;background:var(--hover);overflow:hidden}
+.kbr .b i{display:block;height:100%;background:var(--bad)}
+.kbr .b.x i{background:var(--accent)}
+.kbr .n{text-align:right;font-family:var(--mono);color:var(--bad)}
+.kbr .n .x{color:var(--accent)}
+
+/* 모달 */
+.scrim{position:fixed;inset:0;background:rgba(15,16,22,.38);z-index:30;display:flex;justify-content:center;align-items:flex-start;padding:12vh 16px 16px}
+.scrim[hidden]{display:none}
+.modal{background:var(--paper);border:1px solid var(--line);border-radius:12px;width:min(720px,100%);box-shadow:0 24px 60px rgba(0,0,0,.18);display:flex;flex-direction:column}
+.mh{display:flex;align-items:center;gap:8px;padding:12px 16px 4px;font-size:12.5px;color:var(--muted)}
+.mh .crumb{display:flex;gap:6px;align-items:center}
+.mh .crumb b{color:var(--ink);font-weight:600}
+.mh .r{margin-left:auto}
+.mb{padding:6px 16px 10px;display:grid;gap:6px}
+.mb .big{font-size:17px;font-weight:600;color:var(--ink);border:0;outline:0;background:none;padding:4px 0;width:100%}
+.mb textarea{border:0;outline:0;resize:vertical;background:none;color:var(--body);min-height:54px;width:100%;padding:0}
+.mb .dsl{color:var(--muted);font-size:13px}
+.pills{display:flex;gap:6px;flex-wrap:wrap;padding:8px 16px 12px;position:relative}
+.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line-2);border-radius:6px;padding:2px 9px;background:var(--paper);cursor:pointer;font-size:12.5px;color:var(--ink)}
+.pill span{color:var(--muted)}
+.pill .ab{color:var(--accent);font-weight:700}
+.pill[aria-expanded="true"]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.pill:disabled{opacity:.5}
+.menu{position:absolute;top:calc(100% - 6px);left:16px;min-width:240px;background:var(--paper);border:1px solid var(--line-2);border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,.14);padding:4px;z-index:2}
+.menu[hidden]{display:none}
+.menu .mi{display:flex;align-items:center;gap:8px;width:100%;border:0;background:none;padding:6px 8px;border-radius:5px;cursor:pointer;text-align:left}
+.menu .mi:hover{background:var(--hover)}
+.menu .mi .ck{width:14px;color:var(--accent)}
+.menu .mi:disabled{opacity:.45;cursor:not-allowed}
+.menu .mi small{margin-left:auto;color:var(--muted)}
+.menu .rl{display:grid;grid-template-columns:60px repeat(var(--n),1fr);gap:4px 6px;align-items:center;padding:6px 8px;font-size:12px;border-top:1px solid var(--line);margin-top:4px}
+.menu .rl select{border:1px solid var(--line-2);border-radius:5px;padding:2px 4px;background:var(--paper);font-size:12px}
+.mf{display:flex;align-items:center;gap:8px;padding:10px 16px;border-top:1px solid var(--line)}
+.mf .seg{display:inline-flex;border:1px solid var(--line-2);border-radius:6px;overflow:hidden}
+.mf .seg button{border:0;background:none;padding:2px 10px;cursor:pointer;color:var(--muted);font-size:12.5px}
+.mf .seg button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.mf .r{margin-left:auto;display:flex;gap:8px;align-items:center}
+
+/* 기타 */
+.form{display:grid;gap:12px}
+.form label{display:grid;gap:4px;font-size:12px;color:var(--muted)}
+.form textarea,.form select,.form input{border:1px solid var(--line-2);border-radius:6px;padding:6px 8px;background:var(--paper);color:var(--ink);font-size:13px;width:100%}
+.form .mono textarea{font-family:var(--mono);font-size:12px}
+.bulk{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:6px 16px;background:var(--accent-soft);border-bottom:1px solid var(--line);flex:none}
+.bulk b{color:var(--accent)}
+.bulk select{border:1px solid var(--line-2);border-radius:6px;padding:2px 6px;background:var(--paper)}
+.row input[type=checkbox]{margin:0}
+pre.doc{margin:0;font-family:var(--mono);font-size:12.5px;line-height:1.8;white-space:pre-wrap;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:10px 12px}
+.set{max-width:720px;width:100%;margin:0 auto;padding:24px 20px 60px;overflow:auto}
+.set h2{margin:24px 0 8px;font-size:14px;color:var(--ink);display:flex;align-items:center;gap:8px}
+.set h2:first-child{margin-top:0}
+.set h2 .btn{margin-left:auto}
+.set .box{border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.set .it{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:1px 10px;padding:10px 14px;border-bottom:1px solid var(--line);align-items:center}
+.set .it:last-child{border-bottom:0}
+.set .it b{color:var(--ink);font-weight:600} .set .it span{font-family:var(--mono);font-size:12px;color:var(--muted);word-break:break-all}
+.set .it .btn{grid-row:span 2}
+.chips{display:flex;gap:6px;flex-wrap:wrap;padding:12px 14px}
+.chips span{border:1px solid var(--line-2);border-radius:99px;padding:1px 10px;font-family:var(--mono);font-size:12px}
+.chips input{border:1px solid var(--line-2);border-radius:99px;padding:1px 10px;background:var(--paper);width:120px;font-size:12px}
+
+@media (max-width:1100px){.split{grid-template-columns:minmax(0,1fr) 340px}}
+@media (max-width:820px){
+  .app{grid-template-columns:1fr;height:auto}
+  .sb{flex-direction:row;flex-wrap:wrap;padding:8px 12px}
+  .sb .gl,.sb .ws{display:none}
+  .sb .new{margin:0}
+  .main{border-left:0;min-height:100vh}
+  .split{grid-template-columns:1fr}
+  .peek{border-left:0;border-top:1px solid var(--line)}
+  .row{grid-template-columns:var(--icw,18px) 34px minmax(0,1fr) 40px}
+  .row .tags{display:none}
+}
+</style>
+
+<div class="app">
+  <aside class="sb" id="nav">
+    <div class="ws">TestX</div>
+    <button class="new" id="newRun">새 실행</button>
+    <div class="gl">실행</div>
+    <button data-p="single" aria-current="page"><span class="ic"></span>Single Run</button>
+    <button data-p="pair"><span class="ic"></span>Pair Run</button>
+    <div class="gl">데이터</div>
+    <button data-p="datasets"><span class="ic"></span>Datasets</button>
+    <button data-p="records"><span class="ic"></span>Records</button>
+    <div class="gl">설정</div>
+    <button data-p="prompt"><span class="ic"></span>Prompt</button>
+    <button data-p="settings"><span class="ic"></span>Settings</button>
+  </aside>
+
+  <div class="main">
+    <section class="page" id="p-run">
+      <div class="top"><h1 id="runT">Single Run</h1><span class="vt" id="vt"><button data-v="cases" aria-pressed="true">케이스</button><button data-v="keys" aria-pressed="false">키별 집계</button></span>
+        <div class="r"><button class="btn">고른 케이스 다시 실행</button><button class="btn">CSV</button><button class="btn pri" id="newRun2">새 실행</button></div></div>
+      <div class="fbar" id="fbar"></div>
+      <div class="split"><div class="list" id="list"></div><aside class="peek" id="peek"></aside></div>
+    </section>
+
+    <section class="page" id="p-datasets" hidden>
+      <div class="top"><h1>Datasets</h1><span class="vt"><button aria-pressed="true">예약 슬롯 파싱</button><button aria-pressed="false">FAQ 답변</button><button aria-pressed="false">상품 검색</button></span>
+        <div class="r"><button class="btn">폴더 추가</button><button class="btn">CSV 가져오기</button><button class="btn pri">케이스 추가</button></div></div>
+      <div class="fbar"><input class="btn" style="width:220px;cursor:text" placeholder="질문 · 정답 · 목적 검색" aria-label="검색"><div class="r"><span>목적</span><b>예약 · 변경 · 취소 요청에서 슬롯을 뽑는다</b><span>42건</span></div></div>
+      <div class="bulk"><b>3건 선택</b><select aria-label="폴더 이동"><option>폴더 이동</option></select><button class="btn">목적 다시 짓기</button><button class="btn">목적 지우기</button><button class="btn danger">삭제</button></div>
+      <div class="split"><div class="list" id="dsList"></div>
+        <aside class="peek"><div class="pk"><div class="pid">#05 · 예약<span class="r"><span class="kbd">↑</span><span class="kbd">↓</span></span></div>
+          <div class="form"><label>질문<textarea rows="2">다음 주 화요일 12시 반 3명</textarea></label>
+            <label class="mono">기대 답변<textarea rows="4">{"action":"reserve","slots":{"date":"2025-09-23","time":"12:30","people":3},"code":200}</textarea></label>
+            <label>Contexts<textarea rows="2">영업시간 11:30–22:00 · 단체석 8인까지</textarea></label>
+            <label>목적<input value="날짜 · 시간 · 인원을 모두 뽑는지"></label>
+            <label>폴더<select><option>예약</option><option>변경</option><option>취소</option><option>검색</option></select></label>
+            <div class="acts" style="display:flex;gap:6px"><button class="btn pri">저장</button><button class="btn danger">삭제</button></div></div></div></aside></div>
+    </section>
+
+    <section class="page" id="p-records" hidden>
+      <div class="top"><h1>Records</h1><span class="vt" id="rvt"><button data-r="s" aria-pressed="true">Single</button><button data-r="c" aria-pressed="false">Compare</button></span>
+        <div class="r"><button class="btn">CSV</button></div></div>
+      <div class="fbar"><input class="btn" style="width:220px;cursor:text" placeholder="노드 · 데이터셋 · 질문 검색" aria-label="검색"><span class="fchip"><span>정렬</span><b>생성일시</b><button aria-label="정렬 바꾸기">⇅</button></span></div>
+      <div class="split"><div class="list" id="recList"></div><aside class="peek" id="recPeek"></aside></div>
+    </section>
+
+    <section class="page" id="p-prompt" hidden>
+      <div class="top"><h1>Prompt</h1><div class="r"><button class="btn">새 노드</button><button class="btn pri">새 버전</button></div></div>
+      <div class="split" style="grid-template-columns:minmax(0,1fr) minmax(0,1.3fr)"><div class="list" id="pList"></div>
+        <aside class="peek"><div class="pk"><div class="pid">slot_parser<span class="r"><button class="btn">v11 과 비교</button><button class="btn danger">삭제</button></span></div>
+          <h2>v12 · 시간 표기 규칙 추가</h2>
+          <dl class="props"><dt>작성</dt><dd>sya0202 · 10월 28일 17:31</dd></dl>
+          <div><h3>System prompt</h3><pre class="doc">너는 식당 예약 요청에서 슬롯을 뽑는 파서다.
+반드시 아래 JSON 한 개만 출력한다.
+
+{"action": "reserve|change|cancel|search",
+ "slots": {"date": "YYYY-MM-DD", "time": "HH:MM", "people": 정수, "seat": 문자열},
+ "code": 200}
+
+규칙
+- 시간은 24시간제 HH:MM 으로 쓴다. "3시"는 문맥상 오후면 15:00.
+- 인원은 숫자만, 정수로.
+- 모르는 슬롯은 넣지 않는다.</pre></div>
+          <div><h3>User prompt</h3><pre class="doc">{{message}}</pre></div></div></aside></div>
+    </section>
+
+    <section class="page" id="p-settings" hidden>
+      <div class="top"><h1>Settings</h1></div>
+      <div class="set">
+        <h2>Agent <button class="btn">추가</button></h2><div class="box">
+          <div class="it"><b>운영 챗 API</b><button class="btn">수정</button><span>https://chat.internal:8443/v1/chat · auth-key, x-user-id</span></div>
+          <div class="it"><b>스테이징 챗 API</b><button class="btn">수정</button><span>https://stg-chat.internal/v1/chat · auth-key</span></div></div>
+        <h2>LLM 서버 <button class="btn">추가</button></h2><div class="box">
+          <div class="it"><b>vllm-a</b><button class="btn">수정</button><span>http://10.0.3.21:8000/v1 · VLLM_A_KEY</span></div>
+          <div class="it"><b>openai-proxy</b><button class="btn">수정</button><span>http://10.0.3.40:4000/v1 · PROXY_KEY</span></div></div>
+        <h2>모델 <button class="btn">추가</button></h2><div class="box">
+          <div class="it"><b>gpt-4.1-mini</b><button class="btn">수정</button><span>openai-proxy</span></div><div class="it"><b>gpt-4.1</b><button class="btn">수정</button><span>openai-proxy</span></div>
+          <div class="it"><b>qwen2.5-72b</b><button class="btn">수정</button><span>vllm-a</span></div><div class="it"><b>llama-3.3-70b</b><button class="btn">수정</button><span>vllm-a</span></div></div>
+        <h2>Role</h2><div class="box"><div class="chips"><span>router</span><span>parser</span><span>answer</span><input placeholder="role 추가" aria-label="role 추가"></div></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="scrim" id="scrim" hidden><div class="modal" role="dialog" aria-modal="true" aria-label="새 실행" id="modal"></div></div>
+
+<script>
+(function(){
+  const S = { mode:'single', view:'cases', sel:5, passed:new Set(), m:{ target:'default', agent:0, agentB:1, input:'dataset', ds:0, folder:0, mets:4 }, menu:null };
+  const P = () => S.mode === 'pair';
+  const AG = ['운영 챗 API','스테이징 챗 API'], DS = ['예약 슬롯 파싱','FAQ 답변','상품 검색'], FOLD = ['전체','예약','변경','취소','검색'], MOD = ['gpt-4.1-mini','gpt-4.1','qwen2.5-72b','llama-3.3-70b'];
+  const METS = ['정답 일치','faithfulness','answer_relevancy','context_precision','context_recall','answer_correctness'];
+  // [id, 폴더, 질문, A 틀린 키, B 틀린 키, 시간, [faith, corr] A, B]
+  const C = [
+    [1,'예약','9월 20일 오후 3시에 4명 창가로 예약해 줘',['slots.time','code'],[],'2.4초',[.81,.62],[.84,.88]],
+    [2,'예약','내일 저녁 7시 두 명 자리 있어?',[],[],'1.9초',[.92,.90],[.90,.91]],
+    [3,'예약','토요일 점심 6명 단체 예약 부탁해',['slots.people'],[],'2.2초',[.74,.58],[.86,.83]],
+    [5,'예약','다음 주 화요일 12시 반 3명',['slots.time'],['slots.time'],'2.0초',[.70,.55],[.72,.57]],
+    [8,'예약','오늘 밤 8시 바 좌석 2명',['slots.seat'],[],'2.6초',[.77,.64],[.85,.86]],
+    [15,'변경','R-7781 예약 시간을 6시로 바꿔 줘',['slots.time'],[],'1.7초',[.79,.61],[.88,.87]],
+    [17,'변경','인원을 4명에서 5명으로 늘려 줘',[],['slots.people'],'1.8초',[.90,.89],[.71,.60]],
+    [21,'변경','예약 날짜 하루 미뤄 줄래',['slots.time'],['slots.time'],'2.1초',[.66,.52],[.68,.55]],
+    [26,'취소','R-7781 예약 취소해 줘',null,null,'1.2초',[.95,null],[.94,null]],
+    [29,'취소','오늘 예약 전부 취소',['code'],[],'1.5초',[.72,.60],[.86,.85]],
+    [33,'검색','성수 근처 파스타 맛집',['items[1].name'],['items[1].name'],'3.1초',[.61,.48],[.63,.50]],
+    [36,'검색','주차 되는 한식당 찾아 줘',[],[],'2.8초',[.88,.86],[.89,.87]],
+  ];
+  const TOT = {예약:14,변경:10,취소:8,검색:10};
+  const st = (ks,id) => ks == null ? 'na' : !ks.length ? 'ok' : S.passed.has(id) ? 'man' : 'bad';
+  const T = {ok:'일치',bad:'다름',man:'수동 통과',na:'정답 없음'};
+  const f2 = v => v == null ? '—' : v.toFixed(2);
+
+  function fbar(){
+    const p = P(), m = S.m;
+    document.getElementById('fbar').innerHTML = `<span class="fchip"><span>판정</span><b>다름</b><button aria-label="필터 지우기">×</button></span><span class="fchip"><span>폴더</span><b>전체</b><button aria-label="필터 지우기">×</button></span><button class="add">+ 필터</button>
+      <div class="r"><span>${m.target==='model'?'Model':'Default'}</span>${p&&m.target==='default'?`<span><b class="acc">A</b> ${AG[m.agent]} · <b class="acc">B</b> ${AG[m.agentB]}</span>`:`<span>${AG[m.agent]}</span>`}<span>${DS[m.ds]}</span>
+      <span><b>${p?'33 → 36':'33'}</b> / 41 일치</span>${p?'<b class="acc">B 가 낫습니다</b>':''}<span>10/30 14:12 · ${p?'5분 08초':'2분 41초'} · FALLBACK</span></div>`;
+  }
+  function list(){
+    const p = P(), el = document.getElementById('list');
+    el.style.setProperty('--icw', p ? '33px' : '18px');
+    if (S.view === 'keys'){
+      const K = [['slots.time',8,4],['slots.people',4,2],['items[1].name',3,3],['code',2,1],['slots.seat',1,0]];
+      el.innerHTML = `<div class="kbv">${K.map(([k,a,b])=>`<div class="kbr"><code>${k}</code><span class="bars"><span class="b"><i style="width:${a/8*100}%"></i></span>${p?`<span class="b x"><i style="width:${b/8*100}%"></i></span>`:''}</span><span class="n">${a}${p?` · <span class="x">${b}</span>`:''}</span></div>`).join('')}</div>`; return;
+    }
+    const rows = C.filter(c => c[3] == null || c[3].length || (p && c[4].length));
+    el.innerHTML = Object.keys(TOT).map(f => { const g = rows.filter(c => c[1] === f); if (!g.length) return '';
+      return `<div class="gh"><b>${f}</b><span>${g.length}</span><span class="r">${TOT[f]}건 중</span></div>` + g.map(c => { const [id,,q,ka,kb,t] = c;
+        const keys = [...new Set([...(ka||[]), ...(p ? kb||[] : [])])];
+        return `<button class="row" data-c="${id}" aria-selected="${S.sel===id}"><span class="ics"><span class="si ${st(ka,id)}" title="${p?'A ':''}${T[st(ka,id)]}"></span>${p?`<span class="si ${st(kb,id)}" title="B ${T[st(kb,id)]}"></span>`:''}</span><span class="id">#${String(id).padStart(2,'0')}</span><span class="q">${q}</span><span class="tags">${keys.map(k=>`<span>${k}</span>`).join('')}</span><span class="tm">${t}</span></button>`; }).join(''); }).join('');
+  }
+  function peek(){
+    const p = P(), c = C.find(x => x[0] === S.sel), el = document.getElementById('peek');
+    if (!c){ el.innerHTML = '<div class="empty">케이스를 고르세요</div>'; return; }
+    const [id,f,q,ka,kb,t,ma,mb] = c, sa = st(ka,id), sb = st(kb,id);
+    const GT = [['action','"reserve"'],['slots.time','"12:30"'],['slots.people','3'],['slots.seat','"창가"'],['code','200'],['items[1].name','"파스타 잇"']].filter(([k]) => ['action','code'].includes(k) || (ka||[]).includes(k) || (kb||[]).includes(k) || k === 'slots.people');
+    const WR = {'slots.time':'"00:30"','slots.people':'"3"','slots.seat':'"바"','code':'500','items[1].name':'"성수 파스타"'};
+    const v = (k,val,ks) => (ks||[]).includes(k) ? `<td class="bad">${WR[k]}</td>` : `<td>${val}</td>`;
+    const lbl = s => `<span class="si ${s}"></span>${T[s]}`;
+    el.innerHTML = `<div class="pk"><div class="pid">#${String(id).padStart(2,'0')}<span class="r"><span class="kbd">J</span><span class="kbd">K</span></span></div>
+      <h2>${q}</h2>
+      <dl class="props"><dt>판정</dt><dd>${p?`<span class="ab">A</span>${lbl(sa)} <span class="ab">B</span>${lbl(sb)}`:lbl(sa)}</dd><dt>폴더</dt><dd>${f}</dd><dt>시간</dt><dd>${t} · TTFT 0.6초</dd><dt>trace</dt><dd class="mono">PTX_TRACE_HIS · 3 node</dd></dl>
+      <div><h3>키 비교</h3>${ka==null?'<span style="color:var(--muted)">정답 없음</span>':`<table class="kv"><thead><tr><th>키</th><th>정답</th><th>${p?'A':'답변'}</th>${p?'<th>B</th>':''}</tr></thead><tbody>${GT.map(([k,val])=>`<tr><td class="k">${k}</td><td>${val}</td>${v(k,val,ka)}${p?v(k,val,kb):''}</tr>`).join('')}</tbody></table>`}</div>
+      <div><h3>지표</h3><div class="mt"><span></span><span style="color:var(--muted)">${p?'A':''}</span><span style="color:var(--muted)">${p?'B':''}</span><span>faithfulness</span><span class="${ma[0]<.6?'lo':''}">${f2(ma[0])}</span><span>${p?f2(mb[0]):''}</span><span>answer_correctness</span><span class="${ma[1]!=null&&ma[1]<.6?'lo':''}">${f2(ma[1])}</span><span>${p?f2(mb[1]):''}</span></div></div>
+      <div class="acts">${sa==='bad'||sa==='man'?`<button class="btn" data-pass="${id}">${sa==='man'?'통과 취소':'통과로 표시'}</button>`:''}${sa==='na'?'<button class="btn">정답 추가</button>':''}<button class="btn">답변 원문</button><button class="btn">Contexts 3</button><button class="btn">다시 실행</button></div></div>`;
+  }
+  function modal(){
+    const p = P(), m = S.m, ab = p && m.target === 'default';
+    const pill = (k, label, val, dis) => `<button class="pill" data-menu="${k}" aria-expanded="${S.menu===k}" ${dis?'disabled':''}><span>${label}</span>${val}</button>`;
+    const items = {
+      target: [['default','Default'],['model','Model'],['prompt','Prompt','준비 중']].map(([v,n,s])=>`<button class="mi" data-set="target" data-v="${v}" ${s?'disabled':''}><span class="ck">${m.target===v?'✓':''}</span>${n}${s?`<small>${s}</small>`:''}</button>`).join('') + (m.target==='model'?`<div class="rl" style="--n:${p?2:1}">${p?'<span></span><b style="color:var(--accent)">A</b><b style="color:var(--accent)">B</b>':''}${[['router',0,0],['parser',2,3],['answer',1,1]].map(([r,a,b])=>`<span>${r}</span><select aria-label="${r}">${MOD.map((x,i)=>`<option${i===a?' selected':''}>${x}</option>`).join('')}</select>${p?`<select aria-label="${r} B">${MOD.map((x,i)=>`<option${i===b?' selected':''}>${x}</option>`).join('')}</select>`:''}`).join('')}</div>`:''),
+      agent: AG.map((a,i)=>`<button class="mi" data-set="agent" data-v="${i}"><span class="ck">${m.agent===i?'✓':''}</span>${a}</button>`).join(''),
+      agentB: AG.map((a,i)=>`<button class="mi" data-set="agentB" data-v="${i}"><span class="ck">${m.agentB===i?'✓':''}</span>${a}</button>`).join(''),
+      input: [['dataset','데이터셋'],['manual','직접 입력']].map(([v,n])=>`<button class="mi" data-set="input" data-v="${v}"><span class="ck">${m.input===v?'✓':''}</span>${n}</button>`).join(''),
+      ds: DS.map((d,i)=>`<button class="mi" data-set="ds" data-v="${i}"><span class="ck">${m.ds===i?'✓':''}</span>${d}<small>${[42,30,18][i]}건</small></button>`).join(''),
+      folder: FOLD.map((d,i)=>`<button class="mi" data-set="folder" data-v="${i}"><span class="ck">${m.folder===i?'✓':''}</span>${d}<small>${[42,14,10,8,10][i]}</small></button>`).join('') + '<button class="mi"><span class="ck"></span>케이스 직접 고르기</button>',
+      mets: METS.map((n,i)=>`<label class="mi"><span class="ck"><input type="checkbox" ${i<3||i===5?'checked':''}></span>${n}</label>`).join(''),
+    };
+    const n = m.input === 'manual' ? null : [42,14,10,8,10][m.folder];
+    document.getElementById('modal').innerHTML = `
+      <div class="mh"><span class="crumb"><span>TestX</span>›<b>새 ${p?'Pair':'Single'} Run</b></span><span class="r"><button class="btn" data-close>닫기</button></span></div>
+      <div class="mb">${m.input==='manual'?'<input class="big" aria-label="메시지" value="9월 20일 오후 3시에 4명 창가로 예약해 줘"><textarea aria-label="기대 정답" placeholder="기대 정답"></textarea>':`<div class="big">${DS[m.ds]}${m.folder?` › ${FOLD[m.folder]}`:''}</div><div class="dsl">목적: 예약 · 변경 · 취소 요청에서 슬롯을 뽑는다 · ${n}건</div>`}</div>
+      <div class="pills">${pill('target','대상',m.target==='model'?'Model':'Default')}${ab?pill('agent','<b class="ab">A</b>',AG[m.agent])+pill('agentB','<b class="ab">B</b>',AG[m.agentB]):pill('agent','Agent',AG[m.agent])}${pill('input','입력',m.input==='manual'?'직접 입력':'데이터셋')}${m.input==='dataset'?pill('ds','데이터셋',DS[m.ds])+pill('folder','폴더',FOLD[m.folder]):''}${pill('mets','채점','4개')}
+        <div class="menu" ${S.menu?'':'hidden'}>${S.menu?items[S.menu]:''}</div></div>
+      <div class="mf"><span class="seg" id="mseg"><button data-mm="single" aria-pressed="${!p}">Single</button><button data-mm="pair" aria-pressed="${p}">Pair</button></span>
+        <span class="r"><button class="btn pri">${n==null?(p?'A · B 호출':'호출'):(p?`${n}건 × A · B 실행`:`${n}건 실행`)}</button></span></div>`;
+  }
+  const openModal = v => { document.getElementById('scrim').hidden = !v; S.menu = null; if (v) modal(); };
+  const run = () => { document.getElementById('runT').textContent = P() ? 'Pair Run' : 'Single Run'; fbar(); list(); peek(); };
+  const go = n => {
+    document.querySelectorAll('#nav [data-p]').forEach(x => x.toggleAttribute('aria-current', x.dataset.p === n));
+    const pg = n === 'single' || n === 'pair' ? 'run' : n;
+    document.querySelectorAll('.page').forEach(m => m.hidden = m.id !== 'p-' + pg);
+    if (pg === 'run'){ S.mode = n; run(); }
+  };
+
+  document.getElementById('nav').addEventListener('click', e => { const b = e.target.closest('[data-p]'); if (b) go(b.dataset.p); });
+  document.getElementById('newRun').addEventListener('click', () => openModal(true));
+  document.getElementById('newRun2').addEventListener('click', () => openModal(true));
+  document.getElementById('vt').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (!b) return; S.view = b.dataset.v;
+    document.querySelectorAll('#vt button').forEach(x => x.setAttribute('aria-pressed', x === b)); list(); });
+  document.getElementById('list').addEventListener('click', e => { const r = e.target.closest('[data-c]'); if (r){ S.sel = +r.dataset.c; list(); peek(); } });
+  document.getElementById('peek').addEventListener('click', e => { const b = e.target.closest('[data-pass]'); if (b){ const id = +b.dataset.pass; S.passed.has(id) ? S.passed.delete(id) : S.passed.add(id); list(); peek(); } });
+  document.getElementById('scrim').addEventListener('click', e => {
+    if (e.target.id === 'scrim' || e.target.closest('[data-close]')){ openModal(false); return; }
+    const pm = e.target.closest('[data-menu]'); if (pm){ S.menu = S.menu === pm.dataset.menu ? null : pm.dataset.menu; modal(); return; }
+    const it = e.target.closest('[data-set]'); if (it && !it.disabled){ const k = it.dataset.set, v = it.dataset.v; S.m[k] = isNaN(+v) ? v : +v; if (k !== 'target') S.menu = null; modal(); fbar(); return; }
+    const mm = e.target.closest('[data-mm]'); if (mm){ go(mm.dataset.mm); S.menu = null; modal(); }
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape'){ if (S.menu){ S.menu = null; modal(); } else openModal(false); return; }
+    if (document.getElementById('p-run').hidden || !document.getElementById('scrim').hidden || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+    if (e.key === 'j' || e.key === 'k'){ const vis = [...document.querySelectorAll('#list [data-c]')].map(x => +x.dataset.c); const i = vis.indexOf(S.sel);
+      const nx = vis[Math.max(0, Math.min(vis.length-1, i + (e.key === 'j' ? 1 : -1)))]; if (nx != null){ S.sel = nx; list(); peek(); } }
+  });
+
+  // Datasets: 폴더별 목록
+  document.getElementById('dsList').innerHTML = Object.keys(TOT).map(f => `<div class="gh"><b>${f}</b><span>${TOT[f]}</span></div>` + C.filter(c => c[1] === f).map((c,i) => `<div class="row" style="grid-template-columns:18px 40px minmax(0,1fr) auto" aria-selected="${c[0]===5}"><input type="checkbox" ${[1,2,3].includes(c[0])?'checked':''} aria-label="선택"><span class="id">#${String(c[0]).padStart(2,'0')}</span><span class="q">${c[2]}</span><span class="tm" style="white-space:nowrap">${c[3]==null?'정답 없음':''}</span></div>`).join('')).join('');
+
+  // Records: 날짜별
+  const RS = [['오늘',[['예약 슬롯 파싱','Default · 운영 챗 API','33/41','14:12'],['예약 슬롯 파싱','Model · 운영 챗 API','31/41','11:05']]],['어제',[['FAQ 답변','Default · 운영 챗 API','0.81','17:02'],['직접 입력','Default · 스테이징 챗 API','1/1','16:40']]],['이번 주',[['상품 검색','Model · 운영 챗 API','12/18','10/28'],['예약 슬롯 파싱','Default · 운영 챗 API','28/41','10/27']]]];
+  const RC = [['오늘',[['예약 슬롯 파싱','A 운영 / B 스테이징','33 → 36','14:20']]],['이번 주',[['예약 슬롯 파싱','parser qwen2.5 / llama-3.3','31 → 29','10/29'],['FAQ 답변','A 운영 / B 스테이징','0.81 → 0.83','10/27']]]];
+  const recDraw = c => {
+    let first = true;
+    document.getElementById('recList').innerHTML = (c?RC:RS).map(([g,rs]) => `<div class="gh"><b>${g}</b><span>${rs.length}</span></div>` + rs.map(([d,w,s,t]) => { const sel = first; first = false;
+      return `<div class="row" style="grid-template-columns:minmax(0,1fr) auto auto 52px" aria-selected="${sel}"><span class="q">${d} <span style="color:var(--muted)">· ${w}</span></span><span></span><span class="mono" style="color:var(--ink)">${s}</span><span class="tm">${t}</span></div>`; }).join('')).join('');
+    const r = (c?RC:RS)[0][1][0];
+    document.getElementById('recPeek').innerHTML = `<div class="pk"><div class="pid">${c?'Compare':'Single'} · 10/30 ${r[3]}<span class="r"><span class="kbd">J</span><span class="kbd">K</span></span></div><h2>${r[0]}</h2>
+      <dl class="props"><dt>${c?'가른 축':'대상'}</dt><dd>${c?'Default · Agent':'Default'}</dd><dt>Agent</dt><dd>${c?'<span class="ab">A</span> 운영 챗 API <span class="ab">B</span> 스테이징 챗 API':'운영 챗 API'}</dd><dt>정답 일치</dt><dd class="mono">${r[2]}</dd>${c?'<dt>판정</dt><dd style="color:var(--accent);font-weight:600">B 가 낫습니다</dd>':''}<dt>Engine</dt><dd>FALLBACK</dd><dt>시간</dt><dd>${c?'5분 08초':'2분 41초'} · sya0202</dd></dl>
+      <div><h3>지표</h3><div class="mt"><span></span><span style="color:var(--muted)">${c?'A':''}</span><span style="color:var(--muted)">${c?'B':''}</span><span>faithfulness</span><span>0.82</span><span>${c?'0.84':''}</span><span>answer_relevancy</span><span>0.80</span><span>${c?'0.79':''}</span><span>answer_correctness</span><span>0.66</span><span>${c?'0.72':''}</span></div></div>
+      <div class="acts"><button class="btn pri">케이스 보기</button><button class="btn">데이터셋에 추가</button><button class="btn">CSV</button><button class="btn danger">삭제</button></div></div>`;
+  };
+  recDraw(false);
+  document.getElementById('rvt').addEventListener('click', e => { const b = e.target.closest('[data-r]'); if (!b) return;
+    document.querySelectorAll('#rvt button').forEach(x => x.setAttribute('aria-pressed', x === b)); recDraw(b.dataset.r === 'c'); });
+
+  // Prompt: 노드별 버전
+  const PV = [['router',[['v3','라우팅 예시 정리','10/20']]],['slot_parser',[['v12','시간 표기 규칙 추가','10/28'],['v11','인원 정수 강제','10/24'],['v10','예시 3개로 축소','10/17'],['v9','초안','10/09']]],['answer',[['v7','말투 정리','10/22']]]];
+  document.getElementById('pList').innerHTML = PV.map(([n,vs]) => `<div class="gh"><b>${n}</b><span>${vs.length}</span></div>` + vs.map(([v,d,t]) => `<div class="row" style="grid-template-columns:40px minmax(0,1fr) 52px" aria-selected="${n==='slot_parser'&&v==='v12'}"><span class="id">${v}</span><span class="q">${d}</span><span class="tm">${t}</span></div>`).join('')).join('');
+
+  run();
+})();
+</script>
+
+</html>

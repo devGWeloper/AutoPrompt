@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>TestX 실험표</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* 참고: Braintrust 실험 화면. 위 점수 요약 → 케이스 표(입력·정답·답변·점수 열) → 행 클릭 시 오른쪽 트레이스 패널. Pair 는 지표×A/B 요약표 + 행마다 A→B. */
+:root{
+  --bg:#fbfbfc; --panel:#fff; --ink:#111318; --body:#3b3f47; --muted:#787d87; --line:#e8e9ec; --line-2:#d5d7dc; --sub:#f4f5f7;
+  --accent:#3a5ccc; --accent-soft:#ebf0fd;
+  --up:#16794a; --up-soft:#e4f4ea; --down:#c4362c; --down-soft:#fce9e7; --warn:#a96b10;
+  --sans:system-ui,-apple-system,"Segoe UI","Noto Sans KR","Malgun Gothic",sans-serif; --mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e0f12;--panel:#15171b;--ink:#eceef1;--body:#c0c4cb;--muted:#868b95;--line:#25282e;--line-2:#363a42;--sub:#1b1d22;--accent:#86a1f2;--accent-soft:#1d2540;--up:#5cc68f;--up-soft:#173225;--down:#f0837a;--down-soft:#3b1f1d;--warn:#e2a74e;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0e0f12;--panel:#15171b;--ink:#eceef1;--body:#c0c4cb;--muted:#868b95;--line:#25282e;--line-2:#363a42;--sub:#1b1d22;--accent:#86a1f2;--accent-soft:#1d2540;--up:#5cc68f;--up-soft:#173225;--down:#f0837a;--down-soft:#3b1f1d;--warn:#e2a74e;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--body);font:13px/1.5 var(--sans);font-variant-numeric:tabular-nums}
+button,select,input,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.mono{font-family:var(--mono);font-size:12px}
+header{display:flex;align-items:center;gap:16px;height:46px;padding:0 max(16px,env(safe-area-inset-right,0px)) 0 max(16px,env(safe-area-inset-left,0px));border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{font-weight:700;color:var(--ink);font-size:14px}
+nav{display:flex;gap:2px;overflow-x:auto}
+nav button{border:0;background:none;padding:5px 10px;border-radius:5px;color:var(--muted);cursor:pointer;white-space:nowrap}
+nav button:hover{background:var(--sub)}
+nav button[aria-current]{color:var(--ink);background:var(--sub);font-weight:600}
+.page{padding:16px max(16px,env(safe-area-inset-right,0px)) 60px max(16px,env(safe-area-inset-left,0px));display:grid;gap:14px;align-content:start}
+.page[hidden]{display:none}
+.crumb{display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--muted)}
+.crumb b{color:var(--ink);font-size:16px;font-weight:600}
+.crumb .r{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+.btn{border:1px solid var(--line-2);background:var(--panel);border-radius:5px;padding:4px 10px;font-size:12.5px;cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--sub)}
+.btn.pri{background:var(--ink);border-color:var(--ink);color:var(--panel);font-weight:600}
+.btn.danger{color:var(--down)}
+.tag{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line-2);border-radius:4px;padding:0 6px;font-size:12px;color:var(--body);background:var(--panel);white-space:nowrap}
+.tag b{font-weight:600;color:var(--ink)}
+.tag.a{border-color:var(--accent);color:var(--accent)}
+select,input.t,textarea{border:1px solid var(--line-2);border-radius:5px;padding:4px 7px;background:var(--panel);min-width:0}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:8px;min-width:0}
+
+/* 설정(접힘) */
+.cfg summary{list-style:none;display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:9px 12px;cursor:pointer}
+.cfg summary::-webkit-details-marker{display:none}
+.cfg summary .lab{font-weight:600;color:var(--ink);margin-right:4px}
+.cfg summary .ch{margin-left:auto;color:var(--muted);font-size:12px}
+.cfg[open] summary{border-bottom:1px solid var(--line)}
+.cfg[open] summary .ch::after{content:" 접기"} .cfg:not([open]) summary .ch::after{content:" 펼치기"}
+.cfgb{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0}
+.cfgb > div{padding:12px;border-right:1px solid var(--line);display:grid;gap:6px;align-content:start}
+.cfgb > div:last-child{border-right:0}
+.cfgb .h{font-size:11.5px;color:var(--muted);font-weight:600}
+.cfgb select{width:100%}
+.seg{display:inline-flex;border:1px solid var(--line-2);border-radius:5px;overflow:hidden;width:max-content}
+.seg button{border:0;background:var(--panel);padding:3px 10px;font-size:12.5px;cursor:pointer;color:var(--muted)}
+.seg button+button{border-left:1px solid var(--line-2)}
+.seg button[aria-pressed="true"]{background:var(--sub);color:var(--ink);font-weight:600}
+.seg button:disabled{opacity:.4;cursor:not-allowed}
+.ck{display:flex;gap:6px;align-items:center}
+.ab{display:grid;grid-template-columns:16px 1fr;gap:6px;align-items:center}
+.ab b{color:var(--accent);font-size:12px}
+.roles{display:grid;grid-template-columns:auto repeat(var(--n),1fr);gap:4px 6px;align-items:center;font-size:12px}
+
+/* 점수 요약 */
+.scores{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:0}
+.sc{padding:12px 14px;border-right:1px solid var(--line);display:grid;gap:5px}
+.sc:last-child{border-right:0}
+.sc .n{color:var(--muted);font-size:12px}
+.sc .v{font-size:20px;font-weight:600;color:var(--ink)}
+.sc .bar{height:4px;background:var(--sub);border-radius:2px;overflow:hidden}
+.sc .bar i{display:block;height:100%;background:var(--accent)}
+.sc .sub{font-size:11.5px;color:var(--muted)}
+table.sum{width:100%;border-collapse:collapse}
+.sum th,.sum td{padding:7px 14px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+.sum th:first-child,.sum td:first-child{text-align:left}
+.sum th{font-size:12px;font-weight:500;color:var(--muted)}
+.sum td{font-family:var(--mono);font-size:12.5px;color:var(--ink)}
+.sum td:first-child{font-family:var(--sans);color:var(--body)}
+.sum tr:last-child td{border-bottom:0}
+.d{font-family:var(--mono);font-size:11.5px;padding:0 5px;border-radius:3px}
+.d.up{background:var(--up-soft);color:var(--up)} .d.down{background:var(--down-soft);color:var(--down)} .d.z{color:var(--muted)}
+.grade{font-family:var(--sans)!important;font-weight:600}
+.grade.up{color:var(--up)} .grade.down{color:var(--down)}
+
+/* 표 */
+.tb{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.tb .cnt{color:var(--muted)}
+.tb .r{margin-left:auto;display:flex;gap:6px;align-items:center}
+.tw{overflow:auto}
+table.ex{border-collapse:collapse;width:100%;min-width:980px}
+.ex th{position:sticky;top:0;background:var(--panel);font-size:12px;font-weight:500;color:var(--muted);text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap;z-index:1}
+.ex td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+.ex tr.row{cursor:pointer}
+.ex tr.row:hover td{background:var(--sub)}
+.ex tr.row[aria-selected="true"] td{background:var(--accent-soft)}
+.ex .id{font-family:var(--mono);color:var(--muted);font-size:12px}
+.ex .in{color:var(--ink);max-width:280px}
+.ex .js{font-family:var(--mono);font-size:11.5px;color:var(--body);max-width:260px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:break-all}
+.ex .js em{font-style:normal;background:var(--down-soft);color:var(--down);border-radius:2px}
+.ex .js+.js{margin-top:4px;padding-top:4px;border-top:1px dashed var(--line)}
+.ex .js .lb{font-family:var(--sans);color:var(--accent);font-weight:600;margin-right:4px}
+.s{font-family:var(--mono);font-size:12px;white-space:nowrap;text-align:right}
+.s .x{display:block}
+.s .lo{color:var(--down)} .s .mi{color:var(--warn)}
+.pass{font-size:12px;font-weight:600;white-space:nowrap}
+.pass.ok{color:var(--up)} .pass.no{color:var(--down)} .pass.man{color:var(--up);font-weight:500} .pass.na{color:var(--muted);font-weight:500}
+
+/* 트레이스 패널 */
+.panel{position:fixed;top:0;right:0;bottom:0;width:min(560px,100%);background:var(--panel);border-left:1px solid var(--line);box-shadow:-8px 0 24px rgba(0,0,0,.06);z-index:10;display:flex;flex-direction:column}
+.panel[hidden]{display:none}
+.ph{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line)}
+.ph b{color:var(--ink);font-size:14px}
+.ph .r{margin-left:auto;display:flex;gap:4px}
+.ptabs{display:flex;gap:2px;padding:0 10px;border-bottom:1px solid var(--line)}
+.ptabs button{border:0;background:none;padding:8px 8px;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer}
+.ptabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--ink);font-weight:600}
+.pb{flex:1;overflow:auto;padding:12px 14px;display:grid;gap:14px;align-content:start}
+.blk h4{margin:0 0 5px;font-size:12px;color:var(--muted);font-weight:600}
+.blk .txt{color:var(--ink);font-size:14px}
+table.kv{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px;border:1px solid var(--line)}
+.kv th{font-family:var(--sans);font-weight:500;color:var(--muted);text-align:left;padding:5px 8px;background:var(--sub);border-bottom:1px solid var(--line)}
+.kv td{padding:5px 8px;border-bottom:1px solid var(--line);color:var(--ink);word-break:break-all}
+.kv td.k{color:var(--muted)}
+.kv td.bad{background:var(--down-soft);color:var(--down)}
+.mini{display:grid;grid-template-columns:1fr auto auto;gap:4px 12px;font-size:12.5px}
+.mini span:nth-child(3n+2),.mini span:nth-child(3n){font-family:var(--mono);text-align:right;color:var(--ink)}
+.pf{display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px;border-top:1px solid var(--line)}
+
+/* 기타 */
+.two{display:grid;grid-template-columns:240px minmax(0,1fr);gap:14px;align-items:start}
+.side button{display:flex;justify-content:space-between;width:100%;border:0;background:none;padding:7px 12px;text-align:left;cursor:pointer;border-radius:5px}
+.side button:hover{background:var(--sub)}
+.side button[aria-current="true"]{background:var(--sub);color:var(--ink);font-weight:600}
+.side button em{font-style:normal;color:var(--muted);font-weight:400}
+.side button.sub{padding-left:24px}
+.side .g{padding:6px}
+.side h3{margin:0;padding:10px 12px 4px;font-size:12px;color:var(--muted);font-weight:600}
+.bulk{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:7px 12px;background:var(--accent-soft);border-bottom:1px solid var(--line)}
+.bulk b{color:var(--accent)}
+.rbar{display:inline-block;width:80px;height:6px;border-radius:3px;background:var(--sub);vertical-align:middle;margin-right:6px;overflow:hidden}
+.rbar i{display:block;height:100%;background:var(--accent)}
+pre.p{margin:0;padding:14px;font-family:var(--mono);font-size:12.5px;line-height:1.75;white-space:pre-wrap;color:var(--ink)}
+pre.p .add{background:var(--up-soft);display:block} pre.p .del{background:var(--down-soft);display:block;color:var(--muted)}
+.diffcols{display:grid;grid-template-columns:1fr 1fr}
+.diffcols > div+div{border-left:1px solid var(--line)}
+.diffcols h4{margin:0;padding:7px 14px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted);font-weight:600}
+.chips{display:flex;gap:6px;flex-wrap:wrap;padding:12px}
+
+@media (max-width:900px){.cfgb{grid-template-columns:1fr 1fr}.cfgb > div{border-bottom:1px solid var(--line)}.two,.diffcols{grid-template-columns:1fr}.diffcols > div+div{border-left:0;border-top:1px solid var(--line)}}
+</style>
+
+<header>
+  <span class="brand">TestX</span>
+  <nav id="nav"><button data-p="single" aria-current="page">Single Run</button><button data-p="pair">Pair Run</button><button data-p="datasets">Datasets</button><button data-p="records">Records</button><button data-p="prompt">Prompt</button><button data-p="settings">Settings</button></nav>
+</header>
+
+<main class="page" id="p-run">
+  <div class="crumb"><span>예약 슬롯 파싱</span><span>/</span><b id="title">Single Run</b><span class="tag">10/30 14:12</span><span class="tag" id="dur">2분 41초</span><span class="tag">Engine FALLBACK</span>
+    <div class="r"><button class="btn">고른 케이스 다시 실행</button><button class="btn">CSV</button></div></div>
+  <details class="box cfg" id="cfg"><summary id="cfgSum"></summary><div class="cfgb" id="cfgBody"></div></details>
+  <section class="box" id="summary"></section>
+  <section class="box">
+    <div class="tb"><span class="seg" id="flt"><button data-f="bad" aria-pressed="true">틀린 것</button><button data-f="all" aria-pressed="false">전체</button></span><span class="cnt" id="cnt"></span>
+      <div class="r"><select aria-label="폴더"><option>전체 폴더</option><option>예약</option><option>변경</option><option>취소</option><option>검색</option></select><select aria-label="키"><option>모든 키</option><option>slots.time 8</option><option>slots.people 4</option><option>items[1].name 3</option><option>code 2</option></select></div></div>
+    <div class="tw"><table class="ex" id="ex"></table></div>
+  </section>
+</main>
+
+<main class="page" id="p-datasets" hidden>
+  <div class="crumb"><b>Datasets</b><div class="r"><button class="btn">CSV 가져오기</button><button class="btn pri">새 데이터셋</button></div></div>
+  <div class="two">
+    <aside class="box side"><div class="g"><button aria-current="true">예약 슬롯 파싱 <em>42</em></button><button class="sub">예약 <em>14</em></button><button class="sub">변경 <em>10</em></button><button class="sub">취소 <em>8</em></button><button class="sub">검색 <em>10</em></button><button class="sub" style="color:var(--accent)">폴더 추가</button><button>FAQ 답변 <em>30</em></button><button>상품 검색 <em>18</em></button></div></aside>
+    <section class="box">
+      <div class="tb"><b style="color:var(--ink)">예약 슬롯 파싱</b><span class="cnt">예약 · 변경 · 취소 요청에서 슬롯을 뽑는다</span><div class="r"><input class="t" placeholder="질문 · 정답 · 목적 검색" aria-label="검색"><button class="btn">케이스 추가</button></div></div>
+      <div class="bulk"><b>3건 선택</b><select aria-label="폴더 이동"><option>폴더 이동</option></select><button class="btn">목적 다시 짓기</button><button class="btn">목적 지우기</button><button class="btn danger">삭제</button></div>
+      <div class="tw"><table class="ex" id="dsT" style="min-width:760px"></table></div>
+    </section>
+  </div>
+</main>
+
+<main class="page" id="p-records" hidden>
+  <div class="crumb"><b>Records</b><span class="seg" id="rseg"><button data-r="s" aria-pressed="true">Single</button><button data-r="c" aria-pressed="false">Compare</button></span><div class="r"><input class="t" placeholder="노드 · 데이터셋 · 질문 검색" aria-label="검색"><select aria-label="정렬"><option>생성일시 순</option><option>점수 순</option></select></div></div>
+  <section class="box tw"><table class="ex" id="recT" style="min-width:820px"></table></section>
+</main>
+
+<main class="page" id="p-prompt" hidden>
+  <div class="crumb"><b>Prompt</b><div class="r"><button class="btn">새 노드</button></div></div>
+  <div class="two">
+    <aside class="box side"><h3>노드</h3><div class="g"><button>router <em>3</em></button><button aria-current="true">slot_parser <em>12</em></button><button class="sub" aria-current="true">v12 <em>10/28</em></button><button class="sub">v11 <em>10/24</em></button><button class="sub">v10 <em>10/17</em></button><button>answer <em>7</em></button></div></aside>
+    <section class="box">
+      <div class="tb"><b style="color:var(--ink)">slot_parser</b><span class="tag">v11</span>→<span class="tag a">v12</span><span class="cnt">System prompt · 10/28 sya0202</span><div class="r"><button class="btn">새 버전</button><button class="btn danger">삭제</button></div></div>
+      <div class="diffcols"><div><h4>v11</h4><pre class="p">너는 식당 예약 요청에서 슬롯을 뽑는 파서다.
+반드시 아래 JSON 한 개만 출력한다.
+
+규칙
+<span class="del">- 시간은 손님이 말한 그대로 쓴다.</span>- 인원은 숫자만, 정수로.
+- 모르는 슬롯은 넣지 않는다.</pre></div><div><h4>v12</h4><pre class="p">너는 식당 예약 요청에서 슬롯을 뽑는 파서다.
+반드시 아래 JSON 한 개만 출력한다.
+
+규칙
+<span class="add">- 시간은 24시간제 HH:MM 으로 쓴다. "3시"는 문맥상 오후면 15:00.</span>- 인원은 숫자만, 정수로.
+- 모르는 슬롯은 넣지 않는다.</pre></div></div>
+      <div class="tb" style="border-top:1px solid var(--line)"><span class="cnt">User prompt</span></div><pre class="p">{{message}}</pre>
+    </section>
+  </div>
+</main>
+
+<main class="page" id="p-settings" hidden>
+  <div class="crumb"><b>Settings</b></div>
+  <div class="two">
+    <aside class="box side"><div class="g"><button aria-current="true">Agent <em>2</em></button><button>LLM 서버 <em>2</em></button><button>모델 <em>4</em></button><button>Role <em>3</em></button></div></aside>
+    <div style="display:grid;gap:14px;min-width:0">
+      <section class="box"><div class="tb"><b style="color:var(--ink)">Agent</b><div class="r"><button class="btn">Agent 추가</button></div></div><div class="tw"><table class="ex" style="min-width:640px"><thead><tr><th>이름</th><th>URL</th><th>헤더</th><th></th></tr></thead><tbody>
+        <tr><td class="in">운영 챗 API</td><td class="mono">https://chat.internal:8443/v1/chat</td><td class="mono">auth-key, x-user-id</td><td><button class="btn">수정</button></td></tr>
+        <tr><td class="in">스테이징 챗 API</td><td class="mono">https://stg-chat.internal/v1/chat</td><td class="mono">auth-key</td><td><button class="btn">수정</button></td></tr></tbody></table></div></section>
+      <section class="box"><div class="tb"><b style="color:var(--ink)">LLM 서버 · 모델</b><div class="r"><button class="btn">서버 추가</button><button class="btn">모델 추가</button></div></div><div class="tw"><table class="ex" style="min-width:640px"><thead><tr><th>모델</th><th>서버</th><th>Base URL</th><th>API 키 이름</th></tr></thead><tbody>
+        <tr><td class="mono">gpt-4.1-mini</td><td class="mono">openai-proxy</td><td class="mono">http://10.0.3.40:4000/v1</td><td class="mono">PROXY_KEY</td></tr><tr><td class="mono">gpt-4.1</td><td class="mono">openai-proxy</td><td class="mono">http://10.0.3.40:4000/v1</td><td class="mono">PROXY_KEY</td></tr>
+        <tr><td class="mono">qwen2.5-72b</td><td class="mono">vllm-a</td><td class="mono">http://10.0.3.21:8000/v1</td><td class="mono">VLLM_A_KEY</td></tr><tr><td class="mono">llama-3.3-70b</td><td class="mono">vllm-a</td><td class="mono">http://10.0.3.21:8000/v1</td><td class="mono">VLLM_A_KEY</td></tr></tbody></table></div></section>
+      <section class="box"><div class="tb"><b style="color:var(--ink)">Role</b><div class="r"><input class="t" placeholder="role 이름" aria-label="role 이름"><button class="btn">추가</button></div></div><div class="chips"><span class="tag mono">router</span><span class="tag mono">parser</span><span class="tag mono">answer</span></div></section>
+    </div>
+  </div>
+</main>
+
+<aside class="panel" id="panel" hidden aria-label="케이스 상세"></aside>
+
+<script>
+(function(){
+  const S = { mode:'single', target:'default', input:'dataset', filter:'bad', sel:null, tab:'cmp', passed:new Set() };
+  const P = () => S.mode === 'pair';
+  const AG = ['운영 챗 API','스테이징 챗 API'], MOD = ['gpt-4.1-mini','gpt-4.1','qwen2.5-72b','llama-3.3-70b'];
+  const sel = (o,v=0,l='') => `<select aria-label="${l}">${o.map((x,i)=>`<option${i===v?' selected':''}>${x}</option>`).join('')}</select>`;
+  // [id, 폴더, 질문, 정답 JSON, A 틀린 키, B 틀린 키, [faith, corr] A, B, 시간]
+  const GT1 = '{"action":"reserve","slots":{"date":"2025-09-20","time":"15:00","people":4,"seat":"창가"},"code":200}';
+  const C = [
+    [1,'예약','9월 20일 오후 3시에 4명 창가로 예약해 줘',GT1,['time','code'],[],[.81,.62],[.84,.88],'2.4초'],
+    [2,'예약','내일 저녁 7시 두 명 자리 있어?','{"action":"reserve","slots":{"time":"19:00","people":2},"code":200}',[],[],[.92,.90],[.90,.91],'1.9초'],
+    [3,'예약','토요일 점심 6명 단체 예약 부탁해','{"action":"reserve","slots":{"time":"12:00","people":6},"code":200}',['people'],[],[.74,.58],[.86,.83],'2.2초'],
+    [5,'예약','다음 주 화요일 12시 반 3명','{"action":"reserve","slots":{"time":"12:30","people":3},"code":200}',['time'],['time'],[.70,.55],[.72,.57],'2.0초'],
+    [15,'변경','R-7781 예약 시간을 6시로 바꿔 줘','{"action":"change","slots":{"booking_id":"R-7781","time":"18:00"},"code":200}',['time'],[],[.79,.61],[.88,.87],'1.7초'],
+    [17,'변경','인원을 4명에서 5명으로 늘려 줘','{"action":"change","slots":{"people":5},"code":200}',[],['people'],[.90,.89],[.71,.60],'1.8초'],
+    [26,'취소','R-7781 예약 취소해 줘',null,null,null,[.95,null],[.94,null],'1.2초'],
+    [29,'취소','오늘 예약 전부 취소','{"action":"cancel","slots":{"scope":"today"},"code":200}',['code'],[],[.72,.60],[.86,.85],'1.5초'],
+    [33,'검색','성수 근처 파스타 맛집','{"action":"search","items":[{"name":"라 파스타"},{"name":"파스타 잇"}],"code":200}',['name'],['name'],[.61,.48],[.63,.50],'3.1초'],
+    [36,'검색','주차 되는 한식당 찾아 줘','{"action":"search","items":[{"name":"한상"}],"code":200}',[],[],[.88,.86],[.89,.87],'2.8초'],
+  ];
+  const WRONG = {time:['"15:00"','"14:00"'],code:['200','500'],people:['6','"6"'],name:['"파스타 잇"','"성수 파스타"']};
+  const out = (gt,ks) => { if (gt == null) return '{"action":"cancel","slots":{"booking_id":"R-7781"},"code":200}'; let s = gt.replace(/</g,'&lt;'); (ks||[]).forEach(k => { const w = WRONG[k]; const re = new RegExp(`("${k}":)([^,}]*?)([,}])`); s = s.replace(re, (m,a,v,e) => `${a}<em>${w ? w[1] : 'null'}</em>${e}`); }); return s; };
+  const st = (ks,id) => ks == null ? 'na' : !ks.length ? 'ok' : S.passed.has(id) ? 'man' : 'no';
+  const stTxt = {ok:'일치',no:'다름',man:'수동 통과',na:'정답 없음'};
+  const cls = v => v == null ? '' : v < .6 ? 'lo' : v < .8 ? 'mi' : '';
+  const f2 = v => v == null ? '—' : v.toFixed(2);
+
+  function cfg(){
+    const p = P(), mdl = S.target === 'model', ab = p && !mdl;
+    document.getElementById('cfgSum').innerHTML = `<span class="lab">설정</span><span class="tag"><b>대상</b> ${mdl?'Model':'Default'}</span>${ab?'<span class="tag a">A 운영 챗 API</span><span class="tag a">B 스테이징 챗 API</span>':'<span class="tag">운영 챗 API</span>'}<span class="tag">${S.input==='manual'?'직접 입력':'예약 슬롯 파싱 · 42건'}</span><span class="tag">정답 일치 + RAGAS 3</span><span class="ch"></span>`;
+    document.getElementById('cfgBody').innerHTML = `
+      <div><span class="h">대상</span><span class="seg" data-g="target"><button data-v="default" aria-pressed="${!mdl}">Default</button><button data-v="model" aria-pressed="${mdl}">Model</button><button disabled>Prompt</button></span>
+        ${mdl?`<div class="roles" style="--n:${p?2:1}">${p?'<span></span><b style="color:var(--accent)">A</b><b style="color:var(--accent)">B</b>':''}${[['router',0,0],['parser',2,3],['answer',1,1]].map(([r,a,b])=>`<span>${r}</span>${sel(MOD,a,r)}${p?sel(MOD,b,r):''}`).join('')}</div>`:''}</div>
+      <div><span class="h">Agent</span>${ab?`<div class="ab"><b>A</b>${sel(AG,0,'A')}</div><div class="ab"><b>B</b>${sel(AG,1,'B')}</div>`:sel(AG,0,'Agent')}</div>
+      <div><span class="h">입력</span><span class="seg" data-g="input"><button data-v="dataset" aria-pressed="${S.input==='dataset'}">데이터셋</button><button data-v="manual" aria-pressed="${S.input==='manual'}">직접 입력</button></span>
+        ${S.input==='dataset'?`${sel(['예약 슬롯 파싱 · 42건','FAQ 답변 · 30건','상품 검색 · 18건'],0,'데이터셋')}<div style="display:flex;gap:6px">${sel(['전체 폴더','예약 14','변경 10','취소 8','검색 10'],0,'폴더')}<button class="btn">케이스 선택</button></div>`:`<textarea rows="2" aria-label="메시지">9월 20일 오후 3시에 4명 창가로 예약해 줘</textarea><textarea rows="1" placeholder="기대 정답" aria-label="기대 정답"></textarea>`}</div>
+      <div><span class="h">채점</span>${['정답 일치','faithfulness','answer_relevancy','context_precision','context_recall','answer_correctness'].map((m,i)=>`<label class="ck"><input type="checkbox" ${i<3||i===5?'checked':''}> ${m}</label>`).join('')}<button class="btn pri" style="margin-top:6px">${S.input==='manual'?(p?'A · B 호출':'호출'):(p?'42건 × A · B 실행':'42건 실행')}</button></div>`;
+  }
+  function summary(){
+    const p = P(), el = document.getElementById('summary');
+    const M = [['정답 일치','33 / 41','36 / 41',.80,.88],['faithfulness','0.82','0.84',.82,.84],['answer_relevancy','0.80','0.79',.80,.79],['answer_correctness','0.66','0.72',.66,.72],['평균 시간','2.1초','2.3초',null,null]];
+    if (!p){ el.innerHTML = `<div class="scores">${M.map(([n,a,,v])=>`<div class="sc"><span class="n">${n}</span><span class="v">${a}</span>${v!=null?`<span class="bar"><i style="width:${v*100}%"></i></span>`:'<span class="sub">TTFT 0.6초</span>'}</div>`).join('')}</div>`; return; }
+    const d = (a,b,inv) => { if (a==null) return '<span class="d z">—</span>'; const x = b - a; const good = inv ? x < 0 : x > 0; return Math.abs(x) < .005 ? '<span class="d z">0</span>' : `<span class="d ${good?'up':'down'}">${x>0?'+':''}${x.toFixed(2)}</span>`; };
+    el.innerHTML = `<table class="sum"><thead><tr><th>지표</th><th>A 운영 챗 API</th><th>B 스테이징 챗 API</th><th>차이</th></tr></thead><tbody>
+      ${M.map(([n,a,b,va,vb])=>`<tr><td>${n}</td><td>${a}</td><td>${b}</td><td>${d(va,vb)}</td></tr>`).join('')}
+      <tr><td>판정</td><td></td><td class="grade up">B 가 낫습니다</td><td><span class="d up">개선 5</span> <span class="d down">퇴보 1</span></td></tr></tbody></table>`;
+  }
+  function table(){
+    const p = P();
+    const rows = C.filter(c => S.filter === 'all' || c[4] == null || c[4].length || (p && c[5].length));
+    document.getElementById('cnt').textContent = `${rows.length} / 42건`;
+    document.getElementById('ex').innerHTML = `<thead><tr><th>#</th><th>폴더</th><th>질문</th><th>정답</th><th>답변</th><th>정답 일치</th><th style="text-align:right">faithfulness</th><th style="text-align:right">answer_correctness</th><th style="text-align:right">시간</th></tr></thead><tbody>${rows.map(c=>{
+      const [id,f,q,gt,ka,kb,ma,mb,t] = c, sa = st(ka,id), sb = st(kb,id);
+      const sc = j => `<td class="s"><span class="x ${cls(ma[j])}">${f2(ma[j])}</span>${p?`<span class="x ${cls(mb[j])}">${f2(mb[j])}</span>`:''}</td>`;
+      return `<tr class="row" data-c="${id}" aria-selected="${S.sel===id}"><td class="id">${String(id).padStart(2,'0')}</td><td>${f}</td><td class="in">${q}</td>
+        <td><div class="js">${gt?gt:'<span style="color:var(--muted);font-family:var(--sans)">정답 없음</span>'}</div></td>
+        <td><div class="js">${p?'<span class="lb">A</span>':''}${out(gt,ka)}</div>${p?`<div class="js"><span class="lb">B</span>${out(gt,kb)}</div>`:''}</td>
+        <td><span class="pass ${sa}">${stTxt[sa]}</span>${p?`<br><span class="pass ${sb}">${stTxt[sb]}</span>`:''}</td>${sc(0)}${sc(1)}<td class="s" style="color:var(--muted)">${t}</td></tr>`; }).join('')}</tbody>`;
+  }
+  function panel(){
+    const el = document.getElementById('panel'); const c = C.find(x => x[0] === S.sel);
+    if (!c){ el.hidden = true; return; } el.hidden = false;
+    const p = P(), [id,f,q,gt,ka,kb,ma,mb,t] = c, sa = st(ka,id);
+    const keys = gt ? [['action',null],['slots.time','time'],['slots.people','people'],['code','code']] : [];
+    const val = (k,ks) => { const w = WRONG[k]; return (ks||[]).includes(k) ? `<td class="bad">${w?w[1]:'null'}</td>` : `<td>${w?w[0]:'"reserve"'}</td>`; };
+    let body = '';
+    if (S.tab === 'cmp') body = `<div class="blk"><h4>입력</h4><div class="txt">${q}</div></div>
+      <div class="blk"><h4>키 비교</h4>${gt?`<table class="kv"><thead><tr><th>키</th><th>정답</th><th>${p?'A':'답변'}</th>${p?'<th>B</th>':''}</tr></thead><tbody>${keys.map(([n,k])=>`<tr><td class="k">${n}</td><td>${k&&WRONG[k]?WRONG[k][0]:'"reserve"'}</td>${val(k,ka)}${p?val(k,kb):''}</tr>`).join('')}</tbody></table>`:'<span style="color:var(--muted)">정답 없음</span>'}</div>
+      <div class="blk"><h4>점수</h4><div class="mini"><span></span><span style="color:var(--muted)">${p?'A':''}</span><span style="color:var(--muted)">${p?'B':''}</span><span>faithfulness</span><span>${f2(ma[0])}</span><span>${p?f2(mb[0]):''}</span><span>answer_correctness</span><span>${f2(ma[1])}</span><span>${p?f2(mb[1]):''}</span><span>시간 · TTFT</span><span>${t} · 0.6초</span><span>${p?'2.2초 · 0.7초':''}</span></div></div>`;
+    else if (S.tab === 'raw') body = `<div class="blk"><h4>${p?'A 답변 원문':'답변 원문'}</h4><pre class="p" style="padding:0">${out(gt,ka)}</pre></div>`;
+    else if (S.tab === 'ctx') body = `<div class="blk"><h4>Contexts 3</h4><pre class="p" style="padding:0">영업시간 11:30–22:00
+단체석 8인까지
+창가석 4인 테이블 6개</pre></div>`;
+    else body = `<div class="blk"><h4>PTX_TRACE_HIS</h4><table class="kv"><thead><tr><th>node</th><th>시간</th></tr></thead><tbody><tr><td>router</td><td>0.4초</td></tr><tr><td>slot_parser</td><td>1.6초</td></tr><tr><td>answer</td><td>0.4초</td></tr></tbody></table></div>`;
+    el.innerHTML = `<div class="ph"><b>#${String(id).padStart(2,'0')}</b><span class="tag">${f}</span><span class="pass ${sa}">${stTxt[sa]}</span><div class="r"><button class="btn" data-mv="-1" aria-label="이전">↑</button><button class="btn" data-mv="1" aria-label="다음">↓</button><button class="btn" data-x>닫기</button></div></div>
+      <div class="ptabs" role="tablist">${[['cmp','비교'],['raw','답변 원문'],['ctx','Contexts'],['trace','trace']].map(([k,n])=>`<button role="tab" data-t="${k}" aria-selected="${S.tab===k}">${n}</button>`).join('')}</div>
+      <div class="pb">${body}</div>
+      <div class="pf">${sa==='no'||sa==='man'?`<button class="btn" data-pass="${id}">${sa==='man'?'통과 취소':'통과로 표시'}</button>`:''}${sa==='na'?'<button class="btn">정답 추가</button>':''}<button class="btn">이 케이스 다시 실행</button></div>`;
+  }
+  const run = () => { cfg(); summary(); table(); panel();
+    document.getElementById('title').textContent = P() ? 'Pair Run' : 'Single Run';
+    document.getElementById('dur').textContent = P() ? '5분 08초' : '2분 41초'; };
+
+  document.getElementById('nav').addEventListener('click', e => {
+    const b = e.target.closest('[data-p]'); if (!b) return; const n = b.dataset.p;
+    document.querySelectorAll('#nav button').forEach(x => x.toggleAttribute('aria-current', x === b));
+    const pg = n === 'single' || n === 'pair' ? 'run' : n;
+    document.querySelectorAll('.page').forEach(m => m.hidden = m.id !== 'p-' + pg);
+    S.sel = null; panel();
+    if (pg === 'run'){ S.mode = n; run(); }
+  });
+  document.getElementById('cfgBody').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (b && !b.disabled){ S[b.parentElement.dataset.g] = b.dataset.v; cfg(); } });
+  document.getElementById('flt').addEventListener('click', e => { const b = e.target.closest('[data-f]'); if (!b) return; S.filter = b.dataset.f;
+    document.querySelectorAll('#flt button').forEach(x => x.setAttribute('aria-pressed', x === b)); table(); });
+  document.getElementById('ex').addEventListener('click', e => { const r = e.target.closest('tr.row'); if (r){ S.sel = +r.dataset.c; table(); panel(); } });
+  document.getElementById('panel').addEventListener('click', e => {
+    if (e.target.closest('[data-x]')){ S.sel = null; table(); panel(); return; }
+    const t = e.target.closest('[data-t]'); if (t){ S.tab = t.dataset.t; panel(); return; }
+    const m = e.target.closest('[data-mv]'); if (m){ const i = C.findIndex(c=>c[0]===S.sel); S.sel = C[Math.max(0,Math.min(C.length-1,i + +m.dataset.mv))][0]; table(); panel(); return; }
+    const ps = e.target.closest('[data-pass]'); if (ps){ const id = +ps.dataset.pass; S.passed.has(id) ? S.passed.delete(id) : S.passed.add(id); table(); panel(); }
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && S.sel != null){ S.sel = null; table(); panel(); } });
+
+  const PU = {'예약':'날짜 · 시간 · 인원을 모두 뽑는지','변경':'바꿀 슬롯만 뽑는지','취소':'예약 번호를 정확히 옮기는지','검색':'지역과 키워드를 나누는지'};
+  document.getElementById('dsT').innerHTML = '<thead><tr><th><input type="checkbox" aria-label="전체 선택"></th><th>질문</th><th>정답</th><th>목적</th><th>폴더</th><th></th></tr></thead><tbody>' +
+    C.map((c,i)=>`<tr><td><input type="checkbox" ${i<3?'checked':''} aria-label="선택"></td><td class="in">${c[2]}</td><td><div class="js">${c[3]||'<span style="color:var(--muted);font-family:var(--sans)">정답 없음</span>'}</div></td><td>${PU[c[1]]}</td><td>${c[1]}</td><td><button class="btn">수정</button></td></tr>`).join('') + '</tbody>';
+
+  const rb = v => `<span class="rbar"><i style="width:${v*100}%"></i></span>`;
+  const recS = () => '<thead><tr><th>생성일시</th><th>데이터셋</th><th>대상</th><th>Agent</th><th>정답 일치</th><th style="text-align:right">faithfulness</th><th style="text-align:right">answer_correctness</th><th></th></tr></thead><tbody>' +
+    [['10/30 14:12','예약 슬롯 파싱','Default','운영 챗 API',.80,'33/41',.82,.66],['10/30 11:05','예약 슬롯 파싱','Model','운영 챗 API',.76,'31/41',.80,.63],['10/29 17:02','FAQ 답변','Default','운영 챗 API',null,'—',.86,.81],['10/28 10:18','상품 검색','Model','운영 챗 API',.67,'12/18',.71,.58]]
+    .map(r=>`<tr class="row"><td class="id">${r[0]}</td><td class="in">${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td class="mono">${r[4]!=null?rb(r[4]):''}${r[5]}</td><td class="s">${r[6].toFixed(2)}</td><td class="s">${r[7].toFixed(2)}</td><td><button class="btn">데이터셋에 추가</button></td></tr>`).join('') + '</tbody>';
+  const recC = () => '<thead><tr><th>생성일시</th><th>데이터셋</th><th>가른 축</th><th>A</th><th>B</th><th>정답 일치</th><th>판정</th></tr></thead><tbody>' +
+    [['10/30 14:20','예약 슬롯 파싱','Default','운영 챗 API','스테이징 챗 API','33 → 36','up','B 가 나음'],['10/29 09:40','예약 슬롯 파싱','Model · parser','qwen2.5-72b','llama-3.3-70b','31 → 29','down','A 가 나음'],['10/27 15:02','FAQ 답변','Default','운영 챗 API','스테이징 챗 API','—','z','비슷함']]
+    .map(r=>`<tr class="row"><td class="id">${r[0]}</td><td class="in">${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td><td class="mono">${r[5]}</td><td><span class="d ${r[6]}">${r[7]}</span></td></tr>`).join('') + '</tbody>';
+  document.getElementById('recT').innerHTML = recS();
+  document.getElementById('rseg').addEventListener('click', e => { const b = e.target.closest('[data-r]'); if (!b) return;
+    document.querySelectorAll('#rseg button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    document.getElementById('recT').innerHTML = b.dataset.r === 's' ? recS() : recC(); });
+
+  run();
+})();
+</script>
+
+</html>

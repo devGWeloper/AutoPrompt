@@ -109,6 +109,9 @@ const PROTOTYPES = [
   { label: 'B 워크벤치', href: '/prototypes/b-workbench.html' },
   { label: 'C A·B 대칭', href: '/prototypes/c-pair.html' },
   { label: 'D 리포트형', href: '/prototypes/d-report.html' },
+  { label: 'H 실험표', href: '/prototypes/h-experiment.html' },
+  { label: 'I 열 비교', href: '/prototypes/i-columns.html' },
+  { label: 'J 목록형', href: '/prototypes/j-list.html' },
 ];
 
 export const SECTION_META = Object.fromEntries(

@@ -341,7 +341,7 @@ input{font:inherit;color:inherit}
     const n = S.input === 'manual' ? null : [42,14,10,8,10][S.folder];
     document.getElementById('go').textContent = n == null ? (pair() ? 'A · B 호출' : '호출') : (pair() ? `${n}건 × A · B 실행` : `${n}건 실행`);
     document.getElementById('goNote').textContent = S.metrics.size ? '' : '채점 없이 답변만 받습니다';
-    document.querySelectorAll('.mode button').forEach(b => b.setAttribute('aria-pressed', b.dataset.m === S.mode));
+    document.querySelectorAll('#view-run .mode button').forEach(b => b.setAttribute('aria-pressed', b.dataset.m === S.mode));
     document.querySelectorAll('#nav [data-nav]').forEach(b => b.toggleAttribute('aria-current', b.dataset.nav === S.mode));
   }
   const PAGES = ['run','datasets','records','prompt','settings'];
@@ -353,13 +353,6 @@ input{font:inherit;color:inherit}
     if (b.dataset.nav){ S.mode = b.dataset.nav; renderSteps(); renderReport(); }
   });
 
-  // 샘플: 데이터셋 케이스 · 기록 목록
-  const GT = {'예약':'{"action":"reserve","slots":{"time":"15:00","people":4}}','변경':'{"action":"change","slots":{"booking_id":"R-7781","time":"18:00"}}','취소':'{"action":"cancel","slots":{"booking_id":"R-7781"}}','검색':'{"action":"search","slots":{"keyword":"파스타"}}'};
-  const PU = {'예약':'날짜 · 시간 · 인원을 모두 뽑는지','변경':'바꿀 슬롯만 뽑는지','취소':'예약 번호를 정확히 옮기는지','검색':'지역과 키워드를 나누는지'};
-  document.getElementById('dsT').innerHTML = '<thead><tr><th><input type="checkbox" aria-label="전체 선택"></th><th>질문</th><th>정답</th><th>목적</th><th>폴더</th></tr></thead><tbody>' +
-    CASES.map(([id,f,q],i) => `<tr><td><input type="checkbox" ${i<3?'checked':''} aria-label="선택"></td><td class="cq">${q}</td><td class="mono">${id===26?'<span style="color:var(--muted);font-family:var(--sans)">정답 없음</span>':GT[f]}</td><td style="font-size:13px">${PU[f]}</td><td class="cf">${f}</td></tr>`).join('') + '</tbody>';
-  const RL = [['예약 슬롯 파싱 · Default','10/30 14:12','33/42'],['예약 슬롯 파싱 · Model','10/30 11:05','31/42'],['FAQ 답변 · Default','10/29 17:02','0.81'],['직접 입력 · Default','10/29 16:40','—'],['상품 검색 · Model','10/28 10:18','12/18'],['예약 슬롯 파싱 · Default','10/27 09:31','28/42']];
-  document.getElementById('recL').innerHTML = RL.map(([w,d,s],i) => `<button class="lrow" ${i===0?'aria-current="true"':''} style="grid-template-columns:minmax(0,1fr) auto"><b>${w}</b><span class="s">${s}</span><span>${d}</span></button>`).join('');
   const steps = document.getElementById('steps');
   steps.addEventListener('click', e => {
     const h = e.target.closest('[data-step]'); if (h){ const i = +h.dataset.step; S.open = S.open === i ? -1 : i; renderSteps(); return; }
@@ -369,7 +362,7 @@ input{font:inherit;color:inherit}
     const s = e.target.dataset.sel; if (s){ S[s] = +e.target.value; renderSteps(); return; }
     const m = e.target.dataset.met; if (m){ e.target.checked ? S.metrics.add(m) : S.metrics.delete(m); renderSteps(); renderReport(); }
   });
-  document.querySelector('.mode').addEventListener('click', e => {
+  document.querySelector('#view-run .mode').addEventListener('click', e => {
     const b = e.target.closest('[data-m]'); if (!b) return; S.mode = b.dataset.m; renderSteps(); renderReport();
   });
 
@@ -388,6 +381,13 @@ input{font:inherit;color:inherit}
     [33,'검색','성수 근처 파스타 맛집',['items[1].name'],['items[1].name'],'3.1초'],
     [36,'검색','주차 되는 한식당 찾아 줘',[],[],'2.8초'],
   ];
+  // 샘플: 데이터셋 케이스 · 기록 목록
+  const GT = {'예약':'{"action":"reserve","slots":{"time":"15:00","people":4}}','변경':'{"action":"change","slots":{"booking_id":"R-7781","time":"18:00"}}','취소':'{"action":"cancel","slots":{"booking_id":"R-7781"}}','검색':'{"action":"search","slots":{"keyword":"파스타"}}'};
+  const PU = {'예약':'날짜 · 시간 · 인원을 모두 뽑는지','변경':'바꿀 슬롯만 뽑는지','취소':'예약 번호를 정확히 옮기는지','검색':'지역과 키워드를 나누는지'};
+  document.getElementById('dsT').innerHTML = '<thead><tr><th><input type="checkbox" aria-label="전체 선택"></th><th>질문</th><th>정답</th><th>목적</th><th>폴더</th></tr></thead><tbody>' +
+    CASES.map(([id,f,q],i) => `<tr><td><input type="checkbox" ${i<3?'checked':''} aria-label="선택"></td><td class="cq">${q}</td><td class="mono">${id===26?'<span style="color:var(--muted);font-family:var(--sans)">정답 없음</span>':GT[f]}</td><td style="font-size:13px">${PU[f]}</td><td class="cf">${f}</td></tr>`).join('') + '</tbody>';
+  const RL = [['예약 슬롯 파싱 · Default','10/30 14:12','33/42'],['예약 슬롯 파싱 · Model','10/30 11:05','31/42'],['FAQ 답변 · Default','10/29 17:02','0.81'],['직접 입력 · Default','10/29 16:40','—'],['상품 검색 · Model','10/28 10:18','12/18'],['예약 슬롯 파싱 · Default','10/27 09:31','28/42']];
+  document.getElementById('recL').innerHTML = RL.map(([w,d,s],i) => `<button class="lrow" ${i===0?'aria-current="true"':''} style="grid-template-columns:minmax(0,1fr) auto"><b>${w}</b><span class="s">${s}</span><span>${d}</span></button>`).join('');
   const lv = v => v >= .8 ? ['ok','High'] : v >= .6 ? ['mid','Mid'] : ['low','Low'];
   function renderReport(){
     const P = pair();
