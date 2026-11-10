@@ -40,7 +40,7 @@ export interface ProjectOutcome {
 
 export interface TickResult {
   ran: boolean;
-  /** Why it did not run (disabled / not configured / busy / bot lookup failed). */
+  /** Why it did not run (not configured / busy / bot lookup failed). */
   skipped?: string;
   /** One entry per MR handled (a project with no open MR gets one NO_MR entry). */
   outcomes: ProjectOutcome[];
@@ -229,7 +229,6 @@ async function processProject(
 
 export async function runGateTick(trigger: TickTrigger): Promise<TickResult> {
   const cfg = getGateConfig();
-  if (!cfg.enabled) return { ran: false, skipped: "disabled", outcomes: [] };
   if (!cfg.baseUrl || !cfg.token || cfg.projects.length === 0) {
     return { ran: false, skipped: "not configured (gitlab.baseUrl / token / projects)", outcomes: [] };
   }

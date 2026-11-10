@@ -75,9 +75,11 @@ export interface GateProjectConfig {
 }
 
 /** MR gate — approves MRs into the target branch (prd) when the dataset's latest test run passed.
- * Off unless `gate.enabled: true`; dry-run (comment only) unless `gate.dryRun: false`. */
+ * The periodic batch runs only when `gate.batchEnabled: true`; the webhook / manual-run
+ * endpoints work whenever the gate is configured. Dry-run (comment only) unless `gate.dryRun: false`. */
 export interface GateConfig {
-  enabled: boolean;
+  /** Run the periodic tick (timer). Does not affect the webhook / manual-run endpoints. */
+  batchEnabled: boolean;
   dryRun: boolean;
   /** false = never post MR comments (log only). */
   comment: boolean;
@@ -133,7 +135,7 @@ interface RawConfig {
   ragasEngine?: string;
   llmKeys?: Record<string, unknown>;
   gate?: {
-    enabled?: unknown;
+    batchEnabled?: unknown;
     dryRun?: unknown;
     comment?: unknown;
     intervalSec?: unknown;
@@ -264,7 +266,7 @@ function normalizeGate(raw: RawConfig | null): GateConfig {
     });
   }
   return {
-    enabled: g.enabled === true,
+    batchEnabled: g.batchEnabled === true,
     dryRun: g.dryRun !== false,
     comment: g.comment !== false,
     intervalMs:

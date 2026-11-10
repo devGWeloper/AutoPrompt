@@ -24,7 +24,7 @@ AI Agent 프로젝트(GitLab)에서 **`prd` 브랜치로 향하는 모든 MR**(�
 | 3 | 시각 비교는 `START_TM` vs head 커밋 `committed_date` (커밋 시각만 본다) | 요구사항 |
 | 4 | **Dry-run 기본값 ON**: approve 대신 "승인 가능" 코멘트만 | 정책 검증 후 전환 |
 | 5 | 토큰/시크릿도 **`config.yml`** 에 둔다 | 기존 DB 비밀번호와 같은 방식. 리포 커밋 주의사항은 §4.2 |
-| 6 | `gate.enabled` 기본 `false`, **prd 서버에서만 `true`** | dev/로컬이 같은 DB·GitLab 을 보면 이중 승인·이중 코멘트 |
+| 6 | `gate.batchEnabled` 기본 `false`, **prd 서버에서만 `true`**. 배치(타이머)만 켜고 끄며 gate 전체 스위치는 없다 | dev/로컬이 같은 DB·GitLab 을 보면 이중 승인·이중 코멘트. webhook / 수동 실행 API 는 `secret` 만 있으면 동작 |
 | 7 | **신규 테이블 없음** | "이미 승인했는가" = GitLab approvals, "이미 코멘트했는가" = MR notes, 이력 = 서버 로그. 상세는 §5 |
 
 ## 3. 아키텍처
@@ -51,7 +51,7 @@ curl(운영자) ─────────▶ │ POST /api/gate/run  ───
 - `src/instrumentation.ts` 의 `register()` 에서 `NEXT_RUNTIME === 'nodejs'` 일 때만 `await import('./lib/gate/scheduler')` (Edge 번들에 `oracledb` 가 섞이면 빌드가 깨짐).
 - Next 14.2 는 `next.config.mjs` 에 `experimental.instrumentationHook: true` 필요.
 - `globalThis.__gateTimer` 로 타이머 **중복 등록 방지** (dev HMR 대비).
-- `gate.enabled=false` 면 타이머를 아예 만들지 않는다.
+- `gate.batchEnabled=false` 면 타이머를 아예 만들지 않는다 (webhook / 수동 실행은 영향 없음).
 - 기동 직후 즉시 실행하지 않고 첫 tick 은 interval 후. 필요하면 `/api/gate/run` 으로 수동 실행.
 
 ## 4. 설정
@@ -60,7 +60,7 @@ curl(운영자) ─────────▶ │ POST /api/gate/run  ───
 
 ```yaml
 gate:
-  enabled: false              # prd 서버에서만 true
+  batchEnabled: false         # 5분 배치(타이머)만 on/off. prd 서버에서만 true
   dryRun: true                # true = approve 안 하고 코멘트만
   comment: true               # false = 코멘트 게시 안 함 (로그만)
   intervalSec: 300            # 5분
@@ -84,7 +84,7 @@ gate:
   - Project Access Token 사용 + **만료일 설정**
   - 노출 의심 시 토큰만 재발급하면 되므로 교체 절차를 알아 둘 것
 - 로그에는 토큰/시크릿을 절대 출력하지 않는다 (요청 헤더 마스킹).
-- dev 용 `config.dev.yml` 에는 토큰을 넣지 않는다 (`gate.enabled: false` 유지 → 이중 실행 방지와 동시에 토큰 노출면 축소).
+- dev 용 `config.dev.yml` 에는 토큰을 넣지 않는다 (`gate.batchEnabled: false` 유지 → 이중 실행 방지와 동시에 토큰 노출면 축소).
 
 ## 5. 상태 관리 — 신규 테이블 없이
 
@@ -203,7 +203,7 @@ START_TM > TO_TIMESTAMP(:commitLocal, 'YYYY-MM-DD HH24:MI:SS')
 - **페이로드 내용은 신뢰하지 않는다.** 트리거로만 쓰고, 판단 근거는 항상 GitLab API 재조회 결과.
 - 여러 번 와도 진행 플래그와 디바운스(최소 간격 10초)로 1회만 실행.
 - webhook 이 없어도 시스템은 완전히 동작한다 (최악의 경우 5분 지연).
-- 앱 전역에 인증이 없으므로(`README`) 두 엔드포인트만 시크릿 필수. `gate.secret` 이 비어 있거나 `gate.enabled=false` 면 **엔드포인트 비활성(403)**.
+- 앱 전역에 인증이 없으므로(`README`) 두 엔드포인트만 시크릿 필수. `gate.secret` 이 비어 있으면 **엔드포인트 비활성(403)**. 배치 스위치(`batchEnabled`)와는 무관하다.
 
 ## 10. 코멘트 형식 (간단히)
 
@@ -242,7 +242,7 @@ docs/gate-design.md (이 문서)
 2. **타임존**: 앱 서버와 DB 서버 시각/타임존 일치 확인, 실제 run 1건과 방금 한 커밋으로 `START_TM >` 비교 1회 확인.
 3. **Dry-run 운영**: 며칠간 코멘트만 남기며 "승인 가능" 판정이 사람의 판단과 일치하는지 확인.
 4. **실모드 전환**: 테스트 MR 1건으로 approve 동작 + `sha` 불일치 시 거부 + **새 커밋 push 시 승인 초기화** 동작 확인 → `dryRun: false`.
-5. **이중 실행 방지**: dev/로컬에서 `gate.enabled` 기본 false 인지, 기동 로그에 "gate disabled" 가 찍히는지 확인.
+5. **이중 실행 방지**: dev/로컬에서 `gate.batchEnabled` 기본 false 인지, 기동 로그에 "gate batch off" 가 찍히는지 확인.
 
 ## 12. 채울 값 / 미결
 
@@ -268,7 +268,7 @@ docs/gate-design.md (이 문서)
 
 ### 14.1 결과
 
-설계(§1~§11)대로 구현했다. 기본값은 `gate.enabled: false`, `gate.dryRun: true` 이며, 꺼져 있으면 타이머도 엔드포인트도 동작하지 않아 앱은 기존과 동일하다.
+설계(§1~§11)대로 구현했다. 기본값은 `gate.batchEnabled: false`, `gate.dryRun: true` 이며, 배치가 꺼져 있으면 타이머가 만들어지지 않는다. 엔드포인트(webhook / 수동 실행)는 `gate.secret` 이 설정돼 있으면 배치 스위치와 무관하게 동작한다. (gate 전체 on/off 스위치는 두지 않는다.)
 
 **호출 경로**: `src/instrumentation.ts` → `lib/gate/scheduler.ts`(5분 타이머) → `lib/gate/tick.ts` (`runGateTick` → `processProject` = 전체 흐름). webhook(`/api/gitlab/webhook`)은 판단하지 않고 `triggerGate()` 로 tick 을 앞당겨 실행시키기만 한다.
 
@@ -295,7 +295,7 @@ docs/gate-design.md (이 문서)
 |---|---|
 | `src/lib/config.ts` | `gate` 설정 타입/정규화/`getGateConfig()` 추가. 기존 필드·시작 로그는 그대로이고 gate 값(토큰)은 로그에 찍지 않음 |
 | `next.config.mjs` | `experimental.instrumentationHook: true` 한 줄 추가 |
-| `config.yml`, `config.dev.yml` | `gate:` 섹션 추가 (둘 다 `enabled: false`, `dryRun: true`) |
+| `config.yml`, `config.dev.yml` | `gate:` 섹션 추가 (둘 다 `batchEnabled: false`, `dryRun: true`) |
 
 신규: `src/instrumentation.ts`, `src/lib/gate/*`(policy, evidence, gitlabClient, tick, scheduler, auth, time), `src/app/api/gitlab/webhook/route.ts`, `src/app/api/gate/run/route.ts`, 이 문서. UI·기존 API·DB 스키마는 건드리지 않았다.
 
@@ -308,7 +308,7 @@ docs/gate-design.md (이 문서)
 - **로그 규칙**: 같은 상태는 다시 찍지 않고 판정이 바뀔 때만 info. 에러는 tick 마다 찍힌다. 토큰·시크릿·케이스 본문은 로그에 없다 (`CASE_ID` 만).
 - **`prd` 로 오는 모든 MR 이 대상**: 출발 브랜치와 무관하게 열린 MR 을 전부 각각 판정한다 (`sourceBranch` 를 비워 둔 기본값). 목록은 한 페이지(100건)만 읽고, 꽉 차면 경고 로그를 남긴다.
 - **판정 근거는 MR 과 무관하게 같다**: 근거는 지정 `datasetId` 의 최신 run 하나이므로 MR 이 여러 개면 각 MR 의 head 커밋 시각만 다르게 비교될 뿐 같은 run 이 근거가 된다. 즉 **어떤 브랜치에서 온 MR 이든 "그 데이터셋의 최신 테스트가 자기 최신 커밋 이후에 통과했는가"** 만 본다. 테스트가 해당 MR 의 코드로 돌았는지는 확인하지 않는다.
-- **엔드포인트 보호**: `gate.enabled=false` 이거나 `gate.secret` 이 비어 있으면 `/api/gitlab/webhook`, `/api/gate/run` 은 항상 403.
+- **엔드포인트 보호**: `gate.secret` 이 비어 있으면 `/api/gitlab/webhook`, `/api/gate/run` 은 항상 403. 점검 실행에는 `gitlab.baseUrl` / `token` / `projects` 설정도 필요하다 (없으면 `ran: false`, "not configured").
 
 ### 14.5 검증 상태
 
@@ -316,7 +316,7 @@ docs/gate-design.md (이 문서)
 |---|---|
 | `npm run typecheck`, `npm run build` | 통과 |
 | 판정 로직(`policy.ts`) 전 분기, 시각 변환 | 임시 스크립트로 확인 (저장소에 테스트 러너가 없어 테스트 파일은 커밋하지 않음) |
-| gate 꺼진 상태로 서버 기동 | 확인: 두 엔드포인트 403, 기동 로그 `gate disabled`, `/api/health` 정상 |
+| 배치 꺼진 상태(구 `enabled: false` 시점)로 서버 기동 | 확인: 두 엔드포인트 403(secret 비어 있음), `/api/health` 정상. `batchEnabled` 로 바꾼 뒤에는 기동 로그 `gate batch off` 로 재확인 필요 |
 | **실제 GitLab 호출 (MR 조회/커밋/approvals/notes/approve)** | **미검증** |
 | **Oracle 에서 run/케이스 조회 SQL** | **미검증** (DB 미연결 환경) |
 | **webhook 수신 (GitLab → 서버)** | **미검증** |
@@ -330,7 +330,7 @@ docs/gate-design.md (이 문서)
 | # | 할 일 | 비고 |
 |---|---|---|
 | 1 | `config.yml`(prd 브랜치)의 `gate:` 채우기 | `gitlab.baseUrl`, `gitlab.token`, `secret`, `projects[].gitlabProjectId`, `projects[].datasetId` |
-| 2 | **`gate.enabled: true` 는 prd 서버의 `config.yml` 에만** | `config.dev.yml` 은 `false` 유지. 두 서버가 동시에 켜지면 이중 승인·이중 코멘트. `deploy.sh prd` 는 `config.dev.yml` 을 지우므로 `config.yml` 값이 쓰인다 |
+| 2 | **`gate.batchEnabled: true` 는 prd 서버의 `config.yml` 에만** | `config.dev.yml` 은 `false` 유지. 두 서버가 동시에 켜지면 이중 승인·이중 코멘트. `deploy.sh prd` 는 `config.dev.yml` 을 지우므로 `config.yml` 값이 쓰인다 |
 | 3 | 처음엔 `dryRun: true` | 코멘트("승인 가능 (dry-run)")만 남는다. 며칠 판정을 사람 판단과 비교한 뒤 `false` |
 | 4 | **앱 서버 ↔ DB 서버 타임존 확인** | 앱 서버 `date`, DB `SELECT SYSTIMESTAMP FROM DUAL`. 다르면 판정이 시간 단위로 어긋난다 (§7.3) |
 | 5 | prd 서버 → GitLab 네트워크 | `gate.gitlab.baseUrl` 로 HTTP(S) 접근 가능해야 함. **Node `fetch` 는 `HTTP_PROXY` 환경변수를 쓰지 않으므로** 프록시 경유 GitLab 은 지원하지 않는다 (사내 직접 접근 전제) |
@@ -339,7 +339,7 @@ docs/gate-design.md (이 문서)
 | 8 | DB 계정 권한 | 기존 접속 계정이 `PTX_RUN_MAS`, `PTX_RUN_DET` 을 읽을 수 있으면 충분 (gate 는 쓰기 없음) |
 | 9 | `PASS_YN` 마이그레이션 적용 여부 | `sql/migrate_run_det_pass.sql`. 없으면 수동 통과 처리가 반영되지 않고 `EXACT_VAL=1` 만 통과로 본다 (코드가 컬럼 유무를 자동 판별) |
 | 10 | 배포 | `./deploy.sh prd`. 새 의존성 없음. 서버 재시작 시 gate 도 같이 재시작 |
-| 11 | 배포 후 확인 | `app.log` 에 `gate scheduler started` (또는 `gate disabled`). 이어서 `curl -X POST http://<host>:5175/api/gate/run -H "X-Gate-Secret: <secret>"` 로 1회 수동 실행해 응답의 `outcomes` 확인 |
+| 11 | 배포 후 확인 | `app.log` 에 `gate scheduler started` (또는 `gate batch off`). 이어서 `curl -X POST http://<host>:5175/api/gate/run -H "X-Gate-Secret: <secret>"` 로 1회 수동 실행해 응답의 `outcomes` 확인 |
 | 12 | **로그 보존** | `deploy.sh` 는 `nohup … > app.log` 로 **재배포할 때마다 로그를 덮어쓴다.** gate 이력이 로그에만 남으므로 보존이 필요하면 `>>` 로 바꾸거나 별도 로테이션 구성 |
 
 ### 15.2 GitLab 쪽
@@ -356,12 +356,12 @@ docs/gate-design.md (이 문서)
 
 ### 15.3 켜기 전 최종 점검 순서
 
-1. 위 15.1 #1~#4, 15.2 #1~#4 완료 → `enabled: true`, `dryRun: true` 로 배포
+1. 위 15.1 #1~#4, 15.2 #1~#4 완료 → `batchEnabled: true`, `dryRun: true` 로 배포
 2. 로그에 `gate scheduler started` 확인, `/api/gate/run` 수동 실행으로 GitLab 호출·DB 조회가 에러 없이 도는지 확인
 3. 테스트 MR 로 판정 확인: 테스트 이력 없음 → "불통과", 최신 커밋 이후 테스트 통과 → "승인 가능 (dry-run)", 커밋 후 새 커밋 push → 다시 평가
 4. 15.2 #5 webhook 등록 후 MR 이벤트에서 즉시 실행되는지 확인 (없어도 5분 내 동작)
 5. dry-run 판정이 사람 판단과 며칠 일치하면 `dryRun: false` → 테스트 MR 로 실제 approve 확인, **새 커밋 push 시 승인이 초기화되는지** 확인
-6. 문제 시 `gate.enabled: false` 로 바꿔 재배포하면 즉시 중단 (이미 한 승인은 GitLab 에서 직접 취소)
+6. 문제 시 `gate.batchEnabled: false` 로 바꿔 재배포하면 배치가 중단된다 (이미 한 승인은 GitLab 에서 직접 취소). webhook / 수동 실행까지 막으려면 GitLab 의 webhook 을 끄거나 `gate.secret` 을 비운다.
 
 ### 15.4 알려진 제약
 

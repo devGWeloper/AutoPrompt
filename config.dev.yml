@@ -75,11 +75,12 @@ llmKeys:
   # VLLM_A_KEY: "sk-..."
 
 # MR Gate — GitLab 에서 targetBranch(prd) 로 오는 MR 에 테스트 이력이 있으면 봇이 승인한다 (docs/gate-design.md).
-#   enabled 는 prd 서버에서만 true. dev/로컬은 false 로 둔다 (이중 승인·이중 코멘트 방지).
+#   batchEnabled 는 5분 주기 배치만 켜고 끈다 (webhook / 수동 실행 API 는 이 값과 무관, secret 만 있으면 동작).
+#   prd 서버에서만 true. dev/로컬은 false 로 둔다 (이중 승인·이중 코멘트 방지).
 #   dryRun true 면 approve 하지 않고 "승인 가능" 코멘트만 남긴다. 검증 후 false 로.
 #   token/secret 은 이 파일이 리포에 커밋되는 점에 유의 (봇은 해당 프로젝트에만 두고 만료일을 설정).
 gate:
-  enabled: false
+  batchEnabled: false
   dryRun: true
   comment: true             # false = MR 코멘트 없이 로그만
   intervalSec: 300          # tick 주기(초). 최소 30

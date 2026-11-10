@@ -7,19 +7,20 @@ const g = globalThis as unknown as { __gateTimer?: ReturnType<typeof setInterval
 
 /**
  * Start the periodic gate tick. Called once from `src/instrumentation.ts`.
- * Does nothing unless `gate.enabled: true` — so a dev box or a second server
+ * Does nothing unless `gate.batchEnabled: true` — so a dev box or a second server
  * never double-approves. The first tick runs after one interval, not at boot.
+ * The webhook / manual-run endpoints are not affected by this switch.
  */
 export function startGateScheduler(): void {
   const cfg = getGateConfig();
-  if (!cfg.enabled) {
-    logger.info("gate disabled (gate.enabled is not true) — scheduler not started");
+  if (!cfg.batchEnabled) {
+    logger.info("gate batch off (gate.batchEnabled is not true) — scheduler not started");
     return;
   }
   if (g.__gateTimer) return; // dev HMR / double register
 
   if (!cfg.baseUrl || !cfg.token || cfg.projects.length === 0) {
-    logger.error("gate enabled but not configured — scheduler not started", {
+    logger.error("gate batch on but not configured — scheduler not started", {
       baseUrlSet: cfg.baseUrl !== "",
       tokenSet: cfg.token !== "",
       projects: cfg.projects.length,
