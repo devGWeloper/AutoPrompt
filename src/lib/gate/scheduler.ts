@@ -41,7 +41,7 @@ export function startGateScheduler(): void {
       project: p.gitlabProjectId,
       source: p.sourceBranch || "(any)",
       target: p.targetBranch,
-      datasetId: p.datasetId,
+      datasetId: p.datasetId || "(all)",
     })),
   });
 }

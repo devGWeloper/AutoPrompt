@@ -89,8 +89,8 @@ gate:
     baseUrl: ""             # 예: https://gitlab.example.com
     token: ""               # 봇 계정 Project Access Token (api scope)
     timeoutSec: 15
-  projects:                 # 지금은 1개. datasetId 가 0/빈 id 인 항목은 무시된다
+  projects:                 # 지금은 1개. gitlabProjectId 가 빈 항목은 자리만 잡아 둔 것으로 보고 무시된다
     - gitlabProjectId: ""   # 숫자 ID 또는 URL-encoded path
       sourceBranch: ""        # 비우면 targetBranch 로 오는 모든 MR 이 대상. 값을 주면 그 브랜치에서 온 MR 만
       targetBranch: "prd"
-      datasetId: 0
+      datasetId: 0            # 0/비움 = 데이터셋 구분 없이 전체에서 가장 최근 단독 테스트를 본다. 양의 정수면 그 데이터셋만

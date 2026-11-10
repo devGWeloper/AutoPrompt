@@ -73,7 +73,7 @@ gate:
     - gitlabProjectId: ""     # 숫자 ID 또는 URL-encoded path
       sourceBranch: ""          # 비우면 targetBranch 로 오는 모든 MR 이 대상. 값을 주면 그 브랜치에서 온 MR 만
       targetBranch: "prd"
-      datasetId: 0            # 평가 대상 데이터셋 (고정)
+      datasetId: 0            # 평가 대상 데이터셋. 0/비움 = 데이터셋 구분 없이 전체에서 최신 single run
 ```
 
 ### 4.2 토큰 취급 주의
@@ -137,7 +137,7 @@ runGateTick():
 ```sql
 SELECT RUN_ID, STATUS_CD, START_TM, ...
   FROM PTX_RUN_MAS
- WHERE DATASET_ID = :datasetId
+ WHERE DATASET_ID = :datasetId           -- datasetId 가 0/비움이면 이 조건을 뺀다 (전체 데이터셋)
    AND AB_GROUP_ID IS NULL                 -- single run 만
  ORDER BY START_TM DESC
  FETCH FIRST 1 ROWS ONLY
@@ -248,7 +248,7 @@ docs/gate-design.md (이 문서)
 
 | 항목 | 상태 |
 |---|---|
-| `datasetId` | 추후 입력 (config 고정값) |
+| `datasetId` | 선택. 비우거나 0 이면 전체 데이터셋, 양의 정수면 그 데이터셋만 (config 고정값) |
 | `gitlabProjectId`, `baseUrl`, 봇 토큰 | 추후 입력 (`config.yml`) |
 | approve API 상세 | 사용자가 추후 기재 |
 | GitLab 이 사내 CA/self-signed 인증서인 경우 | 서버 기동 환경에 `NODE_EXTRA_CA_CERTS=<CA 파일>` 지정 (앱에는 TLS 검증 해제 옵션을 두지 않음) |
@@ -301,7 +301,7 @@ docs/gate-design.md (이 문서)
 
 ### 14.4 동작상 중요한 점
 
-- **판정**: 지정 `datasetId` 의 가장 최근 single run(`AB_GROUP_ID IS NULL`) 1건만 본다. 과거에 통과한 run 이 있어도 최신 run 이 실패면 불통과. 불일치 재실행은 `START_TM` 을 다시 찍으므로 재실행 시각이 기준이 된다.
+- **판정**: 지정 `datasetId` 의 가장 최근 single run(`AB_GROUP_ID IS NULL`) 1건만 본다. `datasetId` 를 비우거나 0 으로 두면 데이터셋 구분 없이 전체에서 가장 최근 single run 1건을 본다. 잘못된 값(음수, 문자 등)은 경고 로그와 함께 그 프로젝트를 건너뛴다. 과거에 통과한 run 이 있어도 최신 run 이 실패면 불통과. 불일치 재실행은 `START_TM` 을 다시 찍으므로 재실행 시각이 기준이 된다.
 - **승인은 평가한 sha 에 고정**: `approve` 에 `sha` 를 실어 보내므로 평가 후 push 된 커밋은 GitLab 이 거부하고 다음 tick 에 재평가한다.
 - **새 커밋 후 재승인 방지는 GitLab 설정에 의존**: "새 커밋 push 시 승인 초기화"가 꺼져 있으면 옛 승인이 새 커밋에 남는다 (§5). 이 서버는 이를 검증하지 않는다.
 - **코멘트 중복 방지**는 메모리가 아니라 GitLab 에 남은 마커로 판단하므로 서버를 재시작해도 같은 코멘트가 다시 달리지 않는다. 재시작 후에는 로그의 `gate: verdict` 줄이 한 번 다시 찍힐 뿐이다.

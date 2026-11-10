@@ -70,7 +70,8 @@ export interface GateProjectConfig {
   sourceBranch: string;
   /** MRs into this branch are the gate's subject (default "prd"). */
   targetBranch: string;
-  /** The dataset whose latest single run is the evidence. */
+  /** The dataset whose latest single run is the evidence. 0 = not set: the latest single run
+   * across every dataset is the evidence. */
   datasetId: number;
 }
 
@@ -255,9 +256,18 @@ function normalizeGate(raw: RawConfig | null): GateConfig {
   const projects: GateProjectConfig[] = [];
   for (const p of Array.isArray(g.projects) ? g.projects : []) {
     const gitlabProjectId = str(p?.gitlabProjectId);
-    const datasetId = Number(p?.datasetId);
-    // A placeholder slot (blank id / datasetId 0) is not a project.
-    if (!gitlabProjectId || !Number.isInteger(datasetId) || datasetId <= 0) continue;
+    // A placeholder slot (blank gitlabProjectId) is not a project.
+    if (!gitlabProjectId) continue;
+    // datasetId blank / 0 = not set → every dataset. Anything else must be a positive integer;
+    // a malformed value is skipped loudly rather than silently widened to "every dataset".
+    const rawDataset = str(p?.datasetId);
+    const datasetId = rawDataset === "" ? 0 : Number(rawDataset);
+    if (!Number.isInteger(datasetId) || datasetId < 0) {
+      logger.warn("gate project skipped — datasetId must be a positive integer, or blank / 0 for every dataset", {
+        project: gitlabProjectId,
+      });
+      continue;
+    }
     projects.push({
       gitlabProjectId,
       sourceBranch: str(p?.sourceBranch),
