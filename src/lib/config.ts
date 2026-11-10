@@ -62,6 +62,35 @@ export interface OpenAiCompatConfig {
 
 export type RagasEngineMode = "auto" | "fallback" | "ragas";
 
+/** One GitLab project the MR gate watches (docs/gate-design.md). */
+export interface GateProjectConfig {
+  /** Numeric id or URL-encoded path. */
+  gitlabProjectId: string;
+  /** '' = every source branch. Set only to narrow the gate to one source. */
+  sourceBranch: string;
+  /** MRs into this branch are the gate's subject (default "prd"). */
+  targetBranch: string;
+  /** The dataset whose latest single run is the evidence. */
+  datasetId: number;
+}
+
+/** MR gate — approves MRs into the target branch (prd) when the dataset's latest test run passed.
+ * Off unless `gate.enabled: true`; dry-run (comment only) unless `gate.dryRun: false`. */
+export interface GateConfig {
+  enabled: boolean;
+  dryRun: boolean;
+  /** false = never post MR comments (log only). */
+  comment: boolean;
+  intervalMs: number;
+  /** Shared secret for the webhook (X-Gitlab-Token) and manual run (X-Gate-Secret). */
+  secret: string;
+  baseUrl: string;
+  /** Bot account token. Credential — must never reach a log or a response. */
+  token: string;
+  timeoutMs: number;
+  projects: GateProjectConfig[];
+}
+
 interface AppConfig {
   appEnv: AppEnv;
   /** null when the DB block is incomplete (treated as "not connected"). */
@@ -74,6 +103,8 @@ interface AppConfig {
   embedding: OpenAiCompatConfig;
   /** auto (LLM engine when llm configured, else fallback) | fallback | ragas. */
   ragasEngine: RagasEngineMode;
+  /** MR gate settings (server-side only; holds a credential). */
+  gate: GateConfig;
   /** API keys of the LLM servers the *agent* calls, by name. A registered LLM
    * server (PTX_LLMSVR_MAS.KEY_REF) points at one of these names; the value
    * lives only here and is handed to the agent per call in a request header,
@@ -101,6 +132,15 @@ interface RawConfig {
   embedding?: Partial<OpenAiCompatConfig>;
   ragasEngine?: string;
   llmKeys?: Record<string, unknown>;
+  gate?: {
+    enabled?: unknown;
+    dryRun?: unknown;
+    comment?: unknown;
+    intervalSec?: unknown;
+    secret?: unknown;
+    gitlab?: { baseUrl?: unknown; token?: unknown; timeoutSec?: unknown };
+    projects?: { gitlabProjectId?: unknown; sourceBranch?: unknown; targetBranch?: unknown; datasetId?: unknown }[];
+  };
 }
 
 const DEV_FILE = "config.dev.yml";
@@ -196,6 +236,47 @@ function normalizeLlmKeys(raw: Record<string, unknown> | undefined): Record<stri
   return out;
 }
 
+const GATE_DEFAULT_INTERVAL_SEC = 300;
+const GATE_MIN_INTERVAL_SEC = 30;
+const GATE_DEFAULT_TIMEOUT_SEC = 15;
+
+function str(v: unknown): string {
+  return typeof v === "string" || typeof v === "number" ? String(v).trim() : "";
+}
+
+/** Safe defaults: disabled, dry-run, comments on. Anything malformed falls back
+ * to the cautious side rather than failing the whole config load. */
+function normalizeGate(raw: RawConfig | null): GateConfig {
+  const g = raw?.gate ?? {};
+  const interval = Number(g.intervalSec);
+  const timeout = Number(g.gitlab?.timeoutSec);
+  const projects: GateProjectConfig[] = [];
+  for (const p of Array.isArray(g.projects) ? g.projects : []) {
+    const gitlabProjectId = str(p?.gitlabProjectId);
+    const datasetId = Number(p?.datasetId);
+    // A placeholder slot (blank id / datasetId 0) is not a project.
+    if (!gitlabProjectId || !Number.isInteger(datasetId) || datasetId <= 0) continue;
+    projects.push({
+      gitlabProjectId,
+      sourceBranch: str(p?.sourceBranch),
+      targetBranch: str(p?.targetBranch) || "prd",
+      datasetId,
+    });
+  }
+  return {
+    enabled: g.enabled === true,
+    dryRun: g.dryRun !== false,
+    comment: g.comment !== false,
+    intervalMs:
+      (Number.isFinite(interval) && interval >= GATE_MIN_INTERVAL_SEC ? interval : GATE_DEFAULT_INTERVAL_SEC) * 1000,
+    secret: str(g.secret),
+    baseUrl: str(g.gitlab?.baseUrl).replace(/\/+$/, ""),
+    token: str(g.gitlab?.token),
+    timeoutMs: (Number.isFinite(timeout) && timeout > 0 ? timeout : GATE_DEFAULT_TIMEOUT_SEC) * 1000,
+    projects,
+  };
+}
+
 function normalizeRagasEngine(v: string | undefined): RagasEngineMode {
   const m = (v ?? "").trim().toLowerCase();
   return m === "fallback" || m === "ragas" ? m : "auto";
@@ -233,6 +314,7 @@ export function loadConfig(): AppConfig {
     llm: normalizeOpenAi(raw?.llm),
     embedding: normalizeOpenAi(raw?.embedding),
     ragasEngine: normalizeRagasEngine(raw?.ragasEngine),
+    gate: normalizeGate(raw),
     llmKeys: normalizeLlmKeys(raw?.llmKeys),
     sourceFile,
   };
@@ -318,6 +400,11 @@ export function getLlmKeys(): Record<string, string> {
 /** Just the names — what the settings screen may offer. */
 export function getLlmKeyNames(): string[] {
   return Object.keys(loadConfig().llmKeys);
+}
+
+/** MR gate settings. Server-side only — contains the bot token and shared secret. */
+export function getGateConfig(): GateConfig {
+  return loadConfig().gate;
 }
 
 export function getRagasEngineMode(): RagasEngineMode {
