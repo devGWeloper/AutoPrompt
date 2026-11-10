@@ -305,6 +305,8 @@ docs/gate-design.md (이 문서)
 - **승인은 평가한 sha 에 고정**: `approve` 에 `sha` 를 실어 보내므로 평가 후 push 된 커밋은 GitLab 이 거부하고 다음 tick 에 재평가한다.
 - **새 커밋 후 재승인 방지는 GitLab 설정에 의존**: "새 커밋 push 시 승인 초기화"가 꺼져 있으면 옛 승인이 새 커밋에 남는다 (§5). 이 서버는 이를 검증하지 않는다.
 - **코멘트 중복 방지**는 메모리가 아니라 GitLab 에 남은 마커로 판단하므로 서버를 재시작해도 같은 코멘트가 다시 달리지 않는다. 재시작 후에는 로그의 `gate: verdict` 줄이 한 번 다시 찍힐 뿐이다.
+- **gate 전용 로그 파일**: gate 로그는 콘솔과 함께 `gate.logDir`(기본 `logs/`)의 `gate-YYYY-MM-DD.log` (KST 날짜, 하루 한 파일, JSON 한 줄씩)에도 쌓인다. `app.log` 와 달리 재배포해도 덮어쓰지 않는다(`logs/` 는 `.gitignore`). 점검이 끝날 때마다 `gate: tick done` 한 줄(트리거, 소요 시간, MR 수, 판정별 건수, 수행한 동작)을 남긴다.
+- **단계별 진행 로그**: 점검마다 `run` ID 를 붙여, 한 번의 실행을 줄 단위로 따라갈 수 있다. `gate: tick start` → 단계마다 `gate: step done`(단계 키·이름·소요 ms·핵심 결과) 또는 `gate: step skipped`(건너뛴 이유) → MR 마다 `gate: MR done`(최종 판정·동작·완료한 단계 목록) → `gate: tick done`. 단계는 `get_bot` → `list_mrs` → `get_mr` → `get_approvals` → `get_commit` → `load_evidence` → `evaluate` → `approve` → `check_comment` → `post_comment`. 실패하면 `gate: step failed`(어느 단계, 오류) 뒤에 `gate: MR failed`(`failedStep`, `completedSteps`)가 남아 어디까지 하다 실패했는지 알 수 있다.
 - **로그 규칙**: 같은 상태는 다시 찍지 않고 판정이 바뀔 때만 info. 에러는 tick 마다 찍힌다. 토큰·시크릿·케이스 본문은 로그에 없다 (`CASE_ID` 만).
 - **`prd` 로 오는 모든 MR 이 대상**: 출발 브랜치와 무관하게 열린 MR 을 전부 각각 판정한다 (`sourceBranch` 를 비워 둔 기본값). 목록은 한 페이지(100건)만 읽고, 꽉 차면 경고 로그를 남긴다.
 - **판정 근거는 MR 과 무관하게 같다**: 근거는 지정 `datasetId` 의 최신 run 하나이므로 MR 이 여러 개면 각 MR 의 head 커밋 시각만 다르게 비교될 뿐 같은 run 이 근거가 된다. 즉 **어떤 브랜치에서 온 MR 이든 "그 데이터셋의 최신 테스트가 자기 최신 커밋 이후에 통과했는가"** 만 본다. 테스트가 해당 MR 의 코드로 돌았는지는 확인하지 않는다.
@@ -340,7 +342,7 @@ docs/gate-design.md (이 문서)
 | 9 | `PASS_YN` 마이그레이션 적용 여부 | `sql/migrate_run_det_pass.sql`. 없으면 수동 통과 처리가 반영되지 않고 `EXACT_VAL=1` 만 통과로 본다 (코드가 컬럼 유무를 자동 판별) |
 | 10 | 배포 | `./deploy.sh prd`. 새 의존성 없음. 서버 재시작 시 gate 도 같이 재시작 |
 | 11 | 배포 후 확인 | `app.log` 에 `gate scheduler started` (또는 `gate batch off`). 이어서 `curl -X POST http://<host>:5175/api/gate/run -H "X-Gate-Secret: <secret>"` 로 1회 수동 실행해 응답의 `outcomes` 확인 |
-| 12 | **로그 보존** | `deploy.sh` 는 `nohup … > app.log` 로 **재배포할 때마다 로그를 덮어쓴다.** gate 이력이 로그에만 남으므로 보존이 필요하면 `>>` 로 바꾸거나 별도 로테이션 구성 |
+| 12 | **로그 보존** | `deploy.sh` 는 `nohup … > app.log` 로 **재배포할 때마다 app.log 를 덮어쓴다.** gate 로그는 별도로 `logs/gate-YYYY-MM-DD.log` 에 하루 한 파일씩 쌓이고 재배포해도 유지된다(`git reset --hard` 는 추적하지 않는 파일을 지우지 않는다). `gate.logRetainDays`(기본 30)일보다 오래된 파일은 자동 삭제, 0 이면 삭제 안 함 |
 
 ### 15.2 GitLab 쪽
 

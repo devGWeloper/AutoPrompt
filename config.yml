@@ -85,6 +85,8 @@ gate:
   dryRun: true
   comment: true             # false = MR 코멘트 없이 로그만
   intervalSec: 300          # tick 주기(초). 최소 30
+  logDir: "logs"            # gate 전용 로그 폴더 (실행 폴더 기준). 하루 한 파일: gate-YYYY-MM-DD.log
+  logRetainDays: 30         # 이 일수보다 오래된 gate 로그 파일은 자동 삭제. 0 = 삭제 안 함
   secret: ""                # webhook(X-Gitlab-Token) / 수동 실행(X-Gate-Secret) 공유 시크릿
   gitlab:
     baseUrl: ""             # 예: https://gitlab.example.com

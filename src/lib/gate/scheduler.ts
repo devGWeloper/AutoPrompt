@@ -1,6 +1,6 @@
 import { getGateConfig } from "@/lib/config";
 import { errorText } from "@/lib/http";
-import { logger } from "@/lib/logger";
+import { gateLog as logger } from "./log";
 import { runGateTick } from "./tick";
 
 const g = globalThis as unknown as { __gateTimer?: ReturnType<typeof setInterval> };

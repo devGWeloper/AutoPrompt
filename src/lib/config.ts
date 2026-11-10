@@ -91,6 +91,10 @@ export interface GateConfig {
   /** Bot account token. Credential — must never reach a log or a response. */
   token: string;
   timeoutMs: number;
+  /** Directory of the gate-only log files (gate-YYYY-MM-DD.log), relative to the working directory. */
+  logDir: string;
+  /** Gate log files older than this many days are deleted. 0 = keep forever. */
+  logRetainDays: number;
   projects: GateProjectConfig[];
 }
 
@@ -141,6 +145,8 @@ interface RawConfig {
     comment?: unknown;
     intervalSec?: unknown;
     secret?: unknown;
+    logDir?: unknown;
+    logRetainDays?: unknown;
     gitlab?: { baseUrl?: unknown; token?: unknown; timeoutSec?: unknown };
     projects?: { gitlabProjectId?: unknown; sourceBranch?: unknown; targetBranch?: unknown; datasetId?: unknown }[];
   };
@@ -247,6 +253,15 @@ function str(v: unknown): string {
   return typeof v === "string" || typeof v === "number" ? String(v).trim() : "";
 }
 
+const GATE_DEFAULT_LOG_RETAIN_DAYS = 30;
+
+/** Days to keep gate log files. Blank / malformed → 30; 0 → keep forever. */
+function normalizeRetainDays(v: unknown): number {
+  if (str(v) === "") return GATE_DEFAULT_LOG_RETAIN_DAYS;
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 0 ? n : GATE_DEFAULT_LOG_RETAIN_DAYS;
+}
+
 /** Safe defaults: disabled, dry-run, comments on. Anything malformed falls back
  * to the cautious side rather than failing the whole config load. */
 function normalizeGate(raw: RawConfig | null): GateConfig {
@@ -285,6 +300,8 @@ function normalizeGate(raw: RawConfig | null): GateConfig {
     baseUrl: str(g.gitlab?.baseUrl).replace(/\/+$/, ""),
     token: str(g.gitlab?.token),
     timeoutMs: (Number.isFinite(timeout) && timeout > 0 ? timeout : GATE_DEFAULT_TIMEOUT_SEC) * 1000,
+    logDir: str(g.logDir) || "logs",
+    logRetainDays: normalizeRetainDays(g.logRetainDays),
     projects,
   };
 }
@@ -347,6 +364,15 @@ export function loadConfig(): AppConfig {
     embeddingConfigured: cached.embedding.endpoint !== "",
     // Names only, as with the agent headers above.
     llmKeys: Object.keys(cached.llmKeys),
+    // Set / not-set flags only — the token and secret never reach the log.
+    gate: {
+      batchEnabled: cached.gate.batchEnabled,
+      baseUrlSet: cached.gate.baseUrl !== "",
+      tokenSet: cached.gate.token !== "",
+      secretSet: cached.gate.secret !== "",
+      projects: cached.gate.projects.map((p) => ({ project: p.gitlabProjectId, datasetId: p.datasetId || "(all)" })),
+      rawProjectsIsList: Array.isArray(raw?.gate?.projects),
+    },
   });
   return cached;
 }
