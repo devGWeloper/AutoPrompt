@@ -290,6 +290,9 @@ async function processProject(
   const mrs = await step(pt, "list_mrs", "열린 MR 목록 조회", () => listOpenMrs(cfg, p), (r) => ({
     count: r.length,
     target: p.targetBranch,
+    ...(p.sourceBranch ? { sourceFilter: p.sourceBranch } : {}),
+    // Which MRs were found: iid, source branch and a short title.
+    mrs: r.map((m) => ({ iid: m.iid, source: m.source_branch, title: (m.title ?? "").slice(0, 60) })),
   }));
   if (mrs.length >= OPEN_MR_PAGE) {
     logger.warn("gate: open MR list hit the page limit — older MRs are not handled", {
