@@ -169,17 +169,31 @@ export function RunDurationTag({ runs, className }: { runs: Timed[]; className?:
             : '실행 시작 → 종료'
       }
     >
-      {sides?.map((s) => (
-        <span key={s.label} className="text-[11px]">
-          {s.label} <span className="font-mono tabular-nums">{s.ms == null ? '—' : fmtDuration(s.ms)}</span>
+      {/* Pair: 윗줄 A · B, 아랫줄 전체 · 재실행. */}
+      {sides && (
+        <span className="text-[11px]">
+          {sides.map((s, i) => (
+            <span key={s.label} className={i > 0 ? 'ml-2.5' : undefined}>
+              {s.label}{' '}
+              <span className="font-mono text-[12.5px] font-semibold tabular-nums text-ink">
+                {s.ms == null ? '—' : fmtDuration(s.ms)}
+              </span>
+            </span>
+          ))}
         </span>
-      ))}
+      )}
       <span>
         {sides && <span className="mr-1 text-[11px]">전체</span>}
         <span className="font-mono font-semibold tabular-nums text-ink">{fmtDuration(headMs)}</span>
         <Paren ms={headMs} />
+        {sides && rerun && (
+          <span className="ml-2.5 text-[11px]">
+            재실행 <span className="font-mono tabular-nums">{fmtDuration(ms)}</span>
+            <Paren ms={ms} />
+          </span>
+        )}
       </span>
-      {rerun && (
+      {!sides && rerun && (
         <span className="text-[11px]">
           재실행 <span className="font-mono tabular-nums">{fmtDuration(ms)}</span>
           <Paren ms={ms} />
@@ -298,16 +312,24 @@ export function RunDurationStack({ runs }: { runs: Timed[] }) {
           : undefined
       }
     >
-      {sides?.map((sd) => (
-        <span key={sd.label} className="text-[10.5px] text-muted-soft">
-          {sd.label} {sd.ms == null ? '—' : fmtDuration(sd.ms)}
+      {sides && (
+        <span>
+          {sides.map((sd, i) => (
+            <span key={sd.label} className={i > 0 ? 'ml-2' : undefined}>
+              <span className="text-[10.5px] text-muted-soft">{sd.label}</span>{' '}
+              <span className="font-semibold text-ink">{sd.ms == null ? '—' : fmtDuration(sd.ms)}</span>
+            </span>
+          ))}
         </span>
-      ))}
+      )}
       <span>
         {sides && <span className="mr-1 text-[10.5px] text-muted-soft">전체</span>}
-        {fmtDuration(headMs)}
+        <span className={sides ? 'font-semibold text-ink' : undefined}>{fmtDuration(headMs)}</span>
+        {sides && rerun && <span className="ml-2 text-[10.5px] text-muted-soft">재실행 {fmtDuration(ms)}</span>}
       </span>
-      {rerun ? (
+      {sides ? (
+        !rerun && min && <span className="text-[10.5px] text-muted-soft">{min}</span>
+      ) : rerun ? (
         <span className="text-[10.5px] text-muted-soft">재실행 {fmtDuration(ms)}</span>
       ) : (
         min && <span className="text-[10.5px] text-muted-soft">{min}</span>
