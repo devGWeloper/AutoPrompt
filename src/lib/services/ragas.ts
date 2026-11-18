@@ -14,7 +14,7 @@ import { ALL_METRICS, EXACT_MATCH, SYSTEM_USER } from "@/lib/types";
 import type { LlmMetric, RagasMetric, RagasRunDetail, RagasRunSummary } from "@/lib/types";
 import { writeAudit } from "./audit";
 import { deleteCallConfigs } from "./callConfig";
-import { isLive } from "./runRegistry";
+import { isExecuting } from "./runRegistry";
 
 // ============================================================
 // Fallback scorer — deterministic token-overlap heuristics (dependency-free).
@@ -266,7 +266,7 @@ export async function deleteRun(runId: number): Promise<void> {
   // stream never reaches a terminal event, and the panel that started it is
   // left showing nothing but a Cancel button for a run it can no longer
   // cancel. Stop it first, then delete it.
-  if (isLive(runId)) {
+  if (isExecuting(runId)) {
     throw conflict("실행 중인 기록입니다 — 먼저 취소한 뒤 삭제하세요");
   }
   await withConn(async (conn) => {

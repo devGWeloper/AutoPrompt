@@ -47,6 +47,13 @@ export function isLive(runId: number): boolean {
   return runs.has(runId);
 }
 
+/** Still executing — registered and not yet ended. Unlike ``isLive`` this is
+ * false during the KEEP_AFTER_FINISH_MS replay window after the run ends. */
+export function isExecuting(runId: number): boolean {
+  const live = runs.get(runId);
+  return !!live && live.terminal === null;
+}
+
 /**
  * Cut this run's in-flight work immediately. The DB flag ('CANCELLING') is only
  * read between cases, so on its own a cancel waits out whatever call is already

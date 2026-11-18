@@ -157,16 +157,25 @@ export function RunDurationTag({ runs, className }: { runs: Timed[]; className?:
   // 위 줄은 그 실행에 걸린 시간 — 재실행을 거쳤으면 처음 돌렸을 때의 것이고,
   // 아닌 실행에서는 방금 돌린 그것이다. 둘 다 '이 실행에 걸린 시간' 이라 자리가 같다.
   const headMs = firstMs ?? ms;
+  const sides = pairSides(runs);
   return (
     <span
       className={cn('inline-flex flex-col items-end whitespace-nowrap leading-tight text-muted', className)}
       title={
         rerun
           ? `실행 ${fmtDuration(headMs)}${firstStartedText(runs) ? ` (${firstStartedText(runs)})` : ''} · 재실행 ${fmtDuration(ms)} — 재실행은 다시 돌린 케이스만 잰 시간입니다`
-          : '실행 시작 → 종료'
+          : sides
+            ? 'A · B 각각 시작 → 종료 · 전체는 먼저 시작한 쪽부터 나중에 끝난 쪽까지'
+            : '실행 시작 → 종료'
       }
     >
+      {sides?.map((s) => (
+        <span key={s.label} className="text-[11px]">
+          {s.label} <span className="font-mono tabular-nums">{s.ms == null ? '—' : fmtDuration(s.ms)}</span>
+        </span>
+      ))}
       <span>
+        {sides && <span className="mr-1 text-[11px]">전체</span>}
         <span className="font-mono font-semibold tabular-nums text-ink">{fmtDuration(headMs)}</span>
         <Paren ms={headMs} />
       </span>
@@ -178,6 +187,16 @@ export function RunDurationTag({ runs, className }: { runs: Timed[]; className?:
       )}
     </span>
   );
+}
+
+/** Pair 실행의 A · B 각자 걸린 시간. 단일 실행이면 null — 전체와 같은 수를 두 번
+ * 적게 된다. 각 쪽도 전체와 같은 규칙: 재실행을 거쳤으면 처음 돌렸을 때의 시간. */
+function pairSides(runs: Timed[]): { label: string; ms: number | null }[] | null {
+  if (runs.length !== 2) return null;
+  return runs.map((r, i) => ({
+    label: i === 0 ? 'A' : 'B',
+    ms: (wasRerun(r) ? runFirstSpanMs(r) : null) ?? runSpanMs(r),
+  }));
 }
 
 /**
@@ -266,6 +285,7 @@ export function RunDurationStack({ runs }: { runs: Timed[] }) {
   const headMs = firstMs ?? ms;
   const min = fmtMinutes(headMs);
   const firstAt = firstStartedText(runs);
+  const sides = pairSides(runs);
   return (
     <span
       className="flex flex-col leading-tight"
@@ -278,7 +298,15 @@ export function RunDurationStack({ runs }: { runs: Timed[] }) {
           : undefined
       }
     >
-      <span>{fmtDuration(headMs)}</span>
+      {sides?.map((sd) => (
+        <span key={sd.label} className="text-[10.5px] text-muted-soft">
+          {sd.label} {sd.ms == null ? '—' : fmtDuration(sd.ms)}
+        </span>
+      ))}
+      <span>
+        {sides && <span className="mr-1 text-[10.5px] text-muted-soft">전체</span>}
+        {fmtDuration(headMs)}
+      </span>
       {rerun ? (
         <span className="text-[10.5px] text-muted-soft">재실행 {fmtDuration(ms)}</span>
       ) : (
@@ -925,8 +953,16 @@ export function RunProgress({
 export function DatasetSelect({
   datasets, value, onChange, variant,
 }: { datasets: Dataset[]; value: number | null; onChange: (id: number) => void; variant?: 'field' | 'chip' }) {
+  // 폭을 좁혀 실행 조건 줄이 한 줄에 서게 한다 — 긴 이름은 잘리니 전체를 title 로.
+  const picked = datasets.find((d) => d.dataset_id === value);
   return (
-    <Select variant={variant} value={value ?? ''} onChange={(e) => onChange(Number(e.target.value))} className="w-52">
+    <Select
+      variant={variant}
+      value={value ?? ''}
+      onChange={(e) => onChange(Number(e.target.value))}
+      className="w-40"
+      title={picked?.dataset_nm}
+    >
       <option value="" disabled>Dataset</option>
       {datasets.map((d) => (
         <option key={d.dataset_id} value={d.dataset_id}>
@@ -1007,7 +1043,7 @@ export function CategorySelect({
       variant="chip"
       value={value ?? ''}
       onChange={(e) => onChange(e.target.value || null)}
-      className="w-40"
+      className="w-32"
       title="이 폴더의 케이스만 실행합니다"
     >
       <option value="">전체 ({total})</option>
