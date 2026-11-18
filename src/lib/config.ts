@@ -62,6 +62,42 @@ export interface OpenAiCompatConfig {
 
 export type RagasEngineMode = "auto" | "fallback" | "ragas";
 
+/** One GitLab project the MR gate watches (docs/gate-design.md). */
+export interface GateProjectConfig {
+  /** Numeric id or URL-encoded path. */
+  gitlabProjectId: string;
+  /** '' = every source branch. Set only to narrow the gate to one source. */
+  sourceBranch: string;
+  /** MRs into this branch are the gate's subject (default "prd"). */
+  targetBranch: string;
+  /** The dataset whose latest single run is the evidence. 0 = not set: the latest single run
+   * across every dataset is the evidence. */
+  datasetId: number;
+}
+
+/** MR gate — approves MRs into the target branch (prd) when the dataset's latest test run passed.
+ * The periodic batch runs only when `gate.batchEnabled: true`; the webhook / manual-run
+ * endpoints work whenever the gate is configured. Dry-run (comment only) unless `gate.dryRun: false`. */
+export interface GateConfig {
+  /** Run the periodic tick (timer). Does not affect the webhook / manual-run endpoints. */
+  batchEnabled: boolean;
+  dryRun: boolean;
+  /** false = never post MR comments (log only). */
+  comment: boolean;
+  intervalMs: number;
+  /** Shared secret for the webhook (X-Gitlab-Token) and manual run (X-Gate-Secret). */
+  secret: string;
+  baseUrl: string;
+  /** Bot account token. Credential — must never reach a log or a response. */
+  token: string;
+  timeoutMs: number;
+  /** Directory of the gate-only log files (gate-YYYY-MM-DD.log), relative to the working directory. */
+  logDir: string;
+  /** Gate log files older than this many days are deleted. 0 = keep forever. */
+  logRetainDays: number;
+  projects: GateProjectConfig[];
+}
+
 interface AppConfig {
   appEnv: AppEnv;
   /** null when the DB block is incomplete (treated as "not connected"). */
@@ -74,6 +110,8 @@ interface AppConfig {
   embedding: OpenAiCompatConfig;
   /** auto (LLM engine when llm configured, else fallback) | fallback | ragas. */
   ragasEngine: RagasEngineMode;
+  /** MR gate settings (server-side only; holds a credential). */
+  gate: GateConfig;
   /** API keys of the LLM servers the *agent* calls, by name. A registered LLM
    * server (PTX_LLMSVR_MAS.KEY_REF) points at one of these names; the value
    * lives only here and is handed to the agent per call in a request header,
@@ -101,6 +139,17 @@ interface RawConfig {
   embedding?: Partial<OpenAiCompatConfig>;
   ragasEngine?: string;
   llmKeys?: Record<string, unknown>;
+  gate?: {
+    batchEnabled?: unknown;
+    dryRun?: unknown;
+    comment?: unknown;
+    intervalSec?: unknown;
+    secret?: unknown;
+    logDir?: unknown;
+    logRetainDays?: unknown;
+    gitlab?: { baseUrl?: unknown; token?: unknown; timeoutSec?: unknown };
+    projects?: { gitlabProjectId?: unknown; sourceBranch?: unknown; targetBranch?: unknown; datasetId?: unknown }[];
+  };
 }
 
 const DEV_FILE = "config.dev.yml";
@@ -196,6 +245,67 @@ function normalizeLlmKeys(raw: Record<string, unknown> | undefined): Record<stri
   return out;
 }
 
+const GATE_DEFAULT_INTERVAL_SEC = 300;
+const GATE_MIN_INTERVAL_SEC = 30;
+const GATE_DEFAULT_TIMEOUT_SEC = 15;
+
+function str(v: unknown): string {
+  return typeof v === "string" || typeof v === "number" ? String(v).trim() : "";
+}
+
+const GATE_DEFAULT_LOG_RETAIN_DAYS = 30;
+
+/** Days to keep gate log files. Blank / malformed → 30; 0 → keep forever. */
+function normalizeRetainDays(v: unknown): number {
+  if (str(v) === "") return GATE_DEFAULT_LOG_RETAIN_DAYS;
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 0 ? n : GATE_DEFAULT_LOG_RETAIN_DAYS;
+}
+
+/** Safe defaults: disabled, dry-run, comments on. Anything malformed falls back
+ * to the cautious side rather than failing the whole config load. */
+function normalizeGate(raw: RawConfig | null): GateConfig {
+  const g = raw?.gate ?? {};
+  const interval = Number(g.intervalSec);
+  const timeout = Number(g.gitlab?.timeoutSec);
+  const projects: GateProjectConfig[] = [];
+  for (const p of Array.isArray(g.projects) ? g.projects : []) {
+    const gitlabProjectId = str(p?.gitlabProjectId);
+    // A placeholder slot (blank gitlabProjectId) is not a project.
+    if (!gitlabProjectId) continue;
+    // datasetId blank / 0 = not set → every dataset. Anything else must be a positive integer;
+    // a malformed value is skipped loudly rather than silently widened to "every dataset".
+    const rawDataset = str(p?.datasetId);
+    const datasetId = rawDataset === "" ? 0 : Number(rawDataset);
+    if (!Number.isInteger(datasetId) || datasetId < 0) {
+      logger.warn("gate project skipped — datasetId must be a positive integer, or blank / 0 for every dataset", {
+        project: gitlabProjectId,
+      });
+      continue;
+    }
+    projects.push({
+      gitlabProjectId,
+      sourceBranch: str(p?.sourceBranch),
+      targetBranch: str(p?.targetBranch) || "prd",
+      datasetId,
+    });
+  }
+  return {
+    batchEnabled: g.batchEnabled === true,
+    dryRun: g.dryRun !== false,
+    comment: g.comment !== false,
+    intervalMs:
+      (Number.isFinite(interval) && interval >= GATE_MIN_INTERVAL_SEC ? interval : GATE_DEFAULT_INTERVAL_SEC) * 1000,
+    secret: str(g.secret),
+    baseUrl: str(g.gitlab?.baseUrl).replace(/\/+$/, ""),
+    token: str(g.gitlab?.token),
+    timeoutMs: (Number.isFinite(timeout) && timeout > 0 ? timeout : GATE_DEFAULT_TIMEOUT_SEC) * 1000,
+    logDir: str(g.logDir) || "logs",
+    logRetainDays: normalizeRetainDays(g.logRetainDays),
+    projects,
+  };
+}
+
 function normalizeRagasEngine(v: string | undefined): RagasEngineMode {
   const m = (v ?? "").trim().toLowerCase();
   return m === "fallback" || m === "ragas" ? m : "auto";
@@ -233,6 +343,7 @@ export function loadConfig(): AppConfig {
     llm: normalizeOpenAi(raw?.llm),
     embedding: normalizeOpenAi(raw?.embedding),
     ragasEngine: normalizeRagasEngine(raw?.ragasEngine),
+    gate: normalizeGate(raw),
     llmKeys: normalizeLlmKeys(raw?.llmKeys),
     sourceFile,
   };
@@ -253,6 +364,15 @@ export function loadConfig(): AppConfig {
     embeddingConfigured: cached.embedding.endpoint !== "",
     // Names only, as with the agent headers above.
     llmKeys: Object.keys(cached.llmKeys),
+    // Set / not-set flags only — the token and secret never reach the log.
+    gate: {
+      batchEnabled: cached.gate.batchEnabled,
+      baseUrlSet: cached.gate.baseUrl !== "",
+      tokenSet: cached.gate.token !== "",
+      secretSet: cached.gate.secret !== "",
+      projects: cached.gate.projects.map((p) => ({ project: p.gitlabProjectId, datasetId: p.datasetId || "(all)" })),
+      rawProjectsIsList: Array.isArray(raw?.gate?.projects),
+    },
   });
   return cached;
 }
@@ -318,6 +438,11 @@ export function getLlmKeys(): Record<string, string> {
 /** Just the names — what the settings screen may offer. */
 export function getLlmKeyNames(): string[] {
   return Object.keys(loadConfig().llmKeys);
+}
+
+/** MR gate settings. Server-side only — contains the bot token and shared secret. */
+export function getGateConfig(): GateConfig {
+  return loadConfig().gate;
 }
 
 export function getRagasEngineMode(): RagasEngineMode {

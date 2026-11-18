@@ -36,3 +36,6 @@ Thumbs.db
 # Logs
 logs/
 *.log
+
+# gate-only log files (src/lib/gate/log.ts)
+logs/
